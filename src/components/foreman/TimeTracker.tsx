@@ -57,6 +57,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [componentSearch, setComponentSearch] = useState('');
   const [showComponentDropdown, setShowComponentDropdown] = useState(false);
   const [totalJobHours, setTotalJobHours] = useState(0);
+  const [totalComponentHours, setTotalComponentHours] = useState(0);
   
   // Entry mode selection
   const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('none');
@@ -99,6 +100,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     loadWorkers();
     loadLocalTimers();
     loadTotalJobHours();
+    loadTotalComponentHours();
     
     // Start tick interval for live timer updates
     tickIntervalRef.current = setInterval(() => {
@@ -179,6 +181,28 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       setTotalJobHours(totalManHours);
     } catch (error) {
       console.error('Error loading total job hours:', error);
+    }
+  }
+
+  async function loadTotalComponentHours() {
+    try {
+      // Only count component-level time entries (not job clock-in/out)
+      const { data, error } = await supabase
+        .from('time_entries')
+        .select('total_hours, crew_count')
+        .eq('job_id', job.id)
+        .not('component_id', 'is', null) // Only component time
+        .not('total_hours', 'is', null);
+
+      if (error) throw error;
+
+      const totalManHours = (data || []).reduce((sum, entry) => 
+        sum + ((entry.total_hours || 0) * (entry.crew_count || 1)), 0
+      );
+
+      setTotalComponentHours(totalManHours);
+    } catch (error) {
+      console.error('Error loading total component hours:', error);
     }
   }
 
@@ -415,7 +439,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       
       toast.success(`Time entry saved: ${roundedHours.toFixed(2)} hours`);
       setReviewTimer(null);
-      loadTotalJobHours(); // Reload progress
+      loadTotalComponentHours(); // Reload component time
       onTimerUpdate();
     } catch (error: any) {
       toast.error('Failed to save time entry');
@@ -545,7 +569,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       setManualNotes('');
       setManualPhotos([]);
       setManualPhotoUrls([]);
-      loadTotalJobHours(); // Reload progress
+      loadTotalComponentHours(); // Reload component time
       onTimerUpdate();
     } catch (error: any) {
       toast.error('Failed to save manual entry');
@@ -601,55 +625,79 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
   return (
     <div className="space-y-4">
-      {/* Project Progress Bar - Based on Clock-In/Out Time */}
-      {estimatedHours > 0 && (
-        <Card className="border-2 border-primary/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Target className="w-4 h-4 text-primary" />
-              Project Progress (Clock-In Time)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Completion</span>
-              <span className={`font-bold text-lg ${
-                isOverBudget ? 'text-destructive' : 'text-primary'
-              }`}>
-                {progressPercent.toFixed(0)}%
-              </span>
+      {/* Time Tracking Summary */}
+      <Card className="border-2 border-primary/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Target className="w-4 h-4 text-primary" />
+            Time Tracking Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Job Total Hours */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Total Job Time</span>
+              <span className="text-xs text-muted-foreground">Clock-in/out entries</span>
             </div>
-            <Progress value={progressPercent} className="h-3" />
-            <div className="grid grid-cols-2 gap-3 text-center text-sm">
-              <div className="p-3 bg-muted/30 rounded-lg">
-                <p className="text-2xl font-bold">{totalJobHours.toFixed(1)}</p>
-                <p className="text-xs text-muted-foreground mt-1">Hours Logged</p>
-              </div>
-              <div className="p-3 bg-muted/30 rounded-lg">
-                <p className="text-2xl font-bold">{estimatedHours.toFixed(1)}</p>
-                <p className="text-xs text-muted-foreground mt-1">Estimated</p>
-              </div>
+            <div className="p-4 bg-primary/10 border-2 border-primary rounded-lg text-center">
+              <p className="text-3xl font-bold text-primary">{totalJobHours.toFixed(1)}</p>
+              <p className="text-xs text-muted-foreground mt-1">hours across all workers</p>
             </div>
-            {isOverBudget ? (
-              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-center">
-                <p className="text-sm text-destructive font-medium flex items-center justify-center gap-1">
-                  <TrendingUp className="w-4 h-4" />
-                  Over budget by {(totalJobHours - estimatedHours).toFixed(1)}h
-                </p>
-              </div>
-            ) : (
-              <div className="bg-success/10 border border-success/30 rounded-lg p-3 text-center">
-                <p className="text-sm text-success font-medium">
-                  {remainingHours.toFixed(1)}h remaining
-                </p>
-              </div>
-            )}
-            <div className="text-xs text-center text-muted-foreground pt-2 border-t">
-              Based on clock-in/out entries only
+          </div>
+
+          {/* Component Hours */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Component Time</span>
+              <span className="text-xs text-muted-foreground">Task-specific tracking</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="p-4 bg-muted/50 border-2 border-muted rounded-lg text-center">
+              <p className="text-3xl font-bold">{totalComponentHours.toFixed(1)}</p>
+              <p className="text-xs text-muted-foreground mt-1">hours on components</p>
+            </div>
+          </div>
+
+          {/* Project Progress (if estimated hours exist) */}
+          {estimatedHours > 0 && (
+            <div className="pt-3 border-t space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Project Completion</span>
+                <span className={`font-bold text-lg ${
+                  isOverBudget ? 'text-destructive' : 'text-primary'
+                }`}>
+                  {progressPercent.toFixed(0)}%
+                </span>
+              </div>
+              <Progress value={progressPercent} className="h-3" />
+              <div className="grid grid-cols-2 gap-3 text-center text-sm">
+                <div className="p-2 bg-muted/30 rounded">
+                  <p className="text-lg font-bold">{totalJobHours.toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground">Logged</p>
+                </div>
+                <div className="p-2 bg-muted/30 rounded">
+                  <p className="text-lg font-bold">{estimatedHours.toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground">Estimated</p>
+                </div>
+              </div>
+              {isOverBudget ? (
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-2 text-center">
+                  <p className="text-xs text-destructive font-medium flex items-center justify-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    Over budget by {(totalJobHours - estimatedHours).toFixed(1)}h
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-success/10 border border-success/30 rounded-lg p-2 text-center">
+                  <p className="text-xs text-success font-medium">
+                    {remainingHours.toFixed(1)}h remaining
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Entry Mode Selection - Show only if no mode selected */}
       {entryMode === 'none' && (
