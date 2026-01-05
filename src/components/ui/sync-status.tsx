@@ -20,7 +20,9 @@ export function SyncStatusDetailed() {
   const { queueStatus, isUploading, retryFailed, processQueue } = usePhotoUpload();
   const connectionStatus = useConnectionStatus();
   const [shouldShow, setShouldShow] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const [shownAt, setShownAt] = useState<number>(0);
 
   const totalPending = pendingCount + queueStatus.pending + queueStatus.failed;
   const hasIssues = queueStatus.failed > 0;
@@ -35,9 +37,10 @@ export function SyncStatusDetailed() {
     }
   }, [isSyncing, isUploading, pendingCount, queueStatus]);
 
-  // Debounce visibility to prevent flashing
+  // Debounce visibility with minimum show time to prevent flashing
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
+    let hideTimeout: NodeJS.Timeout;
+    let minShowTimeout: NodeJS.Timeout;
 
     // Should show if:
     // - Actively syncing/uploading OR
@@ -48,15 +51,43 @@ export function SyncStatusDetailed() {
     if (shouldBeVisible) {
       // Show immediately when there's work to do
       setShouldShow(true);
+      
+      // After showing, ensure it stays visible for at least 3 seconds
+      if (!isVisible) {
+        setIsVisible(true);
+        setShownAt(Date.now());
+      }
     } else {
-      // Hide after 2 second delay to prevent flashing
-      timeout = setTimeout(() => {
-        setShouldShow(false);
-      }, 2000);
+      // Calculate how long the button has been shown
+      const visibleDuration = Date.now() - shownAt;
+      const minVisibleTime = 3000; // 3 seconds minimum
+      const hideDelay = 5000; // 5 seconds after work completes
+      
+      // If shown for less than minimum time, wait for minimum time first
+      if (visibleDuration < minVisibleTime && shownAt > 0) {
+        minShowTimeout = setTimeout(() => {
+          // After minimum time, wait additional delay before hiding
+          hideTimeout = setTimeout(() => {
+            setIsVisible(false);
+            // Actually remove from DOM after fade animation (300ms)
+            setTimeout(() => setShouldShow(false), 300);
+          }, hideDelay);
+        }, minVisibleTime - visibleDuration);
+      } else {
+        // Already shown for minimum time, just add hide delay
+        hideTimeout = setTimeout(() => {
+          setIsVisible(false);
+          // Actually remove from DOM after fade animation (300ms)
+          setTimeout(() => setShouldShow(false), 300);
+        }, hideDelay);
+      }
     }
 
-    return () => clearTimeout(timeout);
-  }, [isActive, totalPending]);
+    return () => {
+      clearTimeout(hideTimeout);
+      clearTimeout(minShowTimeout);
+    };
+  }, [isActive, totalPending, shownAt, isVisible]);
 
   // Don't render at all when hidden
   if (!shouldShow) {
@@ -69,7 +100,9 @@ export function SyncStatusDetailed() {
         <Button
           variant="outline"
           size="sm"
-          className="fixed bottom-4 right-4 z-50 shadow-lg"
+          className={`fixed bottom-4 right-4 z-50 shadow-lg transition-all duration-300 ease-in-out ${
+            isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+          }`}
           title={import.meta.env.DEV ? debugInfo : undefined}
         >
           {isSyncing || isUploading ? (
