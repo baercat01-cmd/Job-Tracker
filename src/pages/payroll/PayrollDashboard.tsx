@@ -36,19 +36,25 @@ interface TimeEntryData {
   components?: { name: string } | null;
 }
 
-interface JobTimeData {
-  jobId: string;
-  jobName: string;
-  clientName: string;
+interface DateEntryData {
+  date: string;
+  entries: {
+    jobName: string;
+    clientName: string;
+    startTime: string;
+    endTime: string | null;
+    totalHours: number;
+    isManual: boolean;
+    notes: string | null;
+  }[];
   totalHours: number;
-  entries: TimeEntryData[];
 }
 
 interface UserTimeData {
   userId: string;
   userName: string;
   totalHours: number;
-  jobs: JobTimeData[];
+  dateEntries: DateEntryData[];
 }
 
 interface WeekData {
@@ -64,7 +70,7 @@ export function PayrollDashboard() {
   const [weekOptions, setWeekOptions] = useState<{ value: string; label: string }[]>([]);
   const [weekData, setWeekData] = useState<WeekData | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
-  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<string>('all');
 
   useEffect(() => {
@@ -136,7 +142,7 @@ export function PayrollDashboard() {
 
       if (usersError) throw usersError;
 
-      // Group entries by user, then by job
+      // Group entries by user, then by date
       const userMap = new Map<string, UserTimeData>();
       
       users.forEach(user => {
@@ -144,38 +150,49 @@ export function PayrollDashboard() {
           userId: user.id,
           userName: user.username || 'Unknown User',
           totalHours: 0,
-          jobs: [],
+          dateEntries: [],
         });
       });
 
       (timeEntries || []).forEach((entry: any) => {
         const userData = userMap.get(entry.user_id);
         if (userData) {
-          // Find or create job entry
-          let jobData = userData.jobs.find(j => j.jobId === entry.job_id);
-          if (!jobData) {
-            jobData = {
-              jobId: entry.job_id,
-              jobName: entry.jobs?.name || 'Unknown Job',
-              clientName: entry.jobs?.client_name || '',
-              totalHours: 0,
+          // Get date string (YYYY-MM-DD)
+          const dateStr = new Date(entry.start_time).toISOString().split('T')[0];
+          
+          // Find or create date entry
+          let dateData = userData.dateEntries.find(d => d.date === dateStr);
+          if (!dateData) {
+            dateData = {
+              date: dateStr,
               entries: [],
+              totalHours: 0,
             };
-            userData.jobs.push(jobData);
+            userData.dateEntries.push(dateData);
           }
           
-          jobData.entries.push(entry);
-          jobData.totalHours += entry.total_hours || 0;
+          // Add entry to date
+          dateData.entries.push({
+            jobName: entry.jobs?.name || 'Unknown Job',
+            clientName: entry.jobs?.client_name || '',
+            startTime: entry.start_time,
+            endTime: entry.end_time,
+            totalHours: entry.total_hours || 0,
+            isManual: entry.is_manual,
+            notes: entry.notes,
+          });
+          
+          dateData.totalHours += entry.total_hours || 0;
           userData.totalHours += entry.total_hours || 0;
         }
       });
 
-      // Convert to array and filter out users with no hours, sort jobs within each user
+      // Convert to array and filter out users with no hours, sort dates within each user
       const usersWithTime = Array.from(userMap.values())
         .filter(u => u.totalHours > 0)
         .map(u => ({
           ...u,
-          jobs: u.jobs.sort((a, b) => a.jobName.localeCompare(b.jobName)),
+          dateEntries: u.dateEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // Most recent first
         }))
         .sort((a, b) => a.userName.localeCompare(b.userName));
 
@@ -202,14 +219,14 @@ export function PayrollDashboard() {
     setExpandedUsers(newExpanded);
   }
 
-  function toggleJobExpanded(jobKey: string) {
-    const newExpanded = new Set(expandedJobs);
-    if (newExpanded.has(jobKey)) {
-      newExpanded.delete(jobKey);
+  function toggleDateExpanded(dateKey: string) {
+    const newExpanded = new Set(expandedDates);
+    if (newExpanded.has(dateKey)) {
+      newExpanded.delete(dateKey);
     } else {
-      newExpanded.add(jobKey);
+      newExpanded.add(dateKey);
     }
-    setExpandedJobs(newExpanded);
+    setExpandedDates(newExpanded);
   }
 
   async function exportWeekToPDF() {
@@ -231,28 +248,29 @@ export function PayrollDashboard() {
         users: usersToExport.map(user => ({
           name: user.userName,
           totalHours: user.totalHours,
-          jobs: user.jobs.map(job => ({
-            name: job.jobName,
-            client: job.clientName,
-            totalHours: job.totalHours,
-            entries: job.entries.map(entry => ({
-              date: new Date(entry.start_time).toLocaleDateString('en-US', {
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric',
-              }),
-              startTime: new Date(entry.start_time).toLocaleTimeString([], {
+          dates: user.dateEntries.map(dateEntry => ({
+            date: new Date(dateEntry.date).toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            }),
+            totalHours: dateEntry.totalHours,
+            entries: dateEntry.entries.map(entry => ({
+              job: entry.jobName,
+              client: entry.clientName,
+              startTime: new Date(entry.startTime).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
               }),
-              endTime: entry.end_time 
-                ? new Date(entry.end_time).toLocaleTimeString([], {
+              endTime: entry.endTime 
+                ? new Date(entry.endTime).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
                 : '-',
-              hours: (entry.total_hours || 0).toFixed(2),
-              type: entry.is_manual ? 'Manual' : 'Timer',
+              hours: entry.totalHours.toFixed(2),
+              type: entry.isManual ? 'Manual' : 'Timer',
             })),
           })),
         })),
@@ -301,7 +319,7 @@ export function PayrollDashboard() {
 
   const totalWeekHours = filteredUsers.reduce((sum, u) => sum + u.totalHours, 0);
   const totalEntries = filteredUsers.reduce((sum, u) => 
-    sum + u.jobs.reduce((jobSum, j) => jobSum + j.entries.length, 0), 0
+    sum + u.dateEntries.reduce((dateSum, d) => dateSum + d.entries.length, 0), 0
   );
 
   return (
@@ -403,7 +421,7 @@ export function PayrollDashboard() {
                     <SelectItem value="all">All Employees</SelectItem>
                     {(weekData?.users || []).map(user => (
                       <SelectItem key={user.userId} value={user.userId}>
-                        {user.userName} - {user.totalHours.toFixed(2)}h across {user.jobs.length} job{user.jobs.length !== 1 ? 's' : ''}
+                        {user.userName} - {user.totalHours.toFixed(2)}h across {user.dateEntries.length} day{user.dateEntries.length !== 1 ? 's' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -456,7 +474,7 @@ export function PayrollDashboard() {
                       <div>
                         <CardTitle className="text-xl font-bold">{user.userName}</CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {user.jobs.length} job{user.jobs.length !== 1 ? 's' : ''}
+                          {user.dateEntries.length} day{user.dateEntries.length !== 1 ? 's' : ''} worked
                         </p>
                       </div>
                     </div>
@@ -469,76 +487,79 @@ export function PayrollDashboard() {
                 
                 {expandedUsers.has(user.userId) && (
                   <CardContent className="pt-0">
-                    <div className="border-t pt-4 space-y-3">
-                      {user.jobs.map(job => {
-                        const jobKey = `${user.userId}-${job.jobId}`;
+                    <div className="border-t pt-4 space-y-2">
+                      {user.dateEntries.map(dateEntry => {
+                        const dateKey = `${user.userId}-${dateEntry.date}`;
                         return (
-                          <Card key={jobKey} className="border-primary/20">
-                            <CardHeader
-                              className="cursor-pointer hover:bg-muted/30 transition-colors py-3"
-                              onClick={() => toggleJobExpanded(jobKey)}
+                          <div key={dateKey} className="border rounded-lg">
+                            {/* Date Header - Clickable */}
+                            <div
+                              className="cursor-pointer hover:bg-muted/30 transition-colors p-3 flex items-center justify-between"
+                              onClick={() => toggleDateExpanded(dateKey)}
                             >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 flex-1">
-                                  {expandedJobs.has(jobKey) ? (
-                                    <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                  )}
-                                  <div className="flex-1">
-                                    <p className="font-bold text-base">{job.jobName}</p>
-                                    {job.clientName && (
-                                      <p className="text-xs text-muted-foreground mt-0.5">
-                                        {job.clientName}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="text-right ml-4">
-                                  <p className="text-xl font-bold">{job.totalHours.toFixed(2)}h</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {job.entries.length} entr{job.entries.length !== 1 ? 'ies' : 'y'}
+                              <div className="flex items-center gap-2 flex-1">
+                                {expandedDates.has(dateKey) ? (
+                                  <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                )}
+                                <div className="flex-1">
+                                  <p className="font-bold text-base">
+                                    {new Date(dateEntry.date).toLocaleDateString('en-US', {
+                                      weekday: 'long',
+                                      month: 'long',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                    })}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {dateEntry.entries.length} time entr{dateEntry.entries.length !== 1 ? 'ies' : 'y'}
                                   </p>
                                 </div>
                               </div>
-                            </CardHeader>
+                              <div className="text-right ml-4">
+                                <p className="text-2xl font-bold text-primary">{dateEntry.totalHours.toFixed(2)}h</p>
+                              </div>
+                            </div>
                             
-                            {expandedJobs.has(jobKey) && (
-                              <CardContent className="pt-0 pb-3">
+                            {/* Expanded Date Entries */}
+                            {expandedDates.has(dateKey) && (
+                              <div className="border-t bg-muted/20 p-3">
                                 <div className="space-y-2">
-                                  {job.entries.map(entry => (
+                                  {dateEntry.entries.map((entry, idx) => (
                                     <div
-                                      key={entry.id}
-                                      className="p-3 bg-muted/30 rounded-lg border"
+                                      key={idx}
+                                      className="p-3 bg-card rounded-lg border"
                                     >
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="font-medium text-sm">
-                                          {new Date(entry.start_time).toLocaleDateString('en-US', {
-                                            weekday: 'short',
-                                            month: 'short',
-                                            day: 'numeric',
-                                          })}
-                                        </span>
-                                        <Badge variant={entry.is_manual ? 'secondary' : 'default'} className="text-xs">
-                                          {entry.is_manual ? 'Manual' : 'Timer'}
+                                      <div className="flex items-start justify-between gap-3 mb-2">
+                                        <div className="flex-1">
+                                          <p className="font-bold text-sm">{entry.jobName}</p>
+                                          {entry.clientName && (
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                              {entry.clientName}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <Badge variant={entry.isManual ? 'secondary' : 'default'} className="text-xs flex-shrink-0">
+                                          {entry.isManual ? 'Manual' : 'Timer'}
                                         </Badge>
                                       </div>
                                       
-                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div className="grid grid-cols-3 gap-3 text-sm mb-2">
                                         <div>
-                                          <span className="text-muted-foreground">Start:</span>
-                                          <span className="ml-2 font-medium">
-                                            {new Date(entry.start_time).toLocaleTimeString([], {
+                                          <span className="text-muted-foreground block text-xs">Start</span>
+                                          <span className="font-medium">
+                                            {new Date(entry.startTime).toLocaleTimeString([], {
                                               hour: '2-digit',
                                               minute: '2-digit',
                                             })}
                                           </span>
                                         </div>
                                         <div>
-                                          <span className="text-muted-foreground">End:</span>
-                                          <span className="ml-2 font-medium">
-                                            {entry.end_time 
-                                              ? new Date(entry.end_time).toLocaleTimeString([], {
+                                          <span className="text-muted-foreground block text-xs">End</span>
+                                          <span className="font-medium">
+                                            {entry.endTime 
+                                              ? new Date(entry.endTime).toLocaleTimeString([], {
                                                   hour: '2-digit',
                                                   minute: '2-digit',
                                                 })
@@ -546,22 +567,26 @@ export function PayrollDashboard() {
                                             }
                                           </span>
                                         </div>
+                                        <div className="text-right">
+                                          <span className="text-muted-foreground block text-xs">Hours</span>
+                                          <span className="text-lg font-bold text-primary">
+                                            {entry.totalHours.toFixed(2)}
+                                          </span>
+                                        </div>
                                       </div>
                                       
-                                      <div className="mt-2 pt-2 border-t flex items-center justify-between">
-                                        <span className="text-xs text-muted-foreground">
-                                          {entry.components?.name || 'Job-level time'}
-                                        </span>
-                                        <span className="text-lg font-bold text-primary">
-                                          {(entry.total_hours || 0).toFixed(2)}h
-                                        </span>
-                                      </div>
+                                      {entry.notes && (
+                                        <div className="pt-2 border-t">
+                                          <p className="text-xs text-muted-foreground">Notes:</p>
+                                          <p className="text-xs mt-1">{entry.notes}</p>
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
-                              </CardContent>
+                              </div>
                             )}
-                          </Card>
+                          </div>
                         );
                       })}
                     </div>
