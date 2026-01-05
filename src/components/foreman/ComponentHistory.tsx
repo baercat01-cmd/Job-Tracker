@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Clock, Users, Edit, Save, X, FileText, ChevronDown, ChevronRight, Trash2, AlertTriangle } from 'lucide-react';
+import { Clock, Users, Edit, Save, X, FileText, ChevronDown, ChevronRight, Trash2, AlertTriangle, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { getLocalDateString } from '@/lib/utils';
 import type { Job } from '@/types';
@@ -268,8 +268,12 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     });
   }
 
-  // Group entries by date, then by component
-  const entriesByDate = timeEntries.reduce((acc, entry) => {
+  // Separate component entries from clock-in entries
+  const componentEntries = timeEntries.filter(e => e.component_id !== null);
+  const clockInEntries = timeEntries.filter(e => e.component_id === null);
+
+  // Group component entries by date, then by component
+  const componentEntriesByDate = componentEntries.reduce((acc, entry) => {
     // Use local date for grouping
     const entryDate = new Date(entry.start_time);
     const date = getLocalDateString(entryDate);
@@ -285,16 +289,38 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     return acc;
   }, {} as Record<string, Record<string, TimeEntry[]>>);
 
-  // Sort dates (most recent first)
-  const sortedDates = Object.keys(entriesByDate).sort((a, b) => b.localeCompare(a));
+  // Group clock-in entries by date
+  const clockInEntriesByDate = clockInEntries.reduce((acc, entry) => {
+    const entryDate = new Date(entry.start_time);
+    const date = getLocalDateString(entryDate);
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(entry);
+    return acc;
+  }, {} as Record<string, TimeEntry[]>);
+
+  // Sort dates (most recent first) - combine both types
+  const allDates = new Set([...Object.keys(componentEntriesByDate), ...Object.keys(clockInEntriesByDate)]);
+  const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
   
-  // Calculate total entries per date
-  const getDateStats = (date: string) => {
-    const componentsForDate = entriesByDate[date];
+  // Calculate stats for component entries
+  const getComponentDateStats = (date: string) => {
+    const componentsForDate = componentEntriesByDate[date] || {};
     const totalEntries = Object.values(componentsForDate).reduce((sum, entries) => sum + entries.length, 0);
     const totalManHours = Object.values(componentsForDate).reduce(
       (sum, entries) => sum + entries.reduce((s, e) => s + ((e.total_hours || 0) * (e.crew_count || 1)), 0),
       0
+    );
+    return { totalEntries, totalManHours };
+  };
+
+  // Calculate stats for clock-in entries
+  const getClockInDateStats = (date: string) => {
+    const entriesForDate = clockInEntriesByDate[date] || [];
+    const totalEntries = entriesForDate.length;
+    const totalManHours = entriesForDate.reduce(
+      (sum, e) => sum + ((e.total_hours || 0) * (e.crew_count || 1)), 0
     );
     return { totalEntries, totalManHours };
   };
@@ -323,8 +349,12 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   return (
     <div className="space-y-4">
       {sortedDates.map((date, index) => {
-        const componentsForDate = entriesByDate[date];
-        const { totalEntries, totalManHours } = getDateStats(date);
+        const componentsForDate = componentEntriesByDate[date] || {};
+        const clockInsForDate = clockInEntriesByDate[date] || [];
+        const componentStats = getComponentDateStats(date);
+        const clockInStats = getClockInDateStats(date);
+        const hasComponentEntries = Object.keys(componentsForDate).length > 0;
+        const hasClockInEntries = clockInsForDate.length > 0;
 
         return (
           <Card key={date} className="border-2 shadow-md" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
@@ -338,51 +368,207 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{totalEntries} time {totalEntries === 1 ? 'entry' : 'entries'}</span>
-                    <span>•</span>
-                    <span>{Object.keys(componentsForDate).length} {Object.keys(componentsForDate).length === 1 ? 'component' : 'components'}</span>
+                    {hasComponentEntries && (
+                      <>
+                        <span>{componentStats.totalEntries} component {componentStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
+                      </>
+                    )}
+                    {hasComponentEntries && hasClockInEntries && <span>•</span>}
+                    {hasClockInEntries && (
+                      <span>{clockInStats.totalEntries} clock-in {clockInStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                   <p className="text-3xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                    {totalManHours.toFixed(1)}
+                    {(componentStats.totalManHours + clockInStats.totalManHours).toFixed(1)}
                   </p>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Man-Hours</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Man-Hours</p>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4 pt-4 bg-gradient-to-b from-muted/10 to-muted/5">
-              {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
-                <div key={componentName} className="space-y-3 border-l-4 pl-4 py-2" style={{ borderLeftColor: compIndex % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                  {/* Component Name Header */}
-                  <div className="flex items-center justify-between pb-3 border-b-2">
-                    <h3 className="font-bold text-lg text-primary">{componentName}</h3>
-                    <Badge variant="secondary" className="text-sm font-semibold">
-                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+            <CardContent className="space-y-6 pt-4 bg-gradient-to-b from-muted/10 to-muted/5">
+              {/* Component Time Section */}
+              {hasComponentEntries && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b-2 border-primary/20">
+                    <h3 className="text-lg font-bold text-primary flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Component Time
+                    </h3>
+                    <Badge variant="default" className="bg-primary">
+                      {componentStats.totalManHours.toFixed(1)} hrs
+                    </Badge>
+                  </div>
+                  {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
+                    <div key={componentName} className="space-y-3 border-l-4 pl-4 py-2" style={{ borderLeftColor: compIndex % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+                      {/* Component Name Header */}
+                      <div className="flex items-center justify-between pb-3 border-b-2">
+                        <h4 className="font-bold text-base text-foreground">{componentName}</h4>
+                        <Badge variant="secondary" className="text-sm font-semibold">
+                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                        </Badge>
+                      </div>
+
+                      {/* Component Entries */}
+                      <div className="space-y-3">
+                        {entries.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="border rounded-lg p-4 space-y-3 bg-card hover:bg-muted/30 transition-colors"
+                          >
+                            {/* Entry Header */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {entry.is_manual && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Manual
+                                    </Badge>
+                                  )}
+                                  {!entry.is_manual && (
+                                    <span className="text-sm text-muted-foreground">
+                                      {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {entry.user_id === userId && (
+                                <div className="flex gap-1 flex-shrink-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openEditDialog(entry)}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => startDeleteEntry(entry.id)}
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Entry Details */}
+                            <div className="flex items-center gap-4 text-sm flex-wrap">
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-4 h-4 text-muted-foreground" />
+                                <div>
+                                  <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)}</span>
+                                  <span className="text-xs text-muted-foreground ml-1">man-hours</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Users className="w-4 h-4 text-muted-foreground" />
+                                <span>{entry.crew_count} crew</span>
+                              </div>
+                              <div className="text-muted-foreground">
+                                by {entry.user_profiles?.username || 'Unknown'}
+                              </div>
+                            </div>
+
+                            {/* Worker Names */}
+                            {entry.worker_names && entry.worker_names.length > 0 && (
+                              <div className="bg-muted/50 rounded-md p-3">
+                                <p className="text-sm text-muted-foreground mb-1 font-medium">Workers:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {entry.worker_names.map((name, idx) => (
+                                    <Badge key={idx} variant="secondary" className="text-xs">
+                                      {name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Photos */}
+                            {entry.photos && entry.photos.length > 0 && (
+                              <div className="bg-muted/50 rounded-md p-3">
+                                <p className="text-sm text-muted-foreground mb-2 font-medium">Photos ({entry.photos.length}):</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {entry.photos.map((photo) => (
+                                    <a
+                                      key={photo.id}
+                                      href={photo.photo_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="aspect-square rounded-lg overflow-hidden border hover:opacity-80 transition-opacity"
+                                    >
+                                      <img
+                                        src={photo.photo_url}
+                                        alt={photo.caption || 'Time entry photo'}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Notes */}
+                            {entry.notes && (
+                              <div className="bg-muted/50 rounded-md p-3">
+                                <p className="text-sm text-muted-foreground mb-1 font-medium">Notes:</p>
+                                <p className="text-sm whitespace-pre-wrap">{entry.notes}</p>
+                              </div>
+                            )}
+                            {!entry.notes && entry.user_id === userId && (
+                              <button
+                                onClick={() => openEditDialog(entry)}
+                                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                              >
+                                + Add notes
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Clock-In Time Section */}
+              {hasClockInEntries && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b-2 border-success/20">
+                    <h3 className="text-lg font-bold text-success flex items-center gap-2">
+                      <LogIn className="w-4 h-4" />
+                      Clock-In Time
+                    </h3>
+                    <Badge variant="default" className="bg-success">
+                      {clockInStats.totalManHours.toFixed(1)} hrs
                     </Badge>
                   </div>
 
-                  {/* Component Entries */}
                   <div className="space-y-3">
-                    {entries.map((entry) => (
+                    {clockInsForDate.map((entry) => (
                       <div
                         key={entry.id}
-                        className="border rounded-lg p-4 space-y-3 bg-card hover:bg-muted/30 transition-colors"
+                        className="border-2 border-success/30 rounded-lg p-4 space-y-3 bg-success/5 hover:bg-success/10 transition-colors"
                       >
                         {/* Entry Header */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               {entry.is_manual && (
-                                <Badge variant="outline" className="text-xs">
-                                  Manual
+                                <Badge variant="outline" className="text-xs border-success text-success">
+                                  Manual Entry
                                 </Badge>
                               )}
                               {!entry.is_manual && (
-                                <span className="text-sm text-muted-foreground">
-                                  {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                                </span>
+                                <Badge variant="outline" className="text-xs border-success text-success">
+                                  Clock In/Out
+                                </Badge>
                               )}
+                              <span className="text-sm text-muted-foreground">
+                                {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                              </span>
                             </div>
                           </div>
                           {entry.user_id === userId && (
@@ -409,9 +595,9 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                         {/* Entry Details */}
                         <div className="flex items-center gap-4 text-sm flex-wrap">
                           <div className="flex items-center gap-1">
-                            <Clock className="w-4 h-4 text-muted-foreground" />
+                            <Clock className="w-4 h-4 text-success" />
                             <div>
-                              <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)}</span>
+                              <span className="font-medium text-success">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)}</span>
                               <span className="text-xs text-muted-foreground ml-1">man-hours</span>
                             </div>
                           </div>
@@ -426,7 +612,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                         {/* Worker Names */}
                         {entry.worker_names && entry.worker_names.length > 0 && (
-                          <div className="bg-muted/50 rounded-md p-3">
+                          <div className="bg-success/10 rounded-md p-3">
                             <p className="text-sm text-muted-foreground mb-1 font-medium">Workers:</p>
                             <div className="flex flex-wrap gap-2">
                               {entry.worker_names.map((name, idx) => (
@@ -440,7 +626,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                         {/* Photos */}
                         {entry.photos && entry.photos.length > 0 && (
-                          <div className="bg-muted/50 rounded-md p-3">
+                          <div className="bg-success/10 rounded-md p-3">
                             <p className="text-sm text-muted-foreground mb-2 font-medium">Photos ({entry.photos.length}):</p>
                             <div className="grid grid-cols-3 gap-2">
                               {entry.photos.map((photo) => (
@@ -464,7 +650,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                         {/* Notes */}
                         {entry.notes && (
-                          <div className="bg-muted/50 rounded-md p-3">
+                          <div className="bg-success/10 rounded-md p-3">
                             <p className="text-sm text-muted-foreground mb-1 font-medium">Notes:</p>
                             <p className="text-sm whitespace-pre-wrap">{entry.notes}</p>
                           </div>
@@ -481,7 +667,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                     ))}
                   </div>
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
         );
