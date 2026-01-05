@@ -167,9 +167,11 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
   });
   const [miscJobsId, setMiscJobsId] = useState<string | null>(null);
   const [components, setComponents] = useState<Component[]>([]);
-  const [selectedComponentForJob, setSelectedComponentForJob] = useState('');
-  const [componentHours, setComponentHours] = useState('0');
-  const [componentMinutes, setComponentMinutes] = useState('0');
+  const [jobComponents, setJobComponents] = useState<Array<{
+    componentId: string;
+    hours: string;
+    minutes: string;
+  }>>([]);
 
   useEffect(() => {
     loadJobs();
@@ -182,6 +184,22 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
       loadComponents(selectedJobId);
     }
   }, [selectedJobId]);
+
+  // Calculate default component time from job time
+  const calculateDefaultComponentTime = () => {
+    if (!manualData.startTime || !manualData.endTime) return { hours: '0', minutes: '0' };
+    
+    const start = new Date(`${manualData.date}T${manualData.startTime}`);
+    const end = new Date(`${manualData.date}T${manualData.endTime}`);
+    
+    if (end <= start) return { hours: '0', minutes: '0' };
+    
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.floor((totalMinutes % 60) / 15) * 15; // Round to nearest 15
+    
+    return { hours: hours.toString(), minutes: minutes.toString() };
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -424,16 +442,18 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     
     const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
 
-    // Validate component time if component is selected
-    if (selectedComponentForJob) {
-      const compHours = parseInt(componentHours) + parseInt(componentMinutes) / 60;
-      if (compHours <= 0) {
-        toast.error('Component time must be greater than 0');
-        return;
-      }
-      if (compHours > totalHours) {
-        toast.error('Component time cannot exceed total job time');
-        return;
+    // Validate component times if any components are selected
+    if (jobComponents.length > 0) {
+      for (const comp of jobComponents) {
+        const compHours = parseInt(comp.hours) + parseInt(comp.minutes) / 60;
+        if (compHours <= 0) {
+          toast.error('All component times must be greater than 0');
+          return;
+        }
+        if (compHours > totalHours) {
+          toast.error('Component time cannot exceed total job time');
+          return;
+        }
       }
     }
 
@@ -462,14 +482,13 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
       if (error) throw error;
 
-      // Save component time entry if component is selected
-      if (selectedComponentForJob) {
-        const compHours = parseInt(componentHours) + parseInt(componentMinutes) / 60;
-        const { error: compError } = await supabase
-          .from('time_entries')
-          .insert({
+      // Save component time entries if any components are selected
+      if (jobComponents.length > 0) {
+        const componentEntries = jobComponents.map(comp => {
+          const compHours = parseInt(comp.hours) + parseInt(comp.minutes) / 60;
+          return {
             job_id: selectedJobId,
-            component_id: selectedComponentForJob,
+            component_id: comp.componentId,
             user_id: userId,
             start_time: startDateTime,
             end_time: endDateTime,
@@ -479,14 +498,19 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             is_active: false,
             notes: 'Component time from job entry',
             worker_names: [],
-          });
+          };
+        });
+
+        const { error: compError } = await supabase
+          .from('time_entries')
+          .insert(componentEntries);
 
         if (compError) throw compError;
       }
 
       const job = jobs.find(j => j.id === selectedJobId);
-      const componentMsg = selectedComponentForJob 
-        ? ` (${(parseInt(componentHours) + parseInt(componentMinutes) / 60).toFixed(2)}h on component)`
+      const componentMsg = jobComponents.length > 0
+        ? ` (${jobComponents.length} component${jobComponents.length > 1 ? 's' : ''})`
         : '';
       toast.success(`${totalHours.toFixed(2)} hours logged to ${job?.name}${componentMsg}`);
       
@@ -498,10 +522,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
         startTime: '06:00',
         endTime: '17:00',
       });
-      setSelectedComponentForJob('');
-      setComponentHours('0');
-      setComponentMinutes('0');
-      setShowComponentInput(false);
+      setJobComponents([]);
       onSuccess?.();
       onBack?.();
     } catch (error: any) {
@@ -731,9 +752,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               endTime: '17:00',
               notes: '',
             });
-            setSelectedComponentForJob('');
-            setComponentHours('0');
-            setComponentMinutes('0');
+            setJobComponents([]);
             onBack?.(); // Go back to jobs page
           }
         }}
@@ -858,67 +877,130 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                 {mode === 'manual' && selectedJobId && components.length > 0 && (
                   <div className="space-y-3 pt-4 border-t">
                     <div className="bg-muted/30 rounded-lg p-3">
-                      <Label className="text-sm font-medium mb-3 block">Add Component Time (Optional)</Label>
-                      <p className="text-xs text-muted-foreground mb-3">Track time on a specific component using the same date and crew from above</p>
-                      
-                      <div className="space-y-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="component-select" className="text-xs">Component</Label>
-                          <Select value={selectedComponentForJob} onValueChange={setSelectedComponentForJob}>
-                            <SelectTrigger id="component-select" className="h-11">
-                              <SelectValue placeholder="Select component..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {components.map((comp) => (
-                                <SelectItem key={comp.id} value={comp.id}>
-                                  {comp.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <Label className="text-sm font-medium block">Add Component Time (Optional)</Label>
+                          <p className="text-xs text-muted-foreground">Track time on specific components</p>
                         </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const defaultTime = calculateDefaultComponentTime();
+                            setJobComponents([...jobComponents, {
+                              componentId: '',
+                              hours: defaultTime.hours,
+                              minutes: defaultTime.minutes,
+                            }]);
+                          }}
+                        >
+                          <Package className="w-3 h-3 mr-1" />
+                          Add Component
+                        </Button>
+                      </div>
+                      
+                      {jobComponents.length === 0 && (
+                        <div className="text-center py-4 border border-dashed rounded-lg">
+                          <Package className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-xs text-muted-foreground">No components added yet</p>
+                        </div>
+                      )}
 
-                        {selectedComponentForJob && (
-                          <div className="space-y-2">
-                            <Label className="text-xs">Time on Component</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <Select value={componentHours} onValueChange={setComponentHours}>
-                                  <SelectTrigger className="h-11">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-[200px]">
-                                    {[...Array(25)].map((_, i) => (
-                                      <SelectItem key={i} value={i.toString()}>
-                                        {i}h
+                      <div className="space-y-3">
+                        {jobComponents.map((comp, index) => (
+                          <div key={index} className="space-y-2 p-3 border rounded-lg bg-card">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-medium">Component {index + 1}</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setJobComponents(jobComponents.filter((_, i) => i !== index));
+                                }}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Select 
+                                value={comp.componentId} 
+                                onValueChange={(value) => {
+                                  const updated = [...jobComponents];
+                                  updated[index].componentId = value;
+                                  setJobComponents(updated);
+                                }}
+                              >
+                                <SelectTrigger className="h-10">
+                                  <SelectValue placeholder="Select component..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {components
+                                    .filter(c => !jobComponents.some((jc, i) => i !== index && jc.componentId === c.id))
+                                    .map((c) => (
+                                      <SelectItem key={c.id} value={c.id}>
+                                        {c.name}
                                       </SelectItem>
                                     ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Select value={componentMinutes} onValueChange={setComponentMinutes}>
-                                  <SelectTrigger className="h-11">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-[200px]">
-                                    {[0, 15, 30, 45].map((min) => (
-                                      <SelectItem key={min} value={min.toString()}>
-                                        {min}m
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                                </SelectContent>
+                              </Select>
                             </div>
-                            <div className="bg-primary/10 rounded p-2 text-center">
-                              <p className="text-xs text-muted-foreground">Component Time</p>
-                              <p className="text-lg font-bold text-primary">
-                                {(parseInt(componentHours) + parseInt(componentMinutes) / 60).toFixed(2)} hours
-                              </p>
-                            </div>
+
+                            {comp.componentId && (
+                              <div className="space-y-2">
+                                <Label className="text-xs">Time on Component</Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Select 
+                                    value={comp.hours} 
+                                    onValueChange={(value) => {
+                                      const updated = [...jobComponents];
+                                      updated[index].hours = value;
+                                      setJobComponents(updated);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-10">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-[200px]">
+                                      {[...Array(25)].map((_, i) => (
+                                        <SelectItem key={i} value={i.toString()}>
+                                          {i}h
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Select 
+                                    value={comp.minutes} 
+                                    onValueChange={(value) => {
+                                      const updated = [...jobComponents];
+                                      updated[index].minutes = value;
+                                      setJobComponents(updated);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-10">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-[200px]">
+                                      {[0, 15, 30, 45].map((min) => (
+                                        <SelectItem key={min} value={min.toString()}>
+                                          {min}m
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="bg-primary/10 rounded p-2 text-center">
+                                  <p className="text-xs text-muted-foreground">Total Time</p>
+                                  <p className="text-base font-bold text-primary">
+                                    {(parseInt(comp.hours) + parseInt(comp.minutes) / 60).toFixed(2)} hours
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -935,9 +1017,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
         startTime: '06:00',
         endTime: '17:00',
       });
-      setSelectedComponentForJob('');
-      setComponentHours('0');
-      setComponentMinutes('0');
+      setJobComponents([]);
       onBack?.();
     }}                    className="flex-1 h-12"
                     disabled={loading}
