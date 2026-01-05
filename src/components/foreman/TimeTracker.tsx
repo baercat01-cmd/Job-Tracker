@@ -637,31 +637,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Clock-In Hours Display */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Clock-In Time</span>
-              </div>
-              <div className="p-3 bg-success/10 border-2 border-success rounded-lg text-center">
-                <p className="text-2xl font-bold text-success">{totalClockInHours.toFixed(1)}</p>
-                <p className="text-xs text-muted-foreground mt-1">job hours</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Component Time</span>
-              </div>
-              <div className="p-3 bg-primary/10 border-2 border-primary rounded-lg text-center">
-                <p className="text-2xl font-bold text-primary">{totalComponentHours.toFixed(1)}</p>
-                <p className="text-xs text-muted-foreground mt-1">task hours</p>
-              </div>
-            </div>
-          </div>
-
           {/* Progress Bar (Clock-In Hours) */}
           {estimatedHours > 0 && (
-            <div className="pt-3 border-t space-y-3">
+            <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Budget Progress</span>
                 <span className={`font-bold text-lg ${
@@ -671,26 +649,16 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                 </span>
               </div>
               <Progress value={progressPercent} className="h-3" />
-              <div className="grid grid-cols-2 gap-3 text-center text-sm">
-                <div className="p-2 bg-muted/30 rounded">
-                  <p className="text-lg font-bold">{totalClockInHours.toFixed(1)}</p>
-                  <p className="text-xs text-muted-foreground">Clock-In Hours</p>
-                </div>
-                <div className="p-2 bg-muted/30 rounded">
-                  <p className="text-lg font-bold">{estimatedHours.toFixed(1)}</p>
-                  <p className="text-xs text-muted-foreground">Estimated</p>
-                </div>
-              </div>
               {isOverBudget ? (
-                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-2 text-center">
-                  <p className="text-xs text-destructive font-medium flex items-center justify-center gap-1">
-                    <TrendingUp className="w-3 h-3" />
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-center">
+                  <p className="text-sm text-destructive font-medium flex items-center justify-center gap-1">
+                    <TrendingUp className="w-4 h-4" />
                     Over budget by {(totalClockInHours - estimatedHours).toFixed(1)}h
                   </p>
                 </div>
               ) : (
-                <div className="bg-success/10 border border-success/30 rounded-lg p-2 text-center">
-                  <p className="text-xs text-success font-medium">
+                <div className="bg-success/10 border border-success/30 rounded-lg p-3 text-center">
+                  <p className="text-sm text-success font-medium">
                     {remainingHours.toFixed(1)}h remaining
                   </p>
                 </div>
