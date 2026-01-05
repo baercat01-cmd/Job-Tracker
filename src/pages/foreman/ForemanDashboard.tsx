@@ -13,12 +13,12 @@ import { DailyLogForm } from '@/components/foreman/DailyLogForm';
 import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
-import { FieldJobDashboard } from '@/components/foreman/FieldJobDashboard';
+
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'dashboard';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -272,19 +272,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             userId={profile?.id || ''}
           />
         )}
-
-        {activeTab === 'dashboard' && (
-          <FieldJobDashboard 
-            job={selectedJob} 
-            userId={profile?.id || ''} 
-            activeTimerCount={activeTimers.length}
-          />
-        )}
       </main>
 
-      {/* Bottom Navigation - 6 tabs for job features */}
+      {/* Bottom Navigation - 5 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg">
-        <div className="container mx-auto px-4 py-2 grid grid-cols-6 gap-1">
+        <div className="container mx-auto px-4 py-2 grid grid-cols-5 gap-1">
           <Button
             variant={activeTab === 'timer' ? 'default' : 'ghost'}
             className="flex-col h-auto py-3 touch-target relative"
@@ -327,14 +319,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           >
             <History className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">History</span>
-          </Button>
-          <Button
-            variant={activeTab === 'dashboard' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <BarChart3 className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Dashboard</span>
           </Button>
         </div>
       </nav>
