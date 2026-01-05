@@ -112,7 +112,7 @@ export function PayrollDashboard() {
       weekEnd.setDate(weekStart.getDate() + 6);
       weekEnd.setHours(23, 59, 59, 999);
       
-      // Load all time entries for the week
+      // Load ONLY clock-in time entries (component_id IS NULL) for payroll
       const { data: timeEntries, error: timeError } = await supabase
         .from('time_entries')
         .select(`
@@ -122,6 +122,7 @@ export function PayrollDashboard() {
         `)
         .gte('start_time', weekStart.toISOString())
         .lte('start_time', weekEnd.toISOString())
+        .is('component_id', null) // Only clock-in entries, no component time
         .not('total_hours', 'is', null)
         .order('start_time', { ascending: true });
 
