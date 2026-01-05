@@ -64,7 +64,7 @@ interface WeekData {
 }
 
 export function PayrollDashboard() {
-  const { profile, logout } = useAuth();
+  const { profile, clearUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [weekOptions, setWeekOptions] = useState<{ value: string; label: string }[]>([]);
@@ -327,7 +327,7 @@ export function PayrollDashboard() {
               </div>
             </div>
             <Button variant="outline" onClick={() => {
-              logout();
+              clearUser();
               window.location.reload();
             }}>
               <LogOut className="w-4 h-4 mr-2" />
