@@ -122,7 +122,13 @@ export async function getByIndex<T>(
     const transaction = db.transaction(storeName, 'readonly');
     const store = transaction.objectStore(storeName);
     const index = store.index(indexName);
-    const request = index.getAll(value);
+    
+    // Handle boolean values and other types properly
+    const keyRange = value === null || value === undefined 
+      ? undefined 
+      : IDBKeyRange.only(value);
+    
+    const request = keyRange ? index.getAll(keyRange) : index.getAll();
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
