@@ -40,15 +40,16 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
 
       if (jobsError) throw jobsError;
 
-      // Load time entries for all jobs to calculate progress
+      // Load CLOCK-IN time entries only (component_id IS NULL) to calculate progress
       const { data: timeEntries, error: timeError } = await supabase
         .from('time_entries')
-        .select('job_id, total_hours, crew_count')
+        .select('job_id, total_hours, crew_count, component_id')
+        .is('component_id', null) // Only clock-in hours
         .not('total_hours', 'is', null);
 
       if (timeError) throw timeError;
 
-      // Calculate total man-hours for each job
+      // Calculate total clock-in man-hours for each job
       const jobManHours = new Map<string, number>();
       (timeEntries || []).forEach((entry: any) => {
         const manHours = (entry.total_hours || 0) * (entry.crew_count || 1);
@@ -156,7 +157,7 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
                       </div>
                       <Progress value={job.progressPercent} className="h-2" />
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{job.totalManHours.toFixed(1)}h used</span>
+                        <span>{job.totalManHours.toFixed(1)}h clock-in</span>
                         <span>{job.estimated_hours.toFixed(1)}h estimated</span>
                       </div>
                     </div>

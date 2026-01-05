@@ -912,7 +912,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">Progress</span>
+                <span className="font-medium">Progress (Clock-In Hours)</span>
                 <span className={`font-bold ${
                   isOverBudget ? 'text-destructive' : 'text-primary'
                 }`}>
@@ -926,7 +926,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
               {isOverBudget && (
                 <p className="text-xs text-destructive font-medium flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  Project is over estimated hours
+                  Clock-in hours exceed estimate
                 </p>
               )}
             </div>
