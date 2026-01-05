@@ -724,15 +724,19 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               startTime: '06:00',
               endTime: '17:00',
             });
-            setComponentData({
-              jobId: '',
-              componentId: '',
+            setMiscJobData({
+              name: '',
+              address: '',
               date: new Date().toISOString().split('T')[0],
               startTime: '06:00',
               endTime: '17:00',
               notes: '',
             });
             setComponents([]);
+            setSelectedComponentForJob('');
+            setComponentHours('0');
+            setComponentMinutes('0');
+            setShowComponentInput(false);
             onBack?.(); // Go back to jobs page
           }
         }}
