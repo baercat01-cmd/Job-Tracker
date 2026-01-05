@@ -793,24 +793,41 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             {jobType === 'existing' && (
               <>
                 {/* Mode Toggle */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
                   <Button
-                    variant={mode === 'manual' ? 'default' : 'ghost'}
+                    variant={mode === 'manual' ? 'secondary' : 'ghost'}
                     onClick={() => setMode('manual')}
-                    className="h-10"
+                    size="sm"
+                    className="h-8 text-xs"
                   >
-                    <Edit3 className="w-4 h-4 mr-2" />
+                    <Edit3 className="w-3 h-3 mr-1.5" />
                     Manual Entry
                   </Button>
                   <Button
-                    variant={mode === 'timer' ? 'default' : 'ghost'}
+                    variant={mode === 'timer' ? 'secondary' : 'ghost'}
                     onClick={() => setMode('timer')}
-                    className="h-10"
+                    size="sm"
+                    className="h-8 text-xs"
                   >
-                    <Timer className="w-4 h-4 mr-2" />
+                    <Timer className="w-3 h-3 mr-1.5" />
                     Timer
                   </Button>
                 </div>
+
+                {/* Date Field - Show above job selection in manual mode */}
+                {mode === 'manual' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
+                    <Input
+                      id="dialog-date"
+                      type="date"
+                      className="h-12"
+                      value={manualData.date}
+                      onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                )}
 
                 {/* Job Selection */}
                 <div className="space-y-2">
@@ -837,17 +854,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                 {/* Manual Entry Fields */}
                 {mode === 'manual' && (
                   <>
-                    <div className="space-y-2">
-                      <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
-                      <Input
-                        id="dialog-date"
-                        type="date"
-                        className="h-12"
-                        value={manualData.date}
-                        onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
-                        max={new Date().toISOString().split('T')[0]}
-                      />
-                    </div>
 
                     <TimeDropdownPicker
                       label="Clock In Time"
