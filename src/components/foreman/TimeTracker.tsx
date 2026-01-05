@@ -60,8 +60,8 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [totalComponentHours, setTotalComponentHours] = useState(0);
   const [totalClockInHours, setTotalClockInHours] = useState(0);
   
-  // Entry mode selection
-  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('none');
+  // Entry mode selection - default to manual
+  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('manual');
   
   // Timer start mode and selection
   const [timerMode, setTimerMode] = useState<'count' | 'workers'>('workers');
@@ -670,36 +670,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </CardContent>
       </Card>
 
-      {/* Entry Mode Selection - Show only if no mode selected */}
-      {entryMode === 'none' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Track Time</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
-              <Button
-                variant={entryMode === 'timer' ? 'secondary' : 'ghost'}
-                onClick={() => setEntryMode('timer')}
-                size="sm"
-                className="h-8 text-xs"
-              >
-                <Play className="w-3 h-3 mr-1.5" />
-                Timer
-              </Button>
-              <Button
-                variant={entryMode === 'manual' ? 'secondary' : 'ghost'}
-                onClick={() => setEntryMode('manual')}
-                size="sm"
-                className="h-8 text-xs"
-              >
-                <Edit className="w-3 h-3 mr-1.5" />
-                Manual
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Entry mode selection removed - defaulting to manual */}
 
       {/* Active Timers */}
       {localTimers.map((timer) => (
@@ -800,23 +771,23 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Clock className="w-4 h-4 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg">Component Timer</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Track time by component</p>
+                  <CardTitle className="text-lg">Add Component - Timer</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Track time with live timer</p>
                 </div>
               </div>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => {
-                  setEntryMode('none');
+                  setEntryMode('manual');
                   setSelectedComponent('');
                   setComponentSearch('');
                   setTimerCrewCount('0');
                   setTimerSelectedWorkers([]);
                 }}
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
+                <Edit className="w-4 h-4 mr-2" />
+                Manual Entry
               </Button>
             </div>
           </CardHeader>
@@ -1243,10 +1214,26 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Manual Time Entry</span>
-              <span className="text-sm font-normal text-muted-foreground">Step {manualStep} of 4</span>
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <span>Add Component - Manual</span>
+                <span className="text-sm font-normal text-muted-foreground">Step {manualStep} of 4</span>
+              </DialogTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEntryMode('timer');
+                  setManualStep(1);
+                  setManualComponent('');
+                  setManualComponentSearch('');
+                }}
+                className="text-xs h-7"
+              >
+                <Clock className="w-3 h-3 mr-1" />
+                Timer
+              </Button>
+            </div>
           </DialogHeader>
           
           {/* Progress Indicator */}
