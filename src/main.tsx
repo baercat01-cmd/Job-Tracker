@@ -3,19 +3,37 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-console.log('🚀 FieldTrack Pro v2.0.4 - Starting...');
-console.log('👤 Simple user selection enabled - no authentication required');
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
+import { initDB } from './lib/offline-db';
 
-// COMPLETELY DISABLE SERVICE WORKER to fix caching issues
-// Unregister all existing service workers on every load
+console.log('🚀 FieldTrack Pro v2.0.4 - Starting...');
+console.log('📱 Offline support enabled');
+
+// Register Service Worker for offline support
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    registrations.forEach((registration) => {
-      console.log('🧹 [Main] Unregistering service worker');
-      registration.unregister();
-    });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('[Service Worker] Registered:', registration);
+      })
+      .catch((error) => {
+        console.error('[Service Worker] Registration failed:', error);
+      });
   });
 }
+
+// Initialize IndexedDB
+initDB()
+  .then(() => {
+    console.log('[IndexedDB] Initialized successfully');
+  })
+  .catch((error) => {
+    console.error('[IndexedDB] Initialization failed:', error);
+  });
 
 // Verify React is loaded correctly
 if (!StrictMode || !createRoot) {

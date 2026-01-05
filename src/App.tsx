@@ -10,6 +10,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
+import { ConnectionStatus } from '@/components/ui/connection-status';
 
 // Error Boundary to catch runtime errors
 class ErrorBoundary extends Component<
@@ -146,6 +147,7 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <AppContent />
+        <ConnectionStatus />
         <Toaster position="top-center" richColors />
       </AuthProvider>
     </ErrorBoundary>
