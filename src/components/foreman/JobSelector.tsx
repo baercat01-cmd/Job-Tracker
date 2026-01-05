@@ -23,7 +23,6 @@ interface JobWithProgress extends Job {
 
 export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -85,27 +84,10 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
     }
   }
 
-  const filteredJobs = jobs.filter(
-    (job) =>
-      job.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.address.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredJobs = jobs;
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search jobs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div> {/* This closing div tag was missing */}
-
       {loading ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
