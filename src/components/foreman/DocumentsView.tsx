@@ -15,7 +15,10 @@ import {
   Clock, 
   User,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -52,14 +55,20 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
   const [loading, setLoading] = useState(true);
   const [unviewedDocs, setUnviewedDocs] = useState<Set<string>>(new Set());
   
-  // Revision log
-  const [showRevisionLog, setShowRevisionLog] = useState(false);
-  const [revisionLogDoc, setRevisionLogDoc] = useState<JobDocument | null>(null);
-  const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
+  // Revision data per document
+  const [documentRevisions, setDocumentRevisions] = useState<Record<string, DocumentRevision[]>>({});
+  const [expandedDocuments, setExpandedDocuments] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadDocuments();
   }, [job.id, userId]);
+
+  useEffect(() => {
+    // Load all revisions when documents are loaded
+    documents.forEach(doc => {
+      loadRevisions(doc.id);
+    });
+  }, [documents]);
 
   async function loadDocuments() {
     try {
@@ -113,12 +122,12 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
     }
   }
 
-  async function loadRevisions(document: JobDocument) {
+  async function loadRevisions(documentId: string) {
     try {
       const { data: revisionsData, error: revisionsError } = await supabase
         .from('job_document_revisions')
         .select('*')
-        .eq('document_id', document.id)
+        .eq('document_id', documentId)
         .order('version_number', { ascending: false });
 
       if (revisionsError) throw revisionsError;
@@ -139,22 +148,34 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
           uploader_name: r.uploaded_by ? profileMap.get(r.uploaded_by) : null,
         }));
 
-        setRevisions(revisionsWithNames);
+        setDocumentRevisions(prev => ({
+          ...prev,
+          [documentId]: revisionsWithNames
+        }));
       } else {
-        setRevisions(revisionsData || []);
+        setDocumentRevisions(prev => ({
+          ...prev,
+          [documentId]: revisionsData || []
+        }));
       }
     } catch (error: any) {
       console.error('Error loading revisions:', error);
-      toast.error('Failed to load revision history');
     }
   }
 
-  async function openRevisionLog(document: JobDocument) {
-    setRevisionLogDoc(document);
-    await loadRevisions(document);
-    setShowRevisionLog(true);
-    
-    // Mark latest revision as viewed
+  function toggleDocumentExpansion(documentId: string) {
+    setExpandedDocuments(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(documentId)) {
+        newSet.delete(documentId);
+      } else {
+        newSet.add(documentId);
+      }
+      return newSet;
+    });
+  }
+
+  async function markDocumentAsViewed(document: JobDocument) {
     try {
       const { data: latestRevision } = await supabase
         .from('job_document_revisions')
@@ -186,7 +207,7 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
     }
   }
 
-  async function viewDocument(revision: DocumentRevision) {
+  async function viewDocument(revision: DocumentRevision, document: JobDocument) {
     // Open document
     window.open(revision.file_url, '_blank');
     
@@ -203,7 +224,7 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
         });
 
       // Remove from unviewed if this was the latest version
-      if (revisionLogDoc && revision.version_number === revisionLogDoc.current_version) {
+      if (revision.version_number === document.current_version) {
         setUnviewedDocs(prev => {
           const newSet = new Set(prev);
           newSet.delete(revision.document_id);
@@ -240,6 +261,10 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
       {/* Documents List */}
       {documents.map((doc) => {
         const hasNewRevision = unviewedDocs.has(doc.id);
+        const revisions = documentRevisions[doc.id] || [];
+        const latestRevision = revisions[0];
+        const pastRevisions = revisions.slice(1);
+        const isExpanded = expandedDocuments.has(doc.id);
         
         return (
           <Card 
@@ -257,11 +282,24 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
                     <CardTitle className="text-base leading-tight">
                       {doc.name}
                     </CardTitle>
-                    {hasNewRevision && (
-                      <Badge className="bg-red-500 text-white shrink-0 animate-pulse">
-                        NEW
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {hasNewRevision && (
+                        <Badge className="bg-red-500 text-white animate-pulse">
+                          NEW
+                        </Badge>
+                      )}
+                      {pastRevisions.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleDocumentExpansion(doc.id)}
+                          className="h-6 w-6 p-0 hover:bg-muted"
+                          title="View past versions"
+                        >
+                          <History className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -279,121 +317,113 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
               </div>
             </CardHeader>
             
-            <CardContent className="pt-0">
-              <Button
-                onClick={() => openRevisionLog(doc)}
-                className={`w-full h-12 text-base ${hasNewRevision ? 'gradient-primary shadow-md' : ''}`}
-                variant={hasNewRevision ? 'default' : 'outline'}
-              >
-                {hasNewRevision ? (
-                  <>
-                    <AlertCircle className="w-5 h-5 mr-2" />
-                    VIEW UPDATED DOCUMENT
-                  </>
-                ) : (
-                  <>
-                    <History className="w-5 h-5 mr-2" />
-                    View Document & History
-                  </>
-                )}
-              </Button>
+            <CardContent className="pt-0 space-y-3">
+              {/* Current Version - Most Accessible */}
+              {latestRevision && (
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => {
+                      viewDocument(latestRevision, doc);
+                      markDocumentAsViewed(doc);
+                    }}
+                    className={`w-full h-12 text-base ${hasNewRevision ? 'gradient-primary shadow-md' : ''}`}
+                    variant={hasNewRevision ? 'default' : 'default'}
+                  >
+                    {hasNewRevision ? (
+                      <>
+                        <AlertCircle className="w-5 h-5 mr-2" />
+                        VIEW UPDATED DOCUMENT
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-5 h-5 mr-2" />
+                        Open Document
+                      </>
+                    )}
+                  </Button>
+                  
+                  {latestRevision.revision_description && (
+                    <div className="p-2 bg-muted/50 rounded-lg border">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Latest update:</p>
+                      <p className="text-xs">
+                        {latestRevision.revision_description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Past Versions - Collapsible */}
+              {pastRevisions.length > 0 && (
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleDocumentExpansion(doc.id)}
+                    className="w-full h-9 text-xs"
+                  >
+                    {isExpanded ? (
+                      <>
+                        <ChevronDown className="w-4 h-4 mr-2" />
+                        Hide Past Versions ({pastRevisions.length})
+                      </>
+                    ) : (
+                      <>
+                        <ChevronRight className="w-4 h-4 mr-2" />
+                        View Past Versions ({pastRevisions.length})
+                      </>
+                    )}
+                  </Button>
+                  
+                  {/* Expanded Past Versions */}
+                  {isExpanded && (
+                    <div className="space-y-2 pt-2 border-t">
+                      {pastRevisions.map((rev) => (
+                        <div
+                          key={rev.id}
+                          className="p-3 bg-muted/30 rounded-lg border space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-xs">
+                              Version {rev.version_number}
+                            </Badge>
+                            <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {rev.uploader_name || 'Unknown'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {new Date(rev.uploaded_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {rev.revision_description && (
+                            <div className="text-xs text-muted-foreground">
+                              {rev.revision_description}
+                            </div>
+                          )}
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => viewDocument(rev, doc)}
+                            className="w-full h-8 text-xs"
+                          >
+                            <Eye className="w-3 h-3 mr-2" />
+                            Open v{rev.version_number}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
       })}
-
-      {/* Revision Log Dialog */}
-      <Dialog open={showRevisionLog} onOpenChange={setShowRevisionLog}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              {revisionLogDoc?.name}
-            </DialogTitle>
-            {revisionLogDoc && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground pt-1">
-                <Badge variant="outline">{revisionLogDoc.category}</Badge>
-                <Badge className="bg-primary/10 text-primary">
-                  Current: v{revisionLogDoc.current_version}
-                </Badge>
-              </div>
-            )}
-          </DialogHeader>
-          
-          {revisions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No versions available
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {revisions.map((rev, index) => {
-                const isLatest = index === 0;
-                
-                return (
-                  <Card 
-                    key={rev.id} 
-                    className={`overflow-hidden ${isLatest ? 'border-primary border-2' : ''}`}
-                  >
-                    <CardHeader className={`pb-3 ${isLatest ? 'bg-primary/5' : 'bg-muted/30'}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge className={isLatest ? 'bg-primary' : ''}>
-                            Version {rev.version_number}
-                          </Badge>
-                          {isLatest && (
-                            <Badge variant="outline" className="text-xs">
-                              Current
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {rev.uploader_name || 'Unknown'}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(rev.uploaded_at).toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-3 space-y-3">
-                      {rev.revision_description && (
-                        <div className="p-3 bg-muted/50 rounded-lg">
-                          <p className="text-sm font-medium mb-1">What Changed:</p>
-                          <p className="text-sm text-muted-foreground">
-                            {rev.revision_description}
-                          </p>
-                        </div>
-                      )}
-                      <Button
-                        variant={isLatest ? 'default' : 'outline'}
-                        size="lg"
-                        onClick={() => viewDocument(rev)}
-                        className="w-full"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        {isLatest ? 'Open Current Version' : `Open v${rev.version_number}`}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-          
-          <div className="pt-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowRevisionLog(false)}
-              className="w-full"
-            >
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
