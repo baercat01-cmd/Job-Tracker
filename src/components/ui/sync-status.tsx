@@ -22,7 +22,14 @@ export function SyncStatusDetailed() {
   const totalPending = pendingCount + queueStatus.pending + queueStatus.failed;
   const hasIssues = queueStatus.failed > 0;
 
+  // Only show if actively syncing or has pending items
+  // Hide when idle to prevent flashing
   if (totalPending === 0 && !isSyncing && !isUploading) {
+    return null;
+  }
+
+  // Don't show during initial mount to prevent flash
+  if (isSyncing && !syncProgress && totalPending === 0) {
     return null;
   }
 

@@ -23,10 +23,16 @@ export function useOfflineSync() {
   });
   const connectionStatus = useConnectionStatus();
 
-  // Check pending items count
+  // Check pending items count (only update if changed)
   const updatePendingCount = async () => {
     const pending = await getPendingSyncItems();
-    setStatus((prev) => ({ ...prev, pendingCount: pending.length }));
+    setStatus((prev) => {
+      // Only update if count actually changed to prevent unnecessary re-renders
+      if (prev.pendingCount !== pending.length) {
+        return { ...prev, pendingCount: pending.length };
+      }
+      return prev;
+    });
   };
 
   // Initialize sync on mount
@@ -86,8 +92,8 @@ export function useOfflineSync() {
       }
     });
 
-    // Update pending count periodically
-    const interval = setInterval(updatePendingCount, 5000);
+    // Update pending count periodically (30 seconds to reduce flashing)
+    const interval = setInterval(updatePendingCount, 30000);
 
     return () => {
       mounted = false;
