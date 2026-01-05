@@ -128,9 +128,10 @@ interface ClockInEntry {
 interface QuickTimeEntryProps {
   userId: string;
   onSuccess?: () => void;
+  onOpenTimeClock?: () => void;
 }
 
-export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
+export function QuickTimeEntry({ userId, onSuccess, onOpenTimeClock }: QuickTimeEntryProps) {
   const [loading, setLoading] = useState(false);
   const [clockedInEntry, setClockedInEntry] = useState<ClockInEntry | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -442,7 +443,7 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
     if (!isExpanded) {
       return (
         <Button
-          onClick={() => setIsExpanded(true)}
+          onClick={() => onOpenTimeClock ? onOpenTimeClock() : setIsExpanded(true)}
           size="lg"
           className="w-full h-12 gradient-primary"
         >

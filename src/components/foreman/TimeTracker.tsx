@@ -46,9 +46,10 @@ interface TimeTrackerProps {
   userId: string;
   onBack: () => void;
   onTimerUpdate: () => void;
+  initialMode?: 'none' | 'timer' | 'manual';
 }
 
-export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerProps) {
+export function TimeTracker({ job, userId, onBack, onTimerUpdate, initialMode = 'none' }: TimeTrackerProps) {
   const [components, setComponents] = useState<Component[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [localTimers, setLocalTimers] = useState<LocalTimer[]>([]);
@@ -61,7 +62,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [totalClockInHours, setTotalClockInHours] = useState(0);
   
   // Entry mode selection
-  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('none');
+  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>(initialMode);
   
   // Timer start mode and selection
   const [timerMode, setTimerMode] = useState<'count' | 'workers'>('workers');
