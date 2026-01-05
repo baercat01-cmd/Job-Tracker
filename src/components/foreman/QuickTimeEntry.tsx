@@ -170,7 +170,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
   const [selectedComponentForJob, setSelectedComponentForJob] = useState('');
   const [componentHours, setComponentHours] = useState('0');
   const [componentMinutes, setComponentMinutes] = useState('0');
-  const [showComponentInput, setShowComponentInput] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -732,11 +731,9 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               endTime: '17:00',
               notes: '',
             });
-            setComponents([]);
             setSelectedComponentForJob('');
             setComponentHours('0');
             setComponentMinutes('0');
-            setShowComponentInput(false);
             onBack?.(); // Go back to jobs page
           }
         }}
@@ -860,32 +857,15 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                 {/* Component Time (Optional) - Only show in manual mode */}
                 {mode === 'manual' && selectedJobId && components.length > 0 && (
                   <div className="space-y-3 pt-4 border-t">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Add Component Time (Optional)</Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setShowComponentInput(!showComponentInput);
-                          if (!showComponentInput) {
-                            setSelectedComponentForJob('');
-                            setComponentHours('0');
-                            setComponentMinutes('0');
-                          }
-                        }}
-                        className="h-8 text-xs"
-                      >
-                        {showComponentInput ? 'Hide' : 'Add Component'}
-                      </Button>
-                    </div>
-
-                    {showComponentInput && (
-                      <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="bg-muted/30 rounded-lg p-3">
+                      <Label className="text-sm font-medium mb-3 block">Add Component Time (Optional)</Label>
+                      <p className="text-xs text-muted-foreground mb-3">Track time on a specific component using the same date and crew from above</p>
+                      
+                      <div className="space-y-3">
                         <div className="space-y-2">
                           <Label htmlFor="component-select" className="text-xs">Component</Label>
                           <Select value={selectedComponentForJob} onValueChange={setSelectedComponentForJob}>
-                            <SelectTrigger id="component-select" className="h-10">
+                            <SelectTrigger id="component-select" className="h-11">
                               <SelectValue placeholder="Select component..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -904,7 +884,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <Select value={componentHours} onValueChange={setComponentHours}>
-                                  <SelectTrigger className="h-10">
+                                  <SelectTrigger className="h-11">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent className="max-h-[200px]">
@@ -918,7 +898,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                               </div>
                               <div>
                                 <Select value={componentMinutes} onValueChange={setComponentMinutes}>
-                                  <SelectTrigger className="h-10">
+                                  <SelectTrigger className="h-11">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent className="max-h-[200px]">
@@ -931,13 +911,16 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                                 </Select>
                               </div>
                             </div>
-                            <p className="text-xs text-muted-foreground text-center">
-                              {(parseInt(componentHours) + parseInt(componentMinutes) / 60).toFixed(2)} hours
-                            </p>
+                            <div className="bg-primary/10 rounded p-2 text-center">
+                              <p className="text-xs text-muted-foreground">Component Time</p>
+                              <p className="text-lg font-bold text-primary">
+                                {(parseInt(componentHours) + parseInt(componentMinutes) / 60).toFixed(2)} hours
+                              </p>
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -946,21 +929,17 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                   <Button
                     variant="outline"
                     onClick={() => {
-                      setShowDialog(false);
-                      setMode('manual');
                       setSelectedJobId('');
-                      setManualData({
-                        date: new Date().toISOString().split('T')[0],
-                        startTime: '06:00',
-                        endTime: '17:00',
-                      });
-                      setSelectedComponentForJob('');
-                      setComponentHours('0');
-                      setComponentMinutes('0');
-                      setShowComponentInput(false);
-                      onBack?.();
-                    }}
-                    className="flex-1 h-12"
+      setManualData({
+        date: new Date().toISOString().split('T')[0],
+        startTime: '06:00',
+        endTime: '17:00',
+      });
+      setSelectedComponentForJob('');
+      setComponentHours('0');
+      setComponentMinutes('0');
+      onBack?.();
+    }}                    className="flex-1 h-12"
                     disabled={loading}
                   >
                     <X className="w-4 h-4 mr-2" />
