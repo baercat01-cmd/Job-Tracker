@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Camera, Images, MapPin, X, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getPhotosBrief } from '@/lib/notifications';
@@ -398,6 +398,9 @@ export function PhotoUpload({ job, userId, onBack }: PhotoUploadProps) {
       {/* Photo Viewer Dialog */}
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
         <DialogContent className="max-w-4xl w-full h-[90vh] p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Photo Details</DialogTitle>
+          </DialogHeader>
           {selectedPhoto && (
             <div className="relative w-full h-full flex flex-col">
               {/* Header */}
