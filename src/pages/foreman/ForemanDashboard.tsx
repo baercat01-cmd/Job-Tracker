@@ -18,7 +18,7 @@ import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'dashboard' | 'timeclock';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'dashboard';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -30,7 +30,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [activeTab, setActiveTab] = useState<TabMode>('timer');
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [documentTab, setDocumentTab] = useState<string>('documents');
-  const [timeClockJob, setTimeClockJob] = useState<Job | null>(null);
 
   useEffect(() => {
     if (profile?.id) {
@@ -86,43 +85,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const handleBackToJobs = () => {
     setSelectedJob(null);
     setActiveTab('timer');
-    setTimeClockJob(null);
   };
 
   const handleSignOut = () => {
     clearUser();
     toast.success('Signed out successfully');
-  };
-
-  const handleOpenTimeClock = () => {
-    // Create a temporary "Time Clock" job context
-    setTimeClockJob({
-      id: 'time-clock',
-      name: 'Time Clock Entry',
-      client_name: 'Quick Entry',
-      address: '',
-      description: '',
-      status: 'active',
-      created_at: new Date().toISOString(),
-      components: [],
-    } as Job);
-    setSelectedJob({
-      id: 'time-clock',
-      name: 'Time Clock Entry',
-      client_name: 'Quick Entry',
-      address: '',
-      description: '',
-      status: 'active',
-      created_at: new Date().toISOString(),
-      components: [],
-    } as Job);
-    setActiveTab('timeclock');
-  };
-
-  const handleTimeClockBack = () => {
-    setTimeClockJob(null);
-    setSelectedJob(null);
-    setActiveTab('timer');
   };
 
   // If no job selected, show job selector
@@ -201,11 +168,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
             
             {/* Quick Time Entry Button */}
-            <QuickTimeEntry 
-              userId={profile?.id || ''} 
-              onSuccess={loadActiveTimers}
-              onOpenTimeClock={handleOpenTimeClock}
-            />
+            <QuickTimeEntry userId={profile?.id || ''} onSuccess={loadActiveTimers} />
             
             <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
           </div>
@@ -263,50 +226,52 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
       {/* Main Content - Tabbed Interface */}
       <main className="container mx-auto px-4 py-6 pb-24">
-        {activeTab === 'timeclock' ? (
-          <TimeTracker
-            job={timeClockJob || selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleTimeClockBack}
-            onTimerUpdate={loadActiveTimers}
-            initialMode="manual"
-          />
-        ) : activeTab === 'timer' ? (
+        {activeTab === 'timer' && (
           <TimeTracker
             job={selectedJob}
             userId={profile?.id || ''}
             onBack={handleBackToJobs}
             onTimerUpdate={loadActiveTimers}
           />
-        ) : activeTab === 'photos' ? (
+        )}
+
+        {activeTab === 'photos' && (
           <PhotoUpload
             job={selectedJob}
             userId={profile?.id || ''}
             onBack={handleBackToJobs}
           />
-        ) : activeTab === 'documents' ? (
+        )}
+
+        {activeTab === 'documents' && (
           <JobDetails
             job={selectedJob}
             onBack={handleBackToJobs}
             defaultTab={documentTab}
           />
-        ) : activeTab === 'materials' ? (
+        )}
+
+        {activeTab === 'materials' && (
           <MaterialsList
             job={selectedJob}
             userId={profile?.id || ''}
           />
-        ) : activeTab === 'history' ? (
+        )}
+
+        {activeTab === 'history' && (
           <ComponentHistory
             job={selectedJob}
             userId={profile?.id || ''}
           />
-        ) : activeTab === 'dashboard' ? (
+        )}
+
+        {activeTab === 'dashboard' && (
           <FieldJobDashboard 
             job={selectedJob} 
             userId={profile?.id || ''} 
             activeTimerCount={activeTimers.length}
           />
-        ) : null}
+        )}
       </main>
 
       {/* Bottom Navigation - 6 tabs for job features */}
