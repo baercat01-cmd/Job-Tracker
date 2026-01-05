@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -21,6 +22,9 @@ import {
   Edit3,
   ArrowLeft,
   X,
+  Briefcase,
+  MapPin,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -151,10 +155,21 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     startTime: '06:00',
     endTime: '17:00',
   });
+  const [jobType, setJobType] = useState<'existing' | 'misc'>('existing');
+  const [miscJobData, setMiscJobData] = useState({
+    name: '',
+    address: '',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '06:00',
+    endTime: '17:00',
+    notes: '',
+  });
+  const [miscJobsId, setMiscJobsId] = useState<string | null>(null);
 
   useEffect(() => {
     loadJobs();
     loadClockedInStatus();
+    loadOrCreateMiscJobsCategory();
   }, [userId]);
 
   useEffect(() => {
@@ -186,6 +201,43 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
       setJobs(data || []);
     } catch (error) {
       console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function loadOrCreateMiscJobsCategory() {
+    try {
+      // Check if Misc Jobs internal job exists
+      const { data: existing, error: fetchError } = await supabase
+        .from('jobs')
+        .select('id')
+        .eq('name', 'Misc Jobs')
+        .eq('is_internal', true)
+        .maybeSingle();
+
+      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+      if (existing) {
+        setMiscJobsId(existing.id);
+      } else {
+        // Create Misc Jobs internal job
+        const { data: newJob, error: createError } = await supabase
+          .from('jobs')
+          .insert({
+            name: 'Misc Jobs',
+            client_name: 'Internal',
+            address: 'Various',
+            is_internal: true,
+            status: 'active',
+            created_by: userId,
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        setMiscJobsId(newJob.id);
+      }
+    } catch (error) {
+      console.error('Error loading/creating Misc Jobs category:', error);
     }
   }
 
@@ -351,6 +403,92 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     }
   }
 
+  async function handleMiscJobEntry() {
+    if (!miscJobData.name.trim()) {
+      toast.error('Please enter a job name');
+      return;
+    }
+
+    if (!miscJobData.address.trim()) {
+      toast.error('Please enter a job address');
+      return;
+    }
+
+    if (!miscJobData.startTime || !miscJobData.endTime) {
+      toast.error('Please enter both start and end times');
+      return;
+    }
+
+    if (!miscJobsId) {
+      toast.error('Misc Jobs category not available');
+      return;
+    }
+
+    // Calculate total hours
+    const start = new Date(`${miscJobData.date}T${miscJobData.startTime}`);
+    const end = new Date(`${miscJobData.date}T${miscJobData.endTime}`);
+    
+    if (end <= start) {
+      toast.error('Clock out time must be after clock in time');
+      return;
+    }
+    
+    const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+    setLoading(true);
+
+    try {
+      const startDateTime = new Date(`${miscJobData.date}T${miscJobData.startTime}`).toISOString();
+      const endDateTime = new Date(`${miscJobData.date}T${miscJobData.endTime}`).toISOString();
+
+      // Create structured notes with job details
+      const notesData = {
+        type: 'misc_job',
+        jobName: miscJobData.name,
+        address: miscJobData.address,
+        notes: miscJobData.notes || '',
+      };
+
+      const { error } = await supabase
+        .from('time_entries')
+        .insert({
+          job_id: miscJobsId,
+          component_id: null,
+          user_id: userId,
+          start_time: startDateTime,
+          end_time: endDateTime,
+          total_hours: Math.round(totalHours * 100) / 100,
+          crew_count: 1,
+          is_manual: true,
+          is_active: false,
+          notes: JSON.stringify(notesData),
+          worker_names: [],
+        });
+
+      if (error) throw error;
+
+      toast.success(`${totalHours.toFixed(2)} hours logged to misc job: ${miscJobData.name}`);
+      
+      // Reset and close
+      setShowDialog(false);
+      setMiscJobData({
+        name: '',
+        address: '',
+        date: new Date().toISOString().split('T')[0],
+        startTime: '06:00',
+        endTime: '17:00',
+        notes: '',
+      });
+      onSuccess?.();
+      onBack?.();
+    } catch (error: any) {
+      console.error('Misc job entry error:', error);
+      toast.error('Failed to log time');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleClockOut() {
     if (!clockedInEntry) return;
 
@@ -488,126 +626,255 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             </div>
           </DialogHeader>
 
-          {/* Mode Toggle */}
+          {/* Job Type Selection */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
             <Button
-              variant={mode === 'manual' ? 'default' : 'ghost'}
-              onClick={() => setMode('manual')}
+              variant={jobType === 'existing' ? 'default' : 'ghost'}
+              onClick={() => setJobType('existing')}
               className="h-10"
             >
-              <Edit3 className="w-4 h-4 mr-2" />
-              Manual Entry
+              <Briefcase className="w-4 h-4 mr-2" />
+              Existing Job
             </Button>
             <Button
-              variant={mode === 'timer' ? 'default' : 'ghost'}
-              onClick={() => setMode('timer')}
+              variant={jobType === 'misc' ? 'default' : 'ghost'}
+              onClick={() => setJobType('misc')}
               className="h-10"
             >
-              <Timer className="w-4 h-4 mr-2" />
-              Timer
+              <FileText className="w-4 h-4 mr-2" />
+              Misc Job
             </Button>
           </div>
 
           <div className="space-y-4">
-            {/* Job Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
-              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                <SelectTrigger id="dialog-job" className="h-12">
-                  <SelectValue placeholder="Choose a job..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {jobs.map((job) => (
-                    <SelectItem key={job.id} value={job.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{job.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {job.client_name}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Manual Entry Fields */}
-            {mode === 'manual' && (
+            {/* Existing Job Flow */}
+            {jobType === 'existing' && (
               <>
+                {/* Mode Toggle */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+                  <Button
+                    variant={mode === 'manual' ? 'default' : 'ghost'}
+                    onClick={() => setMode('manual')}
+                    className="h-10"
+                  >
+                    <Edit3 className="w-4 h-4 mr-2" />
+                    Manual Entry
+                  </Button>
+                  <Button
+                    variant={mode === 'timer' ? 'default' : 'ghost'}
+                    onClick={() => setMode('timer')}
+                    className="h-10"
+                  >
+                    <Timer className="w-4 h-4 mr-2" />
+                    Timer
+                  </Button>
+                </div>
+
+                {/* Job Selection */}
                 <div className="space-y-2">
-                  <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
+                  <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
+                  <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                    <SelectTrigger id="dialog-job" className="h-12">
+                      <SelectValue placeholder="Choose a job..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobs.map((job) => (
+                        <SelectItem key={job.id} value={job.id}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{job.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {job.client_name}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Manual Entry Fields */}
+                {mode === 'manual' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
+                      <Input
+                        id="dialog-date"
+                        type="date"
+                        className="h-12"
+                        value={manualData.date}
+                        onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+
+                    <TimeDropdownPicker
+                      label="Clock In Time"
+                      value={manualData.startTime}
+                      onChange={(time) => setManualData({ ...manualData, startTime: time })}
+                    />
+
+                    <TimeDropdownPicker
+                      label="Clock Out Time"
+                      value={manualData.endTime}
+                      onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                    />
+                  </>
+                )}
+
+                {/* Timer Mode Info */}
+                {mode === 'timer' && (
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm text-muted-foreground">
+                      Start a live timer to track your time on this job. You'll be able to clock out when you're done.
+                    </p>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDialog(false);
+                      setMode('manual');
+                      setSelectedJobId('');
+                      setManualData({
+                        date: new Date().toISOString().split('T')[0],
+                        startTime: '06:00',
+                        endTime: '17:00',
+                      });
+                      onBack?.();
+                    }}
+                    className="flex-1 h-12"
+                    disabled={loading}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={mode === 'manual' ? handleManualEntry : handleTimerClockIn}
+                    disabled={loading || !selectedJobId}
+                    className="flex-1 h-12 gradient-primary"
+                  >
+                    {mode === 'manual' ? (
+                      <>
+                        <Clock className="w-4 h-4 mr-2" />
+                        {loading ? 'Logging...' : 'Log Time'}
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="w-4 h-4 mr-2" />
+                        {loading ? 'Starting...' : 'Start Timer'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Misc Job Flow */}
+            {jobType === 'misc' && (
+              <>
+                <div className="bg-warning/10 border border-warning/30 rounded-lg p-3">
+                  <p className="text-sm text-warning-foreground">
+                    Use this for odd jobs not in the system. All details will be visible in payroll.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="misc-job-name" className="text-base font-semibold">Job Name *</Label>
                   <Input
-                    id="dialog-date"
+                    id="misc-job-name"
+                    placeholder="Enter job name..."
+                    className="h-12"
+                    value={miscJobData.name}
+                    onChange={(e) => setMiscJobData({ ...miscJobData, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="misc-job-address" className="text-base font-semibold flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Address *
+                  </Label>
+                  <Input
+                    id="misc-job-address"
+                    placeholder="Enter job address..."
+                    className="h-12"
+                    value={miscJobData.address}
+                    onChange={(e) => setMiscJobData({ ...miscJobData, address: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="misc-date" className="text-base font-semibold">Date *</Label>
+                  <Input
+                    id="misc-date"
                     type="date"
                     className="h-12"
-                    value={manualData.date}
-                    onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                    value={miscJobData.date}
+                    onChange={(e) => setMiscJobData({ ...miscJobData, date: e.target.value })}
                     max={new Date().toISOString().split('T')[0]}
                   />
                 </div>
 
                 <TimeDropdownPicker
                   label="Clock In Time"
-                  value={manualData.startTime}
-                  onChange={(time) => setManualData({ ...manualData, startTime: time })}
+                  value={miscJobData.startTime}
+                  onChange={(time) => setMiscJobData({ ...miscJobData, startTime: time })}
                 />
 
                 <TimeDropdownPicker
                   label="Clock Out Time"
-                  value={manualData.endTime}
-                  onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                  value={miscJobData.endTime}
+                  onChange={(time) => setMiscJobData({ ...miscJobData, endTime: time })}
                 />
-              </>
-            )}
 
-            {/* Timer Mode Info */}
-            {mode === 'timer' && (
-              <div className="p-4 bg-muted/30 rounded-lg border">
-                <p className="text-sm text-muted-foreground">
-                  Start a live timer to track your time on this job. You'll be able to clock out when you're done.
-                </p>
-              </div>
-            )}
+                <div className="space-y-2">
+                  <Label htmlFor="misc-notes" className="text-base font-semibold">Notes (Optional)</Label>
+                  <Textarea
+                    id="misc-notes"
+                    placeholder="Additional notes..."
+                    className="resize-none"
+                    rows={3}
+                    value={miscJobData.notes}
+                    onChange={(e) => setMiscJobData({ ...miscJobData, notes: e.target.value })}
+                  />
+                </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDialog(false);
-                  setMode('manual');
-                  setSelectedJobId('');
-                  setManualData({
-                    date: new Date().toISOString().split('T')[0],
-                    startTime: '06:00',
-                    endTime: '17:00',
-                  });
-                  onBack?.();
-                }}
-                className="flex-1 h-12"
-                disabled={loading}
-              >
-                <X className="w-4 h-4 mr-2" />
-                Cancel
-              </Button>
-              <Button
-                onClick={mode === 'manual' ? handleManualEntry : handleTimerClockIn}
-                disabled={loading || !selectedJobId}
-                className="flex-1 h-12 gradient-primary"
-              >
-                {mode === 'manual' ? (
-                  <>
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDialog(false);
+                      setMiscJobData({
+                        name: '',
+                        address: '',
+                        date: new Date().toISOString().split('T')[0],
+                        startTime: '06:00',
+                        endTime: '17:00',
+                        notes: '',
+                      });
+                      onBack?.();
+                    }}
+                    className="flex-1 h-12"
+                    disabled={loading}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleMiscJobEntry}
+                    disabled={loading || !miscJobData.name.trim() || !miscJobData.address.trim()}
+                    className="flex-1 h-12 gradient-primary"
+                  >
                     <Clock className="w-4 h-4 mr-2" />
                     {loading ? 'Logging...' : 'Log Time'}
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-4 h-4 mr-2" />
-                    {loading ? 'Starting...' : 'Start Timer'}
-                  </>
-                )}
-              </Button>
-            </div>
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
