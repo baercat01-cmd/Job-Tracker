@@ -792,31 +792,24 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             {/* Existing Job Flow */}
             {jobType === 'existing' && (
               <>
-                {/* Mode Toggle */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
-                  <Button
-                    variant={mode === 'manual' ? 'default' : 'ghost'}
-                    onClick={() => setMode('manual')}
-                    className="h-10"
-                  >
-                    <Edit3 className="w-4 h-4 mr-2" />
-                    Manual Entry
-                  </Button>
-                  <Button
-                    variant={mode === 'timer' ? 'default' : 'ghost'}
-                    onClick={() => setMode('timer')}
-                    className="h-10"
-                  >
-                    <Timer className="w-4 h-4 mr-2" />
-                    Timer
-                  </Button>
+                {/* Date Selection - Highlighted */}
+                <div className="space-y-2 p-4 bg-gradient-to-br from-orange-muted to-orange-muted/50 dark:from-orange-muted dark:to-orange-muted/30 border-2 border-orange rounded-lg shadow-md">
+                  <Label htmlFor="dialog-date" className="text-base font-semibold text-orange-dark dark:text-orange-light">Date *</Label>
+                  <Input
+                    id="dialog-date"
+                    type="date"
+                    className="h-14 text-lg font-semibold border-2 border-orange/30 focus:border-orange"
+                    value={manualData.date}
+                    onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
                 </div>
 
-                {/* Job Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
+                {/* Job Selection - Highlighted */}
+                <div className="space-y-2 p-4 bg-gradient-to-br from-orange-muted to-orange-muted/50 dark:from-orange-muted dark:to-orange-muted/30 border-2 border-orange rounded-lg shadow-md">
+                  <Label htmlFor="dialog-job" className="text-base font-semibold text-orange-dark dark:text-orange-light">Select Job *</Label>
                   <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                    <SelectTrigger id="dialog-job" className="h-12">
+                    <SelectTrigger id="dialog-job" className="h-14 text-lg font-semibold border-2 border-orange/30 focus:border-orange">
                       <SelectValue placeholder="Choose a job..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -834,32 +827,48 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                   </Select>
                 </div>
 
+                {/* Mode Toggle - Highlighted */}
+                <div className="p-4 bg-gradient-to-br from-orange-muted to-orange-muted/50 dark:from-orange-muted dark:to-orange-muted/30 border-2 border-orange rounded-lg shadow-md">
+                  <Label className="text-base font-semibold text-orange-dark dark:text-orange-light mb-3 block">Clock In Method *</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant={mode === 'manual' ? 'default' : 'ghost'}
+                      onClick={() => setMode('manual')}
+                      className={`h-12 text-base ${mode === 'manual' ? 'bg-orange hover:bg-orange-dark text-white' : ''}`}
+                    >
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Manual Entry
+                    </Button>
+                    <Button
+                      variant={mode === 'timer' ? 'default' : 'ghost'}
+                      onClick={() => setMode('timer')}
+                      className={`h-12 text-base ${mode === 'timer' ? 'bg-orange hover:bg-orange-dark text-white' : ''}`}
+                    >
+                      <Timer className="w-4 h-4 mr-2" />
+                      Timer
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Manual Entry Fields */}
                 {mode === 'manual' && (
                   <>
+
                     <div className="space-y-2">
-                      <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
-                      <Input
-                        id="dialog-date"
-                        type="date"
-                        className="h-12"
-                        value={manualData.date}
-                        onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
-                        max={new Date().toISOString().split('T')[0]}
+                      <TimeDropdownPicker
+                        label="Clock In Time"
+                        value={manualData.startTime}
+                        onChange={(time) => setManualData({ ...manualData, startTime: time })}
                       />
                     </div>
 
-                    <TimeDropdownPicker
-                      label="Clock In Time"
-                      value={manualData.startTime}
-                      onChange={(time) => setManualData({ ...manualData, startTime: time })}
-                    />
-
-                    <TimeDropdownPicker
-                      label="Clock Out Time"
-                      value={manualData.endTime}
-                      onChange={(time) => setManualData({ ...manualData, endTime: time })}
-                    />
+                    <div className="space-y-2">
+                      <TimeDropdownPicker
+                        label="Clock Out Time"
+                        value={manualData.endTime}
+                        onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                      />
+                    </div>
                   </>
                 )}
 
