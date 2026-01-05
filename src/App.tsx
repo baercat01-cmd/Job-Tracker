@@ -1,6 +1,8 @@
 import { Component, ReactNode } from 'react';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 import { UserSelectPage } from '@/pages/UserSelectPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { PinSetupPage } from '@/pages/PinSetupPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
@@ -63,7 +65,7 @@ class ErrorBoundary extends Component<
 }
 
 function AppContent() {
-  const { profile, loading, selectUser } = useAuth();
+  const { profile, loading, selectUser, clearUser, authState } = useAuth();
   
   // Debug logging in development only
   if (import.meta.env.DEV) {
@@ -86,9 +88,19 @@ function AppContent() {
     );
   }
 
-  // No user selected - show user selection
+  // Authentication flow based on state
   if (!profile) {
     return <UserSelectPage onSelectUser={selectUser} />;
+  }
+
+  // User selected but needs to set up PIN
+  if (authState === 'needs_pin_setup') {
+    return <PinSetupPage user={profile} onComplete={() => window.location.reload()} />;
+  }
+
+  // User selected but needs to login
+  if (authState === 'needs_login') {
+    return <LoginPage user={profile} onSuccess={() => window.location.reload()} onBack={clearUser} />;
   }
 
   // Critical: Role-based routing using profile.role from database

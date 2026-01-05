@@ -1,0 +1,254 @@
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Lock, Fingerprint, Shield, ArrowLeft, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { verifyPin, authenticateBiometric, isWebAuthnSupported } from '@/lib/auth';
+import type { UserProfile } from '@/types';
+
+interface LoginPageProps {
+  user: UserProfile;
+  onSuccess: () => void;
+  onBack: () => void;
+}
+
+const ADMIN_PASSWORD = 'MartinBuilder2025'; // Admin bypass password
+
+export function LoginPage({ user, onSuccess, onBack }: LoginPageProps) {
+  const [pin, setPin] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'pin' | 'admin'>('pin');
+
+  const hasBiometric = user.webauthn_credentials && 
+    Array.isArray(user.webauthn_credentials) && 
+    user.webauthn_credentials.length > 0;
+  const supportsBiometric = isWebAuthnSupported();
+
+  async function handlePinLogin() {
+    if (pin.length !== 4) {
+      toast.error('Please enter your 4-digit PIN');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Verify PIN
+      const isValid = await verifyPin(pin, user.pin_hash!);
+      
+      if (!isValid) {
+        toast.error('Incorrect PIN');
+        setPin('');
+        setLoading(false);
+        return;
+      }
+
+      toast.success('Welcome back!');
+      
+      // Mark user as authenticated
+      localStorage.setItem('fieldtrack_authenticated', 'true');
+      
+      onSuccess();
+    } catch (error: any) {
+      console.error('PIN login error:', error);
+      toast.error('Login failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleBiometricLogin() {
+    setLoading(true);
+
+    try {
+      const isAuthenticated = await authenticateBiometric(
+        user.id,
+        user.webauthn_credentials as any[]
+      );
+
+      if (!isAuthenticated) {
+        toast.error('Biometric authentication failed');
+        setLoading(false);
+        return;
+      }
+
+      toast.success('Welcome back!');
+      
+      // Mark user as authenticated
+      localStorage.setItem('fieldtrack_authenticated', 'true');
+      
+      onSuccess();
+    } catch (error: any) {
+      console.error('Biometric login error:', error);
+      toast.error(error.message || 'Biometric authentication failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleAdminLogin() {
+    if (!adminPassword.trim()) {
+      toast.error('Please enter admin password');
+      return;
+    }
+
+    if (adminPassword !== ADMIN_PASSWORD) {
+      toast.error('Incorrect admin password');
+      setAdminPassword('');
+      return;
+    }
+
+    toast.success('Admin access granted');
+    
+    // Mark user as authenticated
+    localStorage.setItem('fieldtrack_authenticated', 'true');
+    
+    onSuccess();
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="text-center space-y-4">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              disabled={loading}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+            <div className="flex-1 flex justify-center">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-16 w-auto"
+              />
+            </div>
+            <div className="w-20" /> {/* Spacer for alignment */}
+          </div>
+          <div>
+            <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+            <CardDescription>{user.username}</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={loginMethod} onValueChange={(v) => setLoginMethod(v as 'pin' | 'admin')}>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="pin">
+                <Lock className="w-4 h-4 mr-2" />
+                PIN Login
+              </TabsTrigger>
+              <TabsTrigger value="admin">
+                <Shield className="w-4 h-4 mr-2" />
+                Admin
+              </TabsTrigger>
+            </TabsList>
+
+            {/* PIN Login */}
+            <TabsContent value="pin" className="space-y-4">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Lock className="w-8 h-8 text-primary" />
+                </div>
+              </div>
+
+              {/* Biometric Login Button */}
+              {hasBiometric && supportsBiometric && (
+                <Button
+                  onClick={handleBiometricLogin}
+                  disabled={loading}
+                  variant="outline"
+                  className="w-full h-14 border-2 border-primary hover:bg-primary/10"
+                >
+                  <Fingerprint className="w-6 h-6 mr-3 text-primary" />
+                  <span className="text-base font-semibold">Use Biometric</span>
+                </Button>
+              )}
+
+              {/* PIN Input */}
+              <div className="space-y-2">
+                <Label htmlFor="pin">Enter your PIN</Label>
+                <Input
+                  id="pin"
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && pin.length === 4) {
+                      handlePinLogin();
+                    }
+                  }}
+                  placeholder="••••"
+                  className="text-center text-2xl tracking-widest h-14"
+                  autoFocus
+                  disabled={loading}
+                />
+              </div>
+
+              <Button
+                onClick={handlePinLogin}
+                disabled={pin.length !== 4 || loading}
+                className="w-full h-12 gradient-primary"
+              >
+                {loading ? 'Logging in...' : 'Login'}
+              </Button>
+            </TabsContent>
+
+            {/* Admin Login */}
+            <TabsContent value="admin" className="space-y-4">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-warning/10 flex items-center justify-center">
+                  <Shield className="w-8 h-8 text-warning" />
+                </div>
+              </div>
+
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Admin access allows logging into any account. Use responsibly.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <Label htmlFor="admin-password">Admin Password</Label>
+                <Input
+                  id="admin-password"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && adminPassword.trim()) {
+                      handleAdminLogin();
+                    }
+                  }}
+                  placeholder="Enter admin password"
+                  className="h-12"
+                  autoFocus={loginMethod === 'admin'}
+                  disabled={loading}
+                />
+              </div>
+
+              <Button
+                onClick={handleAdminLogin}
+                disabled={!adminPassword.trim() || loading}
+                variant="destructive"
+                className="w-full h-12"
+              >
+                Login as Admin
+              </Button>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

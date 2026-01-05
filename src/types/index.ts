@@ -7,6 +7,9 @@ export interface UserProfile {
   role: 'crew' | 'office' | 'payroll'; // Must be exactly 'crew', 'office', or 'payroll'
   phone: string | null;
   created_at: string;
+  pin_hash?: string | null;
+  webauthn_credentials?: any[] | null;
+  is_admin?: boolean;
 }
 
 export interface Component {
