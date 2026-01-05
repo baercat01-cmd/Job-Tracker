@@ -17,6 +17,7 @@ interface JobSelectorProps {
 interface JobWithProgress extends Job {
   totalManHours: number;
   progressPercent: number;
+  actualProgressPercent: number;
   isOverBudget: boolean;
 }
 
@@ -61,15 +62,17 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
       const jobsWithProgress: JobWithProgress[] = (jobsData || []).map((job) => {
         const totalManHours = jobManHours.get(job.id) || 0;
         const estimatedHours = job.estimated_hours || 0;
-        const progressPercent = estimatedHours > 0 
-          ? Math.min((totalManHours / estimatedHours) * 100, 100) 
+        const actualProgressPercent = estimatedHours > 0 
+          ? (totalManHours / estimatedHours) * 100
           : 0;
+        const progressPercent = Math.min(actualProgressPercent, 100);
         const isOverBudget = totalManHours > estimatedHours && estimatedHours > 0;
 
         return {
           ...job,
           totalManHours,
           progressPercent,
+          actualProgressPercent,
           isOverBudget,
         };
       });
@@ -150,12 +153,39 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
                           <span className="text-muted-foreground">Progress</span>
                         </div>
                         <span className={`font-bold ${
-                          job.isOverBudget ? 'text-destructive' : 'text-primary'
+                          job.isOverBudget ? 'text-red-900 dark:text-red-400' : 'text-primary'
                         }`}>
-                          {job.progressPercent.toFixed(0)}%
+                          {job.actualProgressPercent.toFixed(0)}%
                         </span>
                       </div>
-                      <Progress value={job.progressPercent} className="h-2" />
+                      
+                      {/* First Progress Bar - Always shows up to 100% */}
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all ${
+                            job.isOverBudget ? 'bg-red-900 dark:bg-red-700' : 'bg-primary'
+                          }`}
+                          style={{ width: `${job.progressPercent}%` }}
+                        />
+                      </div>
+                      
+                      {/* Second Progress Bar - Shows overflow when over 100% */}
+                      {job.isOverBudget && job.actualProgressPercent > 100 && (
+                        <div className="space-y-1">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className="h-full transition-all bg-red-900 dark:bg-red-700"
+                              style={{ width: `${Math.min(job.actualProgressPercent - 100, 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <span className="text-xs font-bold text-red-900 dark:text-red-400">
+                              {(job.actualProgressPercent - 100).toFixed(0)}% over budget
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{job.totalManHours.toFixed(1)}h clock-in</span>
                         <span>{job.estimated_hours.toFixed(1)}h estimated</span>
