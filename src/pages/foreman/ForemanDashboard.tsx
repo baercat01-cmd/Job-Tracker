@@ -30,7 +30,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [activeTab, setActiveTab] = useState<TabMode>('timer');
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [documentTab, setDocumentTab] = useState<string>('documents');
-  const [showTimeClock, setShowTimeClock] = useState(false);
+  const [timeClockJob, setTimeClockJob] = useState<Job | null>(null);
 
   useEffect(() => {
     if (profile?.id) {
@@ -95,61 +95,35 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   };
 
   const handleOpenTimeClock = () => {
-    setShowTimeClock(true);
+    // Create a temporary "Time Clock" job context
+    setTimeClockJob({
+      id: 'time-clock',
+      name: 'Time Clock Entry',
+      client_name: 'Quick Entry',
+      address: '',
+      description: '',
+      status: 'active',
+      created_at: new Date().toISOString(),
+      components: [],
+    } as Job);
+    setSelectedJob({
+      id: 'time-clock',
+      name: 'Time Clock Entry',
+      client_name: 'Quick Entry',
+      address: '',
+      description: '',
+      status: 'active',
+      created_at: new Date().toISOString(),
+      components: [],
+    } as Job);
+    setActiveTab('timeclock');
   };
 
   const handleTimeClockBack = () => {
-    setShowTimeClock(false);
+    setTimeClockJob(null);
+    setSelectedJob(null);
+    setActiveTab('timer');
   };
-
-  // If showing time clock, show dedicated time clock interface
-  if (showTimeClock) {
-    return (
-      <div className="min-h-screen bg-muted/30">
-        {/* Header */}
-        {!hideHeader && (
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" onClick={handleTimeClockBack}>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <div>
-                <h1 className="text-lg font-bold">Time Clock</h1>
-                <p className="text-xs text-muted-foreground">
-                  {profile?.username} • Crew
-                </p>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
-        </header>
-        )}
-
-        {/* Time Clock Interface */}
-        <main className="container mx-auto px-4 py-6">
-          <TimeTracker
-            job={{
-              id: 'time-clock',
-              name: 'Time Clock Entry',
-              client_name: 'Quick Entry',
-              address: '',
-              description: '',
-              status: 'active',
-              created_at: new Date().toISOString(),
-              components: [],
-            } as Job}
-            userId={profile?.id || ''}
-            onBack={handleTimeClockBack}
-            onTimerUpdate={loadActiveTimers}
-            initialMode="manual"
-          />
-        </main>
-      </div>
-    );
-  }
 
   // If no job selected, show job selector
   if (!selectedJob) {
@@ -289,7 +263,15 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
       {/* Main Content - Tabbed Interface */}
       <main className="container mx-auto px-4 py-6 pb-24">
-        {activeTab === 'timer' ? (
+        {activeTab === 'timeclock' ? (
+          <TimeTracker
+            job={timeClockJob || selectedJob}
+            userId={profile?.id || ''}
+            onBack={handleTimeClockBack}
+            onTimerUpdate={loadActiveTimers}
+            initialMode="manual"
+          />
+        ) : activeTab === 'timer' ? (
           <TimeTracker
             job={selectedJob}
             userId={profile?.id || ''}
