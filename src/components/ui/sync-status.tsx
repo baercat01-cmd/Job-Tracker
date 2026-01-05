@@ -20,10 +20,20 @@ export function SyncStatusDetailed() {
   const { queueStatus, isUploading, retryFailed, processQueue } = usePhotoUpload();
   const connectionStatus = useConnectionStatus();
   const [shouldShow, setShouldShow] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   const totalPending = pendingCount + queueStatus.pending + queueStatus.failed;
   const hasIssues = queueStatus.failed > 0;
   const isActive = isSyncing || isUploading;
+
+  // Debug logging in development
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      const info = `Sync: ${isSyncing}, Upload: ${isUploading}, Pending: ${pendingCount}, Photos: ${queueStatus.pending}/${queueStatus.failed}`;
+      setDebugInfo(info);
+      console.log('[SyncStatus Debug]', info);
+    }
+  }, [isSyncing, isUploading, pendingCount, queueStatus]);
 
   // Debounce visibility to prevent flashing
   useEffect(() => {
@@ -60,6 +70,7 @@ export function SyncStatusDetailed() {
           variant="outline"
           size="sm"
           className="fixed bottom-4 right-4 z-50 shadow-lg"
+          title={import.meta.env.DEV ? debugInfo : undefined}
         >
           {isSyncing || isUploading ? (
             <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -182,12 +193,21 @@ export function SyncStatusDetailed() {
             </div>
 
             {/* Status Messages */}
+            {/* Status Messages */}
             {connectionStatus === 'offline' && totalPending > 0 && (
               <div className="flex items-start gap-2 p-2 bg-muted rounded text-xs">
                 <AlertCircle className="w-4 h-4 text-warning mt-0.5" />
                 <p className="text-muted-foreground">
-                  Changes will sync automatically when connection is restored
+                  {totalPending} change{totalPending !== 1 ? 's' : ''} will sync automatically when connection is restored
                 </p>
+              </div>
+            )}
+            
+            {/* Development Debug Info */}
+            {import.meta.env.DEV && (
+              <div className="pt-2 border-t text-xs text-muted-foreground space-y-1">
+                <p>Debug: {debugInfo}</p>
+                <p>Show: {shouldShow ? 'Yes' : 'No'}</p>
               </div>
             )}
           </CardContent>
