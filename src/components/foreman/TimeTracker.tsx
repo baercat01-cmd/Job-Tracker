@@ -674,34 +674,29 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       {entryMode === 'none' && (
         <Card>
           <CardHeader>
-            <CardTitle>How would you like to track time?</CardTitle>
+            <CardTitle>Track Time</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button
-              onClick={() => setEntryMode('timer')}
-              size="lg"
-              className="w-full touch-target h-20 text-lg"
-              variant="outline"
-            >
-              <Play className="w-6 h-6 mr-3" />
-              <div className="text-left flex-1">
-                <div className="font-bold">Start Timer</div>
-                <div className="text-xs text-muted-foreground font-normal">Track time in real-time</div>
-              </div>
-            </Button>
-            
-            <Button
-              onClick={() => setEntryMode('manual')}
-              size="lg"
-              className="w-full touch-target h-20 text-lg"
-              variant="outline"
-            >
-              <Edit className="w-6 h-6 mr-3" />
-              <div className="text-left flex-1">
-                <div className="font-bold">Manual Entry</div>
-                <div className="text-xs text-muted-foreground font-normal">Enter time after work is done</div>
-              </div>
-            </Button>
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
+              <Button
+                variant={entryMode === 'timer' ? 'secondary' : 'ghost'}
+                onClick={() => setEntryMode('timer')}
+                size="sm"
+                className="h-8 text-xs"
+              >
+                <Play className="w-3 h-3 mr-1.5" />
+                Timer
+              </Button>
+              <Button
+                variant={entryMode === 'manual' ? 'secondary' : 'ghost'}
+                onClick={() => setEntryMode('manual')}
+                size="sm"
+                className="h-8 text-xs"
+              >
+                <Edit className="w-3 h-3 mr-1.5" />
+                Manual
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -832,6 +827,18 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
               </p>
             ) : (
               <>
+              {/* Date Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="timer-date" className="text-sm font-medium">Date</Label>
+                <Input
+                  id="timer-date"
+                  type="date"
+                  value={getLocalDateString()}
+                  readOnly
+                  className="h-11 bg-muted/50"
+                />
+              </div>
+
               {/* Component Selection with Searchable Dropdown */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Component</Label>
