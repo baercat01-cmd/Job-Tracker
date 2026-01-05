@@ -135,11 +135,22 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
       setEditSelectedWorkers([]);
     }
     
-    // Set times
+    // Set times - convert UTC to local for datetime-local input
     const startDate = new Date(entry.start_time);
     const endDate = new Date(entry.end_time);
-    setEditStartTime(startDate.toISOString().slice(0, 16)); // Format: YYYY-MM-DDTHH:MM
-    setEditEndTime(endDate.toISOString().slice(0, 16));
+    
+    // Format: YYYY-MM-DDTHH:MM (local time)
+    const formatDateTimeLocal = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
+    setEditStartTime(formatDateTimeLocal(startDate));
+    setEditEndTime(formatDateTimeLocal(endDate));
   }
 
   function closeEditDialog() {
@@ -157,8 +168,25 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   async function saveTimeEntry() {
     if (!editEntry) return;
 
-    // Validate hours
+    // Validate times
+    if (!editStartTime || !editEndTime) {
+      toast.error('Please enter both start and end times');
+      return;
+    }
+
+    const startDate = new Date(editStartTime);
+    const endDate = new Date(editEndTime);
+    
+    if (endDate <= startDate) {
+      toast.error('End time must be after start time');
+      return;
+    }
+
+    // Calculate total hours from the time range
+    const calculatedHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
     const hours = parseFloat(editHours);
+    
+    // Validate hours
     if (isNaN(hours) || hours <= 0) {
       toast.error('Please enter valid hours');
       return;
@@ -194,8 +222,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
           total_hours: hours,
           crew_count: finalCrewCount,
           worker_names: finalWorkerNames,
-          start_time: new Date(editStartTime).toISOString(),
-          end_time: new Date(editEndTime).toISOString(),
+          start_time: startDate.toISOString(),
+          end_time: endDate.toISOString(),
           notes: editNotes || null 
         })
         .eq('id', editEntry.id);
@@ -605,10 +633,35 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
             <DialogTitle>Edit Time Entry</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Read-only Component Info */}
+            {/* Component Info */}
             <div className="bg-muted/50 rounded-lg p-3">
               <p className="text-sm text-muted-foreground mb-1">Component</p>
-              <p className="font-medium">{editEntry?.components?.name}</p>
+              <p className="font-medium">
+                {editEntry?.components?.name || (editEntry?.component_id === null ? 'Clock-In Time' : 'Unknown')}
+              </p>
+            </div>
+
+            {/* Current Time Display */}
+            <div className="grid grid-cols-3 gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground mb-1">Duration</p>
+                <p className="text-sm font-bold">
+                  {editStartTime && editEndTime ? 
+                    ((new Date(editEndTime).getTime() - new Date(editStartTime).getTime()) / (1000 * 60 * 60)).toFixed(2)
+                    : '0.00'
+                  } hrs
+                </p>
+              </div>
+              <div className="text-center border-x">
+                <p className="text-xs text-muted-foreground mb-1">Original</p>
+                <p className="text-sm font-bold">{editEntry?.total_hours?.toFixed(2) || '0.00'} hrs</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground mb-1">Crew</p>
+                <p className="text-sm font-bold">
+                  {editMode === 'workers' ? editSelectedWorkers.length : editCrewCount}
+                </p>
+              </div>
             </div>
 
             {/* Start Time */}
