@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Lock, Fingerprint, CheckCircle, AlertCircle } from 'lucide-react';
+import { Lock, Fingerprint, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { hashPin, registerBiometric, isWebAuthnSupported } from '@/lib/auth';
 import type { UserProfile } from '@/types';
@@ -13,9 +13,10 @@ import type { UserProfile } from '@/types';
 interface PinSetupPageProps {
   user: UserProfile;
   onComplete: () => void;
+  onBack: () => void;
 }
 
-export function PinSetupPage({ user, onComplete }: PinSetupPageProps) {
+export function PinSetupPage({ user, onComplete, onBack }: PinSetupPageProps) {
   const [step, setStep] = useState<'pin' | 'confirm' | 'biometric'>('pin');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -109,12 +110,24 @@ export function PinSetupPage({ user, onComplete }: PinSetupPageProps) {
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center space-y-4">
-          <div className="flex justify-center">
-            <img 
-              src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-              alt="Martin Builder" 
-              className="h-16 w-auto"
-            />
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              disabled={loading}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+            <div className="flex-1 flex justify-center">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-16 w-auto"
+              />
+            </div>
+            <div className="w-20" /> {/* Spacer for alignment */}
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">Welcome, {user.username}!</CardTitle>

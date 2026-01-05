@@ -95,7 +95,7 @@ function AppContent() {
 
   // User selected but needs to set up PIN
   if (authState === 'needs_pin_setup') {
-    return <PinSetupPage user={profile} onComplete={() => window.location.reload()} />;
+    return <PinSetupPage user={profile} onComplete={() => window.location.reload()} onBack={clearUser} />;
   }
 
   // User selected but needs to login
