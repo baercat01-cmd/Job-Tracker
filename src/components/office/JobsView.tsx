@@ -94,17 +94,19 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
   }
 
   async function loadJobStats(jobId: string) {
-    const [timeData, photosData] = await Promise.all([
+    const [clockInData, photosData] = await Promise.all([
+      // Only load CLOCK-IN hours (component_id IS NULL) for progress calculation
       supabase
         .from('time_entries')
         .select('total_hours, crew_count')
         .eq('job_id', jobId)
+        .is('component_id', null) // Only clock-in hours
         .not('total_hours', 'is', null),
       supabase.from('photos').select('id').eq('job_id', jobId),
     ]);
 
-    // Calculate total man-hours (hours × crew count)
-    const totalManHours = timeData.data?.reduce((sum, entry) => {
+    // Calculate total clock-in man-hours (hours × crew count)
+    const totalClockInHours = clockInData.data?.reduce((sum, entry) => {
       const hours = entry.total_hours || 0;
       const crewCount = entry.crew_count || 1;
       return sum + (hours * crewCount);
@@ -113,8 +115,8 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
     setStats((prev) => ({
       ...prev,
       [jobId]: {
-        totalHours: totalManHours.toFixed(1),
-        totalManHours: totalManHours,
+        totalHours: totalClockInHours.toFixed(1),
+        totalClockInHours: totalClockInHours,
         photosCount: photosData.data?.length || 0,
       },
     }));
@@ -234,30 +236,30 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
                     )}
                   </div>
 
-                  {/* Progress Bar */}
+                  {/* Progress Bar - Clock-In Hours Only */}
                   {job.estimated_hours && job.estimated_hours > 0 && (
                     <div className="space-y-1.5 pt-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Progress</span>
+                        <span className="text-muted-foreground">Progress (Clock-In)</span>
                         <span className="font-bold">
-                          {((jobStats.totalManHours || 0) / job.estimated_hours * 100).toFixed(0)}%
+                          {((jobStats.totalClockInHours || 0) / job.estimated_hours * 100).toFixed(0)}%
                         </span>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div 
                           className={`h-full transition-all duration-500 ${
-                            (jobStats.totalManHours || 0) > job.estimated_hours
+                            (jobStats.totalClockInHours || 0) > job.estimated_hours
                               ? 'bg-destructive'
                               : 'bg-primary'
                           }`}
                           style={{ 
-                            width: `${Math.min(((jobStats.totalManHours || 0) / job.estimated_hours * 100), 100)}%` 
+                            width: `${Math.min(((jobStats.totalClockInHours || 0) / job.estimated_hours * 100), 100)}%` 
                           }}
                         />
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{jobStats.totalHours || '0'} / {job.estimated_hours} hrs</span>
-                        {(jobStats.totalManHours || 0) > job.estimated_hours && (
+                        {(jobStats.totalClockInHours || 0) > job.estimated_hours && (
                           <span className="text-destructive font-medium">Over Budget</span>
                         )}
                       </div>
@@ -276,7 +278,7 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
                         <Clock className="w-4 h-4" />
                       </div>
                       <p className="text-lg font-bold">{jobStats.totalHours || '0'}</p>
-                      <p className="text-xs text-muted-foreground">Man-Hours</p>
+                      <p className="text-xs text-muted-foreground">Clock-In Hrs</p>
                     </div>
                     <div 
                       className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
