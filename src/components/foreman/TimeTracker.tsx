@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { createNotification } from '@/lib/notifications';
@@ -77,8 +77,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [reviewNotes, setReviewNotes] = useState('');
   const [showReviewWorkers, setShowReviewWorkers] = useState(false);
   
-  // Manual entry modal
+  // Manual entry modal - WITH WIZARD STEP STATE
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualStep, setManualStep] = useState(1); // Wizard step: 1=Component, 2=Time, 3=People, 4=Notes&Photos
   const [manualComponent, setManualComponent] = useState('');
   const [manualDate, setManualDate] = useState(getLocalDateString());
   const [manualHours, setManualHours] = useState('0');
@@ -560,6 +561,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       toast.success(`Manual entry saved: ${hours.toFixed(2)} hours${photoText}`);
       setEntryMode('none');
+      setManualStep(1); // Reset wizard
       setManualComponent('');
       setManualComponentSearch('');
       setManualDate(getLocalDateString());
@@ -1211,12 +1213,13 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </DialogContent>
       </Dialog>
 
-      {/* Manual Entry Modal */}
+      {/* Manual Entry Wizard Modal */}
       <Dialog 
         open={entryMode === 'manual'} 
         onOpenChange={(open) => {
           if (!open) {
             setEntryMode('none');
+            setManualStep(1);
             setManualComponent('');
             setManualComponentSearch('');
             setManualDate(getLocalDateString());
@@ -1233,377 +1236,497 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Manual Time Entry</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Manual Time Entry</span>
+              <span className="text-sm font-normal text-muted-foreground">Step {manualStep} of 4</span>
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Date - Small & Less Intrusive at Top */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-3">
-              <Label htmlFor="manual-date" className="text-xs">Date:</Label>
-              <Input
-                id="manual-date"
-                type="date"
-                value={manualDate}
-                onChange={(e) => setManualDate(e.target.value)}
-                max={getLocalDateString()}
-                className="h-8 text-xs w-auto"
+          
+          {/* Progress Indicator */}
+          <div className="flex gap-1 mb-4">
+            {[1, 2, 3, 4].map((step) => (
+              <div
+                key={step}
+                className={`h-1.5 flex-1 rounded-full transition-all ${
+                  step <= manualStep ? 'bg-primary' : 'bg-muted'
+                }`}
               />
-            </div>
-            
-            {/* Component Selection with Searchable Dropdown */}
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Component *</Label>
-              <div className="space-y-2">
-                {/* Search Input with Icon and Dropdown */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
+            ))}
+          </div>
+
+          <div className="space-y-4">
+            {/* STEP 1: Component Selection */}
+            {manualStep === 1 && (
+              <>
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+                    <ListChecks className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">Select Component</h3>
+                  <p className="text-sm text-muted-foreground">Choose the component you worked on</p>
+                </div>
+
+                {/* Date Selection */}
+                <div className="space-y-2">
+                  <Label htmlFor="manual-date">Date</Label>
                   <Input
-                    type="text"
-                    placeholder="Search or select component..."
-                    value={manualComponentSearch}
-                    onChange={(e) => {
-                      setManualComponentSearch(e.target.value);
-                      setShowManualComponentDropdown(true);
-                    }}
-                    onFocus={() => setShowManualComponentDropdown(true)}
-                    className="h-12 text-base pl-10 pr-10"
+                    id="manual-date"
+                    type="date"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    max={getLocalDateString()}
+                    className="h-11"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowManualComponentDropdown(!showManualComponentDropdown)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 z-10"
-                  >
-                    {showManualComponentDropdown ? (
-                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    )}
-                  </button>
                 </div>
 
-                {/* Dropdown List - Show when open or when searching */}
-                {showManualComponentDropdown && (
-                  <div className="border rounded-lg max-h-[240px] overflow-y-auto bg-card shadow-lg">
-                    {components
-                      .filter((comp) => 
-                        manualComponentSearch === '' || 
-                        comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                        comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
-                      )
-                      .map((comp) => (
-                        <button
-                          key={comp.id}
-                          type="button"
-                          onClick={() => {
-                            setManualComponent(comp.id);
-                            setManualComponentSearch('');
-                            setShowManualComponentDropdown(false);
-                          }}
-                          className="w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0"
-                        >
-                          <p className="font-medium">{comp.name}</p>
-                          {comp.description && (
-                            <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
-                          )}
-                        </button>
-                      ))}
-                    {components.filter((comp) => 
-                      manualComponentSearch === '' || 
-                      comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                      comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
-                    ).length === 0 && (
-                      <div className="p-4 text-center text-sm text-muted-foreground">
-                        No components found
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Selected Component Display */}
-                {manualComponent && !manualComponentSearch && !showManualComponentDropdown && (
-                  <div className="flex items-center justify-between p-3 bg-primary/10 border-2 border-primary rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Selected:</span>
-                      <Badge variant="default">
-                        {components.find(c => c.id === manualComponent)?.name}
-                      </Badge>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setManualComponent('');
-                        setShowManualComponentDropdown(true);
-                      }}
-                      className="h-8 text-xs"
-                    >
-                      Change
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Time Scroll Wheels - Larger for Mobile */}
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Time Worked *</Label>
-              <div className="grid grid-cols-2 gap-4">
+                {/* Component Selection with Searchable Dropdown */}
                 <div className="space-y-2">
-                  <Label htmlFor="manual-hours" className="text-xs text-muted-foreground text-center block">Hours</Label>
-                  <Select value={manualHours} onValueChange={setManualHours}>
-                    <SelectTrigger id="manual-hours" className="text-center text-3xl font-mono h-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[200px]">
-                      {[...Array(25)].map((_, i) => (
-                        <SelectItem key={i} value={i.toString()} className="text-center text-xl py-3">
-                          {i.toString().padStart(2, '0')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="manual-minutes" className="text-xs text-muted-foreground text-center block">Minutes</Label>
-                  <Select value={manualMinutes} onValueChange={setManualMinutes}>
-                    <SelectTrigger id="manual-minutes" className="text-center text-3xl font-mono h-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[200px]">
-                      {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => (
-                        <SelectItem key={min} value={min.toString()} className="text-center text-xl py-3">
-                          {min.toString().padStart(2, '0')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-            
-            {/* Workers Selection - Default and Collapsible */}
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Workers</Label>
-              
-              {/* Toggle Buttons */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={manualMode === 'workers' ? 'default' : 'outline'}
-                  onClick={() => setManualMode('workers')}
-                  className="h-12"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Select Workers
-                </Button>
-                <Button
-                  type="button"
-                  variant={manualMode === 'count' ? 'default' : 'outline'}
-                  onClick={() => setManualMode('count')}
-                  className="h-12"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Crew Count
-                </Button>
-              </div>
-
-              {/* Content Based on Mode */}
-              {manualMode === 'workers' ? (
-                <div className="space-y-2">
-                  {workers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/30">
-                      No workers available. Office staff can add workers.
-                    </p>
-                  ) : (
-                    <>
-                      {/* Toggle Button */}
-                      <Button
+                  <Label className="text-base font-semibold">Component *</Label>
+                  <div className="space-y-2">
+                    {/* Search Input with Icon and Dropdown */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
+                      <Input
+                        type="text"
+                        placeholder="Search or select component..."
+                        value={manualComponentSearch}
+                        onChange={(e) => {
+                          setManualComponentSearch(e.target.value);
+                          setShowManualComponentDropdown(true);
+                        }}
+                        onFocus={() => setShowManualComponentDropdown(true)}
+                        className="h-12 text-base pl-10 pr-10"
+                      />
+                      <button
                         type="button"
-                        variant="outline"
-                        onClick={() => setShowManualWorkers(!showManualWorkers)}
-                        className="w-full h-12 justify-between text-base"
+                        onClick={() => setShowManualComponentDropdown(!showManualComponentDropdown)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 z-10"
                       >
-                        <span>
-                          {manualSelectedWorkers.length > 0 
-                            ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length > 1 ? 's' : ''} selected`
-                            : 'Select workers'}
-                        </span>
-                        {showManualWorkers ? (
-                          <ChevronDown className="w-5 h-5" />
+                        {showManualComponentDropdown ? (
+                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
                         ) : (
-                          <ChevronRight className="w-5 h-5" />
+                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
                         )}
-                      </Button>
+                      </button>
+                    </div>
 
-                      {/* Dropdown List */}
-                      {showManualWorkers && (
-                        <div className="border rounded-lg max-h-[240px] overflow-y-auto">
-                          <div className="p-3 space-y-2">
-                            {workers.map((worker) => (
-                              <div key={worker.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded transition-colors">
-                                <Checkbox
-                                  id={`manual-worker-${worker.id}`}
-                                  checked={manualSelectedWorkers.includes(worker.id)}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
-                                    } else {
-                                      setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
-                                    }
-                                  }}
-                                  className="h-5 w-5"
-                                />
-                                <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer text-base flex-1">
-                                  {worker.name}
-                                </Label>
-                              </div>
-                            ))}
+                    {/* Dropdown List - Show when open or when searching */}
+                    {showManualComponentDropdown && (
+                      <div className="border rounded-lg max-h-[240px] overflow-y-auto bg-card shadow-lg">
+                        {components
+                          .filter((comp) => 
+                            manualComponentSearch === '' || 
+                            comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
+                            comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
+                          )
+                          .map((comp) => (
+                            <button
+                              key={comp.id}
+                              type="button"
+                              onClick={() => {
+                                setManualComponent(comp.id);
+                                setManualComponentSearch('');
+                                setShowManualComponentDropdown(false);
+                              }}
+                              className="w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0"
+                            >
+                              <p className="font-medium">{comp.name}</p>
+                              {comp.description && (
+                                <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
+                              )}
+                            </button>
+                          ))}
+                        {components.filter((comp) => 
+                          manualComponentSearch === '' || 
+                          comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
+                          comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
+                        ).length === 0 && (
+                          <div className="p-4 text-center text-sm text-muted-foreground">
+                            No components found
                           </div>
-                        </div>
-                      )}
-
-                      <div className="bg-muted/30 rounded-lg p-3 text-center">
-                        <p className="text-sm font-medium">
-                          {manualSelectedWorkers.length > 0 ? (
-                            <>
-                              <span className="text-primary text-lg font-bold">{manualSelectedWorkers.length}</span> crew member{manualSelectedWorkers.length !== 1 ? 's' : ''}
-                              <span className="text-xs text-muted-foreground block mt-1">
-                                ({manualSelectedWorkers.length} selected)
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-primary text-lg font-bold">0</span> crew members
-                              <span className="text-xs text-muted-foreground block mt-1">(add workers to track)</span>
-                            </>
-                          )}
-                        </p>
+                        )}
                       </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="border rounded-lg max-h-[240px] overflow-y-auto">
-                    <div className="p-3 space-y-2">
-                      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((count) => (
-                        <div
-                          key={count}
-                          onClick={() => setManualCrewCount(count.toString())}
-                          className={`flex items-center justify-between p-3 hover:bg-muted/50 rounded cursor-pointer transition-colors ${
-                            manualCrewCount === count.toString() ? 'bg-primary/10 border-2 border-primary' : 'border-2 border-transparent'
-                          }`}
-                        >
-                          <span className="text-base font-medium">
-                            {count === 0 ? 'No crew' : `${count} crew`}
-                          </span>
-                          <Badge variant={manualCrewCount === count.toString() ? 'default' : 'outline'}>
-                            {count} total
+                    )}
+
+                    {/* Selected Component Display */}
+                    {manualComponent && !manualComponentSearch && !showManualComponentDropdown && (
+                      <div className="flex items-center justify-between p-3 bg-primary/10 border-2 border-primary rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">Selected:</span>
+                          <Badge variant="default">
+                            {components.find(c => c.id === manualComponent)?.name}
                           </Badge>
                         </div>
-                      ))}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setManualComponent('');
+                            setShowManualComponentDropdown(true);
+                          }}
+                          className="h-8 text-xs"
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* STEP 2: Time Entry */}
+            {manualStep === 2 && (
+              <>
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Clock className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">Enter Time Worked</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {components.find(c => c.id === manualComponent)?.name}
+                  </p>
+                </div>
+
+                {/* Time Scroll Wheels - Larger for Mobile */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="manual-hours" className="text-sm font-semibold text-center block">Hours</Label>
+                      <Select value={manualHours} onValueChange={setManualHours}>
+                        <SelectTrigger id="manual-hours" className="text-center text-4xl font-mono h-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {[...Array(25)].map((_, i) => (
+                            <SelectItem key={i} value={i.toString()} className="text-center text-xl py-3">
+                              {i.toString().padStart(2, '0')}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="manual-minutes" className="text-sm font-semibold text-center block">Minutes</Label>
+                      <Select value={manualMinutes} onValueChange={setManualMinutes}>
+                        <SelectTrigger id="manual-minutes" className="text-center text-4xl font-mono h-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => (
+                            <SelectItem key={min} value={min.toString()} className="text-center text-xl py-3">
+                              {min.toString().padStart(2, '0')}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                  <div className="bg-muted/30 rounded-lg p-3 text-center">
-                    <p className="text-sm font-medium">
-                      <span className="text-primary text-lg font-bold">{parseInt(manualCrewCount)}</span> crew member{parseInt(manualCrewCount) !== 1 ? 's' : ''}
-                      <span className="text-xs text-muted-foreground block mt-1">
-                        {parseInt(manualCrewCount) === 0 ? '(no crew members)' : `(${manualCrewCount} selected)`}
-                      </span>
+
+                  {/* Total Time Display */}
+                  <div className="bg-primary/10 rounded-lg p-4 text-center border-2 border-primary">
+                    <p className="text-sm text-muted-foreground mb-1">Total Time</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {parseInt(manualHours)}.{(parseInt(manualMinutes) / 60 * 100).toFixed(0).padStart(2, '0')} hrs
                     </p>
                   </div>
                 </div>
-              )}
-            </div>
-            
-            {/* Photos */}
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Photos (Optional)</Label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                capture="environment"
-                onChange={handlePhotoSelect}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full h-12"
-              >
-                <Camera className="w-5 h-5 mr-2" />
-                {manualPhotos.length > 0 ? `${manualPhotos.length} Photo${manualPhotos.length > 1 ? 's' : ''} Selected` : 'Add Photos'}
-              </Button>
-              {manualPhotoUrls.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                  {manualPhotoUrls.map((url, index) => (
-                    <div key={index} className="relative aspect-square">
-                      <img
-                        src={url}
-                        alt={`Preview ${index + 1}`}
-                        className="w-full h-full object-cover rounded-lg border"
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removePhoto(index)}
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+              </>
+            )}
 
-            {/* Notes */}
-            <div className="space-y-2">
-              <Label htmlFor="manual-notes" className="text-base font-semibold">Notes (Optional)</Label>
-              <Textarea
-                id="manual-notes"
-                value={manualNotes}
-                onChange={(e) => setManualNotes(e.target.value)}
-                placeholder="Add any notes about this work..."
-                rows={3}
-                className="resize-none text-base"
-              />
-            </div>
+            {/* STEP 3: People/Workers */}
+            {manualStep === 3 && (
+              <>
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Users className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">Who Worked on This?</h3>
+                  <p className="text-sm text-muted-foreground">Select workers or enter crew count</p>
+                </div>
+
+                {/* Workers Selection - Default and Collapsible */}
+                <div className="space-y-3">
+                  {/* Toggle Buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={manualMode === 'workers' ? 'default' : 'outline'}
+                      onClick={() => setManualMode('workers')}
+                      className="h-12"
+                    >
+                      <Users className="w-4 h-4 mr-2" />
+                      Select Workers
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={manualMode === 'count' ? 'default' : 'outline'}
+                      onClick={() => setManualMode('count')}
+                      className="h-12"
+                    >
+                      <Users className="w-4 h-4 mr-2" />
+                      Crew Count
+                    </Button>
+                  </div>
+
+                  {/* Content Based on Mode */}
+                  {manualMode === 'workers' ? (
+                    <div className="space-y-2">
+                      {workers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/30">
+                          No workers available. Office staff can add workers.
+                        </p>
+                      ) : (
+                        <>
+                          {/* Toggle Button */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowManualWorkers(!showManualWorkers)}
+                            className="w-full h-12 justify-between text-base"
+                          >
+                            <span>
+                              {manualSelectedWorkers.length > 0 
+                                ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length > 1 ? 's' : ''} selected`
+                                : 'Select workers'}
+                            </span>
+                            {showManualWorkers ? (
+                              <ChevronDown className="w-5 h-5" />
+                            ) : (
+                              <ChevronRight className="w-5 h-5" />
+                            )}
+                          </Button>
+
+                          {/* Dropdown List */}
+                          {showManualWorkers && (
+                            <div className="border rounded-lg max-h-[240px] overflow-y-auto">
+                              <div className="p-3 space-y-2">
+                                {workers.map((worker) => (
+                                  <div key={worker.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded transition-colors">
+                                    <Checkbox
+                                      id={`manual-worker-${worker.id}`}
+                                      checked={manualSelectedWorkers.includes(worker.id)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
+                                        } else {
+                                          setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
+                                        }
+                                      }}
+                                      className="h-5 w-5"
+                                    />
+                                    <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer text-base flex-1">
+                                      {worker.name}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="bg-muted/30 rounded-lg p-3 text-center">
+                            <p className="text-sm font-medium">
+                              {manualSelectedWorkers.length > 0 ? (
+                                <>
+                                  <span className="text-primary text-lg font-bold">{manualSelectedWorkers.length}</span> crew member{manualSelectedWorkers.length !== 1 ? 's' : ''}
+                                  <span className="text-xs text-muted-foreground block mt-1">
+                                    ({manualSelectedWorkers.length} selected)
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-primary text-lg font-bold">0</span> crew members
+                                  <span className="text-xs text-muted-foreground block mt-1">(add workers to track)</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="border rounded-lg max-h-[240px] overflow-y-auto">
+                        <div className="p-3 space-y-2">
+                          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((count) => (
+                            <div
+                              key={count}
+                              onClick={() => setManualCrewCount(count.toString())}
+                              className={`flex items-center justify-between p-3 hover:bg-muted/50 rounded cursor-pointer transition-colors ${
+                                manualCrewCount === count.toString() ? 'bg-primary/10 border-2 border-primary' : 'border-2 border-transparent'
+                              }`}
+                            >
+                              <span className="text-base font-medium">
+                                {count === 0 ? 'No crew' : `${count} crew`}
+                              </span>
+                              <Badge variant={manualCrewCount === count.toString() ? 'default' : 'outline'}>
+                                {count} total
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-3 text-center">
+                        <p className="text-sm font-medium">
+                          <span className="text-primary text-lg font-bold">{parseInt(manualCrewCount)}</span> crew member{parseInt(manualCrewCount) !== 1 ? 's' : ''}
+                          <span className="text-xs text-muted-foreground block mt-1">
+                            {parseInt(manualCrewCount) === 0 ? '(no crew members)' : `(${manualCrewCount} selected)`}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* STEP 4: Notes & Photos */}
+            {manualStep === 4 && (
+              <>
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+                    <CheckCircle2 className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">Add Details</h3>
+                  <p className="text-sm text-muted-foreground">Photos and notes (optional)</p>
+                </div>
+
+                {/* Photos */}
+                <div className="space-y-2">
+                  <Label className="text-base font-semibold">Photos</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture="environment"
+                    onChange={handlePhotoSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-12"
+                  >
+                    <Camera className="w-5 h-5 mr-2" />
+                    {manualPhotos.length > 0 ? `${manualPhotos.length} Photo${manualPhotos.length > 1 ? 's' : ''} Selected` : 'Add Photos'}
+                  </Button>
+                  {manualPhotoUrls.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {manualPhotoUrls.map((url, index) => (
+                        <div key={index} className="relative aspect-square">
+                          <img
+                            src={url}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg border"
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => removePhoto(index)}
+                            className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label htmlFor="manual-notes" className="text-base font-semibold">Notes</Label>
+                  <Textarea
+                    id="manual-notes"
+                    value={manualNotes}
+                    onChange={(e) => setManualNotes(e.target.value)}
+                    placeholder="Add any notes about this work..."
+                    rows={4}
+                    className="resize-none text-base"
+                  />
+                </div>
+              </>
+            )}
             
-            {/* Action Buttons */}
+            {/* Navigation Buttons */}
             <div className="flex gap-3 pt-4 border-t">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setEntryMode('none');
-                  setManualComponent('');
-                  setManualComponentSearch('');
-                  setManualDate(getLocalDateString());
-                  setManualHours('0');
-                  setManualMinutes('0');
-                  setManualMode('workers');
-                  setManualCrewCount('0');
-                  setManualSelectedWorkers([]);
-                  setManualNotes('');
-                  setManualPhotos([]);
-                  setManualPhotoUrls([]);
-                }}
-                disabled={loading}
-                className="flex-1 h-12 text-base"
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={saveManualEntry}
-                disabled={loading || !manualComponent}
-                className="flex-1 h-12 text-base gradient-primary"
-              >
-                {loading ? 'Saving...' : 'Save Entry'}
-              </Button>
+              {/* Back Button - Show on steps 2-4 */}
+              {manualStep > 1 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setManualStep(manualStep - 1)}
+                  disabled={loading}
+                  className="flex-1 h-12 text-base"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back
+                </Button>
+              )}
+              
+              {/* Cancel Button - Show on step 1 */}
+              {manualStep === 1 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setEntryMode('none');
+                    setManualStep(1);
+                    setManualComponent('');
+                    setManualComponentSearch('');
+                    setManualDate(getLocalDateString());
+                    setManualHours('0');
+                    setManualMinutes('0');
+                    setManualMode('workers');
+                    setManualCrewCount('0');
+                    setManualSelectedWorkers([]);
+                    setManualNotes('');
+                    setManualPhotos([]);
+                    setManualPhotoUrls([]);
+                  }}
+                  disabled={loading}
+                  className="flex-1 h-12 text-base"
+                >
+                  Cancel
+                </Button>
+              )}
+              
+              {/* Next Button - Show on steps 1-3 */}
+              {manualStep < 4 && (
+                <Button 
+                  onClick={() => {
+                    // Validation
+                    if (manualStep === 1 && !manualComponent) {
+                      toast.error('Please select a component');
+                      return;
+                    }
+                    if (manualStep === 2 && parseInt(manualHours) === 0 && parseInt(manualMinutes) === 0) {
+                      toast.error('Please enter time worked');
+                      return;
+                    }
+                    setManualStep(manualStep + 1);
+                  }}
+                  disabled={loading || (manualStep === 1 && !manualComponent)}
+                  className="flex-1 h-12 text-base gradient-primary"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              )}
+              
+              {/* Save Button - Show on step 4 */}
+              {manualStep === 4 && (
+                <Button 
+                  onClick={saveManualEntry}
+                  disabled={loading}
+                  className="flex-1 h-12 text-base gradient-primary"
+                >
+                  {loading ? 'Saving...' : 'Save Entry'}
+                  <CheckCircle2 className="w-4 h-4 ml-2" />
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
