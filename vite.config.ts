@@ -8,9 +8,9 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Let the browser determine the WebSocket URL automatically
-      clientPort: undefined,
-      protocol: undefined,
+      // Use the current page protocol and host for WebSocket connection
+      protocol: 'wss',
+      host: typeof window !== 'undefined' ? window.location.hostname : 'localhost',
     },
   },
   plugins: [
