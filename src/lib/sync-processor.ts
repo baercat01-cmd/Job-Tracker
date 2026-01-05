@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { getPendingSyncItems, markSynced, clearSyncedItems, SyncQueueItem } from './offline-db';
 import { isOnline, setStatus } from './offline-manager';
 import { syncTable } from './offline-sync';
+import { resolveAndSync } from './conflict-resolver';
 
 let isProcessing = false;
 let lastProcessTime = 0;
@@ -110,25 +111,22 @@ async function processSyncItem(item: SyncQueueItem): Promise<void> {
   await syncTable(table as any);
 }
 
-// Sync insert operation
+// Sync insert operation with conflict resolution
 async function syncInsert(table: string, data: any, tempId: string): Promise<void> {
   // Remove temp ID if present
   const { id, ...insertData } = data;
   
-  const { data: serverData, error } = await supabase
-    .from(table)
-    .insert(insertData)
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Insert failed: ${error.message}`);
+  // Use conflict resolver to handle potential duplicates
+  const result = await resolveAndSync(table, tempId, insertData, 'insert');
+  
+  if (!result.success) {
+    throw new Error(`Insert failed: ${result.error?.message || 'Unknown error'}`);
   }
 
-  console.log(`[Sync Processor] ✓ Inserted ${table} (temp: ${tempId}, real: ${serverData.id})`);
+  console.log(`[Sync Processor] ✓ Inserted ${table} (temp: ${tempId}, real: ${result.resolvedData?.id})`);
 }
 
-// Sync update operation
+// Sync update operation with conflict resolution
 async function syncUpdate(table: string, updates: any, recordId: string): Promise<void> {
   // Skip if this is a temporary ID (record was created offline)
   if (recordId.startsWith('temp_')) {
@@ -136,13 +134,11 @@ async function syncUpdate(table: string, updates: any, recordId: string): Promis
     return;
   }
 
-  const { error } = await supabase
-    .from(table)
-    .update(updates)
-    .eq('id', recordId);
-
-  if (error) {
-    throw new Error(`Update failed: ${error.message}`);
+  // Use conflict resolver to merge changes intelligently
+  const result = await resolveAndSync(table, recordId, { ...updates, id: recordId }, 'update');
+  
+  if (!result.success) {
+    throw new Error(`Update failed: ${result.error?.message || 'Unknown error'}`);
   }
 
   console.log(`[Sync Processor] ✓ Updated ${table}/${recordId}`);
@@ -171,8 +167,10 @@ async function syncDelete(table: string, recordId: string): Promise<void> {
   console.log(`[Sync Processor] ✓ Deleted ${table}/${recordId}`);
 }
 
-// Auto-sync when coming online
+// Auto-sync when coming online with background retry
 export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
+  let retryTimeout: NodeJS.Timeout | null = null;
+
   const handler = async () => {
     console.log('[Sync Processor] Device came online, starting auto-sync...');
     
@@ -180,7 +178,22 @@ export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     if (isOnline()) {
-      await processSyncQueue(onProgress);
+      try {
+        const result = await processSyncQueue(onProgress);
+        
+        // If some items failed, retry after delay
+        if (result.failed > 0) {
+          console.log(`[Sync Processor] ${result.failed} items failed, will retry in 30s`);
+          retryTimeout = setTimeout(async () => {
+            if (isOnline()) {
+              console.log('[Sync Processor] Retrying failed items...');
+              await processSyncQueue(onProgress);
+            }
+          }, 30000); // Retry after 30 seconds
+        }
+      } catch (error) {
+        console.error('[Sync Processor] Auto-sync error:', error);
+      }
     }
   };
 
@@ -189,6 +202,9 @@ export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
   // Return cleanup function
   return () => {
     window.removeEventListener('online', handler);
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+    }
   };
 }
 
