@@ -78,7 +78,7 @@ export async function initDB(): Promise<IDBDatabase> {
         const syncQueueStore = db.createObjectStore('sync_queue', { keyPath: 'id', autoIncrement: true });
         syncQueueStore.createIndex('table', 'table', { unique: false });
         syncQueueStore.createIndex('timestamp', 'timestamp', { unique: false });
-        syncQueueStore.createIndex('synced', 'synced', { unique: false });
+        // Note: No index on 'synced' because booleans are not valid IndexedDB keys
       }
 
       console.log('[IndexedDB] Database initialized');
@@ -216,7 +216,9 @@ export async function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'timestamp
 }
 
 export async function getPendingSyncItems(): Promise<SyncQueueItem[]> {
-  return getByIndex<SyncQueueItem>('sync_queue', 'synced', false);
+  // Can't use index on boolean field, so get all and filter in memory
+  const allItems = await getAll<SyncQueueItem>('sync_queue');
+  return allItems.filter(item => !item.synced);
 }
 
 export async function markSynced(id: number): Promise<void> {
@@ -244,13 +246,15 @@ export async function clearSyncedItems(): Promise<void> {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction('sync_queue', 'readwrite');
     const store = transaction.objectStore('sync_queue');
-    const index = store.index('synced');
-    const request = index.openCursor(IDBKeyRange.only(true));
+    const request = store.openCursor();
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor) {
-        cursor.delete();
+        // Only delete if synced is true
+        if (cursor.value.synced === true) {
+          cursor.delete();
+        }
         cursor.continue();
       }
     };
