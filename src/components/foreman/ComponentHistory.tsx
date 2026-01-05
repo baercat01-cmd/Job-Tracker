@@ -57,10 +57,10 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   const [loading, setLoading] = useState(true);
   const [editEntry, setEditEntry] = useState<TimeEntry | null>(null);
   const [editNotes, setEditNotes] = useState('');
-  const [editHours, setEditHours] = useState('0');
   const [editMode, setEditMode] = useState<'count' | 'workers'>('count');
   const [editCrewCount, setEditCrewCount] = useState('1');
   const [editSelectedWorkers, setEditSelectedWorkers] = useState<string[]>([]);
+  const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
   const [showEditWorkers, setShowEditWorkers] = useState(false);
@@ -118,7 +118,6 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   function openEditDialog(entry: TimeEntry) {
     setEditEntry(entry);
     setEditNotes(entry.notes || '');
-    setEditHours((entry.total_hours || 0).toString());
     
     // Set mode based on whether worker names exist
     if (entry.worker_names && entry.worker_names.length > 0) {
@@ -135,31 +134,33 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
       setEditSelectedWorkers([]);
     }
     
-    // Set times - convert UTC to local for datetime-local input
+    // Set date and times separately
     const startDate = new Date(entry.start_time);
     const endDate = new Date(entry.end_time);
     
-    // Format: YYYY-MM-DDTHH:MM (local time)
-    const formatDateTimeLocal = (date: Date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-    };
+    // Date in YYYY-MM-DD format
+    const year = startDate.getFullYear();
+    const month = String(startDate.getMonth() + 1).padStart(2, '0');
+    const day = String(startDate.getDate()).padStart(2, '0');
+    setEditDate(`${year}-${month}-${day}`);
     
-    setEditStartTime(formatDateTimeLocal(startDate));
-    setEditEndTime(formatDateTimeLocal(endDate));
+    // Time in HH:MM format (24-hour)
+    const startHours = String(startDate.getHours()).padStart(2, '0');
+    const startMinutes = String(startDate.getMinutes()).padStart(2, '0');
+    setEditStartTime(`${startHours}:${startMinutes}`);
+    
+    const endHours = String(endDate.getHours()).padStart(2, '0');
+    const endMinutes = String(endDate.getMinutes()).padStart(2, '0');
+    setEditEndTime(`${endHours}:${endMinutes}`);
   }
 
   function closeEditDialog() {
     setEditEntry(null);
     setEditNotes('');
-    setEditHours('0');
     setEditMode('count');
     setEditCrewCount('1');
     setEditSelectedWorkers([]);
+    setEditDate('');
     setEditStartTime('');
     setEditEndTime('');
     setShowEditWorkers(false);
@@ -168,27 +169,26 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   async function saveTimeEntry() {
     if (!editEntry) return;
 
-    // Validate times
-    if (!editStartTime || !editEndTime) {
-      toast.error('Please enter both start and end times');
+    // Validate inputs
+    if (!editDate || !editStartTime || !editEndTime) {
+      toast.error('Please enter date and both times');
       return;
     }
 
-    const startDate = new Date(editStartTime);
-    const endDate = new Date(editEndTime);
+    // Combine date and time to create full datetime
+    const startDateTime = new Date(`${editDate}T${editStartTime}`);
+    const endDateTime = new Date(`${editDate}T${editEndTime}`);
     
-    if (endDate <= startDate) {
+    if (endDateTime <= startDateTime) {
       toast.error('End time must be after start time');
       return;
     }
 
-    // Calculate total hours from the time range
-    const calculatedHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
-    const hours = parseFloat(editHours);
+    // Calculate total hours automatically
+    const totalHours = (endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60);
     
-    // Validate hours
-    if (isNaN(hours) || hours <= 0) {
-      toast.error('Please enter valid hours');
+    if (totalHours <= 0) {
+      toast.error('Invalid time range');
       return;
     }
 
@@ -219,11 +219,11 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
       const { error } = await supabase
         .from('time_entries')
         .update({ 
-          total_hours: hours,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          total_hours: Math.round(totalHours * 100) / 100,
           crew_count: finalCrewCount,
           worker_names: finalWorkerNames,
-          start_time: startDate.toISOString(),
-          end_time: endDate.toISOString(),
           notes: editNotes || null 
         })
         .eq('id', editEntry.id);
@@ -641,65 +641,66 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
               </p>
             </div>
 
-            {/* Current Time Display */}
-            <div className="grid grid-cols-3 gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+            {/* Time Summary - Auto-calculated */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
               <div className="text-center">
                 <p className="text-xs text-muted-foreground mb-1">Duration</p>
-                <p className="text-sm font-bold">
-                  {editStartTime && editEndTime ? 
-                    ((new Date(editEndTime).getTime() - new Date(editStartTime).getTime()) / (1000 * 60 * 60)).toFixed(2)
+                <p className="text-2xl font-bold text-primary">
+                  {editDate && editStartTime && editEndTime ? 
+                    (() => {
+                      const start = new Date(`${editDate}T${editStartTime}`);
+                      const end = new Date(`${editDate}T${editEndTime}`);
+                      const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+                      return hours > 0 ? hours.toFixed(2) : '0.00';
+                    })()
                     : '0.00'
-                  } hrs
+                  }
                 </p>
+                <p className="text-xs text-muted-foreground">hours</p>
               </div>
-              <div className="text-center border-x">
+              <div className="text-center border-l">
                 <p className="text-xs text-muted-foreground mb-1">Original</p>
-                <p className="text-sm font-bold">{editEntry?.total_hours?.toFixed(2) || '0.00'} hrs</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground mb-1">Crew</p>
-                <p className="text-sm font-bold">
-                  {editMode === 'workers' ? editSelectedWorkers.length : editCrewCount}
+                <p className="text-2xl font-bold text-muted-foreground">
+                  {editEntry?.total_hours?.toFixed(2) || '0.00'}
                 </p>
+                <p className="text-xs text-muted-foreground">hours</p>
               </div>
             </div>
 
-            {/* Start Time */}
+            {/* Date */}
             <div className="space-y-2">
-              <Label htmlFor="edit-start-time">Start Time</Label>
+              <Label htmlFor="edit-date">Date</Label>
               <Input
-                id="edit-start-time"
-                type="datetime-local"
-                value={editStartTime}
-                onChange={(e) => setEditStartTime(e.target.value)}
+                id="edit-date"
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
                 className="h-11"
               />
             </div>
 
-            {/* End Time */}
-            <div className="space-y-2">
-              <Label htmlFor="edit-end-time">End Time</Label>
-              <Input
-                id="edit-end-time"
-                type="datetime-local"
-                value={editEndTime}
-                onChange={(e) => setEditEndTime(e.target.value)}
-                className="h-11"
-              />
-            </div>
-
-            {/* Total Hours */}
-            <div className="space-y-2">
-              <Label htmlFor="edit-hours">Total Hours</Label>
-              <Input
-                id="edit-hours"
-                type="number"
-                step="0.1"
-                min="0.1"
-                value={editHours}
-                onChange={(e) => setEditHours(e.target.value)}
-                className="h-11"
-              />
+            {/* Time Inputs - Larger and More Prominent */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-start-time" className="text-sm font-semibold">Start Time</Label>
+                <Input
+                  id="edit-start-time"
+                  type="time"
+                  value={editStartTime}
+                  onChange={(e) => setEditStartTime(e.target.value)}
+                  className="h-14 text-xl font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-end-time" className="text-sm font-semibold">End Time</Label>
+                <Input
+                  id="edit-end-time"
+                  type="time"
+                  value={editEndTime}
+                  onChange={(e) => setEditEndTime(e.target.value)}
+                  className="h-14 text-xl font-mono"
+                />
+              </div>
             </div>
 
             {/* Crew Mode Toggle */}
