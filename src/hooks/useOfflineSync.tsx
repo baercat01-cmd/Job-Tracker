@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { initializeSync, syncAllData, subscribeToTable } from '@/lib/offline-sync';
+import { processSyncQueue, enableAutoSync, SyncProgress } from '@/lib/sync-processor';
 import { useConnectionStatus } from '@/lib/offline-manager';
+import { getPendingSyncItems } from '@/lib/offline-db';
 
 interface SyncStatus {
   isSyncing: boolean;
   lastSyncTime: number | null;
   error: string | null;
+  pendingCount: number;
+  syncProgress?: SyncProgress;
 }
 
 export function useOfflineSync() {
@@ -15,8 +19,15 @@ export function useOfflineSync() {
     isSyncing: false,
     lastSyncTime: null,
     error: null,
+    pendingCount: 0,
   });
   const connectionStatus = useConnectionStatus();
+
+  // Check pending items count
+  const updatePendingCount = async () => {
+    const pending = await getPendingSyncItems();
+    setStatus((prev) => ({ ...prev, pendingCount: pending.length }));
+  };
 
   // Initialize sync on mount
   useEffect(() => {
@@ -28,31 +39,60 @@ export function useOfflineSync() {
       setStatus((prev) => ({ ...prev, isSyncing: true, error: null }));
 
       try {
+        // First, process any pending offline changes
+        await processSyncQueue((progress) => {
+          if (mounted) {
+            setStatus((prev) => ({ ...prev, syncProgress: progress }));
+          }
+        });
+
+        // Then sync all data from server
         await initializeSync();
         
         if (mounted) {
-          setStatus({
+          await updatePendingCount();
+          setStatus((prev) => ({
+            ...prev,
             isSyncing: false,
             lastSyncTime: Date.now(),
             error: null,
-          });
+            syncProgress: undefined,
+          }));
         }
       } catch (error) {
         console.error('[Sync Hook] Initial sync failed:', error);
         if (mounted) {
-          setStatus({
+          setStatus((prev) => ({
+            ...prev,
             isSyncing: false,
             lastSyncTime: null,
             error: error instanceof Error ? error.message : 'Sync failed',
-          });
+            syncProgress: undefined,
+          }));
         }
       }
     };
 
     doInitialSync();
 
+    // Enable auto-sync when coming online
+    const cleanup = enableAutoSync((progress) => {
+      if (mounted) {
+        setStatus((prev) => ({ 
+          ...prev, 
+          isSyncing: true,
+          syncProgress: progress 
+        }));
+      }
+    });
+
+    // Update pending count periodically
+    const interval = setInterval(updatePendingCount, 5000);
+
     return () => {
       mounted = false;
+      cleanup();
+      clearInterval(interval);
     };
   }, []);
 
@@ -67,18 +107,29 @@ export function useOfflineSync() {
     setStatus((prev) => ({ ...prev, isSyncing: true, error: null }));
 
     try {
+      // Process offline changes first
+      await processSyncQueue((progress) => {
+        setStatus((prev) => ({ ...prev, syncProgress: progress }));
+      });
+
+      // Then sync all data from server
       await syncAllData();
-      setStatus({
+      
+      await updatePendingCount();
+      setStatus((prev) => ({
+        ...prev,
         isSyncing: false,
         lastSyncTime: Date.now(),
         error: null,
-      });
+        syncProgress: undefined,
+      }));
     } catch (error) {
       console.error('[Sync Hook] Manual sync failed:', error);
       setStatus((prev) => ({
         ...prev,
         isSyncing: false,
         error: error instanceof Error ? error.message : 'Sync failed',
+        syncProgress: undefined,
       }));
     }
   };
