@@ -1,5 +1,6 @@
 // Detailed sync status component showing queue and photo upload progress
 
+import { useEffect, useState } from 'react';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { useConnectionStatus } from '@/lib/offline-manager';
@@ -18,20 +19,37 @@ export function SyncStatusDetailed() {
   const { isSyncing, pendingCount, syncProgress, sync } = useOfflineSync();
   const { queueStatus, isUploading, retryFailed, processQueue } = usePhotoUpload();
   const connectionStatus = useConnectionStatus();
+  const [shouldShow, setShouldShow] = useState(false);
 
   const totalPending = pendingCount + queueStatus.pending + queueStatus.failed;
   const hasIssues = queueStatus.failed > 0;
   const isActive = isSyncing || isUploading;
 
-  // Hide button when:
-  // 1. No pending items AND not actively syncing/uploading
-  // 2. Initial sync phase with no progress yet
-  if (!isActive && totalPending === 0) {
-    return null;
-  }
+  // Debounce visibility to prevent flashing
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
 
-  // Don't show during initial mount to prevent flash
-  if (isActive && !syncProgress && totalPending === 0) {
+    // Should show if:
+    // - Actively syncing/uploading OR
+    // - Has pending items OR
+    // - Has failed items
+    const shouldBeVisible = isActive || totalPending > 0;
+
+    if (shouldBeVisible) {
+      // Show immediately when there's work to do
+      setShouldShow(true);
+    } else {
+      // Hide after 2 second delay to prevent flashing
+      timeout = setTimeout(() => {
+        setShouldShow(false);
+      }, 2000);
+    }
+
+    return () => clearTimeout(timeout);
+  }, [isActive, totalPending]);
+
+  // Don't render at all when hidden
+  if (!shouldShow) {
     return null;
   }
 

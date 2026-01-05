@@ -22,11 +22,22 @@ export function usePhotoUpload() {
   const [queueStatus, setQueueStatus] = useState(getPhotoQueueStatus());
   const connectionStatus = useConnectionStatus();
 
-  // Update queue status periodically
+  // Update queue status periodically (30 seconds to reduce UI churn)
   useEffect(() => {
     const interval = setInterval(() => {
-      setQueueStatus(getPhotoQueueStatus());
-    }, 2000);
+      const newStatus = getPhotoQueueStatus();
+      // Only update if status actually changed
+      setQueueStatus((prev) => {
+        if (
+          prev.pending !== newStatus.pending ||
+          prev.failed !== newStatus.failed ||
+          prev.completed !== newStatus.completed
+        ) {
+          return newStatus;
+        }
+        return prev;
+      });
+    }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
   }, []);
