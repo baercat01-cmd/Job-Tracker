@@ -25,9 +25,10 @@ import {
   Briefcase,
   MapPin,
   FileText,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job } from '@/types';
+import type { Job, Component } from '@/types';
 
 interface TimeDropdownPickerProps {
   value: string; // "HH:MM" format
@@ -155,7 +156,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     startTime: '06:00',
     endTime: '17:00',
   });
-  const [jobType, setJobType] = useState<'existing' | 'misc'>('existing');
+  const [jobType, setJobType] = useState<'existing' | 'misc' | 'component'>('existing');
   const [miscJobData, setMiscJobData] = useState({
     name: '',
     address: '',
@@ -165,6 +166,15 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     notes: '',
   });
   const [miscJobsId, setMiscJobsId] = useState<string | null>(null);
+  const [components, setComponents] = useState<Component[]>([]);
+  const [componentData, setComponentData] = useState({
+    jobId: '',
+    componentId: '',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '06:00',
+    endTime: '17:00',
+    notes: '',
+  });
 
   useEffect(() => {
     loadJobs();
@@ -215,6 +225,47 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
       setJobs(sortedJobs);
     } catch (error) {
       console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function loadComponents(jobId: string) {
+    try {
+      // Get job to find its components
+      const { data: job, error: jobError } = await supabase
+        .from('jobs')
+        .select('components')
+        .eq('id', jobId)
+        .single();
+
+      if (jobError) throw jobError;
+
+      const jobComponents = Array.isArray(job.components) ? job.components : [];
+      
+      if (jobComponents.length > 0) {
+        const activeJobComponents = jobComponents.filter((c: any) => c.isActive);
+        
+        const { data, error } = await supabase
+          .from('components')
+          .select('*')
+          .in('id', activeJobComponents.map((c: any) => c.id))
+          .eq('archived', false);
+
+        if (error) throw error;
+        setComponents(data || []);
+      } else {
+        // Fallback: load all active components
+        const { data, error } = await supabase
+          .from('components')
+          .select('*')
+          .eq('archived', false)
+          .order('name');
+
+        if (error) throw error;
+        setComponents(data || []);
+      }
+    } catch (error) {
+      console.error('Error loading components:', error);
+      setComponents([]);
     }
   }
 
@@ -412,6 +463,82 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     } catch (error: any) {
       console.error('Manual entry error:', error);
       toast.error('Failed to log time');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleComponentEntry() {
+    if (!componentData.jobId) {
+      toast.error('Please select a job');
+      return;
+    }
+
+    if (!componentData.componentId) {
+      toast.error('Please select a component');
+      return;
+    }
+
+    if (!componentData.startTime || !componentData.endTime) {
+      toast.error('Please enter both start and end times');
+      return;
+    }
+
+    // Calculate total hours
+    const start = new Date(`${componentData.date}T${componentData.startTime}`);
+    const end = new Date(`${componentData.date}T${componentData.endTime}`);
+    
+    if (end <= start) {
+      toast.error('End time must be after start time');
+      return;
+    }
+    
+    const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+    setLoading(true);
+
+    try {
+      const startDateTime = new Date(`${componentData.date}T${componentData.startTime}`).toISOString();
+      const endDateTime = new Date(`${componentData.date}T${componentData.endTime}`).toISOString();
+
+      const { error } = await supabase
+        .from('time_entries')
+        .insert({
+          job_id: componentData.jobId,
+          component_id: componentData.componentId, // Component time
+          user_id: userId,
+          start_time: startDateTime,
+          end_time: endDateTime,
+          total_hours: Math.round(totalHours * 4) / 4,
+          crew_count: 1,
+          is_manual: true,
+          is_active: false,
+          notes: componentData.notes || null,
+          worker_names: [],
+        });
+
+      if (error) throw error;
+
+      const job = jobs.find(j => j.id === componentData.jobId);
+      const component = components.find(c => c.id === componentData.componentId);
+      toast.success(`${totalHours.toFixed(2)} hours logged to ${component?.name} on ${job?.name}`);
+      
+      // Reset and close
+      setShowDialog(false);
+      setComponentData({
+        jobId: '',
+        componentId: '',
+        date: new Date().toISOString().split('T')[0],
+        startTime: '06:00',
+        endTime: '17:00',
+        notes: '',
+      });
+      setComponents([]);
+      onSuccess?.();
+      onBack?.();
+    } catch (error: any) {
+      console.error('Component entry error:', error);
+      toast.error('Failed to log component time');
     } finally {
       setLoading(false);
     }
@@ -626,6 +753,15 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               startTime: '06:00',
               endTime: '17:00',
             });
+            setComponentData({
+              jobId: '',
+              componentId: '',
+              date: new Date().toISOString().split('T')[0],
+              startTime: '06:00',
+              endTime: '17:00',
+              notes: '',
+            });
+            setComponents([]);
             onBack?.(); // Go back to jobs page
           }
         }}
@@ -641,7 +777,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
           </DialogHeader>
 
           {/* Job Type Selection */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
+          <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/50 rounded-md">
             <Button
               variant={jobType === 'existing' ? 'secondary' : 'ghost'}
               onClick={() => setJobType('existing')}
@@ -649,7 +785,16 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               className="h-8 text-xs"
             >
               <Briefcase className="w-3 h-3 mr-1.5" />
-              Existing Job
+              Job Time
+            </Button>
+            <Button
+              variant={jobType === 'component' ? 'secondary' : 'ghost'}
+              onClick={() => setJobType('component')}
+              size="sm"
+              className="h-8 text-xs"
+            >
+              <Package className="w-3 h-3 mr-1.5" />
+              Component
             </Button>
             <Button
               variant={jobType === 'misc' ? 'secondary' : 'ghost'}
@@ -783,6 +928,148 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                         {loading ? 'Starting...' : 'Start Timer'}
                       </>
                     )}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Component Time Flow */}
+            {jobType === 'component' && (
+              <>
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-3">
+                  <p className="text-sm text-primary-foreground">
+                    Log time to a specific component. This tracks work separately from job clock-in time.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="component-job" className="text-base font-semibold">Select Job *</Label>
+                  <Select 
+                    value={componentData.jobId} 
+                    onValueChange={(value) => {
+                      setComponentData({ ...componentData, jobId: value, componentId: '' });
+                      loadComponents(value);
+                    }}
+                  >
+                    <SelectTrigger id="component-job" className="h-12">
+                      <SelectValue placeholder="Choose a job..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobs.map((job) => (
+                        <SelectItem key={job.id} value={job.id}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{job.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {job.client_name}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {componentData.jobId && (
+                  <div className="space-y-2">
+                    <Label htmlFor="component-select" className="text-base font-semibold">Select Component *</Label>
+                    {components.length === 0 ? (
+                      <p className="text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg text-center">
+                        No components available for this job. Office staff can assign components.
+                      </p>
+                    ) : (
+                      <Select value={componentData.componentId} onValueChange={(value) => setComponentData({ ...componentData, componentId: value })}>
+                        <SelectTrigger id="component-select" className="h-12">
+                          <SelectValue placeholder="Choose a component..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {components.map((component) => (
+                            <SelectItem key={component.id} value={component.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{component.name}</span>
+                                {component.description && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {component.description}
+                                  </span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
+
+                {componentData.componentId && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="component-date" className="text-base font-semibold">Date *</Label>
+                      <Input
+                        id="component-date"
+                        type="date"
+                        className="h-12"
+                        value={componentData.date}
+                        onChange={(e) => setComponentData({ ...componentData, date: e.target.value })}
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+
+                    <TimeDropdownPicker
+                      label="Start Time"
+                      value={componentData.startTime}
+                      onChange={(time) => setComponentData({ ...componentData, startTime: time })}
+                    />
+
+                    <TimeDropdownPicker
+                      label="End Time"
+                      value={componentData.endTime}
+                      onChange={(time) => setComponentData({ ...componentData, endTime: time })}
+                    />
+
+                    <div className="space-y-2">
+                      <Label htmlFor="component-notes" className="text-base font-semibold">Notes (Optional)</Label>
+                      <Textarea
+                        id="component-notes"
+                        placeholder="Additional notes..."
+                        className="resize-none"
+                        rows={3}
+                        value={componentData.notes}
+                        onChange={(e) => setComponentData({ ...componentData, notes: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDialog(false);
+                      setComponentData({
+                        jobId: '',
+                        componentId: '',
+                        date: new Date().toISOString().split('T')[0],
+                        startTime: '06:00',
+                        endTime: '17:00',
+                        notes: '',
+                      });
+                      setComponents([]);
+                      onBack?.();
+                    }}
+                    className="flex-1 h-12"
+                    disabled={loading}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleComponentEntry}
+                    disabled={loading || !componentData.jobId || !componentData.componentId}
+                    className="flex-1 h-12 gradient-primary"
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    {loading ? 'Logging...' : 'Log Time'}
                   </Button>
                 </div>
               </>
