@@ -99,7 +99,6 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     loadComponents();
     loadWorkers();
     loadLocalTimers();
-    loadTotalJobHours();
     loadTotalComponentHours();
     
     // Start tick interval for live timer updates
@@ -159,28 +158,6 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       setWorkers(data || []);
     } catch (error: any) {
       console.error('Error loading workers:', error);
-    }
-  }
-
-  async function loadTotalJobHours() {
-    try {
-      // Only count job-level clock-in/out entries (not component time)
-      const { data, error } = await supabase
-        .from('time_entries')
-        .select('total_hours, crew_count')
-        .eq('job_id', job.id)
-        .is('component_id', null) // Only job-level clock-in/out time
-        .not('total_hours', 'is', null);
-
-      if (error) throw error;
-
-      const totalManHours = (data || []).reduce((sum, entry) => 
-        sum + ((entry.total_hours || 0) * (entry.crew_count || 1)), 0
-      );
-
-      setTotalJobHours(totalManHours);
-    } catch (error) {
-      console.error('Error loading total job hours:', error);
     }
   }
 
@@ -617,11 +594,11 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     return hours.toFixed(2);
   }
 
-  // Calculate progress
+  // Calculate progress based on component time
   const estimatedHours = job.estimated_hours || 0;
-  const progressPercent = estimatedHours > 0 ? Math.min((totalJobHours / estimatedHours) * 100, 100) : 0;
-  const isOverBudget = totalJobHours > estimatedHours && estimatedHours > 0;
-  const remainingHours = Math.max(estimatedHours - totalJobHours, 0);
+  const progressPercent = estimatedHours > 0 ? Math.min((totalComponentHours / estimatedHours) * 100, 100) : 0;
+  const isOverBudget = totalComponentHours > estimatedHours && estimatedHours > 0;
+  const remainingHours = Math.max(estimatedHours - totalComponentHours, 0);
 
   return (
     <div className="space-y-4">
@@ -630,39 +607,27 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Target className="w-4 h-4 text-primary" />
-            Time Tracking Summary
+            Component Time Tracking
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Job Total Hours */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Total Job Time</span>
-              <span className="text-xs text-muted-foreground">Clock-in/out entries</span>
-            </div>
-            <div className="p-4 bg-primary/10 border-2 border-primary rounded-lg text-center">
-              <p className="text-3xl font-bold text-primary">{totalJobHours.toFixed(1)}</p>
-              <p className="text-xs text-muted-foreground mt-1">hours across all workers</p>
-            </div>
-          </div>
-
           {/* Component Hours */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Component Time</span>
+              <span className="text-sm font-medium">Total Component Time</span>
               <span className="text-xs text-muted-foreground">Task-specific tracking</span>
             </div>
-            <div className="p-4 bg-muted/50 border-2 border-muted rounded-lg text-center">
-              <p className="text-3xl font-bold">{totalComponentHours.toFixed(1)}</p>
+            <div className="p-4 bg-primary/10 border-2 border-primary rounded-lg text-center">
+              <p className="text-3xl font-bold text-primary">{totalComponentHours.toFixed(1)}</p>
               <p className="text-xs text-muted-foreground mt-1">hours on components</p>
             </div>
           </div>
 
-          {/* Project Progress (if estimated hours exist) */}
+          {/* Component Progress (if estimated hours exist) */}
           {estimatedHours > 0 && (
             <div className="pt-3 border-t space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Project Completion</span>
+                <span className="text-muted-foreground">Component Progress</span>
                 <span className={`font-bold text-lg ${
                   isOverBudget ? 'text-destructive' : 'text-primary'
                 }`}>
@@ -672,8 +637,8 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
               <Progress value={progressPercent} className="h-3" />
               <div className="grid grid-cols-2 gap-3 text-center text-sm">
                 <div className="p-2 bg-muted/30 rounded">
-                  <p className="text-lg font-bold">{totalJobHours.toFixed(1)}</p>
-                  <p className="text-xs text-muted-foreground">Logged</p>
+                  <p className="text-lg font-bold">{totalComponentHours.toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground">Component Hours</p>
                 </div>
                 <div className="p-2 bg-muted/30 rounded">
                   <p className="text-lg font-bold">{estimatedHours.toFixed(1)}</p>
@@ -684,7 +649,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                 <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-2 text-center">
                   <p className="text-xs text-destructive font-medium flex items-center justify-center gap-1">
                     <TrendingUp className="w-3 h-3" />
-                    Over budget by {(totalJobHours - estimatedHours).toFixed(1)}h
+                    Over budget by {(totalComponentHours - estimatedHours).toFixed(1)}h
                   </p>
                 </div>
               ) : (
