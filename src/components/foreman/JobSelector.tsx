@@ -31,12 +31,11 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
 
   async function loadJobs() {
     try {
-      // Only show active jobs to crew members, exclude internal jobs (like Shop)
+      // Only show active jobs to crew members
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active')
-        .eq('is_internal', false) // Exclude internal jobs from job cards
         .order('created_at', { ascending: false });
 
       if (jobsError) throw jobsError;
@@ -58,8 +57,20 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
         jobManHours.set(entry.job_id, current + manHours);
       });
 
+      // Filter out Misc Jobs and sort: regular jobs first, then internal jobs
+      const filteredJobs = (jobsData || [])
+        .filter(job => job.name !== 'Misc Jobs')
+        .sort((a, b) => {
+          // If both are internal or both are not, keep original order
+          if (a.is_internal === b.is_internal) {
+            return 0;
+          }
+          // Regular jobs (is_internal = false) come first
+          return a.is_internal ? 1 : -1;
+        });
+
       // Add progress data to each job
-      const jobsWithProgress: JobWithProgress[] = (jobsData || []).map((job) => {
+      const jobsWithProgress: JobWithProgress[] = filteredJobs.map((job) => {
         const totalManHours = jobManHours.get(job.id) || 0;
         const estimatedHours = job.estimated_hours || 0;
         const actualProgressPercent = estimatedHours > 0 

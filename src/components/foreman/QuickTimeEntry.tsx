@@ -198,7 +198,21 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
         .order('name');
 
       if (error) throw error;
-      setJobs(data || []);
+      
+      // Filter out Misc Jobs from selection list
+      const filteredJobs = (data || []).filter(job => job.name !== 'Misc Jobs');
+      
+      // Sort: regular jobs first, then internal jobs at bottom
+      const sortedJobs = filteredJobs.sort((a, b) => {
+        // If both are internal or both are not, sort by name
+        if (a.is_internal === b.is_internal) {
+          return a.name.localeCompare(b.name);
+        }
+        // Regular jobs (is_internal = false) come first
+        return a.is_internal ? 1 : -1;
+      });
+      
+      setJobs(sortedJobs);
     } catch (error) {
       console.error('Error loading jobs:', error);
     }
