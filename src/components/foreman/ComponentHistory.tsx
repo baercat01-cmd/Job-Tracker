@@ -553,7 +553,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                         className="border rounded-md p-2.5 bg-muted/30 hover:bg-muted/50 transition-colors"
                       >
                         <div className="flex items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-2 flex-1">
+                          <div className="flex items-center gap-2 flex-1 flex-wrap">
                             <span className="text-muted-foreground">
                               {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
                             </span>
@@ -561,6 +561,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                             <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(1)} hrs</span>
                             <span className="text-muted-foreground">•</span>
                             <span className="text-muted-foreground">{entry.crew_count} crew</span>
+                            <span className="text-muted-foreground">•</span>
+                            <span className="text-muted-foreground">by {entry.user_profiles?.username || 'Unknown'}</span>
                           </div>
                           {entry.user_id === userId && (
                             <div className="flex gap-1">
