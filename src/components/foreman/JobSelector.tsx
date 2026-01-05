@@ -31,11 +31,12 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
 
   async function loadJobs() {
     try {
-      // Only show active jobs to crew members
+      // Only show active jobs to crew members, exclude internal jobs (like Shop)
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active')
+        .eq('is_internal', false) // Exclude internal jobs from job cards
         .order('created_at', { ascending: false });
 
       if (jobsError) throw jobsError;
