@@ -122,7 +122,7 @@ export function DailyLogsView() {
                       <div className="flex items-center justify-center text-primary mb-1">
                         <Clock className="w-4 h-4" />
                       </div>
-                      <p className="text-lg font-bold">{totalHours.toFixed(1)}</p>
+                      <p className="text-lg font-bold">{totalHours.toFixed(2)}</p>
                       <p className="text-xs text-muted-foreground">Hours</p>
                     </div>
                     <div className="text-center">

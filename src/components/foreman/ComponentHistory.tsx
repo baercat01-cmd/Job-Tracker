@@ -409,7 +409,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 </div>
                 <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                   <p className="text-3xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                    {(componentStats.totalManHours + clockInStats.totalManHours).toFixed(1)}
+                    {(componentStats.totalManHours + clockInStats.totalManHours).toFixed(2)}
                   </p>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Man-Hours</p>
                 </div>
@@ -425,7 +425,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                       Component Time
                     </h3>
                     <Badge variant="default" className="bg-primary">
-                      {componentStats.totalManHours.toFixed(1)} hrs
+                      {componentStats.totalManHours.toFixed(2)} hrs
                     </Badge>
                   </div>
                   {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
@@ -570,7 +570,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                       Clock-In Time
                     </h3>
                     <Badge variant="secondary" className="text-xs">
-                      {clockInStats.totalManHours.toFixed(1)} hrs
+                      {clockInStats.totalManHours.toFixed(2)} hrs
                     </Badge>
                   </div>
 
@@ -586,7 +586,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                               {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
                             </span>
                             <span className="text-muted-foreground">•</span>
-                            <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(1)} hrs</span>
+                            <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)} hrs</span>
                             <span className="text-muted-foreground">•</span>
                             <span className="text-muted-foreground">{entry.crew_count} crew</span>
                             <span className="text-muted-foreground">•</span>

@@ -339,10 +339,10 @@ export function DataExport() {
             doc.setFontSize(8);
             doc.text((entry.components?.name || 'Unknown').substring(0, 25), col1, yPosition);
             doc.text((entry.user_profiles?.username || 'Unknown').substring(0, 15), col2, yPosition);
-            doc.text((entry.total_hours || 0).toFixed(1), col3, yPosition);
+            doc.text((entry.total_hours || 0).toFixed(2), col3, yPosition);
             doc.text((entry.crew_count || 1).toString(), col4, yPosition);
             doc.setFont('helvetica', 'bold');
-            doc.text(crewHours.toFixed(1), col5, yPosition);
+            doc.text(crewHours.toFixed(2), col5, yPosition);
             doc.setFont('helvetica', 'normal');
             doc.text(entry.is_manual ? 'Manual' : 'Timer', col6, yPosition);
             yPosition += 15;
@@ -449,7 +449,7 @@ export function DataExport() {
             log.time_summary.forEach(entry => {
               checkPageBreak(12);
               const crewHours = parseFloat(entry.hours) * entry.crew_count;
-              doc.text(`• ${entry.component_name || entry.name}: ${entry.hours} hrs × ${entry.crew_count} crew = ${crewHours.toFixed(1)} man-hrs`, margin + 15, yPosition);
+              doc.text(`• ${entry.component_name || entry.name}: ${entry.hours} hrs × ${entry.crew_count} crew = ${crewHours.toFixed(2)} man-hrs`, margin + 15, yPosition);
               yPosition += 12;
             });
             yPosition += 3;
@@ -622,7 +622,7 @@ export function DataExport() {
           ${log.time_summary && log.time_summary.length > 0 ? `
             <p><strong>Time Summary:</strong></p>
             <ul>
-              ${log.time_summary.map(t => `<li>${t.component_name || t.name}: ${t.hours} hours (${t.crew_count} crew = ${(parseFloat(t.hours) * t.crew_count).toFixed(1)} crew hours)</li>`).join('')}
+              ${log.time_summary.map(t => `<li>${t.component_name || t.name}: ${t.hours} hours (${t.crew_count} crew = ${(parseFloat(t.hours) * t.crew_count).toFixed(2)} crew hours)</li>`).join('')}
             </ul>
           ` : ''}
 
@@ -705,9 +705,9 @@ export function DataExport() {
                       <tr>
                         <td>${entry.components?.name || 'Unknown'}</td>
                         <td>${entry.user_profiles?.username || 'Unknown'}</td>
-                        <td>${(entry.total_hours || 0).toFixed(1)}</td>
+                        <td>${(entry.total_hours || 0).toFixed(2)}</td>
                         <td>${entry.crew_count || 1}</td>
-                        <td><strong>${crewHours.toFixed(1)}</strong></td>
+                        <td><strong>${crewHours.toFixed(2)}</strong></td>
                         <td>${entry.is_manual ? 'Manual' : 'Timer'}</td>
                         <td style="font-size: 7.5pt;">${details || '—'}</td>
                       </tr>
@@ -876,7 +876,7 @@ export function DataExport() {
         report += `- **Number of Time Entries**: ${totals.entries}\n`;
         report += `- **Actual Hours Logged**: ${totals.hours.toFixed(2)} hours\n`;
         report += `- **Total Crew Hours**: ${totals.crewHours.toFixed(2)} hours\n`;
-        report += `- **Average Crew Size**: ${(totals.crewHours / totals.hours).toFixed(1)} workers\n\n`;
+        report += `- **Average Crew Size**: ${(totals.crewHours / totals.hours).toFixed(2)} workers\n\n`;
       });
 
     report += `---\n\n`;
@@ -922,7 +922,7 @@ export function DataExport() {
           report += `**Time breakdown for the day:**\n`;
           log.time_summary.forEach(entry => {
             const crewHours = parseFloat(entry.hours) * entry.crew_count;
-            report += `- ${entry.component_name || entry.name}: ${entry.hours} hours with ${entry.crew_count} crew (${crewHours.toFixed(1)} crew hours)\n`;
+            report += `- ${entry.component_name || entry.name}: ${entry.hours} hours with ${entry.crew_count} crew (${crewHours.toFixed(2)} crew hours)\n`;
           });
           report += `\n`;
         }

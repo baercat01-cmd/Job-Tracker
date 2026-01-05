@@ -292,7 +292,7 @@ export function TimeEntriesView() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-primary">
-                            {group.totalManHours.toFixed(1)}
+                            {group.totalManHours.toFixed(2)}
                           </p>
                           <p className="text-sm text-muted-foreground">man-hours</p>
                         </div>
@@ -340,7 +340,7 @@ export function TimeEntriesView() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-primary">
-                            {group.totalManHours.toFixed(1)}
+                            {group.totalManHours.toFixed(2)}
                           </p>
                           <p className="text-sm text-muted-foreground">man-hours</p>
                         </div>
@@ -388,7 +388,7 @@ export function TimeEntriesView() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-primary">
-                            {group.totalManHours.toFixed(1)}
+                            {group.totalManHours.toFixed(2)}
                           </p>
                           <p className="text-sm text-muted-foreground">man-hours</p>
                         </div>

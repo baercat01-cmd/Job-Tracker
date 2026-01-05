@@ -326,7 +326,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
     
     if (components.length > 0) {
       summary += `Today the crew worked on ${componentNames}. `;
-      summary += `A total of ${totalHours.toFixed(1)} hours were logged`;
+      summary += `A total of ${totalHours.toFixed(2)} hours were logged`;
       if (crew > 0) {
         summary += ` with ${crew} crew member${crew > 1 ? 's' : ''}`;
       }

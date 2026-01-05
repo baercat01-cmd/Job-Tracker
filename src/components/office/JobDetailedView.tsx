@@ -759,7 +759,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
             <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Hours</p>
-                <p className="text-2xl font-bold">{totalDuration.toFixed(1)}</p>
+                <p className="text-2xl font-bold">{totalDuration.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">Logged Time</p>
               </div>
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -774,7 +774,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
             <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Man-Hours</p>
-                <p className="text-2xl font-bold">{totalManHours.toFixed(1)}</p>
+                <p className="text-2xl font-bold">{totalManHours.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">With Crew</p>
               </div>
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -887,11 +887,11 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="p-4 bg-primary/5 rounded-lg border">
-                <div className="text-3xl font-bold text-primary">{estimatedHours.toFixed(1)}</div>
+                <div className="text-3xl font-bold text-primary">{estimatedHours.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Estimated Hours</p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg border">
-                <div className="text-3xl font-bold">{totalClockInHours.toFixed(1)}</div>
+                <div className="text-3xl font-bold">{totalClockInHours.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Clock-In Hours</p>
               </div>
               <div className={`p-4 rounded-lg border ${
@@ -902,7 +902,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 <div className={`text-3xl font-bold ${
                   isOverBudget ? 'text-destructive' : 'text-success'
                 }`}>
-                  {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(1)}
+                  {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
                   {isOverBudget ? 'Over Budget' : 'Remaining'}
@@ -916,7 +916,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 <span className={`font-bold ${
                   isOverBudget ? 'text-destructive' : 'text-primary'
                 }`}>
-                  {progressPercent.toFixed(1)}%
+                  {progressPercent.toFixed(2)}%
                 </span>
               </div>
               <Progress 
@@ -939,12 +939,12 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
               <div className="text-sm">
                 <p className="text-muted-foreground">Avg Clock-In/Day</p>
                 <p className="font-bold text-lg">
-                  {dateGroups.length > 0 ? (totalClockInHours / dateGroups.length).toFixed(1) : '0.0'}
+                  {dateGroups.length > 0 ? (totalClockInHours / dateGroups.length).toFixed(2) : '0.00'}
                 </p>
               </div>
               <div className="text-sm">
                 <p className="text-muted-foreground">Component Hours</p>
-                <p className="font-bold text-lg">{totalComponentHours.toFixed(1)}</p>
+                <p className="font-bold text-lg">{totalComponentHours.toFixed(2)}</p>
               </div>
             </div>
           </CardContent>
@@ -968,7 +968,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{comp.component_name}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-muted-foreground">{comp.total_man_hours.toFixed(1)} hrs</span>
+                      <span className="text-muted-foreground">{comp.total_man_hours.toFixed(2)} hrs</span>
                       <span className="font-bold text-primary w-12 text-right">{percentage.toFixed(0)}%</span>
                     </div>
                   </div>
@@ -1121,7 +1121,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                             </div>
                             <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                               <p className="text-4xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                                {dateGroup.total_man_hours.toFixed(1)}
+                                {dateGroup.total_man_hours.toFixed(2)}
                               </p>
                               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mt-1">Total Man-Hours</p>
                             </div>
@@ -1159,7 +1159,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                         </div>
                                         <div className="text-right">
                                           <p className="text-lg font-bold text-primary">
-                                            {component.total_man_hours.toFixed(1)}
+                                            {component.total_man_hours.toFixed(2)}
                                           </p>
                                           <p className="text-xs text-muted-foreground">man-hours</p>
                                         </div>
@@ -1212,7 +1212,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                             </div>
                             <div className="text-right">
                               <p className="text-3xl font-bold text-primary">
-                                {componentGroup.total_man_hours.toFixed(1)}
+                                {componentGroup.total_man_hours.toFixed(2)}
                               </p>
                               <p className="text-sm text-muted-foreground">man-hours</p>
                             </div>
@@ -1250,7 +1250,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                         </div>
                                         <div className="text-right">
                                           <p className="text-lg font-bold text-primary">
-                                            {dateSummary.total_man_hours.toFixed(1)}
+                                            {dateSummary.total_man_hours.toFixed(2)}
                                           </p>
                                           <p className="text-xs text-muted-foreground">man-hours</p>
                                         </div>
@@ -1304,19 +1304,19 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                             <div className="text-right flex gap-6">
                               <div>
                                 <p className="text-2xl font-bold text-success">
-                                  {personGroup.clock_in_hours.toFixed(1)}
+                                  {personGroup.clock_in_hours.toFixed(2)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">clock-in hrs</p>
                               </div>
                               <div>
                                 <p className="text-2xl font-bold text-primary">
-                                  {personGroup.component_hours.toFixed(1)}
+                                  {personGroup.component_hours.toFixed(2)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">component hrs</p>
                               </div>
                               <div className="border-l pl-4">
                                 <p className="text-3xl font-bold text-foreground">
-                                  {personGroup.total_man_hours.toFixed(1)}
+                                  {personGroup.total_man_hours.toFixed(2)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">total hrs</p>
                               </div>
@@ -1355,7 +1355,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                         </div>
                                         <div className="text-right">
                                           <p className="text-lg font-bold text-primary">
-                                            {dateSummary.total_man_hours.toFixed(1)}
+                                            {dateSummary.total_man_hours.toFixed(2)}
                                           </p>
                                           <p className="text-xs text-muted-foreground">man-hours</p>
                                         </div>

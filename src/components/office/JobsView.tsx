@@ -115,7 +115,7 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
     setStats((prev) => ({
       ...prev,
       [jobId]: {
-        totalHours: totalClockInHours.toFixed(1),
+        totalHours: totalClockInHours.toFixed(2),
         totalClockInHours: totalClockInHours,
         photosCount: photosData.data?.length || 0,
       },

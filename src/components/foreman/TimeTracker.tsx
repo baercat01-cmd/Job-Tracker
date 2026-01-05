@@ -653,13 +653,13 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                 <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-center">
                   <p className="text-sm text-destructive font-medium flex items-center justify-center gap-1">
                     <TrendingUp className="w-4 h-4" />
-                    Over budget by {(totalClockInHours - estimatedHours).toFixed(1)}h
+                    Over budget by {(totalClockInHours - estimatedHours).toFixed(2)}h
                   </p>
                 </div>
               ) : (
                 <div className="bg-success/10 border border-success/30 rounded-lg p-3 text-center">
                   <p className="text-sm text-success font-medium">
-                    {remainingHours.toFixed(1)}h remaining
+                    {remainingHours.toFixed(2)}h remaining
                   </p>
                 </div>
               )}

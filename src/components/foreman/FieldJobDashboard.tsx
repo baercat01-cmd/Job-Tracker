@@ -241,7 +241,7 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
                 <span className="text-xs font-medium uppercase tracking-wide">Today</span>
               </div>
               <div>
-                <p className="text-3xl font-bold">{todayStats.totalManHours.toFixed(1)}</p>
+                <p className="text-3xl font-bold">{todayStats.totalManHours.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">man-hours</p>
               </div>
               {todayStats.entriesCount > 0 && (
@@ -261,7 +261,7 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
                 <span className="text-xs font-medium uppercase tracking-wide">This Week</span>
               </div>
               <div>
-                <p className="text-3xl font-bold">{weekStats.totalManHours.toFixed(1)}</p>
+                <p className="text-3xl font-bold">{weekStats.totalManHours.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">man-hours</p>
               </div>
               {weekStats.daysWorked > 0 && (
@@ -293,11 +293,11 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
             <Progress value={progressPercent} className="h-3" />
             <div className="grid grid-cols-2 gap-3 text-center text-sm">
               <div className="p-2 bg-muted/30 rounded-lg">
-                <p className="text-lg font-bold">{totalJobHours.toFixed(1)}</p>
+                <p className="text-lg font-bold">{totalJobHours.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">Hours Used</p>
               </div>
               <div className="p-2 bg-muted/30 rounded-lg">
-                <p className="text-lg font-bold">{estimatedHours.toFixed(1)}</p>
+                <p className="text-lg font-bold">{estimatedHours.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">Estimated</p>
               </div>
             </div>
@@ -333,7 +333,7 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {(entry.total_hours * entry.crew_count).toFixed(1)}h
+                        {(entry.total_hours * entry.crew_count).toFixed(2)}h
                       </span>
                       <span className="flex items-center gap-1">
                         <Users className="w-3 h-3" />

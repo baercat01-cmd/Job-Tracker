@@ -155,7 +155,7 @@ export function JobLogsView({ job, onBack, onViewLog }: JobLogsViewProps) {
                 {isOffice && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="w-4 h-4 text-muted-foreground" />
-                    <span><strong>{getTotalHours(log).toFixed(1)}h</strong> logged</span>
+                    <span><strong>{getTotalHours(log).toFixed(2)}h</strong> logged</span>
                     {log.crew_count > 0 && (
                       <>
                         <span className="text-muted-foreground">•</span>

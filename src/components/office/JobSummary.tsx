@@ -261,7 +261,7 @@ export function JobSummary({ job }: JobSummaryProps) {
         <Card>
           <CardContent className="pt-6 text-center">
             <Users className="w-8 h-8 mx-auto mb-2 text-primary" />
-            <p className="text-3xl font-bold">{totalCrewHours.toFixed(1)}</p>
+            <p className="text-3xl font-bold">{totalCrewHours.toFixed(2)}</p>
             <p className="text-sm text-muted-foreground">Total Man-Hours</p>
           </CardContent>
         </Card>
@@ -311,7 +311,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-primary">{user.total_hours.toFixed(1)}</p>
+                      <p className="text-2xl font-bold text-primary">{user.total_hours.toFixed(2)}</p>
                       <p className="text-xs text-muted-foreground">Hours Logged</p>
                     </div>
                   </div>
@@ -328,7 +328,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold">{component.total_hours.toFixed(1)}h</p>
+                          <p className="font-bold">{component.total_hours.toFixed(2)}h</p>
                         </div>
                       </div>
                     ))}
@@ -367,7 +367,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg">{component.total_crew_hours.toFixed(1)}</p>
+                        <p className="font-bold text-lg">{component.total_crew_hours.toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">man-hours</p>
                       </div>
                     </div>
@@ -378,7 +378,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground text-right">
-                      {percentage.toFixed(1)}% of total man-hours
+                      {percentage.toFixed(2)}% of total man-hours
                     </p>
                   </div>
                 );

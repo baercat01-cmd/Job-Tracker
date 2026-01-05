@@ -170,8 +170,8 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
                       )}
                       
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{job.totalManHours.toFixed(1)}h clock-in</span>
-                        <span>{job.estimated_hours.toFixed(1)}h estimated</span>
+                        <span>{job.totalManHours.toFixed(2)}h clock-in</span>
+                        <span>{job.estimated_hours.toFixed(2)}h estimated</span>
                       </div>
                     </div>
                   )}
