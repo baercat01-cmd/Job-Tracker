@@ -60,8 +60,8 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [totalComponentHours, setTotalComponentHours] = useState(0);
   const [totalClockInHours, setTotalClockInHours] = useState(0);
   
-  // Entry mode selection - default to manual
-  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('manual');
+  // Entry mode selection - start with none (show button)
+  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('none');
   
   // Timer start mode and selection
   const [timerMode, setTimerMode] = useState<'count' | 'workers'>('workers');
@@ -670,7 +670,24 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </CardContent>
       </Card>
 
-      {/* Entry mode selection removed - defaulting to manual */}
+      {/* Add Component Button - Show when no mode selected */}
+      {entryMode === 'none' && (
+        <Card className="border-2 border-primary/30 shadow-md">
+          <CardContent className="py-6">
+            <Button
+              onClick={() => setEntryMode('manual')}
+              size="lg"
+              className="w-full h-16 text-lg gradient-primary"
+            >
+              <Plus className="w-6 h-6 mr-2" />
+              Add Component
+            </Button>
+            <p className="text-sm text-muted-foreground text-center mt-3">
+              Track time worked on job components
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Active Timers */}
       {localTimers.map((timer) => (
