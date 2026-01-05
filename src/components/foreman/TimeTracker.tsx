@@ -384,7 +384,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     
     try {
       const totalHours = reviewTimer.totalElapsedMs / (1000 * 60 * 60);
-      const roundedHours = Math.round(totalHours * 100) / 100; // Round to 2 decimals
+      const roundedHours = Math.round(totalHours * 4) / 4; // Round to nearest 0.25 hour
       
       // Determine crew count and worker names based on mode
       let finalCrewCount: number;
@@ -501,7 +501,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         user_id: userId,
         start_time: entryDate.toISOString(),
         end_time: entryDate.toISOString(),
-        total_hours: Math.round(hours * 100) / 100,
+        total_hours: Math.round(hours * 4) / 4,
         crew_count: finalCrewCount,
         is_manual: true,
         is_active: false,

@@ -372,7 +372,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
           user_id: userId,
           start_time: startDateTime,
           end_time: endDateTime,
-          total_hours: Math.round(totalHours * 100) / 100,
+          total_hours: Math.round(totalHours * 4) / 4,
           crew_count: 1,
           is_manual: true,
           is_active: false,
@@ -457,7 +457,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
           user_id: userId,
           start_time: startDateTime,
           end_time: endDateTime,
-          total_hours: Math.round(totalHours * 100) / 100,
+          total_hours: Math.round(totalHours * 4) / 4,
           crew_count: 1,
           is_manual: true,
           is_active: false,
@@ -497,7 +497,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     try {
       const endTime = new Date();
       const totalHours = (endTime.getTime() - new Date(clockedInEntry.start_time).getTime()) / (1000 * 60 * 60);
-      const roundedHours = Math.round(totalHours * 100) / 100;
+      const roundedHours = Math.round(totalHours * 4) / 4;
 
       // Update the time entry
       const { error } = await supabase

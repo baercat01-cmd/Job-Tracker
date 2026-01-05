@@ -221,7 +221,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
         .update({ 
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
-          total_hours: Math.round(totalHours * 100) / 100,
+          total_hours: Math.round(totalHours * 4) / 4,
           crew_count: finalCrewCount,
           worker_names: finalWorkerNames,
           notes: editNotes || null 
