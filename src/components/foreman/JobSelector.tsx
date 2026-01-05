@@ -96,7 +96,8 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
     }
   }
 
-  const filteredJobs = jobs;
+  // Filter out internal jobs from job cards display (but they're still available in time tracking dropdowns)
+  const filteredJobs = jobs.filter(job => !job.is_internal);
 
   return (
     <div className="space-y-4">
