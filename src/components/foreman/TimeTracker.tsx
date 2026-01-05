@@ -795,10 +795,18 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Start New Timer - Show only if timer mode selected */}
       {entryMode === 'timer' && (
-        <Card>
-          <CardHeader className="pb-3">
+        <Card className="border-2 border-primary/30 shadow-md">
+          <CardHeader className="pb-3 bg-gradient-to-r from-primary/10 to-primary/5">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Start Timer</CardTitle>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Component Timer</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Track time by component</p>
+                </div>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
