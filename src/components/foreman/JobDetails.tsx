@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { ArrowLeft, FileText, FolderOpen, MapPin, Package, Bell } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -160,26 +160,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="documents" className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4" />
-            Documents
-          </TabsTrigger>
-          <TabsTrigger value="materials" className="flex items-center gap-2">
-            <Package className="w-4 h-4" />
-            Materials
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="documents">
-          {profile?.id && <DocumentsView job={job} userId={profile.id} />}
-        </TabsContent>
-
-        <TabsContent value="materials">
-          {profile?.id && <MaterialsList job={job} userId={profile.id} />}
-        </TabsContent>
-      </Tabs>
+      {profile?.id && <DocumentsView job={job} userId={profile.id} />}
     </div>
   );
 }
