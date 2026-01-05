@@ -70,7 +70,6 @@ export function PayrollDashboard() {
   const [weekOptions, setWeekOptions] = useState<{ value: string; label: string }[]>([]);
   const [weekData, setWeekData] = useState<WeekData | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<string>('all');
 
   useEffect(() => {
@@ -217,16 +216,6 @@ export function PayrollDashboard() {
       newExpanded.add(userId);
     }
     setExpandedUsers(newExpanded);
-  }
-
-  function toggleDateExpanded(dateKey: string) {
-    const newExpanded = new Set(expandedDates);
-    if (newExpanded.has(dateKey)) {
-      newExpanded.delete(dateKey);
-    } else {
-      newExpanded.add(dateKey);
-    }
-    setExpandedDates(newExpanded);
   }
 
   async function exportWeekToPDF() {
@@ -487,108 +476,81 @@ export function PayrollDashboard() {
                 
                 {expandedUsers.has(user.userId) && (
                   <CardContent className="pt-0">
-                    <div className="border-t pt-4 space-y-2">
-                      {user.dateEntries.map(dateEntry => {
-                        const dateKey = `${user.userId}-${dateEntry.date}`;
-                        return (
-                          <div key={dateKey} className="border rounded-lg">
-                            {/* Date Header - Clickable */}
-                            <div
-                              className="cursor-pointer hover:bg-muted/30 transition-colors p-3 flex items-center justify-between"
-                              onClick={() => toggleDateExpanded(dateKey)}
-                            >
-                              <div className="flex items-center gap-2 flex-1">
-                                {expandedDates.has(dateKey) ? (
-                                  <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                )}
-                                <div className="flex-1">
-                                  <p className="font-bold text-base">
+                    <div className="border-t pt-4">
+                      {/* Spreadsheet Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/30">
+                              <th className="text-left p-2 font-semibold">Date</th>
+                              <th className="text-left p-2 font-semibold">Job</th>
+                              <th className="text-left p-2 font-semibold">Client</th>
+                              <th className="text-left p-2 font-semibold">Start</th>
+                              <th className="text-left p-2 font-semibold">End</th>
+                              <th className="text-right p-2 font-semibold">Hours</th>
+                              <th className="text-center p-2 font-semibold">Type</th>
+                              <th className="text-left p-2 font-semibold">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {user.dateEntries.map((dateEntry, dateIdx) => (
+                              dateEntry.entries.map((entry, entryIdx) => (
+                                <tr 
+                                  key={`${dateIdx}-${entryIdx}`}
+                                  className="border-b hover:bg-muted/20 transition-colors"
+                                >
+                                  <td className="p-2 font-medium">
                                     {new Date(dateEntry.date).toLocaleDateString('en-US', {
-                                      weekday: 'long',
-                                      month: 'long',
+                                      month: 'short',
                                       day: 'numeric',
                                       year: 'numeric',
                                     })}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {dateEntry.entries.length} time entr{dateEntry.entries.length !== 1 ? 'ies' : 'y'}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-right ml-4">
-                                <p className="text-2xl font-bold text-primary">{dateEntry.totalHours.toFixed(2)}h</p>
-                              </div>
-                            </div>
-                            
-                            {/* Expanded Date Entries */}
-                            {expandedDates.has(dateKey) && (
-                              <div className="border-t bg-muted/20 p-3">
-                                <div className="space-y-2">
-                                  {dateEntry.entries.map((entry, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="p-3 bg-card rounded-lg border"
+                                  </td>
+                                  <td className="p-2">{entry.jobName}</td>
+                                  <td className="p-2 text-muted-foreground">{entry.clientName || '-'}</td>
+                                  <td className="p-2 font-mono text-xs">
+                                    {new Date(entry.startTime).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </td>
+                                  <td className="p-2 font-mono text-xs">
+                                    {entry.endTime 
+                                      ? new Date(entry.endTime).toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })
+                                      : '-'
+                                    }
+                                  </td>
+                                  <td className="p-2 text-right font-bold text-primary">
+                                    {entry.totalHours.toFixed(2)}
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <Badge 
+                                      variant={entry.isManual ? 'secondary' : 'default'} 
+                                      className="text-xs"
                                     >
-                                      <div className="flex items-start justify-between gap-3 mb-2">
-                                        <div className="flex-1">
-                                          <p className="font-bold text-sm">{entry.jobName}</p>
-                                          {entry.clientName && (
-                                            <p className="text-xs text-muted-foreground mt-0.5">
-                                              {entry.clientName}
-                                            </p>
-                                          )}
-                                        </div>
-                                        <Badge variant={entry.isManual ? 'secondary' : 'default'} className="text-xs flex-shrink-0">
-                                          {entry.isManual ? 'Manual' : 'Timer'}
-                                        </Badge>
-                                      </div>
-                                      
-                                      <div className="grid grid-cols-3 gap-3 text-sm mb-2">
-                                        <div>
-                                          <span className="text-muted-foreground block text-xs">Start</span>
-                                          <span className="font-medium">
-                                            {new Date(entry.startTime).toLocaleTimeString([], {
-                                              hour: '2-digit',
-                                              minute: '2-digit',
-                                            })}
-                                          </span>
-                                        </div>
-                                        <div>
-                                          <span className="text-muted-foreground block text-xs">End</span>
-                                          <span className="font-medium">
-                                            {entry.endTime 
-                                              ? new Date(entry.endTime).toLocaleTimeString([], {
-                                                  hour: '2-digit',
-                                                  minute: '2-digit',
-                                                })
-                                              : '-'
-                                            }
-                                          </span>
-                                        </div>
-                                        <div className="text-right">
-                                          <span className="text-muted-foreground block text-xs">Hours</span>
-                                          <span className="text-lg font-bold text-primary">
-                                            {entry.totalHours.toFixed(2)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      
-                                      {entry.notes && (
-                                        <div className="pt-2 border-t">
-                                          <p className="text-xs text-muted-foreground">Notes:</p>
-                                          <p className="text-xs mt-1">{entry.notes}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                                      {entry.isManual ? 'Manual' : 'Timer'}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
+                                    {entry.notes || '-'}
+                                  </td>
+                                </tr>
+                              ))
+                            ))}
+                            {/* Total Row */}
+                            <tr className="bg-muted/50 font-bold">
+                              <td className="p-2" colSpan={5}>Total</td>
+                              <td className="p-2 text-right text-primary text-lg">
+                                {user.totalHours.toFixed(2)}
+                              </td>
+                              <td className="p-2" colSpan={2}></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </CardContent>
                 )}
