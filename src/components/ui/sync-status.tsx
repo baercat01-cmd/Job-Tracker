@@ -1,6 +1,5 @@
-// Detailed sync status component showing queue and photo upload progress
+// Minimal sync indicator - only shows during active sync/upload operations
 
-import { useEffect, useState } from 'react';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { useConnectionStatus } from '@/lib/offline-manager';
@@ -8,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Cloud, CloudOff, RefreshCw, Image, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Cloud, CloudOff, RefreshCw, Image } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -20,41 +19,32 @@ export function SyncStatusDetailed() {
   const { queueStatus, isUploading, retryFailed, processQueue } = usePhotoUpload();
   const connectionStatus = useConnectionStatus();
 
-  const totalPending = pendingCount + queueStatus.pending + queueStatus.failed;
-  const hasIssues = queueStatus.failed > 0;
-  const isActive = isSyncing || isUploading;
-
-  // SIMPLIFIED: Only show when actively syncing/uploading
-  // Don't show just because items are pending
-  if (!isActive && !hasIssues) {
+  // ONLY show when actively syncing or uploading - nothing else
+  if (!isSyncing && !isUploading) {
     return null;
   }
 
+  // Simple, minimal indicator - just shows what's happening
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <div
-          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 bg-background/80 backdrop-blur-sm border rounded-full shadow-sm text-xs text-muted-foreground cursor-pointer hover:bg-accent transition-colors"
-        >
-          {isSyncing || isUploading ? (
-            <>
-              <RefreshCw className="w-3 h-3 animate-spin" />
-              <span>Syncing...</span>
-            </>
-          ) : hasIssues ? (
-            <>
-              <AlertCircle className="w-3 h-3 text-warning" />
-              <span>{queueStatus.failed} failed</span>
-            </>
-          ) : null}
-        </div>
-      </PopoverTrigger>
-      <PopoverContent className="w-80" align="end">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span>Sync Status</span>
-              <Badge variant={connectionStatus === 'online' ? 'default' : 'destructive'}>
+    <div className="fixed bottom-4 right-4 z-40">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 hover:bg-primary/20 backdrop-blur-sm border border-primary/20 rounded-full text-xs font-medium text-primary transition-all duration-200 shadow-sm cursor-pointer">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            <span>
+              {isSyncing && isUploading
+                ? 'Syncing'
+                : isSyncing
+                ? 'Syncing'
+                : 'Uploading'}
+            </span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72" align="end">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Sync Status</h4>
+              <Badge variant={connectionStatus === 'online' ? 'default' : 'secondary'} className="text-xs">
                 {connectionStatus === 'online' ? (
                   <Cloud className="w-3 h-3 mr-1" />
                 ) : (
@@ -62,115 +52,46 @@ export function SyncStatusDetailed() {
                 )}
                 {connectionStatus}
               </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Data Sync Status */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Data Changes</span>
-                <span className="font-medium">{pendingCount} pending</span>
-              </div>
-              {isSyncing && syncProgress && (
-                <div className="space-y-1">
-                  <Progress
-                    value={(syncProgress.completed / syncProgress.total) * 100}
-                    className="h-2"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {syncProgress.currentItem} ({syncProgress.completed}/{syncProgress.total})
-                  </p>
-                </div>
-              )}
             </div>
 
-            {/* Photo Upload Status */}
-            {(queueStatus.total > 0 || isUploading) && (
-              <div className="space-y-2 pt-2 border-t">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <Image className="w-4 h-4" />
-                    <span className="text-muted-foreground">Photos</span>
-                  </div>
-                  <div className="flex gap-2">
-                    {queueStatus.pending > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {queueStatus.pending} queued
-                      </Badge>
-                    )}
-                    {queueStatus.failed > 0 && (
-                      <Badge variant="destructive" className="text-xs">
-                        {queueStatus.failed} failed
-                      </Badge>
-                    )}
-                    {queueStatus.completed > 0 && (
-                      <Badge variant="default" className="text-xs">
-                        {queueStatus.completed} done
-                      </Badge>
-                    )}
-                  </div>
+            {/* Data Sync Progress */}
+            {isSyncing && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Syncing data</span>
+                  {syncProgress && (
+                    <span className="font-medium">
+                      {syncProgress.completed}/{syncProgress.total}
+                    </span>
+                  )}
                 </div>
-                {isUploading && (
-                  <div className="space-y-1">
-                    <Progress value={50} className="h-2" />
-                    <p className="text-xs text-muted-foreground">Uploading photos...</p>
-                  </div>
+                {syncProgress && (
+                  <Progress
+                    value={(syncProgress.completed / syncProgress.total) * 100}
+                    className="h-1.5"
+                  />
                 )}
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex gap-2 pt-2 border-t">
-              {connectionStatus === 'online' && pendingCount > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={sync}
-                  disabled={isSyncing}
-                  className="flex-1"
-                >
-                  <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
-                  Sync Now
-                </Button>
-              )}
-              {connectionStatus === 'online' && queueStatus.pending > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={processQueue}
-                  disabled={isUploading}
-                  className="flex-1"
-                >
-                  <Image className="w-3 h-3 mr-1" />
-                  Upload Photos
-                </Button>
-              )}
-              {queueStatus.failed > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={retryFailed}
-                  disabled={isUploading}
-                  className="flex-1"
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Retry Failed
-                </Button>
-              )}
-            </div>
-
-            {/* Status Messages */}
-            {connectionStatus === 'offline' && totalPending > 0 && (
-              <div className="flex items-start gap-2 p-2 bg-muted rounded text-xs">
-                <AlertCircle className="w-4 h-4 text-warning mt-0.5" />
-                <p className="text-muted-foreground">
-                  {totalPending} change{totalPending !== 1 ? 's' : ''} will sync automatically when connection is restored
-                </p>
+            {/* Photo Upload Progress */}
+            {isUploading && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Image className="w-3 h-3" />
+                    <span className="text-muted-foreground">Uploading photos</span>
+                  </div>
+                  <span className="font-medium">
+                    {queueStatus.completed}/{queueStatus.total}
+                  </span>
+                </div>
+                <Progress value={50} className="h-1.5" />
               </div>
             )}
-          </CardContent>
-        </Card>
-      </PopoverContent>
-    </Popover>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
