@@ -168,7 +168,15 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
             
             {/* Quick Time Entry Button */}
-            <QuickTimeEntry userId={profile?.id || ''} onSuccess={loadActiveTimers} />
+            <QuickTimeEntry 
+              userId={profile?.id || ''} 
+              onSuccess={loadActiveTimers}
+              onBack={() => {
+                // Return to jobs page (already here, but this ensures state is clean)
+                setSelectedJob(null);
+                setActiveTab('timer');
+              }}
+            />
             
             <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
           </div>

@@ -7,6 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   LogIn,
   LogOut,
   Clock,
@@ -14,6 +20,7 @@ import {
   Timer,
   Edit3,
   ArrowLeft,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -128,15 +135,16 @@ interface ClockInEntry {
 interface QuickTimeEntryProps {
   userId: string;
   onSuccess?: () => void;
+  onBack?: () => void;
 }
 
-export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
+export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProps) {
   const [loading, setLoading] = useState(false);
   const [clockedInEntry, setClockedInEntry] = useState<ClockInEntry | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [mode, setMode] = useState<'select' | 'timer' | 'manual'>('select');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [mode, setMode] = useState<'timer' | 'manual'>('manual'); // Default to manual
+  const [showDialog, setShowDialog] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [manualData, setManualData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -264,9 +272,10 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
       setElapsedSeconds(0);
 
       toast.success(`Clocked in to ${job?.name}`);
-      setMode('select');
+      setShowDialog(false);
       setSelectedJobId('');
       onSuccess?.();
+      onBack?.();
     } catch (error: any) {
       console.error('Clock in error:', error);
       toast.error('Failed to clock in');
@@ -324,8 +333,8 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
       const job = jobs.find(j => j.id === selectedJobId);
       toast.success(`${totalHours.toFixed(2)} hours logged to ${job?.name}`);
       
-      // Reset form
-      setMode('select');
+      // Reset and close
+      setShowDialog(false);
       setSelectedJobId('');
       setManualData({
         date: new Date().toISOString().split('T')[0],
@@ -333,6 +342,7 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
         endTime: '17:00',
       });
       onSuccess?.();
+      onBack?.();
     } catch (error: any) {
       console.error('Manual entry error:', error);
       toast.error('Failed to log time');
@@ -368,6 +378,7 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
       setClockedInEntry(null);
       setElapsedSeconds(0);
       onSuccess?.();
+      onBack?.();
     } catch (error: any) {
       console.error('Clock out error:', error);
       toast.error('Failed to clock out');
@@ -437,220 +448,169 @@ export function QuickTimeEntry({ userId, onSuccess }: QuickTimeEntryProps) {
     );
   }
 
-  // Mode selection screen
-  if (mode === 'select') {
-    if (!isExpanded) {
-      return (
-        <Button
-          onClick={() => setIsExpanded(true)}
-          size="lg"
-          className="w-full h-12 gradient-primary"
-        >
-          <Clock className="w-5 h-5 mr-2" />
-          Time Clock
-        </Button>
-      );
-    }
+  // Main button to open dialog
+  return (
+    <>
+      <Button
+        onClick={() => setShowDialog(true)}
+        size="lg"
+        className="w-full h-12 gradient-primary"
+      >
+        <Clock className="w-5 h-5 mr-2" />
+        Time Clock
+      </Button>
 
-    return (
-      <Card>
-        <CardContent className="pt-4 pb-3 space-y-2">
-          <Button
-            onClick={() => setMode('timer')}
-            size="lg"
-            className="w-full h-auto py-4 justify-start"
-            variant="outline"
-          >
-            <div className="flex items-center gap-3 w-full">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Timer className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="font-semibold text-sm">Clock In (Timer)</p>
-                <p className="text-xs text-muted-foreground">
-                  Start a live timer
-                </p>
-              </div>
+      {/* Time Clock Dialog */}
+      <Dialog 
+        open={showDialog} 
+        onOpenChange={(open) => {
+          setShowDialog(open);
+          if (!open) {
+            // Reset when closing
+            setMode('manual');
+            setSelectedJobId('');
+            setManualData({
+              date: new Date().toISOString().split('T')[0],
+              startTime: '06:00',
+              endTime: '17:00',
+            });
+            onBack?.(); // Go back to jobs page
+          }
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" />
+                Time Clock
+              </DialogTitle>
             </div>
-          </Button>
+          </DialogHeader>
 
-          <Button
-            onClick={() => setMode('manual')}
-            size="lg"
-            className="w-full h-auto py-4 justify-start"
-            variant="outline"
-          >
-            <div className="flex items-center gap-3 w-full">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Edit3 className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="font-semibold text-sm">Manual Entry</p>
-                <p className="text-xs text-muted-foreground">
-                  Enter time manually
-                </p>
-              </div>
-            </div>
-          </Button>
-
-          <Button
-            onClick={() => setIsExpanded(false)}
-            variant="ghost"
-            size="sm"
-            className="w-full text-xs text-muted-foreground"
-          >
-            Cancel
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Timer mode - select job and clock in
-  if (mode === 'timer') {
-    return (
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
+          {/* Mode Toggle */}
+          <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setMode('select');
-                setSelectedJobId('');
-                setIsExpanded(false);
-              }}
+              variant={mode === 'manual' ? 'default' : 'ghost'}
+              onClick={() => setMode('manual')}
+              className="h-10"
             >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <CardTitle className="flex items-center gap-2">
-              <Timer className="w-5 h-5 text-primary" />
-              Clock In with Timer
-            </CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="timer-job">Select Job</Label>
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-              <SelectTrigger id="timer-job">
-                <SelectValue placeholder="Choose a job..." />
-              </SelectTrigger>
-              <SelectContent>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{job.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {job.client_name}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Button
-            onClick={handleTimerClockIn}
-            disabled={loading || !selectedJobId}
-            size="lg"
-            className="w-full h-14 text-lg gradient-primary"
-          >
-            <LogIn className="w-6 h-6 mr-3" />
-            {loading ? 'Clocking In...' : 'Start Timer'}
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Manual mode - select job and enter time
-  if (mode === 'manual') {
-    return (
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setMode('select');
-                setSelectedJobId('');
-                setIsExpanded(false);
-                setManualData({
-                  date: new Date().toISOString().split('T')[0],
-                  startTime: '06:00',
-                  endTime: '17:00',
-                });
-              }}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Edit3 className="w-4 h-4 text-primary" />
+              <Edit3 className="w-4 h-4 mr-2" />
               Manual Entry
-            </CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="manual-job" className="text-sm">Job</Label>
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-              <SelectTrigger id="manual-job" className="h-9">
-                <SelectValue placeholder="Select job..." />
-              </SelectTrigger>
-              <SelectContent>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{job.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {job.client_name}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            </Button>
+            <Button
+              variant={mode === 'timer' ? 'default' : 'ghost'}
+              onClick={() => setMode('timer')}
+              className="h-10"
+            >
+              <Timer className="w-4 h-4 mr-2" />
+              Timer
+            </Button>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="date" className="text-sm">Date</Label>
-            <Input
-              id="date"
-              type="date"
-              className="h-9"
-              value={manualData.date}
-              onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
-              max={new Date().toISOString().split('T')[0]}
-            />
+          <div className="space-y-4">
+            {/* Job Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
+              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                <SelectTrigger id="dialog-job" className="h-12">
+                  <SelectValue placeholder="Choose a job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{job.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {job.client_name}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Manual Entry Fields */}
+            {mode === 'manual' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
+                  <Input
+                    id="dialog-date"
+                    type="date"
+                    className="h-12"
+                    value={manualData.date}
+                    onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <TimeDropdownPicker
+                  label="Clock In Time"
+                  value={manualData.startTime}
+                  onChange={(time) => setManualData({ ...manualData, startTime: time })}
+                />
+
+                <TimeDropdownPicker
+                  label="Clock Out Time"
+                  value={manualData.endTime}
+                  onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                />
+              </>
+            )}
+
+            {/* Timer Mode Info */}
+            {mode === 'timer' && (
+              <div className="p-4 bg-muted/30 rounded-lg border">
+                <p className="text-sm text-muted-foreground">
+                  Start a live timer to track your time on this job. You'll be able to clock out when you're done.
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDialog(false);
+                  setMode('manual');
+                  setSelectedJobId('');
+                  setManualData({
+                    date: new Date().toISOString().split('T')[0],
+                    startTime: '06:00',
+                    endTime: '17:00',
+                  });
+                  onBack?.();
+                }}
+                className="flex-1 h-12"
+                disabled={loading}
+              >
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+              <Button
+                onClick={mode === 'manual' ? handleManualEntry : handleTimerClockIn}
+                disabled={loading || !selectedJobId}
+                className="flex-1 h-12 gradient-primary"
+              >
+                {mode === 'manual' ? (
+                  <>
+                    <Clock className="w-4 h-4 mr-2" />
+                    {loading ? 'Logging...' : 'Log Time'}
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4 mr-2" />
+                    {loading ? 'Starting...' : 'Start Timer'}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
-
-          <TimeDropdownPicker
-            label="Clock In Time"
-            value={manualData.startTime}
-            onChange={(time) => setManualData({ ...manualData, startTime: time })}
-          />
-
-          <TimeDropdownPicker
-            label="Clock Out Time"
-            value={manualData.endTime}
-            onChange={(time) => setManualData({ ...manualData, endTime: time })}
-          />
-
-          <Button
-            onClick={handleManualEntry}
-            disabled={loading || !selectedJobId}
-            className="w-full gradient-primary"
-          >
-            <Clock className="w-4 h-4 mr-2" />
-            {loading ? 'Logging...' : 'Log Time'}
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return null;
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
