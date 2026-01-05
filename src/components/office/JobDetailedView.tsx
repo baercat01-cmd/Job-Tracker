@@ -68,6 +68,8 @@ interface PersonGroup {
   total_man_hours: number;
   entry_count: number;
   dates: DateSummary[];
+  component_hours: number;
+  clock_in_hours: number;
 }
 
 interface DailyLog {
@@ -95,6 +97,8 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
   const [totalDuration, setTotalDuration] = useState(0);
   const [totalManHours, setTotalManHours] = useState(0);
+  const [totalClockInHours, setTotalClockInHours] = useState(0);
+  const [totalComponentHours, setTotalComponentHours] = useState(0);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set());
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
@@ -363,6 +367,10 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
       // Group by person, then by date (for person view)
       const personMap = new Map<string, Map<string, DateSummary>>();
 
+      // Track totals for clock-in and component time
+      let clockInManHours = 0;
+      let componentManHours = 0;
+
       (data || []).forEach((entry: any) => {
         const date = new Date(entry.start_time).toISOString().split('T')[0];
         const componentId = entry.component_id;
@@ -371,6 +379,13 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         const duration = entry.total_hours || 0;
         const crewCount = entry.crew_count || 1;
         const manHours = duration * crewCount;
+
+        // Track clock-in vs component hours
+        if (componentId === null) {
+          clockInManHours += manHours;
+        } else {
+          componentManHours += manHours;
+        }
 
         const workEntry: ComponentWorkEntry = {
           id: entry.id,
@@ -497,12 +512,29 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
           const total_duration = dates.reduce((sum, d) => sum + d.total_duration, 0);
           const total_man_hours = dates.reduce((sum, d) => sum + d.total_man_hours, 0);
           const entry_count = dates.reduce((sum, d) => sum + d.entries.length, 0);
+          
+          // Calculate component vs clock-in hours for this user
+          let component_hours = 0;
+          let clock_in_hours = 0;
+          dates.forEach(dateSummary => {
+            dateSummary.entries.forEach(entry => {
+              const entryManHours = entry.total_hours * entry.crew_count;
+              if (entry.component_id === null) {
+                clock_in_hours += entryManHours;
+              } else {
+                component_hours += entryManHours;
+              }
+            });
+          });
+          
           return {
             user_name: userName,
             total_duration,
             total_man_hours,
             entry_count,
             dates,
+            component_hours,
+            clock_in_hours,
           };
         })
         .sort((a, b) => b.total_man_hours - a.total_man_hours);
@@ -517,6 +549,8 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
       
       setTotalDuration(totalDur);
       setTotalManHours(totalMan);
+      setTotalClockInHours(clockInManHours);
+      setTotalComponentHours(componentManHours);
 
       // Extract crew members
       const uniqueUsers = new Set<string>();
@@ -708,13 +742,13 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
     );
   }
 
-  // Calculate progress
+  // Calculate progress using clock-in time only
   const estimatedHours = job.estimated_hours || 0;
   const actualHours = totalDuration;
   const actualManHours = totalManHours;
-  const progressPercent = estimatedHours > 0 ? Math.min((actualManHours / estimatedHours) * 100, 100) : 0;
-  const isOverBudget = actualManHours > estimatedHours && estimatedHours > 0;
-  const remainingHours = Math.max(estimatedHours - actualManHours, 0);
+  const progressPercent = estimatedHours > 0 ? Math.min((totalClockInHours / estimatedHours) * 100, 100) : 0;
+  const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
+  const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
     <div className="space-y-4">
@@ -857,8 +891,8 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Estimated Hours</p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg border">
-                <div className="text-3xl font-bold">{actualManHours.toFixed(1)}</div>
-                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Actual Man-Hours</p>
+                <div className="text-3xl font-bold">{totalClockInHours.toFixed(1)}</div>
+                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Clock-In Hours</p>
               </div>
               <div className={`p-4 rounded-lg border ${
                 isOverBudget 
@@ -868,7 +902,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 <div className={`text-3xl font-bold ${
                   isOverBudget ? 'text-destructive' : 'text-success'
                 }`}>
-                  {isOverBudget ? '+' : ''}{(actualManHours - estimatedHours).toFixed(1)}
+                  {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(1)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
                   {isOverBudget ? 'Over Budget' : 'Remaining'}
@@ -897,16 +931,20 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+            <div className="grid grid-cols-3 gap-3 pt-2 border-t">
               <div className="text-sm">
                 <p className="text-muted-foreground">Days Logged</p>
                 <p className="font-bold text-lg">{dateGroups.length}</p>
               </div>
               <div className="text-sm">
-                <p className="text-muted-foreground">Avg Man-Hours/Day</p>
+                <p className="text-muted-foreground">Avg Clock-In/Day</p>
                 <p className="font-bold text-lg">
-                  {dateGroups.length > 0 ? (actualManHours / dateGroups.length).toFixed(1) : '0.0'}
+                  {dateGroups.length > 0 ? (totalClockInHours / dateGroups.length).toFixed(1) : '0.0'}
                 </p>
+              </div>
+              <div className="text-sm">
+                <p className="text-muted-foreground">Component Hours</p>
+                <p className="font-bold text-lg">{totalComponentHours.toFixed(1)}</p>
               </div>
             </div>
           </CardContent>
@@ -1263,11 +1301,25 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                 </p>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-3xl font-bold text-primary">
-                                {personGroup.total_man_hours.toFixed(1)}
-                              </p>
-                              <p className="text-sm text-muted-foreground">man-hours</p>
+                            <div className="text-right flex gap-6">
+                              <div>
+                                <p className="text-2xl font-bold text-success">
+                                  {personGroup.clock_in_hours.toFixed(1)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">clock-in hrs</p>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold text-primary">
+                                  {personGroup.component_hours.toFixed(1)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">component hrs</p>
+                              </div>
+                              <div className="border-l pl-4">
+                                <p className="text-3xl font-bold text-foreground">
+                                  {personGroup.total_man_hours.toFixed(1)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">total hrs</p>
+                              </div>
                             </div>
                           </div>
                         </button>
