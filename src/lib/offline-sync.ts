@@ -70,16 +70,39 @@ export async function syncAllData(
   }
 }
 
+// Map table names to their timestamp column
+const TABLE_TIMESTAMP_COLUMNS: Record<SyncTable, string> = {
+  user_profiles: 'created_at',
+  workers: 'created_at',
+  components: 'created_at',
+  jobs: 'created_at',
+  materials_categories: 'created_at',
+  materials: 'created_at',
+  time_entries: 'created_at',
+  daily_logs: 'created_at',
+  photos: 'created_at',
+  completed_tasks: 'created_at',
+  job_assignments: 'assigned_at',
+  job_documents: 'created_at',
+  job_document_revisions: 'uploaded_at',
+  document_views: 'viewed_at',
+  material_photos: 'timestamp',
+  notifications: 'created_at',
+};
+
 // Sync a specific table
 export async function syncTable(tableName: SyncTable): Promise<void> {
   try {
     console.log(`[Sync] Syncing ${tableName}...`);
 
+    // Get the correct timestamp column for this table
+    const timestampColumn = TABLE_TIMESTAMP_COLUMNS[tableName];
+
     // Fetch all data from Supabase
     const { data, error } = await supabase
       .from(tableName)
       .select('*')
-      .order('created_at', { ascending: false });
+      .order(timestampColumn, { ascending: false });
 
     if (error) {
       console.error(`[Sync] Error fetching ${tableName}:`, error);

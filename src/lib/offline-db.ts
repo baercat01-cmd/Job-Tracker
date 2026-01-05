@@ -1,7 +1,7 @@
 // IndexedDB wrapper for offline data storage
 
 const DB_NAME = 'fieldtrack_offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented to add missing object stores
 
 export interface OfflineDB extends IDBDatabase {
   // Typed access to object stores
@@ -66,11 +66,63 @@ export async function initDB(): Promise<IDBDatabase> {
         workersStore.createIndex('active', 'active', { unique: false });
       }
 
+      // Materials categories store
+      if (!db.objectStoreNames.contains('materials_categories')) {
+        const materialsCategoriesStore = db.createObjectStore('materials_categories', { keyPath: 'id' });
+        materialsCategoriesStore.createIndex('job_id', 'job_id', { unique: false });
+      }
+
       // Materials store
       if (!db.objectStoreNames.contains('materials')) {
         const materialsStore = db.createObjectStore('materials', { keyPath: 'id' });
         materialsStore.createIndex('job_id', 'job_id', { unique: false });
         materialsStore.createIndex('status', 'status', { unique: false });
+      }
+
+      // Material photos store
+      if (!db.objectStoreNames.contains('material_photos')) {
+        const materialPhotosStore = db.createObjectStore('material_photos', { keyPath: 'id' });
+        materialPhotosStore.createIndex('material_id', 'material_id', { unique: false });
+      }
+
+      // Job assignments store
+      if (!db.objectStoreNames.contains('job_assignments')) {
+        const jobAssignmentsStore = db.createObjectStore('job_assignments', { keyPath: 'id' });
+        jobAssignmentsStore.createIndex('job_id', 'job_id', { unique: false });
+        jobAssignmentsStore.createIndex('user_id', 'user_id', { unique: false });
+      }
+
+      // Job documents store
+      if (!db.objectStoreNames.contains('job_documents')) {
+        const jobDocumentsStore = db.createObjectStore('job_documents', { keyPath: 'id' });
+        jobDocumentsStore.createIndex('job_id', 'job_id', { unique: false });
+      }
+
+      // Job document revisions store
+      if (!db.objectStoreNames.contains('job_document_revisions')) {
+        const jobDocRevStore = db.createObjectStore('job_document_revisions', { keyPath: 'id' });
+        jobDocRevStore.createIndex('document_id', 'document_id', { unique: false });
+      }
+
+      // Document views store
+      if (!db.objectStoreNames.contains('document_views')) {
+        const documentViewsStore = db.createObjectStore('document_views', { keyPath: 'id' });
+        documentViewsStore.createIndex('document_id', 'document_id', { unique: false });
+        documentViewsStore.createIndex('user_id', 'user_id', { unique: false });
+      }
+
+      // Completed tasks store
+      if (!db.objectStoreNames.contains('completed_tasks')) {
+        const completedTasksStore = db.createObjectStore('completed_tasks', { keyPath: 'id' });
+        completedTasksStore.createIndex('job_id', 'job_id', { unique: false });
+        completedTasksStore.createIndex('component_id', 'component_id', { unique: false });
+      }
+
+      // Notifications store
+      if (!db.objectStoreNames.contains('notifications')) {
+        const notificationsStore = db.createObjectStore('notifications', { keyPath: 'id' });
+        notificationsStore.createIndex('job_id', 'job_id', { unique: false });
+        notificationsStore.createIndex('created_by', 'created_by', { unique: false });
       }
 
       // Sync queue store - tracks operations to sync when online
