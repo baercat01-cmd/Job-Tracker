@@ -707,7 +707,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             onClick={handleClockOut}
             disabled={loading}
             size="lg"
-            className="w-full h-14 text-lg bg-gradient-to-br from-orange-dark via-orange to-orange-accent hover:shadow-xl hover:shadow-orange/40 transition-all duration-300"
+            className="w-full h-14 text-lg"
+            variant="destructive"
           >
             <LogOut className="w-6 h-6 mr-3" />
             {loading ? 'Clocking Out...' : 'Clock Out'}
@@ -722,7 +723,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     <>
       <Button
         onClick={() => setShowDialog(true)}
-        className="w-full h-10 gradient-orange text-sm"
+        className="w-full h-10 gradient-primary text-sm"
       >
         <Clock className="w-4 h-4 mr-2" />
         Time Clock
@@ -759,7 +760,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-orange" />
+                <Clock className="w-5 h-5 text-primary" />
                 Time Clock
               </DialogTitle>
             </div>
@@ -830,12 +831,9 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
                 {/* Job Selection */}
                 <div className="space-y-2">
-                  <Label htmlFor="dialog-job" className="text-base font-semibold flex items-center gap-2">
-                    <span className="text-orange">Select Job</span>
-                    <span className="text-orange">*</span>
-                  </Label>
+                  <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
                   <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                    <SelectTrigger id="dialog-job" className="h-12 border-orange/30 focus:ring-orange">
+                    <SelectTrigger id="dialog-job" className="h-12">
                       <SelectValue placeholder="Choose a job..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -1035,7 +1033,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                   <Button
                     onClick={mode === 'manual' ? handleManualEntry : handleTimerClockIn}
                     disabled={loading || !selectedJobId}
-                    className="flex-1 h-12 gradient-orange"
+                    className="flex-1 h-12 gradient-primary"
                   >
                     {mode === 'manual' ? (
                       <>
@@ -1148,7 +1146,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                   <Button
                     onClick={handleMiscJobEntry}
                     disabled={loading || !miscJobData.name.trim() || !miscJobData.address.trim()}
-                    className="flex-1 h-12 gradient-orange"
+                    className="flex-1 h-12 gradient-primary"
                   >
                     <Clock className="w-4 h-4 mr-2" />
                     {loading ? 'Logging...' : 'Log Time'}
