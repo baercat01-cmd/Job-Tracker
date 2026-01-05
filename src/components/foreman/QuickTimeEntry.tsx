@@ -881,38 +881,25 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                 {/* Component Time (Optional) - Only show in manual mode */}
                 {mode === 'manual' && selectedJobId && components.length > 0 && (
                   <div className="space-y-3 pt-4 border-t">
-                    <div className="bg-muted/30 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <Label className="text-sm font-medium block">Add Component Time (Optional)</Label>
-                          <p className="text-xs text-muted-foreground">Track time on specific components</p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const defaultTime = calculateDefaultComponentTime();
-                            setJobComponents([...jobComponents, {
-                              componentId: '',
-                              hours: defaultTime.hours,
-                              minutes: defaultTime.minutes,
-                            }]);
-                          }}
-                        >
-                          <Package className="w-3 h-3 mr-1" />
-                          Add Component
-                        </Button>
-                      </div>
-                      
-                      {jobComponents.length === 0 && (
-                        <div className="text-center py-4 border border-dashed rounded-lg">
-                          <Package className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                          <p className="text-xs text-muted-foreground">No components added yet</p>
-                        </div>
-                      )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const defaultTime = calculateDefaultComponentTime();
+                        setJobComponents([...jobComponents, {
+                          componentId: '',
+                          hours: defaultTime.hours,
+                          minutes: defaultTime.minutes,
+                        }]);
+                      }}
+                      className="w-full"
+                    >
+                      <Package className="w-3 h-3 mr-1" />
+                      Add Component
+                    </Button>
 
-                      <div className="space-y-3">
+                    <div className="space-y-3">
                         {jobComponents.map((comp, index) => (
                           <div key={index} className="space-y-2 p-3 border rounded-lg bg-card">
                             <div className="flex items-center justify-between">
@@ -1007,7 +994,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                           </div>
                         ))}
                       </div>
-                    </div>
                   </div>
                 )}
 
