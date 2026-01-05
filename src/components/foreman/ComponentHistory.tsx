@@ -533,135 +533,58 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 </div>
               )}
 
-              {/* Clock-In Time Section */}
+              {/* Clock-In Time Section - Condensed */}
               {hasClockInEntries && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b-2 border-success/20">
-                    <h3 className="text-lg font-bold text-success flex items-center gap-2">
-                      <LogIn className="w-4 h-4" />
+                <div className="space-y-2 pt-2 border-t">
+                  <div className="flex items-center justify-between pb-1">
+                    <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
+                      <LogIn className="w-3.5 h-3.5" />
                       Clock-In Time
                     </h3>
-                    <Badge variant="default" className="bg-success">
+                    <Badge variant="secondary" className="text-xs">
                       {clockInStats.totalManHours.toFixed(1)} hrs
                     </Badge>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-1.5">
                     {clockInsForDate.map((entry) => (
                       <div
                         key={entry.id}
-                        className="border-2 border-success/30 rounded-lg p-4 space-y-3 bg-success/5 hover:bg-success/10 transition-colors"
+                        className="border rounded-md p-2.5 bg-muted/30 hover:bg-muted/50 transition-colors"
                       >
-                        {/* Entry Header */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {entry.is_manual && (
-                                <Badge variant="outline" className="text-xs border-success text-success">
-                                  Manual Entry
-                                </Badge>
-                              )}
-                              {!entry.is_manual && (
-                                <Badge variant="outline" className="text-xs border-success text-success">
-                                  Clock In/Out
-                                </Badge>
-                              )}
-                              <span className="text-sm text-muted-foreground">
-                                {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                              </span>
-                            </div>
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 flex-1">
+                            <span className="text-muted-foreground">
+                              {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                            </span>
+                            <span className="text-muted-foreground">•</span>
+                            <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(1)} hrs</span>
+                            <span className="text-muted-foreground">•</span>
+                            <span className="text-muted-foreground">{entry.crew_count} crew</span>
                           </div>
                           {entry.user_id === userId && (
-                            <div className="flex gap-1 flex-shrink-0">
+                            <div className="flex gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => openEditDialog(entry)}
+                                className="h-6 w-6 p-0"
                               >
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-3 h-3" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => startDeleteEntry(entry.id)}
-                                className="text-destructive hover:text-destructive"
+                                className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>
                           )}
                         </div>
-
-                        {/* Entry Details */}
-                        <div className="flex items-center gap-4 text-sm flex-wrap">
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-4 h-4 text-success" />
-                            <div>
-                              <span className="font-medium text-success">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)}</span>
-                              <span className="text-xs text-muted-foreground ml-1">man-hours</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Users className="w-4 h-4 text-muted-foreground" />
-                            <span>{entry.crew_count} crew</span>
-                          </div>
-                          <div className="text-muted-foreground">
-                            by {entry.user_profiles?.username || 'Unknown'}
-                          </div>
-                        </div>
-
-                        {/* Worker Names */}
-                        {entry.worker_names && entry.worker_names.length > 0 && (
-                          <div className="bg-success/10 rounded-md p-3">
-                            <p className="text-sm text-muted-foreground mb-1 font-medium">Workers:</p>
-                            <div className="flex flex-wrap gap-2">
-                              {entry.worker_names.map((name, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">
-                                  {name}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Photos */}
-                        {entry.photos && entry.photos.length > 0 && (
-                          <div className="bg-success/10 rounded-md p-3">
-                            <p className="text-sm text-muted-foreground mb-2 font-medium">Photos ({entry.photos.length}):</p>
-                            <div className="grid grid-cols-3 gap-2">
-                              {entry.photos.map((photo) => (
-                                <a
-                                  key={photo.id}
-                                  href={photo.photo_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="aspect-square rounded-lg overflow-hidden border hover:opacity-80 transition-opacity"
-                                >
-                                  <img
-                                    src={photo.photo_url}
-                                    alt={photo.caption || 'Time entry photo'}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Notes */}
                         {entry.notes && (
-                          <div className="bg-success/10 rounded-md p-3">
-                            <p className="text-sm text-muted-foreground mb-1 font-medium">Notes:</p>
-                            <p className="text-sm whitespace-pre-wrap">{entry.notes}</p>
-                          </div>
-                        )}
-                        {!entry.notes && entry.user_id === userId && (
-                          <button
-                            onClick={() => openEditDialog(entry)}
-                            className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                          >
-                            + Add notes
-                          </button>
+                          <p className="text-xs text-muted-foreground mt-1.5 pl-1">{entry.notes}</p>
                         )}
                       </div>
                     ))}
