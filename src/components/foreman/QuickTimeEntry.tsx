@@ -627,21 +627,23 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
           </DialogHeader>
 
           {/* Job Type Selection */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
             <Button
-              variant={jobType === 'existing' ? 'default' : 'ghost'}
+              variant={jobType === 'existing' ? 'secondary' : 'ghost'}
               onClick={() => setJobType('existing')}
-              className="h-10"
+              size="sm"
+              className="h-8 text-xs"
             >
-              <Briefcase className="w-4 h-4 mr-2" />
+              <Briefcase className="w-3 h-3 mr-1.5" />
               Existing Job
             </Button>
             <Button
-              variant={jobType === 'misc' ? 'default' : 'ghost'}
+              variant={jobType === 'misc' ? 'secondary' : 'ghost'}
               onClick={() => setJobType('misc')}
-              className="h-10"
+              size="sm"
+              className="h-8 text-xs"
             >
-              <FileText className="w-4 h-4 mr-2" />
+              <FileText className="w-3 h-3 mr-1.5" />
               Misc Job
             </Button>
           </div>
