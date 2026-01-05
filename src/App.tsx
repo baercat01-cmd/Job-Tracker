@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import { ConnectionStatus } from '@/components/ui/connection-status';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
 
 // Error Boundary to catch runtime errors
 class ErrorBoundary extends Component<
@@ -67,13 +68,14 @@ class ErrorBoundary extends Component<
 
 function AppContent() {
   const { profile, loading, selectUser, clearUser, authState } = useAuth();
+  const { isSyncing } = useOfflineSync();
   
   // Debug logging in development only
   if (import.meta.env.DEV) {
     console.log('🔍 AppContent rendering...', { profile: profile?.username, loading });
   }
 
-  if (loading) {
+  if (loading || isSyncing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/30">
         <div className="text-center max-w-sm mx-auto px-4">
@@ -83,7 +85,9 @@ function AppContent() {
             className="h-12 mx-auto mb-6"
           />
           <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground font-medium">Loading FieldTrack Pro...</p>
+          <p className="text-muted-foreground font-medium">
+            {loading ? 'Loading FieldTrack Pro...' : 'Syncing offline data...'}
+          </p>
         </div>
       </div>
     );
