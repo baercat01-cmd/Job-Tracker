@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, FileText, FolderOpen, MapPin, Package, Bell } from 'lucide-react';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { MaterialsList } from './MaterialsList';
 import { DocumentsView } from './DocumentsView';
 import type { Job, DocumentFolder } from '@/types';
@@ -23,6 +24,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     loadNotifications();
@@ -89,45 +91,73 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
 
   return (
     <div className="space-y-4">
-      {/* Notifications Section */}
+      {/* Notifications Icon */}
       {notifications.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bell className="w-4 h-4" />
-              Updates {unreadCount > 0 && <Badge variant="destructive" className="ml-auto">{unreadCount}</Badge>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {notifications.map((notification) => (
-              <button
-                key={notification.id}
-                onClick={() => handleNotificationClick(notification)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  notification.is_read 
-                    ? 'bg-card hover:bg-muted/50 border-border' 
-                    : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
-                }`}
+        <div className="flex justify-end">
+          <Popover open={showNotifications} onOpenChange={setShowNotifications}>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="relative h-9 w-9 p-0"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${
-                      notification.is_read ? 'font-normal' : 'font-semibold'
-                    }`}>
-                      {notification.brief}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(notification.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  {!notification.is_read && (
-                    <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs font-bold flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="end">
+              <div className="p-3 border-b bg-muted/30">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <Bell className="w-4 h-4" />
+                  Updates
+                  {unreadCount > 0 && (
+                    <Badge variant="destructive" className="ml-auto">
+                      {unreadCount} new
+                    </Badge>
                   )}
+                </h4>
+              </div>
+              <div className="max-h-[400px] overflow-y-auto">
+                <div className="p-2 space-y-1">
+                  {notifications.map((notification) => (
+                    <button
+                      key={notification.id}
+                      onClick={() => {
+                        handleNotificationClick(notification);
+                        setShowNotifications(false);
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        notification.is_read 
+                          ? 'bg-card hover:bg-muted/50 border-border' 
+                          : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${
+                            notification.is_read ? 'font-normal' : 'font-semibold'
+                          }`}>
+                            {notification.brief}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(notification.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        {!notification.is_read && (
+                          <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
