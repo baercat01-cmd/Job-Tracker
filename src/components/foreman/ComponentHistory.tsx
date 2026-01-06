@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Clock, Users, Edit, Save, X, FileText, ChevronDown, ChevronRight, Trash2, AlertTriangle, LogIn } from 'lucide-react';
+import { Clock, Users, Edit, Save, X, FileText, ChevronDown, ChevronRight, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { getLocalDateString } from '@/lib/utils';
 import type { Job } from '@/types';
@@ -296,9 +296,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     });
   }
 
-  // Separate component entries from clock-in entries
+  // Only show component entries (filter out clock-in entries)
   const componentEntries = timeEntries.filter(e => e.component_id !== null);
-  const clockInEntries = timeEntries.filter(e => e.component_id === null);
 
   // Group component entries by date, then by component
   const componentEntriesByDate = componentEntries.reduce((acc, entry) => {
@@ -317,20 +316,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     return acc;
   }, {} as Record<string, Record<string, TimeEntry[]>>);
 
-  // Group clock-in entries by date
-  const clockInEntriesByDate = clockInEntries.reduce((acc, entry) => {
-    const entryDate = new Date(entry.start_time);
-    const date = getLocalDateString(entryDate);
-    if (!acc[date]) {
-      acc[date] = [];
-    }
-    acc[date].push(entry);
-    return acc;
-  }, {} as Record<string, TimeEntry[]>);
-
-  // Sort dates (most recent first) - combine both types
-  const allDates = new Set([...Object.keys(componentEntriesByDate), ...Object.keys(clockInEntriesByDate)]);
-  const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
+  // Sort dates (most recent first)
+  const sortedDates = Object.keys(componentEntriesByDate).sort((a, b) => b.localeCompare(a));
   
   // Calculate stats for component entries
   const getComponentDateStats = (date: string) => {
@@ -339,16 +326,6 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     const totalManHours = Object.values(componentsForDate).reduce(
       (sum, entries) => sum + entries.reduce((s, e) => s + ((e.total_hours || 0) * (e.crew_count || 1)), 0),
       0
-    );
-    return { totalEntries, totalManHours };
-  };
-
-  // Calculate stats for clock-in entries
-  const getClockInDateStats = (date: string) => {
-    const entriesForDate = clockInEntriesByDate[date] || [];
-    const totalEntries = entriesForDate.length;
-    const totalManHours = entriesForDate.reduce(
-      (sum, e) => sum + ((e.total_hours || 0) * (e.crew_count || 1)), 0
     );
     return { totalEntries, totalManHours };
   };
@@ -378,11 +355,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
     <div className="space-y-4">
       {sortedDates.map((date, index) => {
         const componentsForDate = componentEntriesByDate[date] || {};
-        const clockInsForDate = clockInEntriesByDate[date] || [];
         const componentStats = getComponentDateStats(date);
-        const clockInStats = getClockInDateStats(date);
-        const hasComponentEntries = Object.keys(componentsForDate).length > 0;
-        const hasClockInEntries = clockInsForDate.length > 0;
 
         return (
           <Card key={date} className="border-2 shadow-md" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
@@ -396,20 +369,12 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    {hasComponentEntries && (
-                      <>
-                        <span>{componentStats.totalEntries} component {componentStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
-                      </>
-                    )}
-                    {hasComponentEntries && hasClockInEntries && <span>•</span>}
-                    {hasClockInEntries && (
-                      <span>{clockInStats.totalEntries} clock-in {clockInStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
-                    )}
+                    <span>{componentStats.totalEntries} component {componentStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
                   </div>
                 </div>
                 <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                   <p className="text-3xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                    {(componentStats.totalManHours + clockInStats.totalManHours).toFixed(2)}
+                    {componentStats.totalManHours.toFixed(2)}
                   </p>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Man-Hours</p>
                 </div>
@@ -417,18 +382,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
             </CardHeader>
             <CardContent className="space-y-6 pt-4 bg-gradient-to-b from-muted/10 to-muted/5">
               {/* Component Time Section */}
-              {hasComponentEntries && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b-2 border-primary/20">
-                    <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Component Time
-                    </h3>
-                    <Badge variant="default" className="bg-primary">
-                      {componentStats.totalManHours.toFixed(2)} hrs
-                    </Badge>
-                  </div>
-                  {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
+              <div className="space-y-4">
+                {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
                     <div key={componentName} className="space-y-3 border-l-4 pl-4 py-2" style={{ borderLeftColor: compIndex % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                       {/* Component Name Header */}
                       <div className="flex items-center justify-between pb-3 border-b-2">
@@ -557,70 +512,8 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                         ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Clock-In Time Section - Condensed */}
-              {hasClockInEntries && (
-                <div className="space-y-2 pt-2 border-t">
-                  <div className="flex items-center justify-between pb-1">
-                    <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
-                      <LogIn className="w-3.5 h-3.5" />
-                      Clock-In Time
-                    </h3>
-                    <Badge variant="secondary" className="text-xs">
-                      {clockInStats.totalManHours.toFixed(2)} hrs
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {clockInsForDate.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="border rounded-md p-2.5 bg-muted/30 hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-2 flex-1 flex-wrap">
-                            <span className="text-muted-foreground">
-                              {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                            </span>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="font-medium">{((entry.total_hours || 0) * (entry.crew_count || 1)).toFixed(2)} hrs</span>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="text-muted-foreground">{entry.crew_count} crew</span>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="text-muted-foreground">by {entry.user_profiles?.username || 'Unknown'}</span>
-                          </div>
-                          {entry.user_id === userId && (
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEditDialog(entry)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <Edit className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => startDeleteEntry(entry.id)}
-                                className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                        {entry.notes && (
-                          <p className="text-xs text-muted-foreground mt-1.5 pl-1">{entry.notes}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </CardContent>
           </Card>
         );
