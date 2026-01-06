@@ -1408,44 +1408,31 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       <ChevronDownIcon className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
                                     </div>
                                     
-                                    {/* Delivery Date - Prominent Display */}
-                                    {(material.delivery_date || material.actual_delivery_date) && (
+                                    {/* Status-specific Date Display */}
+                                    {material.status === 'not_ordered' && material.order_by_date && (
                                       <div className="bg-black/10 rounded px-1.5 py-0.5 mt-0.5">
-                                        {material.actual_delivery_date ? (
-                                          <div className="flex items-center gap-1 text-[10px] font-bold">
-                                            <span>✅</span>
-                                            <span>Delivered: {new Date(material.actual_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                                          </div>
-                                        ) : material.delivery_date ? (
-                                          <div className="flex items-center gap-1 text-[10px] font-bold">
-                                            <span>🚚</span>
-                                            <span>Delivery: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                                          </div>
-                                        ) : null}
+                                        <div className="flex items-center gap-1 text-[10px] font-bold">
+                                          <span>📋</span>
+                                          <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                        </div>
                                       </div>
                                     )}
                                     
-                                    {/* Material Flow Timeline */}
-                                    {(material.order_by_date || material.order_requested_at || material.pull_by_date) && (
-                                      <div className="text-[10px] opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
-                                        {material.order_by_date && (
-                                          <div className="flex items-center gap-1">
-                                            <span className="opacity-70">📋</span>
-                                            <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                          </div>
-                                        )}
-                                        {material.order_requested_at && (
-                                          <div className="flex items-center gap-1">
-                                            <span className="opacity-70">📦</span>
-                                            <span>Ordered: {new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                          </div>
-                                        )}
-                                        {material.pull_by_date && (
-                                          <div className="flex items-center gap-1">
-                                            <span className="opacity-70">🏪</span>
-                                            <span>Pull by: {new Date(material.pull_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                          </div>
-                                        )}
+                                    {material.status === 'ordered' && material.delivery_date && (
+                                      <div className="bg-black/10 rounded px-1.5 py-0.5 mt-0.5">
+                                        <div className="flex items-center gap-1 text-[10px] font-bold">
+                                          <span>🚚</span>
+                                          <span>Delivery: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {['at_shop', 'at_job', 'installed', 'missing'].includes(material.status) && material.updated_at && (
+                                      <div className="bg-black/10 rounded px-1.5 py-0.5 mt-0.5">
+                                        <div className="flex items-center gap-1 text-[10px] font-bold">
+                                          <span>📅</span>
+                                          <span>Updated: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                        </div>
                                       </div>
                                     )}
                                   </div>
