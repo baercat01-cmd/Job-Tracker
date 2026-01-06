@@ -1,0 +1,502 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Edit, Trash2, Phone, Mail, Building2, Calendar, User } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Subcontractor {
+  id: string;
+  name: string;
+  company_name: string | null;
+  phone: string | null;
+  email: string | null;
+  trade: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+interface SubcontractorFormData {
+  name: string;
+  company_name: string;
+  phone: string;
+  email: string;
+  trade: string;
+  notes: string;
+  active: boolean;
+}
+
+const COMMON_TRADES = [
+  'Electrical',
+  'Plumbing',
+  'HVAC',
+  'Concrete',
+  'Excavation',
+  'Roofing',
+  'Siding',
+  'Insulation',
+  'Drywall',
+  'Painting',
+  'Flooring',
+  'Framing',
+  'Other',
+];
+
+export function SubcontractorManagement() {
+  const { profile } = useAuth();
+  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [selectedSubcontractor, setSelectedSubcontractor] = useState<Subcontractor | null>(null);
+  const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState<SubcontractorFormData>({
+    name: '',
+    company_name: '',
+    phone: '',
+    email: '',
+    trade: '',
+    notes: '',
+    active: true,
+  });
+
+  useEffect(() => {
+    loadSubcontractors();
+  }, []);
+
+  async function loadSubcontractors() {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('subcontractors')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setSubcontractors(data || []);
+    } catch (error: any) {
+      console.error('Error loading subcontractors:', error);
+      toast.error('Failed to load subcontractors');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!formData.name.trim()) {
+      toast.error('Name is required');
+      return;
+    }
+
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('subcontractors')
+          .update({
+            name: formData.name.trim(),
+            company_name: formData.company_name.trim() || null,
+            phone: formData.phone.trim() || null,
+            email: formData.email.trim() || null,
+            trade: formData.trade || null,
+            notes: formData.notes.trim() || null,
+            active: formData.active,
+          })
+          .eq('id', editingId);
+
+        if (error) throw error;
+        toast.success('Subcontractor updated successfully');
+      } else {
+        const { error } = await supabase
+          .from('subcontractors')
+          .insert({
+            name: formData.name.trim(),
+            company_name: formData.company_name.trim() || null,
+            phone: formData.phone.trim() || null,
+            email: formData.email.trim() || null,
+            trade: formData.trade || null,
+            notes: formData.notes.trim() || null,
+            active: formData.active,
+            created_by: profile?.id,
+          });
+
+        if (error) throw error;
+        toast.success('Subcontractor added successfully');
+      }
+
+      setShowDialog(false);
+      resetForm();
+      loadSubcontractors();
+    } catch (error: any) {
+      console.error('Error saving subcontractor:', error);
+      toast.error('Failed to save subcontractor');
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Are you sure you want to delete this subcontractor? This will also delete all their scheduled work.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('subcontractors')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      toast.success('Subcontractor deleted successfully');
+      loadSubcontractors();
+    } catch (error: any) {
+      console.error('Error deleting subcontractor:', error);
+      toast.error('Failed to delete subcontractor');
+    }
+  }
+
+  function openEditDialog(subcontractor: Subcontractor) {
+    setEditingId(subcontractor.id);
+    setFormData({
+      name: subcontractor.name,
+      company_name: subcontractor.company_name || '',
+      phone: subcontractor.phone || '',
+      email: subcontractor.email || '',
+      trade: subcontractor.trade || '',
+      notes: subcontractor.notes || '',
+      active: subcontractor.active,
+    });
+    setShowDialog(true);
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setFormData({
+      name: '',
+      company_name: '',
+      phone: '',
+      email: '',
+      trade: '',
+      notes: '',
+      active: true,
+    });
+  }
+
+  const filteredSubcontractors = subcontractors.filter(sub => {
+    // Filter by active status
+    if (filterActive === 'active' && !sub.active) return false;
+    if (filterActive === 'inactive' && sub.active) return false;
+
+    // Filter by search term
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      return (
+        sub.name.toLowerCase().includes(search) ||
+        sub.company_name?.toLowerCase().includes(search) ||
+        sub.trade?.toLowerCase().includes(search) ||
+        sub.phone?.includes(search) ||
+        sub.email?.toLowerCase().includes(search)
+      );
+    }
+
+    return true;
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold">Subcontractor Management</h2>
+          <p className="text-muted-foreground">Manage subcontractors and schedule their work</p>
+        </div>
+        <Button onClick={() => setShowDialog(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Add Subcontractor
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <Input
+            placeholder="Search by name, company, trade, phone, or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <Select value={filterActive} onValueChange={(value: any) => setFilterActive(value)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="active">Active Only</SelectItem>
+            <SelectItem value="inactive">Inactive Only</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Subcontractors List */}
+      {loading ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            Loading subcontractors...
+          </CardContent>
+        </Card>
+      ) : filteredSubcontractors.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <User className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>No subcontractors found</p>
+            <Button onClick={() => setShowDialog(true)} variant="outline" className="mt-4">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Your First Subcontractor
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredSubcontractors.map((sub) => (
+            <Card key={sub.id} className={!sub.active ? 'opacity-60' : ''}>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg">{sub.name}</CardTitle>
+                    {sub.company_name && (
+                      <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                        <Building2 className="w-3 h-3" />
+                        {sub.company_name}
+                      </p>
+                    )}
+                  </div>
+                  <Badge variant={sub.active ? 'default' : 'secondary'}>
+                    {sub.active ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {sub.trade && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Trade</p>
+                      <p className="font-medium">{sub.trade}</p>
+                    </div>
+                  )}
+
+                  {sub.phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="w-4 h-4 text-muted-foreground" />
+                      <a href={`tel:${sub.phone}`} className="hover:underline">
+                        {sub.phone}
+                      </a>
+                    </div>
+                  )}
+
+                  {sub.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="w-4 h-4 text-muted-foreground" />
+                      <a href={`mailto:${sub.email}`} className="hover:underline truncate">
+                        {sub.email}
+                      </a>
+                    </div>
+                  )}
+
+                  {sub.notes && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Notes</p>
+                      <p className="text-sm">{sub.notes}</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedSubcontractor(sub);
+                        setShowScheduleDialog(true);
+                      }}
+                    >
+                      <Calendar className="w-4 h-4 mr-1" />
+                      Schedule
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditDialog(sub)}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(sub.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showDialog} onOpenChange={(open) => {
+        setShowDialog(open);
+        if (!open) resetForm();
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? 'Edit Subcontractor' : 'Add New Subcontractor'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="John Doe"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="company">Company Name</Label>
+                <Input
+                  id="company"
+                  value={formData.company_name}
+                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                  placeholder="ABC Contracting"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="john@example.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="trade">Trade/Specialty</Label>
+                <Select
+                  value={formData.trade}
+                  onValueChange={(value) => setFormData({ ...formData, trade: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select trade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMMON_TRADES.map((trade) => (
+                      <SelectItem key={trade} value={trade}>
+                        {trade}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="active">Status</Label>
+                <Select
+                  value={formData.active ? 'active' : 'inactive'}
+                  onValueChange={(value) => setFormData({ ...formData, active: value === 'active' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Additional notes or special instructions..."
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowDialog(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingId ? 'Update' : 'Add'} Subcontractor
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Dialog - Will be implemented in SubcontractorScheduling component */}
+      {showScheduleDialog && selectedSubcontractor && (
+        <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schedule {selectedSubcontractor.name}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              This will be integrated with the scheduling component
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}

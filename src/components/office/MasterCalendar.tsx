@@ -26,7 +26,7 @@ import {
 
 interface CalendarEvent {
   id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed';
+  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed' | 'subcontractor';
   date: string;
   jobId: string;
   jobName: string;
@@ -36,6 +36,8 @@ interface CalendarEvent {
   status?: string;
   priority?: 'low' | 'medium' | 'high';
   materialId?: string;
+  subcontractorName?: string;
+  subcontractorPhone?: string;
 }
 
 interface MasterCalendarProps {
@@ -200,6 +202,52 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
         });
       }
 
+      // Get subcontractor schedules
+      let subcontractorQuery = supabase
+        .from('subcontractor_schedules')
+        .select(`
+          id,
+          scheduled_date,
+          start_time,
+          end_time,
+          work_description,
+          notes,
+          status,
+          job_id,
+          subcontractors!inner(id, name, phone, trade),
+          jobs!inner(id, name, client_name, status)
+        `)
+        .eq('jobs.status', 'active');
+
+      if (filterJob !== 'all') {
+        subcontractorQuery = subcontractorQuery.eq('job_id', filterJob);
+      }
+
+      const { data: subcontractorSchedules, error: subError } = await subcontractorQuery;
+
+      if (!subError && subcontractorSchedules) {
+        subcontractorSchedules.forEach((schedule: any) => {
+          const jobColor = getJobColor(schedule.jobs.name);
+          const timeStr = schedule.start_time 
+            ? ` (${schedule.start_time.substring(0, 5)}${schedule.end_time ? ` - ${schedule.end_time.substring(0, 5)}` : ''})`
+            : '';
+          events.push({
+            id: `sub-${schedule.id}`,
+            type: 'subcontractor',
+            date: schedule.scheduled_date,
+            jobId: schedule.jobs.id,
+            jobName: schedule.jobs.name,
+            jobColor,
+            title: `${schedule.subcontractors.name}${timeStr}`,
+            description: `${schedule.subcontractors.trade || 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+            subcontractorName: schedule.subcontractors.name,
+            subcontractorPhone: schedule.subcontractors.phone,
+            status: schedule.status,
+            priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.scheduled_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
+          });
+        });
+      }
+
       // Get completed tasks
       let tasksQuery = supabase
         .from('completed_tasks')
@@ -314,6 +362,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
     material_pull: { icon: Package, label: 'Pull from Shop', color: 'bg-purple-500' },
     task_completed: { icon: ListChecks, label: 'Task Completed', color: 'bg-green-500' },
     task_deadline: { icon: AlertCircle, label: 'Task Deadline', color: 'bg-red-500' },
+    subcontractor: { icon: CalendarIcon, label: 'Subcontractor', color: 'bg-indigo-500' },
   };
 
   // Get job color legend
@@ -575,6 +624,11 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">{event.description}</p>
+                          {event.subcontractorPhone && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              📞 {event.subcontractorPhone}
+                            </p>
+                          )}
                           {isMaterialEvent && (
                             <Badge variant="outline" className="mt-2 text-xs">
                               Click to edit material details
@@ -656,6 +710,22 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
                     {events.filter(e => e.type === 'task_completed').length}
                   </p>
                   <p className="text-sm text-muted-foreground">Completed</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-indigo-50 dark:bg-indigo-950/20">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-indigo-500 text-white">
+                  <CalendarIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
+                    {events.filter(e => e.type === 'subcontractor').length}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Subcontractors</p>
                 </div>
               </div>
             </CardContent>

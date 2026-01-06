@@ -18,6 +18,8 @@ import { NotificationsCenter } from '@/components/office/NotificationsCenter';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
+import { SubcontractorManagement } from '@/components/office/SubcontractorManagement';
+import { SubcontractorScheduling } from '@/components/office/SubcontractorScheduling';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -260,7 +262,7 @@ export function OfficeDashboard() {
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-6">
+                <TabsList className="grid w-full grid-cols-8">
                   <TabsTrigger value="export">
                     <Download className="w-4 h-4 mr-2" />
                     Export
@@ -272,6 +274,14 @@ export function OfficeDashboard() {
                   <TabsTrigger value="workers">
                     <Users className="w-4 h-4 mr-2" />
                     Workers
+                  </TabsTrigger>
+                  <TabsTrigger value="subcontractors">
+                    <Users className="w-4 h-4 mr-2" />
+                    Subs
+                  </TabsTrigger>
+                  <TabsTrigger value="schedule">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Schedule
                   </TabsTrigger>
                   <TabsTrigger value="internal">
                     <Briefcase className="w-4 h-4 mr-2" />
@@ -297,6 +307,14 @@ export function OfficeDashboard() {
 
                 <TabsContent value="workers" className="mt-6">
                   <WorkerManagement />
+                </TabsContent>
+
+                <TabsContent value="subcontractors" className="mt-6">
+                  <SubcontractorManagement />
+                </TabsContent>
+
+                <TabsContent value="schedule" className="mt-6">
+                  <SubcontractorScheduling />
                 </TabsContent>
 
                 <TabsContent value="internal" className="mt-6">
