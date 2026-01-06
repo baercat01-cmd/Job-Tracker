@@ -284,9 +284,9 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-2">
             {/* Calendar Grid */}
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1">
               {/* Day headers */}
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                 <div key={day} className="text-center font-semibold text-sm text-muted-foreground py-2">
@@ -297,7 +297,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               {/* Calendar days */}
               {calendarDays.map((day, index) => {
                 if (!day) {
-                  return <div key={`empty-${index}`} className="min-h-24 p-2 border rounded-lg bg-muted/30" />;
+                  return <div key={`empty-${index}`} className="min-h-32 p-1 border rounded bg-muted/30" />;
                 }
 
                 const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -308,7 +308,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                 return (
                   <div
                     key={day}
-                    className={`min-h-24 p-2 border rounded-lg cursor-pointer transition-colors ${
+                    className={`min-h-32 p-1 border rounded cursor-pointer transition-colors ${
                       isToday ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'
                     } ${isSelected ? 'ring-2 ring-primary' : ''}`}
                     onClick={() => setSelectedDate(isSelected ? null : dateStr)}
