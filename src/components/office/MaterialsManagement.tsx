@@ -54,6 +54,10 @@ interface Material {
   use_case: string | null;
   import_source?: string;
   date_needed_by?: string | null;
+  order_by_date?: string | null;
+  pull_by_date?: string | null;
+  delivery_date?: string | null;
+  actual_delivery_date?: string | null;
   ordered_by?: string | null;
   order_requested_at?: string | null;
 }
@@ -118,12 +122,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
   
-  // Order material dialog
-  const [showOrderDialog, setShowOrderDialog] = useState(false);
-  const [orderingMaterial, setOrderingMaterial] = useState<Material | null>(null);
-  const [orderDateNeeded, setOrderDateNeeded] = useState('');
-  const [orderNotes, setOrderNotes] = useState('');
-  const [submittingOrder, setSubmittingOrder] = useState(false);
+  // Status change dialog with dates
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [statusChangeMaterial, setStatusChangeMaterial] = useState<Material | null>(null);
+  const [newStatus, setNewStatus] = useState('not_ordered');
+  const [orderByDate, setOrderByDate] = useState('');
+  const [pullByDate, setPullByDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [actualDeliveryDate, setActualDeliveryDate] = useState('');
+  const [dateNotes, setDateNotes] = useState('');
+  const [submittingStatus, setSubmittingStatus] = useState(false);
   
   // Bulk status change
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
@@ -453,74 +461,81 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  function handleStatusChange(material: Material, newStatus: string) {
-    // If changing to "ordered", show date picker dialog
-    if (newStatus === 'ordered') {
-      setOrderingMaterial(material);
-      // Set default date to tomorrow
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
-      setOrderNotes('');
-      setShowOrderDialog(true);
-    } else {
-      // Direct status change for other statuses
-      updateMaterialStatus(material.id, newStatus);
+  function handleStatusChange(material: Material, newStatusValue: string) {
+    setStatusChangeMaterial(material);
+    setNewStatus(newStatusValue);
+    
+    // Pre-populate existing dates
+    setOrderByDate(material.order_by_date || '');
+    setPullByDate(material.pull_by_date || '');
+    setDeliveryDate(material.delivery_date || '');
+    setActualDeliveryDate(material.actual_delivery_date || '');
+    setDateNotes('');
+    
+    // Set default dates based on status
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    
+    if (newStatusValue === 'ordered' && !material.order_by_date) {
+      setOrderByDate(tomorrowStr);
+      setDeliveryDate(tomorrowStr);
+    } else if (newStatusValue === 'at_shop' && !material.pull_by_date) {
+      setPullByDate(tomorrowStr);
+    } else if (newStatusValue === 'at_job' && !material.actual_delivery_date) {
+      setActualDeliveryDate(new Date().toISOString().split('T')[0]);
     }
+    
+    setShowStatusDialog(true);
   }
 
-  async function updateMaterialStatus(materialId: string, status: string) {
+  async function confirmStatusChange() {
+    if (!statusChangeMaterial) return;
+
+    setSubmittingStatus(true);
     try {
+      const updateData: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update dates based on status
+      if (newStatus === 'ordered') {
+        if (orderByDate) updateData.order_by_date = orderByDate;
+        if (deliveryDate) updateData.delivery_date = deliveryDate;
+        updateData.ordered_by = userId;
+        updateData.order_requested_at = new Date().toISOString();
+      } else if (newStatus === 'at_shop') {
+        if (pullByDate) updateData.pull_by_date = pullByDate;
+      } else if (newStatus === 'at_job') {
+        if (actualDeliveryDate) updateData.actual_delivery_date = actualDeliveryDate;
+      }
+
+      if (dateNotes) {
+        updateData.notes = dateNotes;
+      }
+
       const { error } = await supabase
         .from('materials')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('id', materialId);
-      
+        .update(updateData)
+        .eq('id', statusChangeMaterial.id);
+
       if (error) throw error;
-      toast.success('Status updated');
+
+      toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
+      setShowStatusDialog(false);
+      setStatusChangeMaterial(null);
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to update status');
       console.error(error);
-    }
-  }
-
-  async function confirmMaterialOrder() {
-    if (!orderingMaterial || !orderDateNeeded) {
-      toast.error('Please select a date needed');
-      return;
-    }
-
-    setSubmittingOrder(true);
-    try {
-      const { error } = await supabase
-        .from('materials')
-        .update({
-          status: 'ordered',
-          date_needed_by: orderDateNeeded,
-          ordered_by: userId,
-          order_requested_at: new Date().toISOString(),
-          notes: orderNotes || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', orderingMaterial.id);
-
-      if (error) throw error;
-
-      toast.success(`Material ordered - needed by ${new Date(orderDateNeeded).toLocaleDateString()}`);
-      setShowOrderDialog(false);
-      setOrderingMaterial(null);
-      loadMaterials();
-    } catch (error: any) {
-      toast.error('Failed to order material');
-      console.error(error);
     } finally {
-      setSubmittingOrder(false);
+      setSubmittingStatus(false);
     }
   }
 
   async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    // ... (keeping the existing CSV upload code - it's quite long)
+    // CSV upload logic (keeping existing implementation)
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -960,7 +975,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     try {
       const { error } = await supabase
         .from('materials')
-        .update({ status: 'at_job', updated_at: new Date().toISOString() })
+        .update({ 
+          status: 'at_job', 
+          actual_delivery_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', materialId);
       
       if (error) throw error;
@@ -1135,7 +1154,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         />
       </div>
 
-      {/* Categories List */}
+      {/* Categories List - continues in next message due to character limit */}
       {filteredCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -1321,7 +1340,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                         </th>
                         
                         <th className="text-left p-3 font-semibold text-sm w-48">
-                          Status
+                          Status & Timeline
                         </th>
                         
                         <th className="text-right p-3 font-semibold text-sm w-24">
@@ -1391,22 +1410,34 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                     
                                     {/* Material Flow Timeline */}
                                     <div className="text-[10px] opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                      {material.order_by_date && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="opacity-70">📋</span>
+                                          <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      )}
                                       {material.order_requested_at && (
                                         <div className="flex items-center gap-1">
                                           <span className="opacity-70">📦</span>
                                           <span>Ordered: {new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                         </div>
                                       )}
-                                      {material.date_needed_by && (
+                                      {material.pull_by_date && (
                                         <div className="flex items-center gap-1">
-                                          <span className="opacity-70">📅</span>
-                                          <span>Need by: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                          <span className="opacity-70">🏪</span>
+                                          <span>Pull by: {new Date(material.pull_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                         </div>
                                       )}
-                                      {material.updated_at && material.status !== 'not_ordered' && (
+                                      {material.delivery_date && (
                                         <div className="flex items-center gap-1">
-                                          <span className="opacity-70">🔄</span>
-                                          <span>Updated: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                          <span className="opacity-70">🚚</span>
+                                          <span>Deliver by: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      )}
+                                      {material.actual_delivery_date && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="opacity-70">✅</span>
+                                          <span>Delivered: {new Date(material.actual_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                         </div>
                                       )}
                                     </div>
@@ -1476,79 +1507,144 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         })
       )}
 
-      {/* Order Material Dialog */}
-      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
-        <DialogContent className="max-w-md">
+      {/* Status Change Dialog with Date Tracking */}
+      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" />
-              Order Material
+              <Calendar className="w-5 h-5" />
+              Update Material Status & Timeline
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
-              <p className="font-semibold text-base">{orderingMaterial?.name}</p>
-              {orderingMaterial?.use_case && (
-                <p className="text-sm text-muted-foreground mt-1">Use: {orderingMaterial.use_case}</p>
+              <p className="font-semibold text-base">{statusChangeMaterial?.name}</p>
+              {statusChangeMaterial?.use_case && (
+                <p className="text-sm text-muted-foreground mt-1">Use: {statusChangeMaterial.use_case}</p>
               )}
               <div className="flex items-center gap-4 mt-2 text-sm">
-                <span>Qty: <span className="font-semibold">{orderingMaterial?.quantity}</span></span>
-                {orderingMaterial?.length && (
-                  <span>Length: <span className="font-semibold">{orderingMaterial.length}</span></span>
+                <span>Qty: <span className="font-semibold">{statusChangeMaterial?.quantity}</span></span>
+                {statusChangeMaterial?.length && (
+                  <span>Length: <span className="font-semibold">{statusChangeMaterial.length}</span></span>
                 )}
+              </div>
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-sm font-medium mb-1">Status Change:</p>
+                <div className="flex items-center gap-2">
+                  <Badge className={getStatusColor(statusChangeMaterial?.status || 'not_ordered')}>
+                    {getStatusLabel(statusChangeMaterial?.status || 'not_ordered')}
+                  </Badge>
+                  <span>→</span>
+                  <Badge className={getStatusColor(newStatus)}>
+                    {getStatusLabel(newStatus)}
+                  </Badge>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="order-date" className="text-base font-semibold flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Date Needed By *
-              </Label>
-              <Input
-                id="order-date"
-                type="date"
-                value={orderDateNeeded}
-                onChange={(e) => setOrderDateNeeded(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="h-12 text-base"
-              />
-            </div>
+            {/* Date inputs based on status */}
+            {newStatus === 'ordered' && (
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2">
+                    📋 Order By Date
+                  </Label>
+                  <Input
+                    id="order-by-date"
+                    type="date"
+                    value={orderByDate}
+                    onChange={(e) => setOrderByDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Deadline to place this order</p>
+                </div>
+                <div>
+                  <Label htmlFor="delivery-date" className="flex items-center gap-2">
+                    🚚 Expected Delivery Date
+                  </Label>
+                  <Input
+                    id="delivery-date"
+                    type="date"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Target delivery date to job site</p>
+                </div>
+              </div>
+            )}
 
-            <div className="space-y-3">
-              <Label htmlFor="order-notes" className="text-base font-semibold">Additional Notes (Optional)</Label>
+            {newStatus === 'at_shop' && (
+              <div>
+                <Label htmlFor="pull-by-date" className="flex items-center gap-2">
+                  🏪 Pull By Date
+                </Label>
+                <Input
+                  id="pull-by-date"
+                  type="date"
+                  value={pullByDate}
+                  onChange={(e) => setPullByDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When to pull this material from shop</p>
+              </div>
+            )}
+
+            {newStatus === 'at_job' && (
+              <div>
+                <Label htmlFor="actual-delivery-date" className="flex items-center gap-2">
+                  ✅ Actual Delivery Date
+                </Label>
+                <Input
+                  id="actual-delivery-date"
+                  type="date"
+                  value={actualDeliveryDate}
+                  onChange={(e) => setActualDeliveryDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When material arrived at job site</p>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="date-notes">Notes (Optional)</Label>
               <Input
-                id="order-notes"
-                value={orderNotes}
-                onChange={(e) => setOrderNotes(e.target.value)}
-                placeholder="Any special instructions or urgency notes..."
-                className="h-12 text-base"
+                id="date-notes"
+                value={dateNotes}
+                onChange={(e) => setDateNotes(e.target.value)}
+                placeholder="Any additional notes..."
+                className="h-10"
               />
             </div>
 
             <div className="flex flex-col gap-3 pt-4 border-t">
               <Button
-                onClick={confirmMaterialOrder}
-                disabled={submittingOrder || !orderDateNeeded}
-                className="h-12 text-base gradient-primary"
+                onClick={confirmStatusChange}
+                disabled={submittingStatus}
+                className="h-12 gradient-primary"
               >
-                {submittingOrder ? (
+                {submittingStatus ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Ordering...
+                    Updating...
                   </>
                 ) : (
                   <>
-                    <ShoppingCart className="w-5 h-5 mr-2" />
-                    Confirm Order
+                    <CheckCircle2 className="w-5 h-5 mr-2" />
+                    Confirm Update
                   </>
                 )}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setShowOrderDialog(false)}
-                disabled={submittingOrder}
-                className="h-12 text-base"
+                onClick={() => setShowStatusDialog(false)}
+                disabled={submittingStatus}
+                className="h-12"
               >
                 Cancel
               </Button>
@@ -1791,7 +1887,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </DialogContent>
       </Dialog>
 
-      {/* CSV Import Dialog - keeping full implementation */}
+      {/* CSV Import Dialog - keeping existing CSV implementation */}
       <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
