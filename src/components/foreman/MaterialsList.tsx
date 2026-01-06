@@ -680,7 +680,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   }
 
   return (
-    <div className="space-y-4 w-full lg:max-w-3xl lg:mx-auto">
+    <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
       {/* Action Bar - Mobile Optimized */}
       <div className="flex gap-2">
         {!selectionMode ? (
@@ -795,7 +795,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               </CardHeader>
 
               {expandedBundles.has(bundle.id) && (
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3 p-3">
                   {/* Bundle Status Control */}
                   <div className="pb-4 border-b" onClick={(e) => e.stopPropagation()}>
                     <Label className="text-sm font-semibold mb-2 block">Update Bundle Status</Label>
@@ -829,11 +829,11 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   </div>
 
                   {/* Bundle Materials - Mobile Optimized */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {bundle.materials.map((material) => (
                       <div
                         key={material.id}
-                        className="p-3 border-2 rounded-lg bg-muted/30 space-y-2"
+                        className="p-2 border-2 rounded-lg bg-muted/30 space-y-2"
                       >
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -947,7 +947,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       {/* Categories - Mobile Optimized with Grouping */}
       {filteredCategories.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground text-base">
+          <CardContent className="py-8 text-center text-muted-foreground text-base">
             No materials match the selected filter
           </CardContent>
         </Card>
@@ -971,7 +971,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
             </CardHeader>
 
             {expandedCategories.has(category.id) && (
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2 p-3">
                 {category.groupedMaterials?.map((group) => {
                   const hasMultipleUseCases = group.materials.length > 1;
                   const firstMaterial = group.materials[0];
@@ -982,7 +982,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   return (
                     <div
                       key={group.groupKey}
-                      className={`p-3 border-2 rounded-lg transition-colors space-y-2 ${
+                      className={`p-2 border-2 rounded-lg transition-colors space-y-2 ${
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
