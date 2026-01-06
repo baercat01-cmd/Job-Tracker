@@ -10,6 +10,9 @@ export default defineConfig({
     hmr: {
       // Use client port for WebSocket connection (works with OnSpace proxy)
       clientPort: 443,
+      protocol: 'wss',
+      // Let browser use current hostname for WebSocket
+      host: undefined,
     },
   },
   plugins: [
