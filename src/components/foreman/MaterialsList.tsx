@@ -772,13 +772,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       >
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-base">{material.name}</p>
+                            <p className="font-bold text-lg text-foreground">{material.name}</p>
                             <span className="text-base text-muted-foreground">•</span>
                             <span className="font-medium text-base">Qty: {material.quantity}</span>
                             {material.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
-                                <span className="text-base text-muted-foreground">Length: {material.length}</span>
+                                <span className="text-base text-muted-foreground">L: {material.length}</span>
                               </>
                             )}
                           </div>
@@ -939,13 +939,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                           onClick={() => !selectionMode && openMaterialDetail(material)}
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <p className="font-semibold text-base">{material.name}</p>
+                            <p className="font-bold text-lg text-foreground">{material.name}</p>
                             <span className="text-base text-muted-foreground">•</span>
                             <span className="font-medium text-base">Qty: {material.quantity}</span>
                             {material.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
-                                <span className="text-base text-muted-foreground">Length: {material.length}</span>
+                                <span className="text-base text-muted-foreground">L: {material.length}</span>
                               </>
                             )}
                             {isInBundle && (
