@@ -723,9 +723,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                     <Layers className="w-5 h-5 text-primary" />
                     {bundle.name}
                   </CardTitle>
-                  <Badge variant="secondary" className="text-sm px-3 py-1">
-                    {bundle.materials.length}
-                  </Badge>
                 </div>
                 {bundle.description && (
                   <p className="text-sm text-muted-foreground mt-2">{bundle.description}</p>
@@ -899,9 +896,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   )}
                   {category.name}
                 </CardTitle>
-                <Badge variant="secondary" className="text-sm px-3 py-1">
-                  {category.materials.length}
-                </Badge>
               </div>
             </CardHeader>
 
