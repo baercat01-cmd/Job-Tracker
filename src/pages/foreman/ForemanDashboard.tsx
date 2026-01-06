@@ -248,24 +248,18 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   // Job selected - show tabbed interface
   return (
     <div className="min-h-screen bg-muted/30">
-      {/* Header */}
+      {/* Header with Job Name */}
       {!hideHeader && (
       <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img 
-              src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-              alt="Martin Builder" 
-              className="h-8 w-auto"
-            />
-            <div className="border-l pl-3">
-              <p className="text-xs text-muted-foreground">
-                {profile?.username} • Crew
-              </p>
-            </div>
+        <div className="container mx-auto px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Button variant="ghost" size="sm" onClick={handleBackToJobs} className="h-8 w-8 p-0 flex-shrink-0">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <h1 className="text-sm font-bold truncate">{selectedJob.name}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="h-8 w-8 p-0">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
@@ -279,20 +273,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
         </div>
       )}
-
-      {/* Job Header */}
-      <div className="bg-card border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={handleBackToJobs}>
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">{selectedJob.name}</h1>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Main Content - Tabbed Interface */}
       <main className="container mx-auto px-4 py-6 pb-24">
