@@ -17,6 +17,7 @@ import { DataExport } from '@/components/office/DataExport';
 import { NotificationsCenter } from '@/components/office/NotificationsCenter';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { JobsCalendar } from '@/components/office/JobsCalendar';
+import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -222,7 +223,18 @@ export function OfficeDashboard() {
           </TabsList>
 
           <TabsContent value="jobs">
-            <JobsView />
+            <div className="space-y-6">
+              {/* Master Calendar - Full Width Above Jobs */}
+              <MasterCalendar 
+                onJobSelect={(jobId) => {
+                  setSelectedJobId(jobId);
+                  // JobsView will auto-scroll to the selected job
+                }} 
+              />
+              
+              {/* Active Jobs Cards */}
+              <JobsView selectedJobId={selectedJobId} />
+            </div>
           </TabsContent>
 
           <TabsContent value="calendar">

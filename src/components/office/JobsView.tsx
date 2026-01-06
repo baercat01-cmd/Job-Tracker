@@ -27,9 +27,10 @@ import { Package } from 'lucide-react';
 
 interface JobsViewProps {
   showArchived?: boolean;
+  selectedJobId?: string | null;
 }
 
-export function JobsView({ showArchived = false }: JobsViewProps) {
+export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps) {
   const { profile } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,23 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
   useEffect(() => {
     loadJobs();
   }, []);
+
+  // Auto-scroll to selected job when selectedJobId changes
+  useEffect(() => {
+    if (selectedJobId && selectedJob?.id !== selectedJobId) {
+      const job = jobs.find(j => j.id === selectedJobId);
+      if (job) {
+        setSelectedJob(job);
+        // Scroll to job card if it exists in the DOM
+        setTimeout(() => {
+          const element = document.getElementById(`job-${selectedJobId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
+  }, [selectedJobId, jobs]);
 
   async function loadJobs() {
     try {
@@ -176,7 +194,13 @@ export function JobsView({ showArchived = false }: JobsViewProps) {
             .map((job) => {
             const jobStats = stats[job.id] || {};
             return (
-              <Card key={job.id} className="hover:shadow-md transition-shadow">
+              <Card
+                id={`job-${job.id}`}
+                key={job.id}
+                className={`hover:shadow-md transition-all ${
+                  selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
+                }`}
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1 cursor-pointer" onClick={() => setSelectedJob(job)}>
