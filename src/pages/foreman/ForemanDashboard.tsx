@@ -13,6 +13,7 @@ import { DailyLogForm } from '@/components/foreman/DailyLogForm';
 import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
+import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
@@ -31,6 +32,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [activeTab, setActiveTab] = useState<TabMode>('timer');
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [documentTab, setDocumentTab] = useState<string>('documents');
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -92,6 +94,46 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     clearUser();
     toast.success('Signed out successfully');
   };
+
+  // If showing time history, render that view
+  if (showTimeHistory) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-8 w-auto"
+              />
+              <div className="border-l pl-3">
+                <p className="text-xs text-muted-foreground">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <SyncStatusDetailed />
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-4 py-6">
+          <MyTimeHistory
+            userId={profile?.id || ''}
+            onBack={() => setShowTimeHistory(false)}
+          />
+        </main>
+      </div>
+    );
+  }
 
   // If no job selected, show job selector
   if (!selectedJob) {
@@ -168,6 +210,15 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <div>
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
+            
+            {/* Time History Button */}
+            <Button
+              onClick={() => setShowTimeHistory(true)}
+              className="w-full h-10 gradient-primary text-sm"
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              My Time History
+            </Button>
             
             {/* Quick Time Entry Button */}
             <QuickTimeEntry 
