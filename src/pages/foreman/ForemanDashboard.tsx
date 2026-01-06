@@ -205,13 +205,20 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         )}
 
         {/* Main Content - Job Selection */}
-        <main className="container mx-auto px-4 py-6">
+        <main className="container mx-auto px-4 py-6 pb-32">
           <div className="space-y-4">
             <div>
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
             
-            {/* Quick Time Entry Button */}
+            <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
+          </div>
+        </main>
+
+        {/* Fixed Bottom Action Bar */}
+        <div className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg z-10">
+          <div className="container mx-auto px-4 py-3 space-y-2">
+            {/* Time Clock Button - Full width */}
             <QuickTimeEntry 
               userId={profile?.id || ''} 
               onSuccess={loadActiveTimers}
@@ -222,22 +229,20 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               }}
             />
             
-            <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
-            
-            {/* Time History Button - Smaller at bottom */}
-            <div className="pt-2">
+            {/* Time History Button - Bottom right, smaller */}
+            <div className="flex justify-end">
               <Button
                 onClick={() => setShowTimeHistory(true)}
                 variant="outline"
                 size="sm"
-                className="w-full text-xs h-8"
+                className="text-xs h-7 px-3"
               >
                 <History className="w-3 h-3 mr-1.5" />
                 View Time History
               </Button>
             </div>
           </div>
-        </main>
+        </div>
       </div>
     );
   }
