@@ -890,18 +890,18 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       {/* Bundles */}
       {bundles.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-            <Layers className="w-5 h-5" />
-            Material Bundles
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 py-1">
+            <Layers className="w-3.5 h-3.5" />
+            Bundles
           </h3>
           {bundles.map((bundle) => (
             <Card key={bundle.id} className="border-2 border-primary/20">
               <CardHeader
-                className="cursor-pointer hover:bg-muted/50 transition-colors pb-4"
+                className="cursor-pointer hover:bg-muted/50 transition-colors py-2"
                 onClick={() => toggleBundle(bundle.id)}
               >
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
+                  <CardTitle className="text-base flex items-center gap-2">
                     {expandedBundles.has(bundle.id) ? (
                       <ChevronDown className="w-6 h-6" />
                     ) : (
@@ -912,7 +912,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   </CardTitle>
                 </div>
                 {bundle.description && (
-                  <p className="text-sm text-muted-foreground mt-2">{bundle.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{bundle.description}</p>
                 )}
               </CardHeader>
 
@@ -1060,9 +1060,9 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
       {/* Individual Materials Header */}
       {bundles.length > 0 && categories.some(c => c.materials.length > 0) && (
-        <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-2 pt-4">
-          <Package className="w-5 h-5" />
-          All Materials
+        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 py-1">
+          <Package className="w-3.5 h-3.5" />
+          Materials
         </h3>
       )}
 
@@ -1077,11 +1077,11 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         filteredCategories.map((category) => (
           <Card key={category.id}>
             <CardHeader
-              className="cursor-pointer hover:bg-muted/50 transition-colors pb-4"
+              className="cursor-pointer hover:bg-muted/50 transition-colors py-2"
               onClick={() => toggleCategory(category.id)}
             >
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
+                <CardTitle className="text-base flex items-center gap-2">
                   {expandedCategories.has(category.id) ? (
                     <ChevronDown className="w-6 h-6" />
                   ) : (
