@@ -2,7 +2,6 @@
 
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { useConnectionStatus } from '@/lib/offline-manager';
-import { Badge } from '@/components/ui/badge';
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -47,13 +46,10 @@ export function SyncStatusDetailed() {
   // Subtle badge in top-right corner showing last sync time
   return (
     <div className="fixed top-4 right-4 z-40">
-      <Badge 
-        variant="outline" 
-        className="flex items-center gap-1.5 px-2 py-1 text-xs bg-background/80 backdrop-blur-sm border-muted-foreground/20"
-      >
+      <div className="flex items-center gap-1.5 px-2 py-1 text-xs bg-background/80 backdrop-blur-sm border border-muted-foreground/20 rounded-full shadow-sm">
         <Check className="w-3 h-3 text-green-600" />
         <span className="text-muted-foreground">Synced {timeAgo}</span>
-      </Badge>
+      </div>
     </div>
   );
 }
