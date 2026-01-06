@@ -3,7 +3,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Clock, Camera, LogOut, Briefcase, FileText, ArrowLeft, History, Package, BarChart3 } from 'lucide-react';
+import { Clock, Camera, LogOut, Briefcase, FileText, ArrowLeft, History, Package, BarChart3, Calendar as CalendarIcon } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import type { Job, ActiveTimer } from '@/types';
 import { JobSelector } from '@/components/foreman/JobSelector';
@@ -18,6 +24,7 @@ import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
+import { JobsCalendar } from '@/components/office/JobsCalendar';
 
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
@@ -33,6 +40,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [documentTab, setDocumentTab] = useState<string>('documents');
   const [showTimeHistory, setShowTimeHistory] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -155,6 +163,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setShowCalendar(true)}
+                className="relative"
+              >
+                <CalendarIcon className="w-4 h-4" />
+              </Button>
               <NotificationBell
                 onNotificationClick={(notification) => {
                   console.log('Crew notification clicked:', notification);
@@ -241,6 +257,34 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
           </div>
         </div>
+        
+        {/* Calendar Dialog */}
+        <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5" />
+                Job Calendar
+              </DialogTitle>
+            </DialogHeader>
+            <JobsCalendar 
+              onJobSelect={(jobId) => {
+                // Load and select the job
+                supabase
+                  .from('jobs')
+                  .select('*')
+                  .eq('id', jobId)
+                  .single()
+                  .then(({ data, error }) => {
+                    if (!error && data) {
+                      setSelectedJob(data);
+                      setShowCalendar(false);
+                    }
+                  });
+              }}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
