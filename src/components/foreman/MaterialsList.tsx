@@ -363,9 +363,8 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         if (materialsError) throw materialsError;
       }
 
-      toast.success(`Bundle status updated to ${STATUS_CONFIG[status].label}`);
-      await loadBundles();
-      await loadMaterials();
+      toast.success(`Bundle "${bundles.find(b => b.id === bundleId)?.name}" and all materials updated to ${STATUS_CONFIG[status].label}`);
+      await Promise.all([loadMaterials(), loadBundles()]);
     } catch (error: any) {
       console.error('Error updating bundle status:', error);
       toast.error('Failed to update bundle status');
@@ -774,7 +773,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                     {bundle.materials.map((material) => (
                       <div
                         key={material.id}
-                        className="p-3 border rounded-lg bg-muted/30 space-y-1"
+                        className="p-3 border rounded-lg bg-muted/30 space-y-2"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -789,8 +788,66 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               {material.length && <span>Length: {material.length}</span>}
                             </div>
                           </div>
-                          <div className={`text-xs px-2 py-1 rounded font-medium ${STATUS_CONFIG[material.status].bgClass}`}>
-                            {STATUS_CONFIG[material.status].label}
+                          <div className="w-32 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <Select
+                              value={material.status}
+                              onValueChange={async (value) => {
+                                try {
+                                  const oldStatus = material.status;
+                                  const { error } = await supabase
+                                    .from('materials')
+                                    .update({ status: value, updated_at: new Date().toISOString() })
+                                    .eq('id', material.id);
+                                  
+                                  if (error) throw error;
+                                  toast.success(`${material.name} status updated`);
+                                  
+                                  // Create notification
+                                  await createNotification({
+                                    jobId: job.id,
+                                    createdBy: userId,
+                                    type: 'material_status',
+                                    brief: getMaterialStatusBrief(material.name, oldStatus, value as Material['status']),
+                                    referenceId: material.id,
+                                    referenceData: { 
+                                      materialName: material.name,
+                                      oldStatus,
+                                      newStatus: value,
+                                      bundleName: bundle.name,
+                                    },
+                                  });
+                                  
+                                  // Reload both materials and bundles to sync changes
+                                  await Promise.all([loadMaterials(), loadBundles()]);
+                                } catch (error: any) {
+                                  toast.error('Failed to update status');
+                                  console.error(error);
+                                }
+                              }}
+                            >
+                              <SelectTrigger 
+                                className={`h-8 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{STATUS_CONFIG[material.status].label}</span>
+                                  <ChevronDownIcon className="w-3 h-3 opacity-70" />
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent className="min-w-[140px]">
+                                {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                                  <SelectItem 
+                                    key={status} 
+                                    value={status} 
+                                    className="text-xs cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-3 h-3 rounded border ${config.bgClass}`} />
+                                      <span className="font-medium">{config.label}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                       </div>
@@ -905,9 +962,9 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         <div className="w-36 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={material.status}
-                            disabled={isInBundle}
                             onValueChange={async (value) => {
                               try {
+                                const oldStatus = material.status;
                                 const { error } = await supabase
                                   .from('materials')
                                   .update({ status: value, updated_at: new Date().toISOString() })
@@ -915,7 +972,23 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 
                                 if (error) throw error;
                                 toast.success('Status updated');
-                                loadMaterials();
+                                
+                                // Create notification
+                                await createNotification({
+                                  jobId: job.id,
+                                  createdBy: userId,
+                                  type: 'material_status',
+                                  brief: getMaterialStatusBrief(material.name, oldStatus, value as Material['status']),
+                                  referenceId: material.id,
+                                  referenceData: { 
+                                    materialName: material.name,
+                                    oldStatus,
+                                    newStatus: value,
+                                  },
+                                });
+                                
+                                // Reload both materials and bundles to sync changes
+                                await Promise.all([loadMaterials(), loadBundles()]);
                               } catch (error: any) {
                                 toast.error('Failed to update status');
                                 console.error(error);
@@ -923,7 +996,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all ${isInBundle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                             >
                               <div className="flex items-center justify-between w-full">
                                 <span>{STATUS_CONFIG[material.status].label}</span>
@@ -953,9 +1026,9 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         </p>
                       )}
                       {isInBundle && (
-                        <div className="flex items-center gap-2 text-xs text-primary pt-1 border-t border-primary/20">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1 border-t border-border">
                           <Layers className="w-3 h-3" />
-                          <span>Part of bundle - manage status via bundle</span>
+                          <span>Part of "{bundleInfo.bundleName}" bundle</span>
                         </div>
                       )}
                     </div>
