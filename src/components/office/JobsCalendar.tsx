@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
+import { EventDetailsDialog } from './EventDetailsDialog';
 
 interface CalendarEvent {
   id: string;
@@ -29,6 +30,8 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [showEventDialog, setShowEventDialog] = useState(false);
 
   useEffect(() => {
     loadCalendarEvents();
@@ -358,13 +361,21 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                   {getEventsForDate(selectedDate).map(event => {
                     const config = EVENT_TYPE_CONFIG[event.type];
                     const Icon = config.icon;
+                    const isMaterialEvent = event.type.startsWith('material_');
                     return (
                       <Card
                         key={event.id}
                         className={`cursor-pointer hover:shadow-md transition-shadow ${
                           event.priority === 'high' ? 'border-destructive' : ''
                         }`}
-                        onClick={() => onJobSelect?.(event.jobId)}
+                        onClick={() => {
+                          if (isMaterialEvent) {
+                            setSelectedEvent(event);
+                            setShowEventDialog(true);
+                          } else {
+                            onJobSelect?.(event.jobId);
+                          }
+                        }}
                       >
                         <CardContent className="py-3">
                           <div className="flex items-start gap-3">
@@ -382,6 +393,11 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                               <p className="text-sm text-muted-foreground mt-1">
                                 Job: {event.jobName}
                               </p>
+                              {isMaterialEvent && (
+                                <Badge variant="outline" className="mt-2 text-xs">
+                                  Click to edit
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         </CardContent>
@@ -417,6 +433,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                   const Icon = config.icon;
                   const eventDate = new Date(event.date);
                   const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  const isMaterialEvent = event.type.startsWith('material_');
                   
                   return (
                     <Card
@@ -424,7 +441,14 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                       className={`cursor-pointer hover:shadow-md transition-shadow ${
                         event.priority === 'high' ? 'border-destructive border-2' : ''
                       }`}
-                      onClick={() => onJobSelect?.(event.jobId)}
+                      onClick={() => {
+                        if (isMaterialEvent) {
+                          setSelectedEvent(event);
+                          setShowEventDialog(true);
+                        } else {
+                          onJobSelect?.(event.jobId);
+                        }
+                      }}
                     >
                       <CardContent className="py-4">
                         <div className="flex items-start gap-4">
@@ -460,6 +484,9 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                             <div className="flex items-center gap-2 mt-2">
                               <Badge variant="outline">{event.jobName}</Badge>
                               <Badge variant="outline">{config.label}</Badge>
+                              {isMaterialEvent && (
+                                <Badge variant="secondary" className="text-xs">Click to edit</Badge>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -539,6 +566,19 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Event Details Dialog */}
+      <EventDetailsDialog
+        event={selectedEvent}
+        open={showEventDialog}
+        onClose={() => {
+          setShowEventDialog(false);
+          setSelectedEvent(null);
+        }}
+        onUpdate={() => {
+          loadCalendarEvents();
+        }}
+      />
     </div>
   );
 }
