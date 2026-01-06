@@ -1333,17 +1333,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                       {filteredMaterials.map((material) => (
                         <tr key={material.id} className="hover:bg-muted/20 transition-colors">
                           <td className="p-3">
-                            <div>
-                              <span className="font-medium text-base">{material.name}</span>
-                              {material.date_needed_by && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300">
-                                    <Calendar className="w-3 h-3 mr-1" />
-                                    Need by {new Date(material.date_needed_by).toLocaleDateString()}
-                                  </Badge>
-                                </div>
-                              )}
-                            </div>
+                            <span className="font-medium text-base">{material.name}</span>
                           </td>
                           
                           <td className="p-3">
@@ -1375,7 +1365,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => quickMarkAsOnSite(material.id)}
-                                  className="h-8 text-xs font-semibold border-2 border-green-300 text-green-700 hover:bg-green-50 transition-all"
+                                  className="h-8 text-xs font-semibold border-2 border-green-300 text-green-700 hover:bg-green-50 transition-all flex-shrink-0"
                                   title="Quick mark as on-site"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
@@ -1388,11 +1378,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 onValueChange={(value) => handleStatusChange(material, value)}
                               >
                                 <SelectTrigger 
-                                  className={`h-8 text-xs font-semibold border-2 rounded-md ${getStatusColor(material.status)} hover:shadow-md cursor-pointer transition-all w-32`}
+                                  className={`h-auto min-h-8 text-xs font-semibold border-2 rounded-md ${getStatusColor(material.status)} hover:shadow-md cursor-pointer transition-all flex-1`}
                                 >
-                                  <div className="flex items-center justify-between w-full">
-                                    <span>{getStatusLabel(material.status)}</span>
-                                    <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
+                                  <div className="w-full py-1 text-left">
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span>{getStatusLabel(material.status)}</span>
+                                      <ChevronDownIcon className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
+                                    </div>
+                                    {material.date_needed_by && (
+                                      <div className="text-[10px] opacity-90 font-normal">
+                                        Need: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                      </div>
+                                    )}
+                                    {material.ordered_by && (
+                                      <div className="text-[10px] opacity-80 font-normal">
+                                        Ordered: {material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Yes'}
+                                      </div>
+                                    )}
                                   </div>
                                 </SelectTrigger>
                                 <SelectContent className="min-w-[180px]">

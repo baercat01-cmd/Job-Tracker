@@ -938,11 +938,23 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       onValueChange={(value) => updateBundleStatus(bundle.id, value as Material['status'])}
                     >
                       <SelectTrigger 
-                        className={`h-12 text-base font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                        className={`h-auto min-h-12 text-base font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <span>{STATUS_CONFIG[bundle.status].label}</span>
-                          <ChevronDownIcon className="w-5 h-5 opacity-70" />
+                        <div className="w-full py-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span>{STATUS_CONFIG[bundle.status].label}</span>
+                            <ChevronDownIcon className="w-5 h-5 opacity-70" />
+                          </div>
+                          {bundle.materials.some(m => m.date_needed_by) && (
+                            <div className="text-xs opacity-90 font-normal text-left">
+                              {bundle.materials.filter(m => m.date_needed_by).length} item(s) with delivery dates
+                            </div>
+                          )}
+                          {bundle.updated_at && (
+                            <div className="text-xs opacity-80 font-normal text-left">
+                              Updated: {new Date(bundle.updated_at).toLocaleDateString()}
+                            </div>
+                          )}
                         </div>
                       </SelectTrigger>
                       <SelectContent className="min-w-[180px]">
@@ -1023,11 +1035,23 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-11 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                              className={`h-auto min-h-11 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                             >
-                              <div className="flex items-center justify-between w-full">
-                                <span>{STATUS_CONFIG[material.status].label}</span>
-                                <ChevronDownIcon className="w-4 h-4 opacity-70" />
+                              <div className="w-full py-1">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span>{STATUS_CONFIG[material.status].label}</span>
+                                  <ChevronDownIcon className="w-4 h-4 opacity-70" />
+                                </div>
+                                {material.date_needed_by && (
+                                  <div className="text-xs opacity-90 font-normal text-left">
+                                    Need by: {new Date(material.date_needed_by).toLocaleDateString()}
+                                  </div>
+                                )}
+                                {material.order_requested_at && (
+                                  <div className="text-xs opacity-80 font-normal text-left">
+                                    Ordered: {new Date(material.order_requested_at).toLocaleDateString()}
+                                  </div>
+                                )}
                               </div>
                             </SelectTrigger>
                             <SelectContent className="min-w-[160px]">
@@ -1226,11 +1250,23 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             onValueChange={(value) => handleGroupStatusChange(group, value as Material['status'])}
                           >
                             <SelectTrigger 
-                              className={`h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
+                              className={`h-auto min-h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
-                              <div className="flex items-center justify-between w-full">
-                                <span>{STATUS_CONFIG[group.primaryStatus].label}</span>
-                                <ChevronDownIcon className="w-4 h-4 opacity-70" />
+                              <div className="w-full py-1">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span>{STATUS_CONFIG[group.primaryStatus].label}</span>
+                                  <ChevronDownIcon className="w-4 h-4 opacity-70" />
+                                </div>
+                                {group.materials[0].date_needed_by && (
+                                  <div className="text-xs opacity-90 font-normal text-left">
+                                    Need by: {new Date(group.materials[0].date_needed_by).toLocaleDateString()}
+                                  </div>
+                                )}
+                                {group.materials[0].order_requested_at && (
+                                  <div className="text-xs opacity-80 font-normal text-left">
+                                    Ordered: {new Date(group.materials[0].order_requested_at).toLocaleDateString()}
+                                  </div>
+                                )}
                               </div>
                             </SelectTrigger>
                             <SelectContent className="min-w-[180px]">
