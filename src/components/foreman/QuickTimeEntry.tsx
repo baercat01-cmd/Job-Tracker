@@ -290,7 +290,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
   async function loadOrCreateMiscJobsCategory() {
     try {
-      // Check if Misc Jobs internal job exists
+      // Check if Misc Jobs internal job exists (created manually by crew member)
       const { data: existing, error: fetchError } = await supabase
         .from('jobs')
         .select('id')
@@ -302,26 +302,10 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
       if (existing) {
         setMiscJobsId(existing.id);
-      } else {
-        // Create Misc Jobs internal job
-        const { data: newJob, error: createError } = await supabase
-          .from('jobs')
-          .insert({
-            name: 'Misc Jobs',
-            client_name: 'Internal',
-            address: 'Various',
-            is_internal: true,
-            status: 'active',
-            created_by: userId,
-          })
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        setMiscJobsId(newJob.id);
       }
+      // No auto-creation - user must manually create via Internal Jobs Management
     } catch (error) {
-      console.error('Error loading/creating Misc Jobs category:', error);
+      console.error('Error loading Misc Jobs category:', error);
     }
   }
 
