@@ -11,8 +11,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import { ConnectionStatus } from '@/components/ui/connection-status';
-import { SyncStatusDetailed } from '@/components/ui/sync-status';
-import { useOfflineSync } from '@/hooks/useOfflineSync';
 
 // Error Boundary to catch runtime errors
 class ErrorBoundary extends Component<
@@ -150,7 +148,6 @@ export default function App() {
       <AuthProvider>
         <AppContent />
         <ConnectionStatus />
-        <SyncStatusDetailed />
         <Toaster position="top-center" richColors />
       </AuthProvider>
     </ErrorBoundary>

@@ -17,7 +17,6 @@ import { DataExport } from '@/components/office/DataExport';
 import { NotificationsCenter } from '@/components/office/NotificationsCenter';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
-import { SyncStatusDetailed } from '@/components/ui/sync-status';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,7 +88,6 @@ export function OfficeDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <SyncStatusDetailed />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -137,7 +135,6 @@ export function OfficeDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <SyncStatusDetailed />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
