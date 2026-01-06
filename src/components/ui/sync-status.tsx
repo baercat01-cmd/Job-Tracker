@@ -1,9 +1,9 @@
-// Data synced indicator with clear states: syncing, synced, offline
+// Compact sync indicator - shows only when syncing, on error, or subtle last sync time
 
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { useConnectionStatus } from '@/lib/offline-manager';
 import { useEffect, useState } from 'react';
-import { CheckCircle, Loader2, WifiOff } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 function getTimeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -15,7 +15,7 @@ function getTimeAgo(timestamp: number): string {
 }
 
 export function SyncStatusDetailed() {
-  const { isSyncing, lastSyncTime } = useOfflineSync();
+  const { isSyncing, lastSyncTime, error } = useOfflineSync();
   const connectionStatus = useConnectionStatus();
   const [timeAgo, setTimeAgo] = useState<string>('');
 
@@ -33,38 +33,41 @@ export function SyncStatusDetailed() {
     return () => clearInterval(interval);
   }, [lastSyncTime]);
 
-  // Show different states based on sync status
-  // Priority: Offline > Synced
-  // Note: We don't show the syncing state to avoid visual distraction
-  
-  // State 1: Offline - show static offline indicator
-  if (connectionStatus === 'offline') {
+  // State 1: Show spinner when actively syncing
+  if (isSyncing) {
     return (
-      <div className="fixed top-4 right-4 z-40">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-full shadow-sm">
-          <WifiOff className="h-4 w-4 text-orange-500" />
-          <span className="text-xs font-medium text-orange-700 dark:text-orange-300">
-            Offline
-          </span>
-        </div>
+      <div className="flex items-center gap-2 px-2 py-1 rounded">
+        <Loader2 className="h-3 w-3 text-muted-foreground animate-spin" />
+        <span className="text-xs text-muted-foreground">
+          Syncing...
+        </span>
       </div>
     );
   }
 
-  // State 2: Synced - show static checkmark with last sync time
-  if (lastSyncTime) {
+  // State 2: Show error if sync failed
+  if (error) {
     return (
-      <div className="fixed top-4 right-4 z-40">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-full shadow-sm">
-          <CheckCircle className="h-4 w-4 text-green-500" />
-          <span className="text-xs font-medium text-green-700 dark:text-green-300">
-            Synced {timeAgo}
-          </span>
-        </div>
+      <div className="flex items-center gap-2 px-2 py-1 rounded">
+        <AlertCircle className="h-3 w-3 text-destructive" />
+        <span className="text-xs text-destructive">
+          Sync error
+        </span>
       </div>
     );
   }
 
-  // No state to show (initial load)
+  // State 3: Show subtle last synced time after successful sync
+  if (lastSyncTime && connectionStatus === 'online') {
+    return (
+      <div className="px-2 py-1">
+        <span className="text-xs text-muted-foreground/60">
+          Synced {timeAgo}
+        </span>
+      </div>
+    );
+  }
+
+  // Hidden by default (no sync status to show)
   return null;
 }

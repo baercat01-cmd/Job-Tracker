@@ -17,6 +17,7 @@ import { ComponentHistory } from '@/components/foreman/ComponentHistory';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
+import { SyncStatusDetailed } from '@/components/ui/sync-status';
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
 
@@ -113,6 +114,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <SyncStatusDetailed />
               <NotificationBell
                 onNotificationClick={(notification) => {
                   console.log('Crew notification clicked:', notification);
@@ -204,9 +206,12 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
-            <LogOut className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <SyncStatusDetailed />
+            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </header>
       )}
