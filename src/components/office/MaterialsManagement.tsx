@@ -35,6 +35,8 @@ import {
   ArrowUp,
   ArrowDown,
   ListChecks,
+  Calendar,
+  ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -51,6 +53,9 @@ interface Material {
   notes: string | null;
   use_case: string | null;
   import_source?: string;
+  date_needed_by?: string | null;
+  ordered_by?: string | null;
+  order_requested_at?: string | null;
 }
 
 interface Category {
@@ -112,6 +117,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialLength, setMaterialLength] = useState('');
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
+  
+  // Order material dialog
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
+  const [orderingMaterial, setOrderingMaterial] = useState<Material | null>(null);
+  const [orderDateNeeded, setOrderDateNeeded] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+  const [submittingOrder, setSubmittingOrder] = useState(false);
   
   // Bulk status change
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
@@ -441,14 +453,80 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  function handleStatusChange(material: Material, newStatus: string) {
+    // If changing to "ordered", show date picker dialog
+    if (newStatus === 'ordered') {
+      setOrderingMaterial(material);
+      // Set default date to tomorrow
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
+      setOrderNotes('');
+      setShowOrderDialog(true);
+    } else {
+      // Direct status change for other statuses
+      updateMaterialStatus(material.id, newStatus);
+    }
+  }
+
+  async function updateMaterialStatus(materialId: string, status: string) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', materialId);
+      
+      if (error) throw error;
+      toast.success('Status updated');
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update status');
+      console.error(error);
+    }
+  }
+
+  async function confirmMaterialOrder() {
+    if (!orderingMaterial || !orderDateNeeded) {
+      toast.error('Please select a date needed');
+      return;
+    }
+
+    setSubmittingOrder(true);
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({
+          status: 'ordered',
+          date_needed_by: orderDateNeeded,
+          ordered_by: userId,
+          order_requested_at: new Date().toISOString(),
+          notes: orderNotes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderingMaterial.id);
+
+      if (error) throw error;
+
+      toast.success(`Material ordered - needed by ${new Date(orderDateNeeded).toLocaleDateString()}`);
+      setShowOrderDialog(false);
+      setOrderingMaterial(null);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to order material');
+      console.error(error);
+    } finally {
+      setSubmittingOrder(false);
+    }
+  }
+
   async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    // ... (keeping the existing CSV upload code - it's quite long)
     const file = e.target.files?.[0];
     if (!file) return;
 
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     setFileExtension(fileExt || '');
     
-    // Handle Excel files
     if (fileExt === 'xlsx' || fileExt === 'xls') {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -456,46 +534,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           const data = event.target?.result;
           const workbook = XLSX.read(data, { type: 'binary' });
           
-          console.log('📊 Excel workbook loaded');
-          console.log('📑 Worksheets found:', workbook.SheetNames);
-          
-          // Process ALL worksheets in the Excel file
           const allRows: any[] = [];
           let commonHeaders: string[] = [];
           
-          // Loop through each worksheet
           for (let i = 0; i < workbook.SheetNames.length; i++) {
             const sheetName = workbook.SheetNames[i];
             const worksheet = workbook.Sheets[sheetName];
-            
-            console.log(`\n📄 Processing sheet: "${sheetName}"`);
-            
-            // Convert sheet to JSON
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             
-            if (jsonData.length < 2) {
-              console.log(`⚠️ Sheet "${sheetName}" has no data, skipping`);
-              continue;
-            }
+            if (jsonData.length < 2) continue;
 
-            // First row is headers
             const headers = (jsonData[0] as any[]).map(h => String(h || '').trim());
             
-            // Use first sheet's headers as common headers
             if (i === 0 || commonHeaders.length === 0) {
               commonHeaders = headers;
-              console.log('📋 Headers:', headers);
             }
             
-            // Process data rows
             const sheetRows = jsonData.slice(1).map((row: any) => {
               const rowObj: any = {};
               headers.forEach((header, index) => {
                 rowObj[header] = String(row[index] || '').trim();
               });
               
-              // Add worksheet name as category if not already present
-              // This ensures each worksheet becomes its own category
               const categoryHeader = headers.find(h => /category|type|group/i.test(h));
               if (!categoryHeader) {
                 rowObj['Category'] = sheetName;
@@ -505,12 +565,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               
               return rowObj;
             }).filter(row => {
-              // Filter out empty rows
               const hasData = Object.values(row).some(val => val !== '' && val !== sheetName);
               return hasData;
             });
             
-            console.log(`✅ Sheet "${sheetName}": ${sheetRows.length} rows`);
             allRows.push(...sheetRows);
           }
           
@@ -519,7 +577,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             return;
           }
           
-          // Add 'Category' to headers if not present
           if (!commonHeaders.find(h => /category|type|group/i.test(h))) {
             commonHeaders.unshift('Category');
           }
@@ -527,46 +584,26 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           setCsvColumns(commonHeaders);
           setCsvData(allRows);
 
-          // Auto-detect column mapping
           const autoMapping = {
-            category: commonHeaders.find(c => 
-              /category|type|group/i.test(c)
-            ) || 'Category',
-            name: commonHeaders.find(c => 
-              /name|material|item|description/i.test(c)
-            ) || '',
-            useCase: commonHeaders.find(c => 
-              /use.case|usage|use|purpose|application/i.test(c)
-            ) || '',
-            quantity: commonHeaders.find(c => 
-              /quantity|qty|amount|count/i.test(c)
-            ) || '',
-            length: commonHeaders.find(c => 
-              /length|size|dimension/i.test(c)
-            ) || '',
+            category: commonHeaders.find(c => /category|type|group/i.test(c)) || 'Category',
+            name: commonHeaders.find(c => /name|material|item|description/i.test(c)) || '',
+            useCase: commonHeaders.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
+            quantity: commonHeaders.find(c => /quantity|qty|amount|count/i.test(c)) || '',
+            length: commonHeaders.find(c => /length|size|dimension/i.test(c)) || '',
           };
           
           setColumnMapping(autoMapping);
           setImportStep('columns');
           setShowCsvDialog(true);
           
-          const sheetCount = workbook.SheetNames.length;
-          toast.success(`Loaded ${sheetCount} worksheet${sheetCount > 1 ? 's' : ''} with ${allRows.length} total rows`);
-          
-          console.log('\n📊 Import Summary:');
-          console.log('- Total worksheets:', sheetCount);
-          console.log('- Total rows:', allRows.length);
-          console.log('- Columns:', commonHeaders);
-          console.log('- Auto-mapping:', autoMapping);
+          toast.success(`Loaded ${workbook.SheetNames.length} worksheet(s) with ${allRows.length} total rows`);
         } catch (error: any) {
           toast.error('Failed to parse Excel file');
           console.error('Excel parse error:', error);
         }
       };
       reader.readAsBinaryString(file);
-    }
-    // Handle CSV files
-    else {
+    } else {
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
@@ -578,7 +615,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             return;
           }
 
-          // Parse CSV (simple comma-separated, doesn't handle quoted commas)
           const headers = lines[0].split(',').map(h => h.trim());
           const rows = lines.slice(1).map(line => {
             const values = line.split(',').map(v => v.trim());
@@ -592,32 +628,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           setCsvColumns(headers);
           setCsvData(rows);
 
-          // Auto-detect column mapping
           const autoMapping = {
-            category: headers.find(c => 
-              /category|type|group/i.test(c)
-            ) || '',
-            name: headers.find(c => 
-              /name|material|item|description/i.test(c)
-            ) || '',
-            useCase: headers.find(c => 
-              /use.case|usage|use|purpose|application/i.test(c)
-            ) || '',
-            quantity: headers.find(c => 
-              /quantity|qty|amount|count/i.test(c)
-            ) || '',
-            length: headers.find(c => 
-              /length|size|dimension/i.test(c)
-            ) || '',
+            category: headers.find(c => /category|type|group/i.test(c)) || '',
+            name: headers.find(c => /name|material|item|description/i.test(c)) || '',
+            useCase: headers.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
+            quantity: headers.find(c => /quantity|qty|amount|count/i.test(c)) || '',
+            length: headers.find(c => /length|size|dimension/i.test(c)) || '',
           };
           
           setColumnMapping(autoMapping);
           setImportStep('columns');
           setShowCsvDialog(true);
-          
-          console.log('CSV loaded:', rows.length, 'rows');
-          console.log('Columns detected:', headers);
-          console.log('Auto-mapping:', autoMapping);
         } catch (error: any) {
           toast.error('Failed to parse CSV file');
           console.error('CSV parse error:', error);
@@ -626,7 +647,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       reader.readAsText(file);
     }
     
-    // Reset input
     e.target.value = '';
   }
 
@@ -636,7 +656,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       return;
     }
 
-    // Extract unique categories using mapped column
     const uniqueCategories = Array.from(
       new Set(
         csvData
@@ -648,7 +667,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
     setCsvCategories(uniqueCategories);
     
-    // Initialize category mapping
     const initialMapping: Record<string, string> = {};
     uniqueCategories.forEach(csvCat => {
       const existingMatch = categories.find(
@@ -662,15 +680,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     });
     setCategoryMapping(initialMapping);
     setImportStep('categories');
-    
-    console.log('Categories found:', uniqueCategories);
   }
 
   function downloadCategoryTemplate(category: Category) {
-    // Create CSV template for specific category with headers and example/existing materials
     const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length'];
     
-    // If category has existing materials, include them; otherwise show examples
     let rows: string[][];
     if (category.materials.length > 0) {
       rows = category.materials.map(m => [
@@ -681,7 +695,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         m.length || '',
       ]);
     } else {
-      // Example rows for empty category
       rows = [
         [category.name, 'Example Material 1', 'Foundation work', '100', '8ft'],
         [category.name, 'Example Material 2', 'Framing', '50', '12ft'],
@@ -694,7 +707,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       ...rows.map(row => row.join(',')),
     ].join('\n');
 
-    // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -712,7 +724,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   function downloadAllTemplate() {
-    // Create CSV template with all categories
     const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length'];
     const exampleRows = [
       ['Lumber', '2x4 Stud', 'Wall framing', '100', '8ft'],
@@ -727,7 +738,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       ...exampleRows.map(row => row.join(',')),
     ].join('\n');
 
-    // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -746,14 +756,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function processCsvImport() {
     setUploading(true);
     try {
-      console.log('Starting import process...');
-      
-      // Step 1: Create new categories if needed
       const categoriesToCreate = Object.entries(categoryMapping)
         .filter(([_, value]) => value === 'CREATE_NEW')
         .map(([key]) => key);
 
-      console.log('Categories to create:', categoriesToCreate);
       const newCategoryIds: Record<string, string> = {};
       
       for (const catName of categoriesToCreate) {
@@ -769,15 +775,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .select()
           .single();
 
-        if (error) {
-          console.error('Category creation error:', error);
-          throw error;
-        }
+        if (error) throw error;
         newCategoryIds[catName] = data.id;
-        console.log('Created category:', catName, data.id);
       }
 
-      // Step 2: Get final category mapping
       const finalMapping: Record<string, string> = {};
       Object.entries(categoryMapping).forEach(([excelCat, value]) => {
         if (value === 'CREATE_NEW') {
@@ -787,14 +788,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         }
       });
 
-      console.log('Final category mapping:', finalMapping);
-
-      // Determine import source type
       const importSource = fileExtension === 'csv' ? 'csv_import' : 'excel_import';
       const categoryIdsBeingImported = Object.values(finalMapping);
 
-      // Step 3: Delete old imported materials (that haven't been modified)
-      // from categories that are being re-imported
       let deleted = 0;
       for (const categoryId of categoryIdsBeingImported) {
         const { data: deletedMaterials, error: deleteError } = await supabase
@@ -806,15 +802,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('status', 'not_ordered')
           .select('id');
 
-        if (deleteError) {
-          console.error('Delete error:', deleteError);
-          throw deleteError;
-        }
+        if (deleteError) throw deleteError;
         deleted += deletedMaterials?.length || 0;
       }
-      console.log('Deleted old imported materials:', deleted);
 
-      // Step 4: Process and insert new materials
       const materialsToInsert: any[] = [];
       let skipped = 0;
       let preserved = 0;
@@ -827,22 +818,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         const length = columnMapping.length ? String(row[columnMapping.length] || '').trim() : '';
         const useCase = columnMapping.useCase ? String(row[columnMapping.useCase] || '').trim() : '';
 
-        console.log('Processing row:', { category, name, useCase, quantity, length });
-
         if (!category || !name || quantity === 0) {
-          console.log('Skipping invalid row:', { category, name, quantity });
           skipped++;
           continue;
         }
 
         const categoryId = finalMapping[category];
         if (!categoryId) {
-          console.log('No category ID for:', category);
           skipped++;
           continue;
         }
 
-        // Check if this exact material already exists as manual or modified
         const { data: existingManual } = await supabase
           .from('materials')
           .select('id, import_source, status')
@@ -854,22 +840,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .single();
 
         if (existingManual) {
-          // Material exists - check if it should be preserved
           const shouldPreserve = 
             existingManual.import_source === 'manual' || 
             existingManual.status !== 'not_ordered';
 
           if (shouldPreserve) {
             preserved++;
-            console.log('Preserving manual/modified material:', name, {
-              source: existingManual.import_source,
-              status: existingManual.status,
-            });
-            continue; // Skip this row, keep existing material
+            continue;
           }
         }
 
-        // Insert new material
         materialsToInsert.push({
           job_id: job.id,
           category_id: categoryId,
@@ -881,22 +861,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           created_by: userId,
           import_source: importSource,
         });
-        console.log('Will insert new material:', name);
       }
 
-      console.log('Materials to insert:', materialsToInsert.length);
-      console.log('Materials preserved:', preserved);
-      console.log('Skipped rows:', skipped);
-
-      // Batch insert
       if (materialsToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('materials')
           .insert(materialsToInsert);
-        if (insertError) {
-          console.error('Insert error:', insertError);
-          throw insertError;
-        }
+        if (insertError) throw insertError;
       }
 
       const messageParts = [];
@@ -918,23 +889,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  // Filter and sort materials
   function getFilteredAndSortedMaterials(categoryMaterials: Material[]) {
-    // First filter
     let filtered = categoryMaterials.filter(material => {
-      // Search filter (searches name, use_case, and length)
       const matchesSearch = searchTerm === '' || 
         material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (material.use_case && material.use_case.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (material.length && material.length.toLowerCase().includes(searchTerm.toLowerCase()));
       
-      // Status filter
       const matchesStatus = filterStatus === 'all' || material.status === filterStatus;
       
       return matchesSearch && matchesStatus;
     });
 
-    // Then sort
     filtered.sort((a, b) => {
       let compareA: any;
       let compareB: any;
@@ -968,19 +934,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     return filtered;
   }
 
-  // Handle column header click for sorting
   function handleSort(column: 'name' | 'useCase' | 'quantity' | 'length') {
     if (sortBy === column) {
-      // Toggle direction if same column
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
-      // New column, default to ascending
       setSortBy(column);
       setSortDirection('asc');
     }
   }
 
-  // Render sort icon for column headers
   function SortIcon({ column }: { column: 'name' | 'useCase' | 'quantity' | 'length' }) {
     if (sortBy !== column) {
       return <ArrowUpDown className="w-4 h-4 opacity-40" />;
@@ -990,7 +952,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       : <ArrowDown className="w-4 h-4 text-primary" />;
   }
 
-  // Get filtered categories (only show categories that have matching materials)
   const filteredCategories = filterCategory === 'all' 
     ? categories 
     : categories.filter(cat => cat.id === filterCategory);
@@ -1014,17 +975,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function bulkChangeStatus() {
     setBulkStatusUpdating(true);
     try {
-      // Get all materials that match current filters
       let materialsToUpdate: string[] = [];
       
       if (filterCategory === 'all') {
-        // Update all categories
         categories.forEach(category => {
           const filtered = getFilteredAndSortedMaterials(category.materials);
           materialsToUpdate.push(...filtered.map(m => m.id));
         });
       } else {
-        // Update only selected category
         const category = categories.find(c => c.id === filterCategory);
         if (category) {
           const filtered = getFilteredAndSortedMaterials(category.materials);
@@ -1177,7 +1135,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         />
       </div>
 
-      {/* Categories List - Rendered content goes here as before */}
+      {/* Categories List */}
       {filteredCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -1203,7 +1161,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         filteredCategories.map((category, index) => {
           const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
           if (filteredMaterials.length === 0 && (searchTerm || filterStatus !== 'all')) {
-            return null; // Hide categories with no matching materials when filters are active
+            return null;
           }
           
           return (
@@ -1319,11 +1277,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  {/* Spreadsheet-style Table */}
                   <table className="w-full">
                     <thead className="bg-muted/50 border-b-2">
                       <tr>
-                        {/* Material Name Column */}
                         <th className="text-left p-3 font-semibold text-sm">
                           <button
                             onClick={() => handleSort('name')}
@@ -1334,7 +1290,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           </button>
                         </th>
                         
-                        {/* Use Case Column */}
                         <th className="text-left p-3 font-semibold text-sm">
                           <button
                             onClick={() => handleSort('useCase')}
@@ -1345,7 +1300,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           </button>
                         </th>
                         
-                        {/* Quantity Column */}
                         <th className="text-left p-3 font-semibold text-sm w-24">
                           <button
                             onClick={() => handleSort('quantity')}
@@ -1356,7 +1310,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           </button>
                         </th>
                         
-                        {/* Length Column */}
                         <th className="text-left p-3 font-semibold text-sm w-28">
                           <button
                             onClick={() => handleSort('length')}
@@ -1367,12 +1320,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           </button>
                         </th>
                         
-                        {/* Status Column */}
                         <th className="text-left p-3 font-semibold text-sm w-48">
                           Status
                         </th>
                         
-                        {/* Actions Column */}
                         <th className="text-right p-3 font-semibold text-sm w-24">
                           Actions
                         </th>
@@ -1381,12 +1332,20 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     <tbody className="divide-y">
                       {filteredMaterials.map((material) => (
                         <tr key={material.id} className="hover:bg-muted/20 transition-colors">
-                          {/* Material Name */}
                           <td className="p-3">
-                            <span className="font-medium text-base">{material.name}</span>
+                            <div>
+                              <span className="font-medium text-base">{material.name}</span>
+                              {material.date_needed_by && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300">
+                                    <Calendar className="w-3 h-3 mr-1" />
+                                    Need by {new Date(material.date_needed_by).toLocaleDateString()}
+                                  </Badge>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           
-                          {/* Use Case */}
                           <td className="p-3">
                             {material.use_case ? (
                               <span className="text-sm text-muted-foreground">
@@ -1397,12 +1356,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             )}
                           </td>
                           
-                          {/* Quantity */}
                           <td className="p-3">
                             <span className="font-semibold text-sm">{material.quantity}</span>
                           </td>
                           
-                          {/* Length */}
                           <td className="p-3">
                             {material.length ? (
                               <span className="text-sm font-medium">{material.length}</span>
@@ -1411,10 +1368,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             )}
                           </td>
                           
-                          {/* Status */}
                           <td className="p-3">
                             <div className="flex items-center gap-2">
-                              {/* Quick "Mark On-Site" Button */}
                               {material.status !== 'at_job' && (
                                 <Button
                                   variant="outline"
@@ -1428,24 +1383,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 </Button>
                               )}
                               
-                              {/* Status Dropdown */}
                               <Select
                                 value={material.status}
-                                onValueChange={async (value) => {
-                                  try {
-                                    const { error } = await supabase
-                                      .from('materials')
-                                      .update({ status: value, updated_at: new Date().toISOString() })
-                                      .eq('id', material.id);
-                                    
-                                    if (error) throw error;
-                                    toast.success('Status updated');
-                                    loadMaterials();
-                                  } catch (error: any) {
-                                    toast.error('Failed to update status');
-                                    console.error(error);
-                                  }
-                                }}
+                                onValueChange={(value) => handleStatusChange(material, value)}
                               >
                                 <SelectTrigger 
                                   className={`h-8 text-xs font-semibold border-2 rounded-md ${getStatusColor(material.status)} hover:shadow-md cursor-pointer transition-all w-32`}
@@ -1473,7 +1413,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             </div>
                           </td>
                           
-                          {/* Actions */}
                           <td className="p-3">
                             <div className="flex items-center justify-end gap-1">
                               <Button
@@ -1519,6 +1458,87 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           );
         })
       )}
+
+      {/* Order Material Dialog */}
+      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Order Material
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <p className="font-semibold text-base">{orderingMaterial?.name}</p>
+              {orderingMaterial?.use_case && (
+                <p className="text-sm text-muted-foreground mt-1">Use: {orderingMaterial.use_case}</p>
+              )}
+              <div className="flex items-center gap-4 mt-2 text-sm">
+                <span>Qty: <span className="font-semibold">{orderingMaterial?.quantity}</span></span>
+                {orderingMaterial?.length && (
+                  <span>Length: <span className="font-semibold">{orderingMaterial.length}</span></span>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="order-date" className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Date Needed By *
+              </Label>
+              <Input
+                id="order-date"
+                type="date"
+                value={orderDateNeeded}
+                onChange={(e) => setOrderDateNeeded(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="h-12 text-base"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="order-notes" className="text-base font-semibold">Additional Notes (Optional)</Label>
+              <Input
+                id="order-notes"
+                value={orderNotes}
+                onChange={(e) => setOrderNotes(e.target.value)}
+                placeholder="Any special instructions or urgency notes..."
+                className="h-12 text-base"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4 border-t">
+              <Button
+                onClick={confirmMaterialOrder}
+                disabled={submittingOrder || !orderDateNeeded}
+                className="h-12 text-base gradient-primary"
+              >
+                {submittingOrder ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Ordering...
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="w-5 h-5 mr-2" />
+                    Confirm Order
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowOrderDialog(false)}
+                disabled={submittingOrder}
+                className="h-12 text-base"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Category Modal */}
       <Dialog open={showCategoryModal} onOpenChange={setShowCategoryModal}>
@@ -1754,7 +1774,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </DialogContent>
       </Dialog>
 
-      {/* CSV Import Dialog */}
+      {/* CSV Import Dialog - keeping full implementation */}
       <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1769,7 +1789,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 </p>
               </div>
 
-              {/* Column Mapping */}
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Column Mapping</Label>
                 
@@ -1861,7 +1880,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 </div>
               </div>
 
-              {/* Preview with mapped columns */}
               {columnMapping.category && columnMapping.name && columnMapping.quantity && (
                 <div className="border rounded-md p-3 max-h-60 overflow-y-auto">
                   <p className="text-sm font-medium mb-2">Preview (first 5 rows):</p>
@@ -1905,7 +1923,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 </p>
               </div>
 
-              {/* Category Mapping */}
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Category Mapping</Label>
                 {csvCategories.map((csvCat) => (
@@ -1942,7 +1959,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 ))}
               </div>
 
-              {/* Final Preview */}
               <div className="border rounded-md p-3 max-h-60 overflow-y-auto">
                 <p className="text-sm font-medium mb-2">Ready to import {csvData.length} materials</p>
                 <div className="space-y-1 text-xs">
