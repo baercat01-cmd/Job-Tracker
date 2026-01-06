@@ -1179,9 +1179,15 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
                                 
-                                {/* Status-specific Date Display */}
+                                {/* Status-specific Date Display - Clickable */}
                                 {material.status === 'not_ordered' && material.order_by_date && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDates(material);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>📋</span>
                                       <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1190,7 +1196,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 )}
                                 
                                 {material.status === 'ordered' && material.delivery_date && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDates(material);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>🚚</span>
                                       <span>Delivery: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1199,7 +1211,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 )}
                                 
                                 {['at_shop', 'at_job', 'installed', 'missing'].includes(material.status) && material.updated_at && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDates(material);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>📅</span>
                                       <span>Updated: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1223,18 +1241,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               ))}
                             </SelectContent>
                           </Select>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditDatesGroup(group);
-                            }}
-                            className="w-full h-9 text-xs"
-                          >
-                            <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                            Edit Dates
-                          </Button>
                         </div>
                       </div>
                     ))}
@@ -1427,9 +1433,15 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
                                 
-                                {/* Status-specific Date Display */}
+                                {/* Status-specific Date Display - Clickable */}
                                 {group.primaryStatus === 'not_ordered' && group.materials[0].order_by_date && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDatesGroup(group);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>📋</span>
                                       <span>Order by: {new Date(group.materials[0].order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1438,7 +1450,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 )}
                                 
                                 {group.primaryStatus === 'ordered' && group.materials[0].delivery_date && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDatesGroup(group);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>🚚</span>
                                       <span>Delivery: {new Date(group.materials[0].delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1447,7 +1465,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 )}
                                 
                                 {['at_shop', 'at_job', 'installed', 'missing'].includes(group.primaryStatus) && group.materials[0].updated_at && (
-                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                  <div 
+                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditDatesGroup(group);
+                                    }}
+                                  >
                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                       <span>📅</span>
                                       <span>Updated: {new Date(group.materials[0].updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -1471,18 +1495,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               ))}
                             </SelectContent>
                           </Select>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditDatesGroup(group);
-                            }}
-                            className="w-full h-9 text-xs"
-                          >
-                            <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                            Edit Dates
-                          </Button>
                         </div>
                       </div>
                       
