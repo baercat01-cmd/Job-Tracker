@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, Plus, Minus } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import type { Job } from '@/types';
@@ -76,6 +76,8 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [materialNotes, setMaterialNotes] = useState('');
   const [materialPhotos, setMaterialPhotos] = useState<MaterialPhoto[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [editQuantity, setEditQuantity] = useState<number>(0);
+  const [savingQuantity, setSavingQuantity] = useState(false);
 
   useEffect(() => {
     loadMaterials();
@@ -148,6 +150,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   function openMaterialDetail(material: Material) {
     setSelectedMaterial(material);
     setMaterialNotes(material.notes || '');
+    setEditQuantity(material.quantity);
     loadMaterialPhotos(material.id);
   }
 
@@ -187,6 +190,45 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     } catch (error: any) {
       toast.error('Failed to update status');
       console.error(error);
+    }
+  }
+
+  async function updateMaterialQuantity() {
+    if (!selectedMaterial) return;
+    
+    if (editQuantity < 0) {
+      toast.error('Quantity cannot be negative');
+      return;
+    }
+
+    setSavingQuantity(true);
+    
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          quantity: editQuantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedMaterial.id);
+
+      if (error) throw error;
+
+      toast.success('Quantity updated');
+      setSelectedMaterial({ ...selectedMaterial, quantity: editQuantity });
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update quantity');
+      console.error(error);
+    } finally {
+      setSavingQuantity(false);
+    }
+  }
+
+  function adjustQuantity(delta: number) {
+    const newQty = editQuantity + delta;
+    if (newQty >= 0) {
+      setEditQuantity(newQty);
     }
   }
 
@@ -485,18 +527,83 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   <p className="font-medium">{(selectedMaterial as any).use_case}</p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label className="text-muted-foreground">Quantity</Label>
-                  <p className="font-medium text-lg">{selectedMaterial.quantity}</p>
+              
+              {/* Quantity Editor */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Quantity</Label>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => adjustQuantity(-10)}
+                    className="h-14 w-14 text-xl font-bold"
+                  >
+                    <Minus className="w-6 h-6" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => adjustQuantity(-1)}
+                    className="h-14 w-14 text-xl font-bold"
+                  >
+                    -1
+                  </Button>
+                  <div className="flex-1 text-center">
+                    <Input
+                      type="number"
+                      min="0"
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="h-14 text-center text-2xl font-bold"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => adjustQuantity(1)}
+                    className="h-14 w-14 text-xl font-bold"
+                  >
+                    +1
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => adjustQuantity(10)}
+                    className="h-14 w-14 text-xl font-bold"
+                  >
+                    <Plus className="w-6 h-6" />
+                  </Button>
                 </div>
-                {selectedMaterial.length && (
-                  <div>
-                    <Label className="text-muted-foreground">Length</Label>
-                    <p className="font-medium text-lg">{selectedMaterial.length}</p>
+                {editQuantity !== selectedMaterial.quantity && (
+                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-lg border border-primary/20">
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Original: </span>
+                      <span className="font-medium">{selectedMaterial.quantity}</span>
+                      <span className="mx-2 text-muted-foreground">→</span>
+                      <span className="font-medium text-primary">{editQuantity}</span>
+                      <span className="ml-2 text-muted-foreground">(
+                        {editQuantity > selectedMaterial.quantity ? '+' : ''}
+                        {editQuantity - selectedMaterial.quantity}
+                      )</span>
+                    </div>
+                    <Button
+                      onClick={updateMaterialQuantity}
+                      disabled={savingQuantity}
+                      className="gradient-primary"
+                      size="sm"
+                    >
+                      {savingQuantity ? 'Saving...' : 'Save'}
+                    </Button>
                   </div>
                 )}
               </div>
+              
+              {selectedMaterial.length && (
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <Label className="text-xs text-muted-foreground">Length</Label>
+                  <p className="font-medium text-lg">{selectedMaterial.length}</p>
+                </div>
+              )}
 
               {/* Status Update */}
               <div className="space-y-3">
