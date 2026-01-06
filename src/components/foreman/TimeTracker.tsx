@@ -15,11 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2, Calendar } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { createNotification } from '@/lib/notifications';
-import type { Job, Component } from '@/types';
+import type { Job, Component, CompletedTask } from '@/types';
 import { getLocalDateString } from '@/lib/utils';
 
 interface LocalTimer {
@@ -95,6 +95,13 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [manualPhotoUrls, setManualPhotoUrls] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Completed tasks tracking
+  const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
+  const [completingTask, setCompletingTask] = useState<Component | null>(null);
+  const [completionDate, setCompletionDate] = useState(getLocalDateString());
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [savingCompletion, setSavingCompletion] = useState(false);
+  
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -103,6 +110,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     loadLocalTimers();
     loadTotalComponentHours();
     loadTotalClockInHours();
+    loadCompletedTasks();
     
     // Start tick interval for live timer updates
     tickIntervalRef.current = setInterval(() => {
@@ -205,6 +213,95 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       setTotalClockInHours(totalManHours);
     } catch (error) {
       console.error('Error loading total clock-in hours:', error);
+    }
+  }
+
+  async function loadCompletedTasks() {
+    try {
+      const { data, error } = await supabase
+        .from('completed_tasks')
+        .select('*')
+        .eq('job_id', job.id);
+
+      if (error) throw error;
+      setCompletedTasks(data || []);
+    } catch (error) {
+      console.error('Error loading completed tasks:', error);
+    }
+  }
+
+  function isComponentCompleted(componentId: string): boolean {
+    return completedTasks.some(task => task.component_id === componentId);
+  }
+
+  function getComponentCompletionDate(componentId: string): string | null {
+    const task = completedTasks.find(task => task.component_id === componentId);
+    return task ? task.completed_date : null;
+  }
+
+  function openCompleteTaskDialog(component: Component) {
+    setCompletingTask(component);
+    setCompletionDate(getLocalDateString());
+    setCompletionNotes('');
+  }
+
+  async function markTaskComplete() {
+    if (!completingTask) return;
+
+    setSavingCompletion(true);
+
+    try {
+      const { error } = await supabase
+        .from('completed_tasks')
+        .insert({
+          job_id: job.id,
+          component_id: completingTask.id,
+          completed_date: completionDate,
+          marked_by: userId,
+          notes: completionNotes || null,
+        });
+
+      if (error) throw error;
+
+      toast.success(`${completingTask.name} marked as complete`);
+      await loadCompletedTasks();
+      setCompletingTask(null);
+
+      // Create notification
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'task_completed',
+        brief: `Task completed: ${completingTask.name} on ${new Date(completionDate).toLocaleDateString()}`,
+        referenceId: completingTask.id,
+        referenceData: {
+          componentName: completingTask.name,
+          completedDate: completionDate,
+        },
+      });
+    } catch (error: any) {
+      toast.error('Failed to mark task as complete');
+      console.error(error);
+    } finally {
+      setSavingCompletion(false);
+    }
+  }
+
+  async function unmarkTaskComplete(componentId: string) {
+    try {
+      const { error } = await supabase
+        .from('completed_tasks')
+        .delete()
+        .eq('job_id', job.id)
+        .eq('component_id', componentId);
+
+      if (error) throw error;
+
+      toast.success('Task unmarked as complete');
+      await loadCompletedTasks();
+    } catch (error: any) {
+      toast.error('Failed to unmark task');
+      console.error(error);
     }
   }
 
@@ -685,6 +782,25 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </CardContent>
       </Card>
 
+      {/* Add Component Button - Show at top when no mode selected */}
+      {entryMode === 'none' && (
+        <Card className="border-2 border-primary/30 shadow-md">
+          <CardContent className="py-6">
+            <Button
+              onClick={() => setEntryMode('manual')}
+              size="lg"
+              className="w-full h-16 text-lg gradient-primary"
+            >
+              <Plus className="w-6 h-6 mr-2" />
+              Add Component
+            </Button>
+            <p className="text-sm text-muted-foreground text-center mt-3">
+              Track time worked on job components
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Task Components - Show Prominently */}
       {entryMode === 'none' && components.some(c => isComponentTask(c.id)) && (
         <div className="space-y-3">
@@ -704,43 +820,68 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                         {component.description && (
                           <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
                         )}
+                        {isComponentCompleted(component.id) && (
+                          <div className="flex items-center gap-2 text-success mt-2">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="font-semibold">Completed</span>
+                            <span className="text-sm">- {new Date(getComponentCompletionDate(component.id)!).toLocaleDateString()}</span>
+                          </div>
+                        )}
                       </div>
                       <Badge className="bg-primary text-white">Task</Badge>
                     </div>
-                    <Button
-                      onClick={() => {
-                        setSelectedComponent(component.id);
-                        setEntryMode('manual');
-                      }}
-                      className="w-full h-12 gradient-primary"
-                    >
-                      <Plus className="w-5 h-5 mr-2" />
-                      Log Time
-                    </Button>
+                    <div className="space-y-2">
+                      {!isComponentCompleted(component.id) ? (
+                        <>
+                          <Button
+                            onClick={() => {
+                              setSelectedComponent(component.id);
+                              setEntryMode('manual');
+                            }}
+                            className="w-full h-12 gradient-primary"
+                          >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Log Time
+                          </Button>
+                          <Button
+                            onClick={() => openCompleteTaskDialog(component)}
+                            variant="outline"
+                            className="w-full h-12 border-2 border-success text-success hover:bg-success hover:text-white"
+                          >
+                            <CheckCircle2 className="w-5 h-5 mr-2" />
+                            Mark Complete
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="bg-success/10 border-2 border-success rounded-lg p-4 text-center">
+                            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-success" />
+                            <p className="font-bold text-success">Task Completed</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {new Date(getComponentCompletionDate(component.id)!).toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })}
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => unmarkTaskComplete(component.id)}
+                            variant="outline"
+                            className="w-full h-10 text-sm"
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            Unmark
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
         </div>
-      )}
-
-      {/* Add Component Button - Show when no mode selected */}
-      {entryMode === 'none' && (
-        <Card className="border-2 border-primary/30 shadow-md">
-          <CardContent className="py-6">
-            <Button
-              onClick={() => setEntryMode('manual')}
-              size="lg"
-              className="w-full h-16 text-lg gradient-primary"
-            >
-              <Plus className="w-6 h-6 mr-2" />
-              Add Component
-            </Button>
-            <p className="text-sm text-muted-foreground text-center mt-3">
-              Track time worked on job components
-            </p>
-          </CardContent>
-        </Card>
       )}
 
       {/* Active Timers */}
@@ -831,289 +972,6 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
           </CardContent>
         </Card>
       ))}
-
-      {/* Start New Timer - Show only if timer mode selected */}
-      {entryMode === 'timer' && (
-        <Card className="border-2 border-primary/30 shadow-md">
-          <CardHeader className="pb-3 bg-gradient-to-r from-primary/10 to-primary/5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Add Component - Timer</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Track time with live timer</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setEntryMode('manual');
-                  setSelectedComponent('');
-                  setComponentSearch('');
-                  setTimerCrewCount('0');
-                  setTimerSelectedWorkers([]);
-                }}
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Manual Entry
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {components.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground py-4">
-                No components available for this job. Office staff can assign components.
-              </p>
-            ) : (
-              <>
-              {/* Date Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="timer-date" className="text-sm font-medium">Date</Label>
-                <Input
-                  id="timer-date"
-                  type="date"
-                  value={getLocalDateString()}
-                  readOnly
-                  className="h-11 bg-muted/50"
-                />
-              </div>
-
-              {/* Component Selection with Searchable Dropdown */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Component</Label>
-                <div className="space-y-2">
-                  {/* Search Input with Icon and Dropdown */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
-                    <Input
-                      type="text"
-                      placeholder="Search or select component..."
-                      value={componentSearch}
-                      onChange={(e) => {
-                        setComponentSearch(e.target.value);
-                        setShowComponentDropdown(true);
-                      }}
-                      onFocus={() => setShowComponentDropdown(true)}
-                      className="h-12 text-base pl-10 pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowComponentDropdown(!showComponentDropdown)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 z-10"
-                    >
-                      {showComponentDropdown ? (
-                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Dropdown List - Show when open or when searching */}
-                  {showComponentDropdown && (
-                    <div className="border rounded-lg max-h-[240px] overflow-y-auto bg-card shadow-lg">
-                      {components
-                        .filter((comp) => 
-                          componentSearch === '' || 
-                          comp.name.toLowerCase().includes(componentSearch.toLowerCase()) ||
-                          comp.description?.toLowerCase().includes(componentSearch.toLowerCase())
-                        )
-                        .map((comp) => (
-                          <button
-                            key={comp.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedComponent(comp.id);
-                              setComponentSearch('');
-                              setShowComponentDropdown(false);
-                            }}
-                            className={`w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0 ${
-                              isComponentTask(comp.id) ? 'bg-primary/5 border-l-4 border-l-primary' : ''
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <p className="font-medium">{comp.name}</p>
-                              {isComponentTask(comp.id) && (
-                                <Badge variant="default" className="text-xs bg-primary">Task</Badge>
-                              )}
-                            </div>
-                            {comp.description && (
-                              <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
-                            )}
-                          </button>
-                        ))}
-                      {components.filter((comp) => 
-                        componentSearch === '' || 
-                        comp.name.toLowerCase().includes(componentSearch.toLowerCase()) ||
-                        comp.description?.toLowerCase().includes(componentSearch.toLowerCase())
-                      ).length === 0 && (
-                        <div className="p-4 text-center text-sm text-muted-foreground">
-                          No components found
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Selected Component Display */}
-                  {selectedComponent && !componentSearch && !showComponentDropdown && (
-                    <div className="flex items-center justify-between p-3 bg-primary/10 border-2 border-primary rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">Selected:</span>
-                        <Badge variant="default">
-                          {components.find(c => c.id === selectedComponent)?.name}
-                        </Badge>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedComponent('');
-                          setShowComponentDropdown(true);
-                        }}
-                        className="h-8 text-xs"
-                      >
-                        Change
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Mode Toggle */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={timerMode === 'workers' ? 'default' : 'outline'}
-                  onClick={() => setTimerMode('workers')}
-                  className="h-11"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Select Workers
-                </Button>
-                <Button
-                  type="button"
-                  variant={timerMode === 'count' ? 'default' : 'outline'}
-                  onClick={() => setTimerMode('count')}
-                  className="h-11"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Crew Count
-                </Button>
-              </div>
-
-              {/* Workers or Count Selection */}
-              {timerMode === 'workers' ? (
-                <div className="space-y-2">
-                  {workers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-3 text-center border rounded-lg bg-muted/30">
-                      No workers available
-                    </p>
-                  ) : (
-                    <>
-                      {/* Toggle Button */}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowTimerWorkers(!showTimerWorkers)}
-                        className="w-full h-12 justify-between"
-                      >
-                        <span>
-                          {timerSelectedWorkers.length > 0 
-                            ? `${timerSelectedWorkers.length} worker${timerSelectedWorkers.length > 1 ? 's' : ''} selected`
-                            : 'Select workers'}
-                        </span>
-                        {showTimerWorkers ? (
-                          <ChevronDown className="w-5 h-5" />
-                        ) : (
-                          <ChevronRight className="w-5 h-5" />
-                        )}
-                      </Button>
-
-                      {/* Dropdown List */}
-                      {showTimerWorkers && (
-                        <div className="border rounded-lg max-h-[180px] overflow-y-auto">
-                          <div className="p-2 space-y-1">
-                            {workers.map((worker) => (
-                              <div
-                                key={worker.id}
-                                className="flex items-center space-x-2 p-2 hover:bg-muted/50 rounded transition-colors"
-                              >
-                                <Checkbox
-                                  id={`timer-worker-${worker.id}`}
-                                  checked={timerSelectedWorkers.includes(worker.id)}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setTimerSelectedWorkers([...timerSelectedWorkers, worker.id]);
-                                    } else {
-                                      setTimerSelectedWorkers(timerSelectedWorkers.filter(id => id !== worker.id));
-                                    }
-                                  }}
-                                />
-                                <Label htmlFor={`timer-worker-${worker.id}`} className="cursor-pointer flex-1">
-                                  {worker.name}
-                                </Label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="bg-muted/30 rounded-lg p-2 text-center">
-                        <p className="text-xs font-medium">
-                          {timerSelectedWorkers.length > 0 ? (
-                            <>
-                              <span className="text-primary font-bold">{timerSelectedWorkers.length + 1}</span> total crew
-                              <span className="text-muted-foreground ml-1">({timerSelectedWorkers.length} + you)</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-primary font-bold">1</span> crew member
-                              <span className="text-muted-foreground ml-1">(just you)</span>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Select value={timerCrewCount} onValueChange={setTimerCrewCount}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Additional Crew" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[200px]">
-                      <SelectItem value="0">Just me (1 total)</SelectItem>
-                      {[...Array(19)].map((_, i) => (
-                        <SelectItem key={i + 1} value={(i + 1).toString()}>
-                          +{i + 1} crew ({i + 2} total)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground text-center">You are always included</p>
-                </div>
-              )}
-
-              {/* Start Timer Button */}
-                <Button
-                  onClick={startTimer}
-                  disabled={loading || !selectedComponent}
-                  size="lg"
-                  className="w-full touch-target gradient-primary"
-                >
-                  <Play className="w-5 h-5 mr-2" />
-                  Start Timer
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Review & Save Modal */}
       <Dialog open={!!reviewTimer} onOpenChange={() => setReviewTimer(null)}>
@@ -1269,545 +1127,81 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </DialogContent>
       </Dialog>
 
-      {/* Manual Entry Wizard Modal */}
-      <Dialog 
-        open={entryMode === 'manual'} 
-        onOpenChange={(open) => {
-          if (!open) {
-            setEntryMode('none');
-            setManualStep(1);
-            setManualComponent('');
-            setManualComponentSearch('');
-            setManualDate(getLocalDateString());
-            setManualHours('0');
-            setManualMinutes('0');
-            setManualMode('workers');
-            setManualCrewCount('0');
-            setManualSelectedWorkers([]);
-            setManualNotes('');
-            setManualPhotos([]);
-            setManualPhotoUrls([]);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      {/* Mark Task Complete Dialog */}
+      <Dialog open={!!completingTask} onOpenChange={() => setCompletingTask(null)}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2">
-                <span>Add Component - Manual</span>
-                <span className="text-sm font-normal text-muted-foreground">Step {manualStep} of 4</span>
-              </DialogTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setEntryMode('timer');
-                  setManualStep(1);
-                  setManualComponent('');
-                  setManualComponentSearch('');
-                }}
-                className="text-xs h-7"
-              >
-                <Clock className="w-3 h-3 mr-1" />
-                Timer
-              </Button>
-            </div>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-success" />
+              Mark Task Complete
+            </DialogTitle>
           </DialogHeader>
           
-          {/* Progress Indicator */}
-          <div className="flex gap-1 mb-4">
-            {[1, 2, 3, 4].map((step) => (
-              <div
-                key={step}
-                className={`h-1.5 flex-1 rounded-full transition-all ${
-                  step <= manualStep ? 'bg-primary' : 'bg-muted'
-                }`}
-              />
-            ))}
-          </div>
+          {completingTask && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+                <p className="font-bold text-lg">{completingTask.name}</p>
+                {completingTask.description && (
+                  <p className="text-sm text-muted-foreground mt-1">{completingTask.description}</p>
+                )}
+              </div>
 
-          <div className="space-y-4">
-            {/* STEP 1: Component Selection */}
-            {manualStep === 1 && (
-              <>
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                    <ListChecks className="w-8 h-8 text-primary" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Select Component</h3>
-                  <p className="text-sm text-muted-foreground">Choose the component you worked on</p>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="completion-date" className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Completion Date *
+                </Label>
+                <Input
+                  id="completion-date"
+                  type="date"
+                  value={completionDate}
+                  onChange={(e) => setCompletionDate(e.target.value)}
+                  max={getLocalDateString()}
+                  className="h-12 text-base"
+                />
+              </div>
 
-                {/* Date Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="manual-date">Date</Label>
-                  <Input
-                    id="manual-date"
-                    type="date"
-                    value={manualDate}
-                    onChange={(e) => setManualDate(e.target.value)}
-                    max={getLocalDateString()}
-                    className="h-11"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="completion-notes">Notes (Optional)</Label>
+                <Textarea
+                  id="completion-notes"
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  placeholder="Add any notes about completion..."
+                  rows={3}
+                  className="resize-none text-base"
+                />
+              </div>
 
-                {/* Component Selection with Searchable Dropdown */}
-                <div className="space-y-2">
-                  <Label className="text-base font-semibold">Component *</Label>
-                  <div className="space-y-2">
-                    {/* Search Input with Icon and Dropdown */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
-                      <Input
-                        type="text"
-                        placeholder="Search or select component..."
-                        value={manualComponentSearch}
-                        onChange={(e) => {
-                          setManualComponentSearch(e.target.value);
-                          setShowManualComponentDropdown(true);
-                        }}
-                        onFocus={() => setShowManualComponentDropdown(true)}
-                        className="h-12 text-base pl-10 pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowManualComponentDropdown(!showManualComponentDropdown)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 z-10"
-                      >
-                        {showManualComponentDropdown ? (
-                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Dropdown List - Show when open or when searching */}
-                    {showManualComponentDropdown && (
-                      <div className="border rounded-lg max-h-[240px] overflow-y-auto bg-card shadow-lg">
-                        {components
-                          .filter((comp) => 
-                            manualComponentSearch === '' || 
-                            comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                            comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
-                          )
-                          .map((comp) => (
-                            <button
-                              key={comp.id}
-                              type="button"
-                              onClick={() => {
-                                setManualComponent(comp.id);
-                                setManualComponentSearch('');
-                                setShowManualComponentDropdown(false);
-                              }}
-                              className={`w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0 ${
-                                isComponentTask(comp.id) ? 'bg-primary/5 border-l-4 border-l-primary' : ''
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <p className="font-medium">{comp.name}</p>
-                                {isComponentTask(comp.id) && (
-                                  <Badge variant="default" className="text-xs bg-primary">Task</Badge>
-                                )}
-                              </div>
-                              {comp.description && (
-                                <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
-                              )}
-                            </button>
-                          ))}
-                        {components.filter((comp) => 
-                          manualComponentSearch === '' || 
-                          comp.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                          comp.description?.toLowerCase().includes(manualComponentSearch.toLowerCase())
-                        ).length === 0 && (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No components found
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Selected Component Display */}
-                    {manualComponent && !manualComponentSearch && !showManualComponentDropdown && (
-                      <div className="flex items-center justify-between p-3 bg-primary/10 border-2 border-primary rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Selected:</span>
-                          <Badge variant="default">
-                            {components.find(c => c.id === manualComponent)?.name}
-                          </Badge>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setManualComponent('');
-                            setShowManualComponentDropdown(true);
-                          }}
-                          className="h-8 text-xs"
-                        >
-                          Change
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* STEP 2: Time Entry */}
-            {manualStep === 2 && (
-              <>
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Clock className="w-8 h-8 text-primary" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Enter Time Worked</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {components.find(c => c.id === manualComponent)?.name}
-                  </p>
-                </div>
-
-                {/* Time Scroll Wheels - Larger for Mobile */}
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="manual-hours" className="text-sm font-semibold text-center block">Hours</Label>
-                      <Select value={manualHours} onValueChange={setManualHours}>
-                        <SelectTrigger id="manual-hours" className="text-center text-4xl font-mono h-24">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {[...Array(25)].map((_, i) => (
-                            <SelectItem key={i} value={i.toString()} className="text-center text-xl py-3">
-                              {i.toString().padStart(2, '0')}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="manual-minutes" className="text-sm font-semibold text-center block">Minutes</Label>
-                      <Select value={manualMinutes} onValueChange={setManualMinutes}>
-                        <SelectTrigger id="manual-minutes" className="text-center text-4xl font-mono h-24">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => (
-                            <SelectItem key={min} value={min.toString()} className="text-center text-xl py-3">
-                              {min.toString().padStart(2, '0')}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Total Time Display */}
-                  <div className="bg-primary/10 rounded-lg p-4 text-center border-2 border-primary">
-                    <p className="text-sm text-muted-foreground mb-1">Total Time</p>
-                    <p className="text-3xl font-bold text-primary">
-                      {parseInt(manualHours)}.{(parseInt(manualMinutes) / 60 * 100).toFixed(0).padStart(2, '0')} hrs
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* STEP 3: People/Workers */}
-            {manualStep === 3 && (
-              <>
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Users className="w-8 h-8 text-primary" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Who Worked on This?</h3>
-                  <p className="text-sm text-muted-foreground">Select workers or enter crew count</p>
-                </div>
-
-                {/* Workers Selection - Default and Collapsible */}
-                <div className="space-y-3">
-                  {/* Toggle Buttons */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      type="button"
-                      variant={manualMode === 'workers' ? 'default' : 'outline'}
-                      onClick={() => setManualMode('workers')}
-                      className="h-12"
-                    >
-                      <Users className="w-4 h-4 mr-2" />
-                      Select Workers
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={manualMode === 'count' ? 'default' : 'outline'}
-                      onClick={() => setManualMode('count')}
-                      className="h-12"
-                    >
-                      <Users className="w-4 h-4 mr-2" />
-                      Crew Count
-                    </Button>
-                  </div>
-
-                  {/* Content Based on Mode */}
-                  {manualMode === 'workers' ? (
-                    <div className="space-y-2">
-                      {workers.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/30">
-                          No workers available. Office staff can add workers.
-                        </p>
-                      ) : (
-                        <>
-                          {/* Toggle Button */}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setShowManualWorkers(!showManualWorkers)}
-                            className="w-full h-12 justify-between text-base"
-                          >
-                            <span>
-                              {manualSelectedWorkers.length > 0 
-                                ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length > 1 ? 's' : ''} selected`
-                                : 'Select workers'}
-                            </span>
-                            {showManualWorkers ? (
-                              <ChevronDown className="w-5 h-5" />
-                            ) : (
-                              <ChevronRight className="w-5 h-5" />
-                            )}
-                          </Button>
-
-                          {/* Dropdown List */}
-                          {showManualWorkers && (
-                            <div className="border rounded-lg max-h-[240px] overflow-y-auto">
-                              <div className="p-3 space-y-2">
-                                {workers.map((worker) => (
-                                  <div key={worker.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded transition-colors">
-                                    <Checkbox
-                                      id={`manual-worker-${worker.id}`}
-                                      checked={manualSelectedWorkers.includes(worker.id)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
-                                        } else {
-                                          setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
-                                        }
-                                      }}
-                                      className="h-5 w-5"
-                                    />
-                                    <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer text-base flex-1">
-                                      {worker.name}
-                                    </Label>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="bg-muted/30 rounded-lg p-3 text-center">
-                            <p className="text-sm font-medium">
-                              {manualSelectedWorkers.length > 0 ? (
-                                <>
-                                  <span className="text-primary text-lg font-bold">{manualSelectedWorkers.length}</span> crew member{manualSelectedWorkers.length !== 1 ? 's' : ''}
-                                  <span className="text-xs text-muted-foreground block mt-1">
-                                    ({manualSelectedWorkers.length} selected)
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="text-primary text-lg font-bold">0</span> crew members
-                                  <span className="text-xs text-muted-foreground block mt-1">(add workers to track)</span>
-                                </>
-                              )}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="border rounded-lg max-h-[240px] overflow-y-auto">
-                        <div className="p-3 space-y-2">
-                          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((count) => (
-                            <div
-                              key={count}
-                              onClick={() => setManualCrewCount(count.toString())}
-                              className={`flex items-center justify-between p-3 hover:bg-muted/50 rounded cursor-pointer transition-colors ${
-                                manualCrewCount === count.toString() ? 'bg-primary/10 border-2 border-primary' : 'border-2 border-transparent'
-                              }`}
-                            >
-                              <span className="text-base font-medium">
-                                {count === 0 ? 'No crew' : `${count} crew`}
-                              </span>
-                              <Badge variant={manualCrewCount === count.toString() ? 'default' : 'outline'}>
-                                {count} total
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="bg-muted/30 rounded-lg p-3 text-center">
-                        <p className="text-sm font-medium">
-                          <span className="text-primary text-lg font-bold">{parseInt(manualCrewCount)}</span> crew member{parseInt(manualCrewCount) !== 1 ? 's' : ''}
-                          <span className="text-xs text-muted-foreground block mt-1">
-                            {parseInt(manualCrewCount) === 0 ? '(no crew members)' : `(${manualCrewCount} selected)`}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* STEP 4: Notes & Photos */}
-            {manualStep === 4 && (
-              <>
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                    <CheckCircle2 className="w-8 h-8 text-primary" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Add Details</h3>
-                  <p className="text-sm text-muted-foreground">Photos and notes (optional)</p>
-                </div>
-
-                {/* Photos */}
-                <div className="space-y-2">
-                  <Label className="text-base font-semibold">Photos</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    capture="environment"
-                    onChange={handlePhotoSelect}
-                    className="hidden"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-12"
-                  >
-                    <Camera className="w-5 h-5 mr-2" />
-                    {manualPhotos.length > 0 ? `${manualPhotos.length} Photo${manualPhotos.length > 1 ? 's' : ''} Selected` : 'Add Photos'}
-                  </Button>
-                  {manualPhotoUrls.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {manualPhotoUrls.map((url, index) => (
-                        <div key={index} className="relative aspect-square">
-                          <img
-                            src={url}
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-full object-cover rounded-lg border"
-                          />
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => removePhoto(index)}
-                            className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Notes */}
-                <div className="space-y-2">
-                  <Label htmlFor="manual-notes" className="text-base font-semibold">Notes</Label>
-                  <Textarea
-                    id="manual-notes"
-                    value={manualNotes}
-                    onChange={(e) => setManualNotes(e.target.value)}
-                    placeholder="Add any notes about this work..."
-                    rows={4}
-                    className="resize-none text-base"
-                  />
-                </div>
-              </>
-            )}
-            
-            {/* Navigation Buttons */}
-            <div className="flex gap-3 pt-4 border-t">
-              {/* Back Button - Show on steps 2-4 */}
-              {manualStep > 1 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setManualStep(manualStep - 1)}
-                  disabled={loading}
-                  className="flex-1 h-12 text-base"
+              <div className="flex flex-col gap-3 pt-4 border-t">
+                <Button
+                  onClick={markTaskComplete}
+                  disabled={savingCompletion}
+                  className="h-12 text-base gradient-primary"
                 >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back
+                  {savingCompletion ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 mr-2" />
+                      Mark as Complete
+                    </>
+                  )}
                 </Button>
-              )}
-              
-              {/* Cancel Button - Show on step 1 */}
-              {manualStep === 1 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setEntryMode('none');
-                    setManualStep(1);
-                    setManualComponent('');
-                    setManualComponentSearch('');
-                    setManualDate(getLocalDateString());
-                    setManualHours('0');
-                    setManualMinutes('0');
-                    setManualMode('workers');
-                    setManualCrewCount('0');
-                    setManualSelectedWorkers([]);
-                    setManualNotes('');
-                    setManualPhotos([]);
-                    setManualPhotoUrls([]);
-                  }}
-                  disabled={loading}
-                  className="flex-1 h-12 text-base"
+                <Button
+                  variant="outline"
+                  onClick={() => setCompletingTask(null)}
+                  disabled={savingCompletion}
+                  className="h-12 text-base"
                 >
                   Cancel
                 </Button>
-              )}
-              
-              {/* Next Button - Show on steps 1-3 */}
-              {manualStep < 4 && (
-                <Button 
-                  onClick={() => {
-                    // Validation
-                    if (manualStep === 1 && !manualComponent) {
-                      toast.error('Please select a component');
-                      return;
-                    }
-                    if (manualStep === 2 && parseInt(manualHours) === 0 && parseInt(manualMinutes) === 0) {
-                      toast.error('Please enter time worked');
-                      return;
-                    }
-                    setManualStep(manualStep + 1);
-                  }}
-                  disabled={loading || (manualStep === 1 && !manualComponent)}
-                  className="flex-1 h-12 text-base gradient-primary"
-                >
-                  Next
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              )}
-              
-              {/* Save Button - Show on step 4 */}
-              {manualStep === 4 && (
-                <Button 
-                  onClick={saveManualEntry}
-                  disabled={loading}
-                  className="flex-1 h-12 text-base gradient-primary"
-                >
-                  {loading ? 'Saving...' : 'Save Entry'}
-                  <CheckCircle2 className="w-4 h-4 ml-2" />
-                </Button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
