@@ -122,6 +122,11 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [dateNotes, setDateNotes] = useState('');
   const [submittingStatus, setSubmittingStatus] = useState(false);
   
+  // Edit dates without changing status
+  const [editDatesMaterial, setEditDatesMaterial] = useState<Material | null>(null);
+  const [editDatesGroup, setEditDatesGroup] = useState<Material[] | null>(null);
+  const [savingDates, setSavingDates] = useState(false);
+  
   // Bundle creation
   const [showCreateBundle, setShowCreateBundle] = useState(false);
   const [bundleName, setBundleName] = useState('');
@@ -475,6 +480,76 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       toast.error('Failed to update status');
     } finally {
       setSubmittingStatus(false);
+    }
+  }
+
+  function openEditDates(material: Material) {
+    setEditDatesMaterial(material);
+    setEditDatesGroup(null);
+    setOrderByDate(material.order_by_date || '');
+    setPullByDate(material.pull_by_date || '');
+    setDeliveryDate(material.delivery_date || '');
+    setActualDeliveryDate(material.actual_delivery_date || '');
+    setDateNotes('');
+  }
+
+  function openEditDatesGroup(group: GroupedMaterial) {
+    setEditDatesMaterial(null);
+    setEditDatesGroup(group.materials);
+    const firstMaterial = group.materials[0];
+    setOrderByDate(firstMaterial.order_by_date || '');
+    setPullByDate(firstMaterial.pull_by_date || '');
+    setDeliveryDate(firstMaterial.delivery_date || '');
+    setActualDeliveryDate(firstMaterial.actual_delivery_date || '');
+    setDateNotes('');
+  }
+
+  async function saveDates() {
+    if (!editDatesMaterial && !editDatesGroup) return;
+
+    setSavingDates(true);
+
+    try {
+      let materialIds: string[];
+
+      if (editDatesMaterial) {
+        materialIds = [editDatesMaterial.id];
+      } else if (editDatesGroup) {
+        materialIds = editDatesGroup.map(m => m.id);
+      } else {
+        return;
+      }
+
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update all date fields
+      updateData.order_by_date = orderByDate || null;
+      updateData.pull_by_date = pullByDate || null;
+      updateData.delivery_date = deliveryDate || null;
+      updateData.actual_delivery_date = actualDeliveryDate || null;
+
+      if (dateNotes) {
+        updateData.notes = dateNotes;
+      }
+
+      const { error } = await supabase
+        .from('materials')
+        .update(updateData)
+        .in('id', materialIds);
+
+      if (error) throw error;
+
+      toast.success('Dates updated');
+      setEditDatesMaterial(null);
+      setEditDatesGroup(null);
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error updating dates:', error);
+      toast.error('Failed to update dates');
+    } finally {
+      setSavingDates(false);
     }
   }
 
@@ -1148,6 +1223,18 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               ))}
                             </SelectContent>
                           </Select>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditDatesGroup(group);
+                            }}
+                            className="w-full h-9 text-xs"
+                          >
+                            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                            Edit Dates
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -1323,7 +1410,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                           </div>
                         )}
                         
-                        <div onClick={(e) => e.stopPropagation()}>
+                        <div onClick={(e) => e.stopPropagation()} className="space-y-2">
                           <Select
                             value={group.primaryStatus}
                             onValueChange={(value) => handleGroupStatusChange(group, value as Material['status'])}
@@ -1384,6 +1471,18 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               ))}
                             </SelectContent>
                           </Select>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditDatesGroup(group);
+                            }}
+                            className="w-full h-9 text-xs"
+                          >
+                            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                            Edit Dates
+                          </Button>
                         </div>
                       </div>
                       
@@ -1598,6 +1697,153 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dates Dialog (without status change) */}
+      <Dialog open={!!(editDatesMaterial || editDatesGroup)} onOpenChange={() => {
+        setEditDatesMaterial(null);
+        setEditDatesGroup(null);
+      }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Edit Material Dates
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              {editDatesMaterial ? (
+                <>
+                  <p className="font-semibold text-base">{editDatesMaterial.name}</p>
+                  {editDatesMaterial.use_case && (
+                    <p className="text-sm text-muted-foreground mt-1">Use: {editDatesMaterial.use_case}</p>
+                  )}
+                  <div className="flex items-center gap-4 mt-2 text-sm">
+                    <span>Qty: <span className="font-semibold">{editDatesMaterial.quantity}</span></span>
+                    {editDatesMaterial.length && (
+                      <span>Length: <span className="font-semibold">{editDatesMaterial.length}</span></span>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    <Badge className={STATUS_CONFIG[editDatesMaterial.status].bgClass}>
+                      {STATUS_CONFIG[editDatesMaterial.status].label}
+                    </Badge>
+                  </div>
+                </>
+              ) : editDatesGroup && (
+                <>
+                  <p className="font-semibold text-base">{editDatesGroup[0].name}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {editDatesGroup.length} variant{editDatesGroup.length > 1 ? 's' : ''}
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="edit-order-by-date" className="flex items-center gap-2">
+                  📋 Order By Date
+                </Label>
+                <Input
+                  id="edit-order-by-date"
+                  type="date"
+                  value={orderByDate}
+                  onChange={(e) => setOrderByDate(e.target.value)}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Deadline to place this order</p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-delivery-date" className="flex items-center gap-2">
+                  🚚 Expected Delivery Date
+                </Label>
+                <Input
+                  id="edit-delivery-date"
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Target delivery date to shop</p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-pull-by-date" className="flex items-center gap-2">
+                  🏪 Pull By Date
+                </Label>
+                <Input
+                  id="edit-pull-by-date"
+                  type="date"
+                  value={pullByDate}
+                  onChange={(e) => setPullByDate(e.target.value)}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When to pull this material from shop</p>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-actual-delivery-date" className="flex items-center gap-2">
+                  ✅ Actual Delivery Date
+                </Label>
+                <Input
+                  id="edit-actual-delivery-date"
+                  type="date"
+                  value={actualDeliveryDate}
+                  onChange={(e) => setActualDeliveryDate(e.target.value)}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When material arrived at job site</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="edit-date-notes">Notes (Optional)</Label>
+              <Textarea
+                id="edit-date-notes"
+                value={dateNotes}
+                onChange={(e) => setDateNotes(e.target.value)}
+                placeholder="Any additional notes..."
+                rows={3}
+                className="resize-none text-base"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4 border-t">
+              <Button
+                onClick={saveDates}
+                disabled={savingDates}
+                className="h-12 text-base gradient-primary"
+              >
+                {savingDates ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="w-5 h-5 mr-2" />
+                    Save Dates
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditDatesMaterial(null);
+                  setEditDatesGroup(null);
+                }}
+                disabled={savingDates}
+                className="h-12 text-base"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
