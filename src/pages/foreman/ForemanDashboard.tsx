@@ -285,12 +285,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
             
-            {/* Upcoming Events Widget */}
-            <UpcomingEventsWidget 
-              userId={profile?.id || ''} 
-              onJobSelect={handleJobSelect}
-            />
-            
             <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
           </div>
         </main>
@@ -387,17 +381,12 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       {/* Main Content - Tabbed Interface */}
       <main className="container mx-auto px-4 py-6 pb-24">
         {activeTab === 'timer' && (
-          <div className="space-y-4">
-            {/* Job-Specific Calendar */}
-            <JobCalendar jobId={selectedJob.id} showTitle={true} />
-            
-            <TimeTracker
-              job={selectedJob}
-              userId={profile?.id || ''}
-              onBack={handleBackToJobs}
-              onTimerUpdate={loadActiveTimers}
-            />
-          </div>
+          <TimeTracker
+            job={selectedJob}
+            userId={profile?.id || ''}
+            onBack={handleBackToJobs}
+            onTimerUpdate={loadActiveTimers}
+          />
         )}
 
         {activeTab === 'photos' && (
@@ -417,15 +406,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         )}
 
         {activeTab === 'materials' && (
-          <div className="space-y-4">
-            {/* Job-Specific Calendar */}
-            <JobCalendar jobId={selectedJob.id} showTitle={true} />
-            
-            <MaterialsList
-              job={selectedJob}
-              userId={profile?.id || ''}
-            />
-          </div>
+          <MaterialsList
+            job={selectedJob}
+            userId={profile?.id || ''}
+          />
         )}
 
         {activeTab === 'history' && (
