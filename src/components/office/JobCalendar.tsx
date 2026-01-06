@@ -8,12 +8,14 @@ import { toast } from 'sonner';
 
 interface CalendarEvent {
   id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed';
+  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed' | 'subcontractor';
   date: string;
   title: string;
   description: string;
   status?: string;
   priority?: 'low' | 'medium' | 'high';
+  subcontractorName?: string;
+  subcontractorPhone?: string;
 }
 
 interface JobCalendarProps {
@@ -109,6 +111,41 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
         });
       }
 
+      // Get subcontractor schedules for this job
+      const { data: subcontractorSchedules, error: subError } = await supabase
+        .from('subcontractor_schedules')
+        .select(`
+          id,
+          start_date,
+          end_date,
+          work_description,
+          notes,
+          status,
+          subcontractors!inner(id, name, phone, trades)
+        `)
+        .eq('job_id', jobId);
+
+      if (!subError && subcontractorSchedules) {
+        subcontractorSchedules.forEach((schedule: any) => {
+          const startDate = new Date(schedule.start_date);
+          const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
+          const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
+            ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+            : '';
+          events.push({
+            id: `sub-${schedule.id}`,
+            type: 'subcontractor',
+            date: schedule.start_date,
+            title: `${schedule.subcontractors.name}${dateRangeStr}`,
+            description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+            subcontractorName: schedule.subcontractors.name,
+            subcontractorPhone: schedule.subcontractors.phone,
+            status: schedule.status,
+            priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
+          });
+        });
+      }
+
       setEvents(events);
     } catch (error: any) {
       console.error('Error loading job events:', error);
@@ -140,6 +177,7 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
     material_pull: { icon: Package, label: 'Pull from Shop', color: 'bg-purple-500' },
     task_completed: { icon: ListChecks, label: 'Task Completed', color: 'bg-green-500' },
     task_deadline: { icon: AlertCircle, label: 'Task Deadline', color: 'bg-red-500' },
+    subcontractor: { icon: CalendarIcon, label: 'Subcontractor', color: 'bg-indigo-500' },
   };
 
   // Get upcoming events (next 30 days)
@@ -238,6 +276,11 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
                       year: 'numeric',
                     })}
                   </p>
+                  {event.subcontractorPhone && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      📞 {event.subcontractorPhone}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
