@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, Plus, Minus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import type { Job } from '@/types';
@@ -33,6 +34,19 @@ interface Material {
   status: 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | 'installed' | 'missing';
   notes: string | null;
   updated_at: string;
+  use_case?: string;
+}
+
+interface MaterialBundle {
+  id: string;
+  job_id: string;
+  name: string;
+  description: string | null;
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | 'installed' | 'missing';
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  materials: Material[];
 }
 
 interface Category {
@@ -66,10 +80,22 @@ const STATUS_CONFIG = {
 
 export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Selection mode for creating bundles
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
+  
+  // Bundle creation
+  const [showCreateBundle, setShowCreateBundle] = useState(false);
+  const [bundleName, setBundleName] = useState('');
+  const [bundleDescription, setBundleDescription] = useState('');
+  const [creatingBundle, setCreatingBundle] = useState(false);
   
   // Material detail modal
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
@@ -85,6 +111,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   useEffect(() => {
     loadMaterials();
+    loadBundles();
   }, [job.id]);
 
   async function loadMaterials() {
@@ -109,12 +136,21 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
       if (materialsError) throw materialsError;
 
-      // Group materials by category
+      // Load bundle items to filter out bundled materials
+      const { data: bundleItemsData } = await supabase
+        .from('material_bundle_items')
+        .select('material_id');
+
+      const bundledMaterialIds = new Set((bundleItemsData || []).map(item => item.material_id));
+
+      // Group materials by category, excluding bundled materials
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
         order_index: cat.order_index,
-        materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
+        materials: (materialsData || []).filter((m: any) => 
+          m.category_id === cat.id && !bundledMaterialIds.has(m.id)
+        ),
       }));
 
       setCategories(categoriesWithMaterials);
@@ -123,6 +159,40 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       toast.error('Failed to load materials');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadBundles() {
+    try {
+      // Load bundles
+      const { data: bundlesData, error: bundlesError } = await supabase
+        .from('material_bundles')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+
+      if (bundlesError) throw bundlesError;
+
+      // Load bundle items with material details
+      const bundlesWithMaterials: MaterialBundle[] = await Promise.all(
+        (bundlesData || []).map(async (bundle) => {
+          const { data: itemsData } = await supabase
+            .from('material_bundle_items')
+            .select('material_id, materials(*)')
+            .eq('bundle_id', bundle.id);
+
+          const materials = (itemsData || []).map((item: any) => item.materials).filter(Boolean);
+
+          return {
+            ...bundle,
+            materials,
+          };
+        })
+      );
+
+      setBundles(bundlesWithMaterials);
+    } catch (error: any) {
+      console.error('Error loading bundles:', error);
     }
   }
 
@@ -151,6 +221,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setExpandedCategories(newExpanded);
   }
 
+  function toggleBundle(bundleId: string) {
+    const newExpanded = new Set(expandedBundles);
+    if (newExpanded.has(bundleId)) {
+      newExpanded.delete(bundleId);
+    } else {
+      newExpanded.add(bundleId);
+    }
+    setExpandedBundles(newExpanded);
+  }
+
   function openMaterialDetail(material: Material) {
     setSelectedMaterial(material);
     setMaterialNotes(material.notes || '');
@@ -159,6 +239,147 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setEditLength(material.length || '');
     setEditUseCase((material as any).use_case || '');
     loadMaterialPhotos(material.id);
+  }
+
+  function toggleSelectionMode() {
+    setSelectionMode(!selectionMode);
+    setSelectedMaterialIds(new Set());
+  }
+
+  function toggleMaterialSelection(materialId: string) {
+    const newSelection = new Set(selectedMaterialIds);
+    if (newSelection.has(materialId)) {
+      newSelection.delete(materialId);
+    } else {
+      newSelection.add(materialId);
+    }
+    setSelectedMaterialIds(newSelection);
+  }
+
+  function openCreateBundleDialog() {
+    if (selectedMaterialIds.size === 0) {
+      toast.error('Please select at least one material');
+      return;
+    }
+    setShowCreateBundle(true);
+  }
+
+  function closeCreateBundleDialog() {
+    setShowCreateBundle(false);
+    setBundleName('');
+    setBundleDescription('');
+  }
+
+  async function createBundle() {
+    if (!bundleName.trim()) {
+      toast.error('Please enter a bundle name');
+      return;
+    }
+
+    if (selectedMaterialIds.size === 0) {
+      toast.error('Please select at least one material');
+      return;
+    }
+
+    setCreatingBundle(true);
+
+    try {
+      // Create bundle
+      const { data: bundleData, error: bundleError } = await supabase
+        .from('material_bundles')
+        .insert({
+          job_id: job.id,
+          name: bundleName.trim(),
+          description: bundleDescription.trim() || null,
+          created_by: userId,
+          status: 'not_ordered',
+        })
+        .select()
+        .single();
+
+      if (bundleError) throw bundleError;
+
+      // Add materials to bundle
+      const bundleItems = Array.from(selectedMaterialIds).map(materialId => ({
+        bundle_id: bundleData.id,
+        material_id: materialId,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('material_bundle_items')
+        .insert(bundleItems);
+
+      if (itemsError) throw itemsError;
+
+      toast.success(`Bundle "${bundleName}" created with ${selectedMaterialIds.size} materials`);
+      
+      // Reload data
+      await loadMaterials();
+      await loadBundles();
+      
+      // Reset state
+      setSelectionMode(false);
+      setSelectedMaterialIds(new Set());
+      closeCreateBundleDialog();
+    } catch (error: any) {
+      console.error('Error creating bundle:', error);
+      toast.error('Failed to create bundle');
+    } finally {
+      setCreatingBundle(false);
+    }
+  }
+
+  async function updateBundleStatus(bundleId: string, status: Material['status']) {
+    try {
+      // Update bundle status
+      const { error: bundleError } = await supabase
+        .from('material_bundles')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', bundleId);
+
+      if (bundleError) throw bundleError;
+
+      // Get all materials in bundle
+      const { data: itemsData } = await supabase
+        .from('material_bundle_items')
+        .select('material_id')
+        .eq('bundle_id', bundleId);
+
+      // Update all materials in bundle
+      if (itemsData && itemsData.length > 0) {
+        const materialIds = itemsData.map(item => item.material_id);
+        const { error: materialsError } = await supabase
+          .from('materials')
+          .update({ status, updated_at: new Date().toISOString() })
+          .in('id', materialIds);
+
+        if (materialsError) throw materialsError;
+      }
+
+      toast.success(`Bundle status updated to ${STATUS_CONFIG[status].label}`);
+      await loadBundles();
+    } catch (error: any) {
+      console.error('Error updating bundle status:', error);
+      toast.error('Failed to update bundle status');
+    }
+  }
+
+  async function deleteBundle(bundleId: string) {
+    try {
+      const { error } = await supabase
+        .from('material_bundles')
+        .delete()
+        .eq('id', bundleId);
+
+      if (error) throw error;
+
+      toast.success('Bundle deleted');
+      await loadMaterials();
+      await loadBundles();
+    } catch (error: any) {
+      console.error('Error deleting bundle:', error);
+      toast.error('Failed to delete bundle');
+    }
   }
 
   async function updateMaterialStatus(status: Material['status']) {
@@ -229,13 +450,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       console.error(error);
     } finally {
       setSavingQuantity(false);
-    }
-  }
-
-  function adjustQuantity(delta: number) {
-    const newQty = editQuantity + delta;
-    if (newQty >= 0) {
-      setEditQuantity(newQty);
     }
   }
 
@@ -381,7 +595,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     );
   }
 
-  if (categories.length === 0) {
+  if (categories.length === 0 && bundles.length === 0) {
     return (
       <Card>
         <CardContent className="py-12">
@@ -397,6 +611,38 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   return (
     <div className="space-y-4">
+      {/* Action Bar */}
+      <div className="flex gap-2">
+        {!selectionMode ? (
+          <Button
+            onClick={toggleSelectionMode}
+            variant="outline"
+            className="flex-1"
+          >
+            <PackagePlus className="w-4 h-4 mr-2" />
+            Create Bundle
+          </Button>
+        ) : (
+          <>
+            <Button
+              onClick={openCreateBundleDialog}
+              disabled={selectedMaterialIds.size === 0}
+              className="flex-1 gradient-primary"
+            >
+              <Layers className="w-4 h-4 mr-2" />
+              Create Bundle ({selectedMaterialIds.size})
+            </Button>
+            <Button
+              onClick={toggleSelectionMode}
+              variant="outline"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel
+            </Button>
+          </>
+        )}
+      </div>
+
       {/* Search Bar */}
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -447,6 +693,131 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </Select>
       </div>
 
+      {/* Bundles */}
+      {bundles.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            Material Bundles
+          </h3>
+          {bundles.map((bundle) => (
+            <Card key={bundle.id} className="border-2 border-primary/20">
+              <CardHeader
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => toggleBundle(bundle.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    {expandedBundles.has(bundle.id) ? (
+                      <ChevronDown className="w-5 h-5" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5" />
+                    )}
+                    <Layers className="w-5 h-5 text-primary" />
+                    {bundle.name}
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">
+                      {bundle.materials.length} item{bundle.materials.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                </div>
+                {bundle.description && (
+                  <p className="text-sm text-muted-foreground mt-2">{bundle.description}</p>
+                )}
+              </CardHeader>
+
+              {expandedBundles.has(bundle.id) && (
+                <CardContent className="space-y-3">
+                  {/* Bundle Status Control */}
+                  <div className="pb-3 border-b" onClick={(e) => e.stopPropagation()}>
+                    <Label className="text-xs text-muted-foreground mb-2 block">Update Bundle Status</Label>
+                    <Select
+                      value={bundle.status}
+                      onValueChange={(value) => updateBundleStatus(bundle.id, value as Material['status'])}
+                    >
+                      <SelectTrigger 
+                        className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span>{STATUS_CONFIG[bundle.status].label}</span>
+                          <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[160px]">
+                        {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                          <SelectItem 
+                            key={status} 
+                            value={status} 
+                            className="text-sm cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
+                              <span className="font-medium">{config.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Bundle Materials */}
+                  <div className="space-y-2">
+                    {bundle.materials.map((material) => (
+                      <div
+                        key={material.id}
+                        className="p-3 border rounded-lg bg-muted/30 space-y-1"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{material.name}</p>
+                            {material.use_case && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Use: {material.use_case}
+                              </p>
+                            )}
+                            <div className="flex gap-3 text-sm text-muted-foreground mt-1">
+                              <span>Qty: {material.quantity}</span>
+                              {material.length && <span>Length: {material.length}</span>}
+                            </div>
+                          </div>
+                          <div className={`text-xs px-2 py-1 rounded font-medium ${STATUS_CONFIG[material.status].bgClass}`}>
+                            {STATUS_CONFIG[material.status].label}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Delete Bundle */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Delete bundle "${bundle.name}"? Materials will be moved back to individual items.`)) {
+                        deleteBundle(bundle.id);
+                      }
+                    }}
+                    className="w-full text-destructive hover:text-destructive"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Delete Bundle
+                  </Button>
+                </CardContent>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Individual Materials Header */}
+      {bundles.length > 0 && categories.some(c => c.materials.length > 0) && (
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2 pt-4">
+          <Package className="w-4 h-4" />
+          Individual Materials
+        </h3>
+      )}
+
       {/* Categories */}
       {filteredCategories.length === 0 ? (
         <Card>
@@ -484,9 +855,18 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                     className="p-4 border rounded-lg hover:bg-muted/50 transition-colors space-y-2"
                   >
                     <div className="flex items-start justify-between gap-2">
+                      {selectionMode && (
+                        <div className="pt-1">
+                          <Checkbox
+                            checked={selectedMaterialIds.has(material.id)}
+                            onCheckedChange={() => toggleMaterialSelection(material.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
                       <div 
                         className="flex-1 min-w-0 cursor-pointer" 
-                        onClick={() => openMaterialDetail(material)}
+                        onClick={() => !selectionMode && openMaterialDetail(material)}
                       >
                         <p className="font-medium truncate">{material.name}</p>
                         {(material as any).use_case && (
@@ -544,7 +924,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       </div>
                     </div>
                     {material.notes && (
-                      <p className="text-xs text-muted-foreground line-clamp-2" onClick={() => openMaterialDetail(material)}>
+                      <p className="text-xs text-muted-foreground line-clamp-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
                         Note: {material.notes}
                       </p>
                     )}
@@ -764,6 +1144,71 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Bundle Dialog */}
+      <Dialog open={showCreateBundle} onOpenChange={closeCreateBundleDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create Material Bundle</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-3 border border-primary/20">
+              <p className="text-sm font-medium">Selected Materials: {selectedMaterialIds.size}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bundle-name">Bundle Name *</Label>
+              <Input
+                id="bundle-name"
+                value={bundleName}
+                onChange={(e) => setBundleName(e.target.value)}
+                placeholder="e.g., Roof Package, Foundation Kit..."
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bundle-description">Description (Optional)</Label>
+              <Textarea
+                id="bundle-description"
+                value={bundleDescription}
+                onChange={(e) => setBundleDescription(e.target.value)}
+                placeholder="Add notes about this bundle..."
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={closeCreateBundleDialog}
+                disabled={creatingBundle}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={createBundle}
+                disabled={creatingBundle || !bundleName.trim()}
+                className="gradient-primary"
+              >
+                {creatingBundle ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Layers className="w-4 h-4 mr-2" />
+                    Create Bundle
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
