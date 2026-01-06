@@ -1,8 +1,6 @@
-// Last sync time indicator - shows after sync completes
+// Last sync time indicator - static display only
 
 import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { useConnectionStatus } from '@/lib/offline-manager';
-import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 function getTimeAgo(timestamp: number): string {
@@ -15,8 +13,7 @@ function getTimeAgo(timestamp: number): string {
 }
 
 export function SyncStatusDetailed() {
-  const { isSyncing, lastSyncTime } = useOfflineSync();
-  const connectionStatus = useConnectionStatus();
+  const { lastSyncTime } = useOfflineSync();
   const [timeAgo, setTimeAgo] = useState<string>('');
 
   // Update time ago display every minute
@@ -33,22 +30,16 @@ export function SyncStatusDetailed() {
     return () => clearInterval(interval);
   }, [lastSyncTime]);
 
-  // Only show when NOT syncing AND there is a last sync time
-  if (isSyncing || !lastSyncTime) {
+  // Only show when there is a last sync time
+  if (!lastSyncTime) {
     return null;
   }
 
-  // Only show if online - no point showing sync status when offline
-  if (connectionStatus !== 'online') {
-    return null;
-  }
-
-  // Subtle badge in top-right corner showing last sync time
+  // Simple text display in top-right corner
   return (
     <div className="fixed top-4 right-4 z-40">
-      <div className="flex items-center gap-1.5 px-2 py-1 text-xs bg-background/80 backdrop-blur-sm border border-muted-foreground/20 rounded-full shadow-sm">
-        <Check className="w-3 h-3 text-green-600" />
-        <span className="text-muted-foreground">Synced {timeAgo}</span>
+      <div className="text-xs text-muted-foreground/60">
+        Last synced {timeAgo}
       </div>
     </div>
   );
