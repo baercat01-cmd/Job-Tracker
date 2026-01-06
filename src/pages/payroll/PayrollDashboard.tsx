@@ -7,6 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { 
   Download, 
   Calendar, 
@@ -15,7 +23,9 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
-  DollarSign
+  DollarSign,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -39,6 +49,7 @@ interface TimeEntryData {
 interface DateEntryData {
   date: string;
   entries: {
+    entryId: string;
     jobName: string;
     clientName: string;
     startTime: string;
@@ -71,6 +82,12 @@ export function PayrollDashboard() {
   const [weekData, setWeekData] = useState<WeekData | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [editingEntry, setEditingEntry] = useState<TimeEntryData | null>(null);
+  const [editForm, setEditForm] = useState({
+    hours: '0',
+    minutes: '0',
+    notes: '',
+  });
 
   useEffect(() => {
     generateWeekOptions();
@@ -172,6 +189,7 @@ export function PayrollDashboard() {
           
           // Add entry to date
           dateData.entries.push({
+            entryId: entry.id,
             jobName: entry.jobs?.name || 'Unknown Job',
             clientName: entry.jobs?.client_name || '',
             startTime: entry.start_time,
@@ -310,6 +328,87 @@ export function PayrollDashboard() {
   const totalEntries = filteredUsers.reduce((sum, u) => 
     sum + u.dateEntries.reduce((dateSum, d) => dateSum + d.entries.length, 0), 0
   );
+
+  async function openEditDialog(entryId: string) {
+    try {
+      // Fetch the full entry details
+      const { data, error } = await supabase
+        .from('time_entries')
+        .select('*')
+        .eq('id', entryId)
+        .single();
+
+      if (error) throw error;
+
+      const hours = Math.floor(data.total_hours || 0);
+      const minutes = Math.round(((data.total_hours || 0) - hours) * 60);
+
+      setEditForm({
+        hours: hours.toString(),
+        minutes: minutes.toString(),
+        notes: data.notes || '',
+      });
+      setEditingEntry(data);
+    } catch (error: any) {
+      console.error('Error loading entry:', error);
+      toast.error('Failed to load entry details');
+    }
+  }
+
+  async function saveEdit() {
+    if (!editingEntry) return;
+
+    const totalHours = parseInt(editForm.hours) + parseInt(editForm.minutes) / 60;
+
+    if (totalHours <= 0) {
+      toast.error('Total hours must be greater than 0');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('time_entries')
+        .update({
+          total_hours: Math.round(totalHours * 4) / 4, // Round to nearest 0.25
+          notes: editForm.notes || null,
+        })
+        .eq('id', editingEntry.id);
+
+      if (error) throw error;
+
+      toast.success('Time entry updated');
+      setEditingEntry(null);
+      loadWeekData(); // Reload data
+    } catch (error: any) {
+      console.error('Error updating time entry:', error);
+      toast.error('Failed to update time entry');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteEntry(entryId: string) {
+    if (!confirm('Are you sure you want to delete this time entry?')) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('time_entries')
+        .delete()
+        .eq('id', entryId);
+
+      if (error) throw error;
+
+      toast.success('Time entry deleted');
+      loadWeekData(); // Reload data
+    } catch (error: any) {
+      console.error('Error deleting time entry:', error);
+      toast.error('Failed to delete time entry');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -490,6 +589,7 @@ export function PayrollDashboard() {
                               <th className="text-right p-2 font-semibold">Hours</th>
                               <th className="text-center p-2 font-semibold">Type</th>
                               <th className="text-left p-2 font-semibold">Notes</th>
+                              <th className="text-center p-2 font-semibold">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -537,6 +637,26 @@ export function PayrollDashboard() {
                                   <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
                                     {entry.notes || '-'}
                                   </td>
+                                  <td className="p-2">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openEditDialog(entry.entryId)}
+                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => deleteEntry(entry.entryId)}
+                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </div>
+                                  </td>
                                 </tr>
                               ))
                             ))}
@@ -546,7 +666,7 @@ export function PayrollDashboard() {
                               <td className="p-2 text-right text-primary text-lg">
                                 {user.totalHours.toFixed(2)}
                               </td>
-                              <td className="p-2" colSpan={2}></td>
+                              <td className="p-2" colSpan={3}></td>
                             </tr>
                           </tbody>
                         </table>
@@ -559,6 +679,110 @@ export function PayrollDashboard() {
           </div>
         )}
       </main>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingEntry} onOpenChange={() => setEditingEntry(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Time Entry</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {editingEntry && (
+              <>
+                <div>
+                  <Label className="text-muted-foreground">Date</Label>
+                  <p className="font-medium">
+                    {new Date(editingEntry.start_time).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Time Worked</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="edit-hours" className="text-xs">
+                        Hours
+                      </Label>
+                      <Select
+                        value={editForm.hours}
+                        onValueChange={(value) =>
+                          setEditForm({ ...editForm, hours: value })
+                        }
+                      >
+                        <SelectTrigger id="edit-hours">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {[...Array(25)].map((_, i) => (
+                            <SelectItem key={i} value={i.toString()}>
+                              {i}h
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="edit-minutes" className="text-xs">
+                        Minutes
+                      </Label>
+                      <Select
+                        value={editForm.minutes}
+                        onValueChange={(value) =>
+                          setEditForm({ ...editForm, minutes: value })
+                        }
+                      >
+                        <SelectTrigger id="edit-minutes">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {[0, 15, 30, 45].map((min) => (
+                            <SelectItem key={min} value={min.toString()}>
+                              {min}m
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="bg-primary/10 rounded p-2 text-center">
+                    <p className="text-sm font-bold text-primary">
+                      Total: {(parseInt(editForm.hours) + parseInt(editForm.minutes) / 60).toFixed(2)} hours
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-notes">Notes (Optional)</Label>
+                  <Textarea
+                    id="edit-notes"
+                    value={editForm.notes}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, notes: e.target.value })
+                    }
+                    placeholder="Add notes..."
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingEntry(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} disabled={loading}>
+              {loading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
