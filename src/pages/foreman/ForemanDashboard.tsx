@@ -265,7 +265,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <SyncStatusDetailed />
             <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="w-4 h-4" />
             </Button>
