@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import { getLocalDateString } from '@/lib/utils';
@@ -106,6 +106,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'date' | 'quantity'>('name');
   
   // Selection mode for creating bundles
   const [selectionMode, setSelectionMode] = useState(false);
@@ -913,8 +914,28 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         );
       }
 
+      // Sort materials
+      const sortedMaterials = [...filteredMaterials].sort((a, b) => {
+        if (sortBy === 'name') {
+          return a.name.localeCompare(b.name);
+        } else if (sortBy === 'status') {
+          const statusOrder = ['not_ordered', 'ordered', 'at_shop', 'at_job', 'installed', 'missing'];
+          return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
+        } else if (sortBy === 'date') {
+          const aDate = a.delivery_date || a.order_by_date || a.updated_at;
+          const bDate = b.delivery_date || b.order_by_date || b.updated_at;
+          if (!aDate && !bDate) return 0;
+          if (!aDate) return 1;
+          if (!bDate) return -1;
+          return new Date(aDate).getTime() - new Date(bDate).getTime();
+        } else if (sortBy === 'quantity') {
+          return b.quantity - a.quantity;
+        }
+        return 0;
+      });
+
       // Group materials by name and length
-      const groupedMaterials = groupMaterialsByNameAndLength(filteredMaterials);
+      const groupedMaterials = groupMaterialsByNameAndLength(sortedMaterials);
 
       return {
         ...cat,
@@ -980,7 +1001,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </div>
       )}
 
-      {/* Search Bar and Status Filter - Side by Side */}
+      {/* Search, Sort, and Status Filter */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -1000,6 +1021,22 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               <X className="w-5 h-5" />
             </Button>
           )}
+        </div>
+
+        {/* Sort Dropdown */}
+        <div className="w-36">
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'name' | 'status' | 'date' | 'quantity')}>
+            <SelectTrigger className="h-12 text-sm">
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="quantity">Quantity</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Status Filter Tab - Compact */}

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -16,6 +16,7 @@ import { InternalJobsManagement } from '@/components/office/InternalJobsManageme
 import { DataExport } from '@/components/office/DataExport';
 import { NotificationsCenter } from '@/components/office/NotificationsCenter';
 import { NotificationBell } from '@/components/office/NotificationBell';
+import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -197,10 +198,14 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="jobs" className="flex items-center gap-2">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Calendar</span>
             </TabsTrigger>
             <TabsTrigger value="time" className="flex items-center gap-2">
               <Clock className="w-4 h-4" />
@@ -218,6 +223,13 @@ export function OfficeDashboard() {
 
           <TabsContent value="jobs">
             <JobsView />
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <JobsCalendar onJobSelect={(jobId) => {
+              setSelectedJobId(jobId);
+              setActiveTab('jobs');
+            }} />
           </TabsContent>
 
           <TabsContent value="time">
