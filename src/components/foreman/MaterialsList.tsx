@@ -81,6 +81,7 @@ const STATUS_CONFIG = {
 export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
+  const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
@@ -136,21 +137,12 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
       if (materialsError) throw materialsError;
 
-      // Load bundle items to filter out bundled materials
-      const { data: bundleItemsData } = await supabase
-        .from('material_bundle_items')
-        .select('material_id');
-
-      const bundledMaterialIds = new Set((bundleItemsData || []).map(item => item.material_id));
-
-      // Group materials by category, excluding bundled materials
+      // Group materials by category, including all materials
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
         order_index: cat.order_index,
-        materials: (materialsData || []).filter((m: any) => 
-          m.category_id === cat.id && !bundledMaterialIds.has(m.id)
-        ),
+        materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
       }));
 
       setCategories(categoriesWithMaterials);
@@ -190,7 +182,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         })
       );
 
+      // Create a map of material ID to bundle info for tagging
+      const bundleMap = new Map<string, { bundleId: string; bundleName: string }>();
+      bundlesWithMaterials.forEach((bundle) => {
+        bundle.materials.forEach((material) => {
+          bundleMap.set(material.id, { bundleId: bundle.id, bundleName: bundle.name });
+        });
+      });
+
       setBundles(bundlesWithMaterials);
+      setMaterialBundleMap(bundleMap);
     } catch (error: any) {
       console.error('Error loading bundles:', error);
     }
@@ -247,6 +248,12 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   }
 
   function toggleMaterialSelection(materialId: string) {
+    // Don't allow selection of materials already in a bundle
+    if (materialBundleMap.has(materialId)) {
+      toast.error('This material is already in a bundle');
+      return;
+    }
+
     const newSelection = new Set(selectedMaterialIds);
     if (newSelection.has(materialId)) {
       newSelection.delete(materialId);
@@ -358,6 +365,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
       toast.success(`Bundle status updated to ${STATUS_CONFIG[status].label}`);
       await loadBundles();
+      await loadMaterials();
     } catch (error: any) {
       console.error('Error updating bundle status:', error);
       toast.error('Failed to update bundle status');
@@ -814,7 +822,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       {bundles.length > 0 && categories.some(c => c.materials.length > 0) && (
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2 pt-4">
           <Package className="w-4 h-4" />
-          Individual Materials
+          All Materials
         </h3>
       )}
 
@@ -849,87 +857,110 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
             {expandedCategories.has(category.id) && (
               <CardContent className="space-y-2">
-                {category.materials.map((material) => (
-                  <div
-                    key={material.id}
-                    className="p-4 border rounded-lg hover:bg-muted/50 transition-colors space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      {selectionMode && (
-                        <div className="pt-1">
-                          <Checkbox
-                            checked={selectedMaterialIds.has(material.id)}
-                            onCheckedChange={() => toggleMaterialSelection(material.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                {category.materials.map((material) => {
+                  const bundleInfo = materialBundleMap.get(material.id);
+                  const isInBundle = !!bundleInfo;
+
+                  return (
+                    <div
+                      key={material.id}
+                      className={`p-4 border rounded-lg transition-colors space-y-2 ${
+                        isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        {selectionMode && (
+                          <div className="pt-1">
+                            <Checkbox
+                              checked={selectedMaterialIds.has(material.id)}
+                              onCheckedChange={() => toggleMaterialSelection(material.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              disabled={isInBundle}
+                            />
+                          </div>
+                        )}
+                        <div 
+                          className="flex-1 min-w-0 cursor-pointer" 
+                          onClick={() => !selectionMode && openMaterialDetail(material)}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-medium truncate">{material.name}</p>
+                            {isInBundle && (
+                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 shrink-0">
+                                <Layers className="w-3 h-3 mr-1" />
+                                {bundleInfo.bundleName}
+                              </Badge>
+                            )}
+                          </div>
+                          {(material as any).use_case && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Use: {(material as any).use_case}
+                            </p>
+                          )}
+                          <div className="flex gap-3 text-sm text-muted-foreground mt-1">
+                            <span>Qty: {material.quantity}</span>
+                            {material.length && <span>Length: {material.length}</span>}
+                          </div>
+                        </div>
+                        <div className="w-36 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={material.status}
+                            disabled={isInBundle}
+                            onValueChange={async (value) => {
+                              try {
+                                const { error } = await supabase
+                                  .from('materials')
+                                  .update({ status: value, updated_at: new Date().toISOString() })
+                                  .eq('id', material.id);
+                                
+                                if (error) throw error;
+                                toast.success('Status updated');
+                                loadMaterials();
+                              } catch (error: any) {
+                                toast.error('Failed to update status');
+                                console.error(error);
+                              }
+                            }}
+                          >
+                            <SelectTrigger 
+                              className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all ${isInBundle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span>{STATUS_CONFIG[material.status].label}</span>
+                                <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
+                              </div>
+                            </SelectTrigger>
+                            <SelectContent className="min-w-[160px]">
+                              {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                                <SelectItem 
+                                  key={status} 
+                                  value={status} 
+                                  className="text-sm cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
+                                    <span className="font-medium">{config.label}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {material.notes && (
+                        <p className="text-xs text-muted-foreground line-clamp-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
+                          Note: {material.notes}
+                        </p>
+                      )}
+                      {isInBundle && (
+                        <div className="flex items-center gap-2 text-xs text-primary pt-1 border-t border-primary/20">
+                          <Layers className="w-3 h-3" />
+                          <span>Part of bundle - manage status via bundle</span>
                         </div>
                       )}
-                      <div 
-                        className="flex-1 min-w-0 cursor-pointer" 
-                        onClick={() => !selectionMode && openMaterialDetail(material)}
-                      >
-                        <p className="font-medium truncate">{material.name}</p>
-                        {(material as any).use_case && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Use: {(material as any).use_case}
-                          </p>
-                        )}
-                        <div className="flex gap-3 text-sm text-muted-foreground mt-1">
-                          <span>Qty: {material.quantity}</span>
-                          {material.length && <span>Length: {material.length}</span>}
-                        </div>
-                      </div>
-                      <div className="w-36 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          value={material.status}
-                          onValueChange={async (value) => {
-                            try {
-                              const { error } = await supabase
-                                .from('materials')
-                                .update({ status: value, updated_at: new Date().toISOString() })
-                                .eq('id', material.id);
-                              
-                              if (error) throw error;
-                              toast.success('Status updated');
-                              loadMaterials();
-                            } catch (error: any) {
-                              toast.error('Failed to update status');
-                              console.error(error);
-                            }
-                          }}
-                        >
-                          <SelectTrigger 
-                            className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <span>{STATUS_CONFIG[material.status].label}</span>
-                              <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
-                            </div>
-                          </SelectTrigger>
-                          <SelectContent className="min-w-[160px]">
-                            {Object.entries(STATUS_CONFIG).map(([status, config]) => (
-                              <SelectItem 
-                                key={status} 
-                                value={status} 
-                                className="text-sm cursor-pointer"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
-                                  <span className="font-medium">{config.label}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
                     </div>
-                    {material.notes && (
-                      <p className="text-xs text-muted-foreground line-clamp-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
-                        Note: {material.notes}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             )}
           </Card>
