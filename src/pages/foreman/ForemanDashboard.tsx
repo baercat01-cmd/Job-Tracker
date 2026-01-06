@@ -25,6 +25,8 @@ import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { JobsCalendar } from '@/components/office/JobsCalendar';
+import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
+import { JobCalendar } from '@/components/office/JobCalendar';
 
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
@@ -225,6 +227,12 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
             
+            {/* Upcoming Events Widget */}
+            <UpcomingEventsWidget 
+              userId={profile?.id || ''} 
+              onJobSelect={handleJobSelect}
+            />
+            
             <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
           </div>
         </main>
@@ -349,12 +357,17 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       {/* Main Content - Tabbed Interface */}
       <main className="container mx-auto px-4 py-6 pb-24">
         {activeTab === 'timer' && (
-          <TimeTracker
-            job={selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleBackToJobs}
-            onTimerUpdate={loadActiveTimers}
-          />
+          <div className="space-y-4">
+            {/* Job-Specific Calendar */}
+            <JobCalendar jobId={selectedJob.id} showTitle={true} />
+            
+            <TimeTracker
+              job={selectedJob}
+              userId={profile?.id || ''}
+              onBack={handleBackToJobs}
+              onTimerUpdate={loadActiveTimers}
+            />
+          </div>
         )}
 
         {activeTab === 'photos' && (
@@ -374,10 +387,15 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         )}
 
         {activeTab === 'materials' && (
-          <MaterialsList
-            job={selectedJob}
-            userId={profile?.id || ''}
-          />
+          <div className="space-y-4">
+            {/* Job-Specific Calendar */}
+            <JobCalendar jobId={selectedJob.id} showTitle={true} />
+            
+            <MaterialsList
+              job={selectedJob}
+              userId={profile?.id || ''}
+            />
+          </div>
         )}
 
         {activeTab === 'history' && (
