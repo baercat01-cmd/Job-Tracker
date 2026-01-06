@@ -334,6 +334,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <div className="flex-1">
               <h1 className="text-xl font-bold">{selectedJob.name}</h1>
             </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setShowCalendar(true)}
+              className="relative"
+            >
+              <CalendarIcon className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </div>
