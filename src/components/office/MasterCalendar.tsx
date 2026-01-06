@@ -235,25 +235,37 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
         subcontractorSchedules.forEach((schedule: any) => {
           const jobColor = getJobColor(schedule.jobs.name);
           const startDate = new Date(schedule.start_date);
-          const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
-          const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
-            ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+          const endDate = schedule.end_date ? new Date(schedule.end_date) : startDate;
+          
+          // Create date range string for display
+          const dateRangeStr = endDate.getTime() !== startDate.getTime()
+            ? ` (${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
             : '';
-          events.push({
-            id: `sub-${schedule.id}`,
-            type: 'subcontractor',
-            date: schedule.start_date,
-            jobId: schedule.jobs.id,
-            jobName: schedule.jobs.name,
-            jobColor,
-            title: `${schedule.subcontractors.name}${dateRangeStr}`,
-            description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
-            subcontractorTrades: schedule.subcontractors.trades,
-            subcontractorName: schedule.subcontractors.name,
-            subcontractorPhone: schedule.subcontractors.phone,
-            status: schedule.status,
-            priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-          });
+
+          // Add event for each day in the range
+          const currentDate = new Date(startDate);
+          while (currentDate <= endDate) {
+            const dateStr = currentDate.toISOString().split('T')[0];
+            
+            events.push({
+              id: `sub-${schedule.id}-${dateStr}`,
+              type: 'subcontractor',
+              date: dateStr,
+              jobId: schedule.jobs.id,
+              jobName: schedule.jobs.name,
+              jobColor,
+              title: `${schedule.subcontractors.name}${dateRangeStr}`,
+              description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+              subcontractorTrades: schedule.subcontractors.trades,
+              subcontractorName: schedule.subcontractors.name,
+              subcontractorPhone: schedule.subcontractors.phone,
+              status: schedule.status,
+              priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
+            });
+            
+            // Move to next day
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
         });
       }
 
