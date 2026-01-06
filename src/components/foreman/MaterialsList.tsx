@@ -597,7 +597,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">Loading materials...</div>
+        <div className="text-muted-foreground text-base">Loading materials...</div>
       </div>
     );
   }
@@ -607,8 +607,8 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       <Card>
         <CardContent className="py-12">
           <div className="text-center text-muted-foreground">
-            <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No materials have been added to this job yet.</p>
+            <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <p className="text-base">No materials have been added to this job yet.</p>
             <p className="text-sm mt-2">Office staff can add material categories and items.</p>
           </div>
         </CardContent>
@@ -618,15 +618,15 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   return (
     <div className="space-y-4">
-      {/* Action Bar */}
+      {/* Action Bar - Mobile Optimized */}
       <div className="flex gap-2">
         {!selectionMode ? (
           <Button
             onClick={toggleSelectionMode}
             variant="outline"
-            className="flex-1"
+            className="flex-1 h-12 text-base font-semibold"
           >
-            <PackagePlus className="w-4 h-4 mr-2" />
+            <PackagePlus className="w-5 h-5 mr-2" />
             Create Bundle
           </Button>
         ) : (
@@ -634,64 +634,64 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
             <Button
               onClick={openCreateBundleDialog}
               disabled={selectedMaterialIds.size === 0}
-              className="flex-1 gradient-primary"
+              className="flex-1 h-12 text-base font-semibold gradient-primary"
             >
-              <Layers className="w-4 h-4 mr-2" />
-              Create Bundle ({selectedMaterialIds.size})
+              <Layers className="w-5 h-5 mr-2" />
+              Bundle ({selectedMaterialIds.size})
             </Button>
             <Button
               onClick={toggleSelectionMode}
               variant="outline"
+              className="h-12 px-4"
             >
-              <X className="w-4 h-4 mr-2" />
-              Cancel
+              <X className="w-5 h-5" />
             </Button>
           </>
         )}
       </div>
 
-      {/* Search Bar */}
+      {/* Search Bar - Mobile Optimized */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
         <Input
           placeholder="Search materials..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-8 pr-8 h-9 text-sm"
+          className="pl-11 pr-12 h-12 text-base"
         />
         {searchTerm && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setSearchTerm('')}
-            className="absolute right-0.5 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-10 w-10 p-0"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-5 h-5" />
           </Button>
         )}
       </div>
 
-      {/* Status Filter Dropdown */}
+      {/* Status Filter - Mobile Optimized */}
       <div>
         <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-          <SelectTrigger className="h-10">
+          <SelectTrigger className="h-12 text-base">
             <SelectValue>
               {statusFilter === 'all' ? (
                 'All Materials'
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].color}`} />
+                  <span className={`w-3 h-3 rounded-full ${STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].color}`} />
                   {STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].label}
                 </div>
               )}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Materials</SelectItem>
+            <SelectItem value="all" className="text-base py-3">All Materials</SelectItem>
             {Object.entries(STATUS_CONFIG).map(([status, config]) => (
-              <SelectItem key={status} value={status}>
+              <SelectItem key={status} value={status} className="text-base py-3">
                 <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${config.color}`} />
+                  <span className={`w-3 h-3 rounded-full ${config.color}`} />
                   {config.label}
                 </div>
               </SelectItem>
@@ -703,31 +703,29 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       {/* Bundles */}
       {bundles.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-            <Layers className="w-4 h-4" />
+          <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Layers className="w-5 h-5" />
             Material Bundles
           </h3>
           {bundles.map((bundle) => (
             <Card key={bundle.id} className="border-2 border-primary/20">
               <CardHeader
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                className="cursor-pointer hover:bg-muted/50 transition-colors pb-4"
                 onClick={() => toggleBundle(bundle.id)}
               >
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg flex items-center gap-2">
                     {expandedBundles.has(bundle.id) ? (
-                      <ChevronDown className="w-5 h-5" />
+                      <ChevronDown className="w-6 h-6" />
                     ) : (
-                      <ChevronRight className="w-5 h-5" />
+                      <ChevronRight className="w-6 h-6" />
                     )}
                     <Layers className="w-5 h-5 text-primary" />
                     {bundle.name}
                   </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">
-                      {bundle.materials.length} item{bundle.materials.length !== 1 ? 's' : ''}
-                    </Badge>
-                  </div>
+                  <Badge variant="secondary" className="text-sm px-3 py-1">
+                    {bundle.materials.length}
+                  </Badge>
                 </div>
                 {bundle.description && (
                   <p className="text-sm text-muted-foreground mt-2">{bundle.description}</p>
@@ -735,28 +733,28 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               </CardHeader>
 
               {expandedBundles.has(bundle.id) && (
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-4">
                   {/* Bundle Status Control */}
-                  <div className="pb-3 border-b" onClick={(e) => e.stopPropagation()}>
-                    <Label className="text-xs text-muted-foreground mb-2 block">Update Bundle Status</Label>
+                  <div className="pb-4 border-b" onClick={(e) => e.stopPropagation()}>
+                    <Label className="text-sm font-semibold mb-2 block">Update Bundle Status</Label>
                     <Select
                       value={bundle.status}
                       onValueChange={(value) => updateBundleStatus(bundle.id, value as Material['status'])}
                     >
                       <SelectTrigger 
-                        className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                        className={`h-12 text-base font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                       >
                         <div className="flex items-center justify-between w-full">
                           <span>{STATUS_CONFIG[bundle.status].label}</span>
-                          <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
+                          <ChevronDownIcon className="w-5 h-5 opacity-70" />
                         </div>
                       </SelectTrigger>
-                      <SelectContent className="min-w-[160px]">
+                      <SelectContent className="min-w-[180px]">
                         {Object.entries(STATUS_CONFIG).map(([status, config]) => (
                           <SelectItem 
                             key={status} 
                             value={status} 
-                            className="text-sm cursor-pointer"
+                            className="text-base cursor-pointer py-3"
                           >
                             <div className="flex items-center gap-3">
                               <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
@@ -768,87 +766,83 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                     </Select>
                   </div>
 
-                  {/* Bundle Materials */}
-                  <div className="space-y-2">
+                  {/* Bundle Materials - Mobile Optimized */}
+                  <div className="space-y-3">
                     {bundle.materials.map((material) => (
                       <div
                         key={material.id}
-                        className="p-3 border rounded-lg bg-muted/30 space-y-2"
+                        className="p-4 border-2 rounded-lg bg-muted/30 space-y-3"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{material.name}</p>
-                            {material.use_case && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Use: {material.use_case}
-                              </p>
-                            )}
-                            <div className="flex gap-3 text-sm text-muted-foreground mt-1">
-                              <span>Qty: {material.quantity}</span>
-                              {material.length && <span>Length: {material.length}</span>}
-                            </div>
+                        <div>
+                          <p className="font-semibold text-base">{material.name}</p>
+                          {material.use_case && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Use: {material.use_case}
+                            </p>
+                          )}
+                          <div className="flex gap-4 text-base text-muted-foreground mt-2">
+                            <span className="font-medium">Qty: {material.quantity}</span>
+                            {material.length && <span>Length: {material.length}</span>}
                           </div>
-                          <div className="w-32 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <Select
-                              value={material.status}
-                              onValueChange={async (value) => {
-                                try {
-                                  const oldStatus = material.status;
-                                  const { error } = await supabase
-                                    .from('materials')
-                                    .update({ status: value, updated_at: new Date().toISOString() })
-                                    .eq('id', material.id);
-                                  
-                                  if (error) throw error;
-                                  toast.success(`${material.name} status updated`);
-                                  
-                                  // Create notification
-                                  await createNotification({
-                                    jobId: job.id,
-                                    createdBy: userId,
-                                    type: 'material_status',
-                                    brief: getMaterialStatusBrief(material.name, oldStatus, value as Material['status']),
-                                    referenceId: material.id,
-                                    referenceData: { 
-                                      materialName: material.name,
-                                      oldStatus,
-                                      newStatus: value,
-                                      bundleName: bundle.name,
-                                    },
-                                  });
-                                  
-                                  // Reload both materials and bundles to sync changes
-                                  await Promise.all([loadMaterials(), loadBundles()]);
-                                } catch (error: any) {
-                                  toast.error('Failed to update status');
-                                  console.error(error);
-                                }
-                              }}
+                        </div>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={material.status}
+                            onValueChange={async (value) => {
+                              try {
+                                const oldStatus = material.status;
+                                const { error } = await supabase
+                                  .from('materials')
+                                  .update({ status: value, updated_at: new Date().toISOString() })
+                                  .eq('id', material.id);
+                                
+                                if (error) throw error;
+                                toast.success(`${material.name} status updated`);
+                                
+                                await createNotification({
+                                  jobId: job.id,
+                                  createdBy: userId,
+                                  type: 'material_status',
+                                  brief: getMaterialStatusBrief(material.name, oldStatus, value as Material['status']),
+                                  referenceId: material.id,
+                                  referenceData: { 
+                                    materialName: material.name,
+                                    oldStatus,
+                                    newStatus: value,
+                                    bundleName: bundle.name,
+                                  },
+                                });
+                                
+                                await Promise.all([loadMaterials(), loadBundles()]);
+                              } catch (error: any) {
+                                toast.error('Failed to update status');
+                                console.error(error);
+                              }
+                            }}
+                          >
+                            <SelectTrigger 
+                              className={`h-11 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                             >
-                              <SelectTrigger 
-                                className={`h-8 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
-                              >
-                                <div className="flex items-center justify-between w-full">
-                                  <span>{STATUS_CONFIG[material.status].label}</span>
-                                  <ChevronDownIcon className="w-3 h-3 opacity-70" />
-                                </div>
-                              </SelectTrigger>
-                              <SelectContent className="min-w-[140px]">
-                                {Object.entries(STATUS_CONFIG).map(([status, config]) => (
-                                  <SelectItem 
-                                    key={status} 
-                                    value={status} 
-                                    className="text-xs cursor-pointer"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className={`w-3 h-3 rounded border ${config.bgClass}`} />
-                                      <span className="font-medium">{config.label}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                              <div className="flex items-center justify-between w-full">
+                                <span>{STATUS_CONFIG[material.status].label}</span>
+                                <ChevronDownIcon className="w-4 h-4 opacity-70" />
+                              </div>
+                            </SelectTrigger>
+                            <SelectContent className="min-w-[160px]">
+                              {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                                <SelectItem 
+                                  key={status} 
+                                  value={status} 
+                                  className="text-sm cursor-pointer py-3"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
+                                    <span className="font-medium">{config.label}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     ))}
@@ -857,15 +851,14 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   {/* Delete Bundle */}
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={() => {
                       if (confirm(`Delete bundle "${bundle.name}"? Materials will be moved back to individual items.`)) {
                         deleteBundle(bundle.id);
                       }
                     }}
-                    className="w-full text-destructive hover:text-destructive"
+                    className="w-full h-12 text-base text-destructive hover:text-destructive"
                   >
-                    <X className="w-4 h-4 mr-2" />
+                    <X className="w-5 h-5 mr-2" />
                     Delete Bundle
                   </Button>
                 </CardContent>
@@ -877,16 +870,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
       {/* Individual Materials Header */}
       {bundles.length > 0 && categories.some(c => c.materials.length > 0) && (
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2 pt-4">
-          <Package className="w-4 h-4" />
+        <h3 className="text-base font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-2 pt-4">
+          <Package className="w-5 h-5" />
           All Materials
         </h3>
       )}
 
-      {/* Categories */}
+      {/* Categories - Mobile Optimized */}
       {filteredCategories.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
+          <CardContent className="py-12 text-center text-muted-foreground text-base">
             No materials match the selected filter
           </CardContent>
         </Card>
@@ -894,26 +887,26 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         filteredCategories.map((category) => (
           <Card key={category.id}>
             <CardHeader
-              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              className="cursor-pointer hover:bg-muted/50 transition-colors pb-4"
               onClick={() => toggleCategory(category.id)}
             >
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   {expandedCategories.has(category.id) ? (
-                    <ChevronDown className="w-5 h-5" />
+                    <ChevronDown className="w-6 h-6" />
                   ) : (
-                    <ChevronRight className="w-5 h-5" />
+                    <ChevronRight className="w-6 h-6" />
                   )}
                   {category.name}
                 </CardTitle>
-                <Badge variant="secondary">
-                  {category.materials.length} item{category.materials.length !== 1 ? 's' : ''}
+                <Badge variant="secondary" className="text-sm px-3 py-1">
+                  {category.materials.length}
                 </Badge>
               </div>
             </CardHeader>
 
             {expandedCategories.has(category.id) && (
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-3">
                 {category.materials.map((material) => {
                   const bundleInfo = materialBundleMap.get(material.id);
                   const isInBundle = !!bundleInfo;
@@ -921,45 +914,51 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   return (
                     <div
                       key={material.id}
-                      className={`p-4 border rounded-lg transition-colors space-y-2 ${
-                        isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50'
+                      className={`p-4 border-2 rounded-lg transition-colors space-y-3 ${
+                        isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        {selectionMode && (
-                          <div className="pt-1">
-                            <Checkbox
-                              checked={selectedMaterialIds.has(material.id)}
-                              onCheckedChange={() => toggleMaterialSelection(material.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              disabled={isInBundle}
-                            />
-                          </div>
-                        )}
+                      {selectionMode && (
+                        <div className="flex items-center gap-3 pb-3 border-b">
+                          <Checkbox
+                            checked={selectedMaterialIds.has(material.id)}
+                            onCheckedChange={() => toggleMaterialSelection(material.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={isInBundle}
+                            className="h-6 w-6"
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            {isInBundle ? 'Already in bundle' : 'Select this material'}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div className="space-y-3">
                         <div 
-                          className="flex-1 min-w-0 cursor-pointer" 
+                          className="cursor-pointer" 
                           onClick={() => !selectionMode && openMaterialDetail(material)}
                         >
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium truncate">{material.name}</p>
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="font-semibold text-base flex-1">{material.name}</p>
                             {isInBundle && (
-                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 shrink-0">
+                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
                                 <Layers className="w-3 h-3 mr-1" />
                                 {bundleInfo.bundleName}
                               </Badge>
                             )}
                           </div>
                           {(material as any).use_case && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
+                            <p className="text-sm text-muted-foreground mb-2">
                               Use: {(material as any).use_case}
                             </p>
                           )}
-                          <div className="flex gap-3 text-sm text-muted-foreground mt-1">
-                            <span>Qty: {material.quantity}</span>
+                          <div className="flex gap-4 text-base text-muted-foreground">
+                            <span className="font-medium">Qty: {material.quantity}</span>
                             {material.length && <span>Length: {material.length}</span>}
                           </div>
                         </div>
-                        <div className="w-36 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        
+                        <div onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={material.status}
                             onValueChange={async (value) => {
@@ -973,7 +972,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 if (error) throw error;
                                 toast.success('Status updated');
                                 
-                                // Create notification
                                 await createNotification({
                                   jobId: job.id,
                                   createdBy: userId,
@@ -987,7 +985,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                   },
                                 });
                                 
-                                // Reload both materials and bundles to sync changes
                                 await Promise.all([loadMaterials(), loadBundles()]);
                               } catch (error: any) {
                                 toast.error('Failed to update status');
@@ -996,19 +993,19 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-9 text-xs font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                              className={`h-12 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
                               <div className="flex items-center justify-between w-full">
                                 <span>{STATUS_CONFIG[material.status].label}</span>
-                                <ChevronDownIcon className="w-3.5 h-3.5 opacity-70" />
+                                <ChevronDownIcon className="w-4 h-4 opacity-70" />
                               </div>
                             </SelectTrigger>
-                            <SelectContent className="min-w-[160px]">
+                            <SelectContent className="min-w-[180px]">
                               {Object.entries(STATUS_CONFIG).map(([status, config]) => (
                                 <SelectItem 
                                   key={status} 
                                   value={status} 
-                                  className="text-sm cursor-pointer"
+                                  className="text-base cursor-pointer py-3"
                                 >
                                   <div className="flex items-center gap-3">
                                     <div className={`w-4 h-4 rounded border-2 ${config.bgClass}`} />
@@ -1020,14 +1017,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                           </Select>
                         </div>
                       </div>
+                      
                       {material.notes && (
-                        <p className="text-xs text-muted-foreground line-clamp-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
+                        <p className="text-sm text-muted-foreground cursor-pointer border-t pt-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
                           Note: {material.notes}
                         </p>
                       )}
+                      
                       {isInBundle && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1 border-t border-border">
-                          <Layers className="w-3 h-3" />
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2 border-t">
+                          <Layers className="w-4 h-4" />
                           <span>Part of "{bundleInfo.bundleName}" bundle</span>
                         </div>
                       )}
@@ -1040,134 +1039,123 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         ))
       )}
 
-      {/* Material Detail Modal */}
+      {/* Material Detail Modal - Mobile Optimized */}
       <Dialog open={!!selectedMaterial} onOpenChange={() => setSelectedMaterial(null)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selectedMaterial?.name}</DialogTitle>
+            <DialogTitle className="text-xl">{selectedMaterial?.name}</DialogTitle>
           </DialogHeader>
 
           {selectedMaterial && (
             <div className="space-y-6">
               {/* Material Name */}
-              <div className="space-y-2">
-                <Label htmlFor="material-name" className="text-base font-semibold">Material Name</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="material-name"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="Enter material name..."
-                    className="flex-1"
-                  />
-                  {editName !== selectedMaterial.name && (
-                    <Button
-                      onClick={saveMaterialDetails}
-                      disabled={savingDetails || !editName.trim()}
-                      size="sm"
-                      className="gradient-primary"
-                    >
-                      {savingDetails ? 'Saving...' : 'Save'}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Use Case */}
-              <div className="space-y-2">
-                <Label htmlFor="material-use-case" className="text-base font-semibold">Use Case</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="material-use-case"
-                    value={editUseCase}
-                    onChange={(e) => setEditUseCase(e.target.value)}
-                    placeholder="Enter use case (optional)..."
-                    className="flex-1"
-                  />
-                  {editUseCase !== ((selectedMaterial as any).use_case || '') && (
-                    <Button
-                      onClick={saveMaterialDetails}
-                      disabled={savingDetails}
-                      size="sm"
-                      className="gradient-primary"
-                    >
-                      {savingDetails ? 'Saving...' : 'Save'}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Length */}
-              <div className="space-y-2">
-                <Label htmlFor="material-length" className="text-base font-semibold">Length</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="material-length"
-                    value={editLength}
-                    onChange={(e) => setEditLength(e.target.value)}
-                    placeholder="Enter length (optional)..."
-                    className="flex-1"
-                  />
-                  {editLength !== (selectedMaterial.length || '') && (
-                    <Button
-                      onClick={saveMaterialDetails}
-                      disabled={savingDetails}
-                      size="sm"
-                      className="gradient-primary"
-                    >
-                      {savingDetails ? 'Saving...' : 'Save'}
-                    </Button>
-                  )}
-                </div>
-              </div>
-              
-              {/* Quantity Editor */}
               <div className="space-y-3">
-                <Label htmlFor="material-quantity" className="text-base font-semibold">Quantity</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="material-quantity"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={editQuantity}
-                    onChange={(e) => setEditQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
-                    placeholder="Enter quantity..."
-                    className="flex-1 h-12 text-lg"
-                  />
-                  {editQuantity !== selectedMaterial.quantity && (
-                    <Button
-                      onClick={updateMaterialQuantity}
-                      disabled={savingQuantity}
-                      className="gradient-primary"
-                    >
-                      {savingQuantity ? 'Saving...' : 'Save'}
-                    </Button>
-                  )}
-                </div>
-                {editQuantity !== selectedMaterial.quantity && (
-                  <div className="text-sm text-muted-foreground bg-primary/5 p-2 rounded">
-                    Original: <span className="font-medium">{selectedMaterial.quantity}</span>
-                    <span className="mx-1">→</span>
-                    New: <span className="font-medium text-primary">{editQuantity}</span>
-                    <span className="ml-2">
-                      ({editQuantity > selectedMaterial.quantity ? '+' : ''}
-                      {editQuantity - selectedMaterial.quantity})
-                    </span>
-                  </div>
+                <Label htmlFor="material-name" className="text-lg font-semibold">Material Name</Label>
+                <Input
+                  id="material-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Enter material name..."
+                  className="h-12 text-base"
+                />
+                {editName !== selectedMaterial.name && (
+                  <Button
+                    onClick={saveMaterialDetails}
+                    disabled={savingDetails || !editName.trim()}
+                    className="w-full h-11 gradient-primary"
+                  >
+                    {savingDetails ? 'Saving...' : 'Save Name'}
+                  </Button>
                 )}
               </div>
 
-              {/* Status Update */}
+              {/* Use Case */}
               <div className="space-y-3">
-                <Label className="text-base font-semibold">Update Status</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <Label htmlFor="material-use-case" className="text-lg font-semibold">Use Case</Label>
+                <Input
+                  id="material-use-case"
+                  value={editUseCase}
+                  onChange={(e) => setEditUseCase(e.target.value)}
+                  placeholder="Enter use case (optional)..."
+                  className="h-12 text-base"
+                />
+                {editUseCase !== ((selectedMaterial as any).use_case || '') && (
+                  <Button
+                    onClick={saveMaterialDetails}
+                    disabled={savingDetails}
+                    className="w-full h-11 gradient-primary"
+                  >
+                    {savingDetails ? 'Saving...' : 'Save Use Case'}
+                  </Button>
+                )}
+              </div>
+
+              {/* Length */}
+              <div className="space-y-3">
+                <Label htmlFor="material-length" className="text-lg font-semibold">Length</Label>
+                <Input
+                  id="material-length"
+                  value={editLength}
+                  onChange={(e) => setEditLength(e.target.value)}
+                  placeholder="Enter length (optional)..."
+                  className="h-12 text-base"
+                />
+                {editLength !== (selectedMaterial.length || '') && (
+                  <Button
+                    onClick={saveMaterialDetails}
+                    disabled={savingDetails}
+                    className="w-full h-11 gradient-primary"
+                  >
+                    {savingDetails ? 'Saving...' : 'Save Length'}
+                  </Button>
+                )}
+              </div>
+              
+              {/* Quantity Editor - Mobile Optimized */}
+              <div className="space-y-3">
+                <Label htmlFor="material-quantity" className="text-lg font-semibold">Quantity</Label>
+                <Input
+                  id="material-quantity"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
+                  placeholder="Enter quantity..."
+                  className="h-14 text-xl font-semibold text-center"
+                />
+                {editQuantity !== selectedMaterial.quantity && (
+                  <>
+                    <div className="text-base text-muted-foreground bg-primary/5 p-3 rounded">
+                      Original: <span className="font-medium">{selectedMaterial.quantity}</span>
+                      <span className="mx-2">→</span>
+                      New: <span className="font-medium text-primary">{editQuantity}</span>
+                      <span className="ml-2">
+                        ({editQuantity > selectedMaterial.quantity ? '+' : ''}
+                        {editQuantity - selectedMaterial.quantity})
+                      </span>
+                    </div>
+                    <Button
+                      onClick={updateMaterialQuantity}
+                      disabled={savingQuantity}
+                      className="w-full h-12 gradient-primary text-base"
+                    >
+                      {savingQuantity ? 'Saving...' : 'Save Quantity'}
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {/* Status Update - Mobile Optimized */}
+              <div className="space-y-3">
+                <Label className="text-lg font-semibold">Update Status</Label>
+                <div className="grid grid-cols-2 gap-3">
                   {Object.entries(STATUS_CONFIG).map(([status, config]) => (
                     <Button
                       key={status}
                       variant={selectedMaterial.status === status ? 'default' : 'outline'}
                       onClick={() => updateMaterialStatus(status as Material['status'])}
-                      className={`h-12 ${
+                      className={`h-14 text-sm font-semibold ${
                         selectedMaterial.status === status 
                           ? `${config.color} text-white hover:opacity-90` 
                           : ''
@@ -1179,9 +1167,9 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                 </div>
               </div>
 
-              {/* Notes */}
-              <div className="space-y-2">
-                <Label htmlFor="material-notes" className="text-base font-semibold">
+              {/* Notes - Mobile Optimized */}
+              <div className="space-y-3">
+                <Label htmlFor="material-notes" className="text-lg font-semibold">
                   Notes
                 </Label>
                 <Textarea
@@ -1189,31 +1177,30 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   value={materialNotes}
                   onChange={(e) => setMaterialNotes(e.target.value)}
                   placeholder="Add notes about this material..."
-                  rows={3}
-                  className="resize-none"
+                  rows={4}
+                  className="resize-none text-base"
                 />
                 <Button
                   onClick={saveMaterialNotes}
                   variant="outline"
-                  size="sm"
-                  className="w-full"
+                  className="w-full h-12 text-base"
                 >
-                  <FileText className="w-4 h-4 mr-2" />
+                  <FileText className="w-5 h-5 mr-2" />
                   Save Notes
                 </Button>
               </div>
 
-              {/* Photos */}
+              {/* Photos - Mobile Optimized */}
               <div className="space-y-3">
-                <Label className="text-base font-semibold">Photos</Label>
+                <Label className="text-lg font-semibold">Photos</Label>
                 
                 <Button
                   variant="outline"
-                  className="w-full h-12"
+                  className="w-full h-14 text-base"
                   disabled={uploadingPhoto}
                   onClick={() => document.getElementById('material-photo-upload')?.click()}
                 >
-                  <Camera className="w-5 h-5 mr-2" />
+                  <Camera className="w-6 h-6 mr-2" />
                   {uploadingPhoto ? 'Uploading...' : 'Add Photo'}
                 </Button>
                 <input
@@ -1226,13 +1213,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                 />
 
                 {materialPhotos.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     {materialPhotos.map((photo) => (
                       <img
                         key={photo.id}
                         src={photo.photo_url}
                         alt="Material"
-                        className="w-full aspect-square object-cover rounded-lg border"
+                        className="w-full aspect-square object-cover rounded-lg border-2"
                       />
                     ))}
                   </div>
@@ -1242,7 +1229,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               <Button
                 variant="outline"
                 onClick={() => setSelectedMaterial(null)}
-                className="w-full"
+                className="w-full h-12 text-base"
               >
                 Close
               </Button>
@@ -1251,65 +1238,66 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Create Bundle Dialog */}
+      {/* Create Bundle Dialog - Mobile Optimized */}
       <Dialog open={showCreateBundle} onOpenChange={closeCreateBundleDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Create Material Bundle</DialogTitle>
+            <DialogTitle className="text-xl">Create Material Bundle</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="bg-primary/5 rounded-lg p-3 border border-primary/20">
-              <p className="text-sm font-medium">Selected Materials: {selectedMaterialIds.size}</p>
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <p className="text-base font-medium">Selected Materials: {selectedMaterialIds.size}</p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bundle-name">Bundle Name *</Label>
+            <div className="space-y-3">
+              <Label htmlFor="bundle-name" className="text-base font-semibold">Bundle Name *</Label>
               <Input
                 id="bundle-name"
                 value={bundleName}
                 onChange={(e) => setBundleName(e.target.value)}
                 placeholder="e.g., Roof Package, Foundation Kit..."
-                className="h-11"
+                className="h-12 text-base"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bundle-description">Description (Optional)</Label>
+            <div className="space-y-3">
+              <Label htmlFor="bundle-description" className="text-base font-semibold">Description (Optional)</Label>
               <Textarea
                 id="bundle-description"
                 value={bundleDescription}
                 onChange={(e) => setBundleDescription(e.target.value)}
                 placeholder="Add notes about this bundle..."
-                rows={3}
-                className="resize-none"
+                rows={4}
+                className="resize-none text-base"
               />
             </div>
 
-            <div className="flex gap-2 justify-end pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={closeCreateBundleDialog}
-                disabled={creatingBundle}
-              >
-                Cancel
-              </Button>
+            <div className="flex flex-col gap-3 pt-4 border-t">
               <Button
                 onClick={createBundle}
                 disabled={creatingBundle || !bundleName.trim()}
-                className="gradient-primary"
+                className="h-12 text-base gradient-primary"
               >
                 {creatingBundle ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                     Creating...
                   </>
                 ) : (
                   <>
-                    <Layers className="w-4 h-4 mr-2" />
+                    <Layers className="w-5 h-5 mr-2" />
                     Create Bundle
                   </>
                 )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={closeCreateBundleDialog}
+                disabled={creatingBundle}
+                className="h-12 text-base"
+              >
+                Cancel
               </Button>
             </div>
           </div>
