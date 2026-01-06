@@ -369,7 +369,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={() => setShowCalendar(true)}
+              onClick={() => setShowCalendarPage(true)}
               className="relative"
             >
               <CalendarIcon className="w-4 h-4" />
