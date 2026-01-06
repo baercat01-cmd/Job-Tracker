@@ -78,6 +78,10 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editQuantity, setEditQuantity] = useState<number>(0);
   const [savingQuantity, setSavingQuantity] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLength, setEditLength] = useState('');
+  const [editUseCase, setEditUseCase] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
 
   useEffect(() => {
     loadMaterials();
@@ -151,6 +155,9 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setSelectedMaterial(material);
     setMaterialNotes(material.notes || '');
     setEditQuantity(material.quantity);
+    setEditName(material.name);
+    setEditLength(material.length || '');
+    setEditUseCase((material as any).use_case || '');
     loadMaterialPhotos(material.id);
   }
 
@@ -229,6 +236,44 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     const newQty = editQuantity + delta;
     if (newQty >= 0) {
       setEditQuantity(newQty);
+    }
+  }
+
+  async function saveMaterialDetails() {
+    if (!selectedMaterial) return;
+    
+    if (!editName.trim()) {
+      toast.error('Material name cannot be empty');
+      return;
+    }
+
+    setSavingDetails(true);
+    
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          name: editName.trim(),
+          length: editLength.trim() || null,
+          use_case: editUseCase.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedMaterial.id);
+
+      if (error) throw error;
+
+      toast.success('Material details updated');
+      setSelectedMaterial({ 
+        ...selectedMaterial, 
+        name: editName.trim(),
+        length: editLength.trim() || null,
+      } as any);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update material details');
+      console.error(error);
+    } finally {
+      setSavingDetails(false);
     }
   }
 
@@ -520,13 +565,77 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
           {selectedMaterial && (
             <div className="space-y-6">
-              {/* Material Info */}
-              {(selectedMaterial as any).use_case && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <Label className="text-xs text-muted-foreground">Use Case</Label>
-                  <p className="font-medium">{(selectedMaterial as any).use_case}</p>
+              {/* Material Name */}
+              <div className="space-y-2">
+                <Label htmlFor="material-name" className="text-base font-semibold">Material Name</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="material-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Enter material name..."
+                    className="flex-1"
+                  />
+                  {editName !== selectedMaterial.name && (
+                    <Button
+                      onClick={saveMaterialDetails}
+                      disabled={savingDetails || !editName.trim()}
+                      size="sm"
+                      className="gradient-primary"
+                    >
+                      {savingDetails ? 'Saving...' : 'Save'}
+                    </Button>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Use Case */}
+              <div className="space-y-2">
+                <Label htmlFor="material-use-case" className="text-base font-semibold">Use Case</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="material-use-case"
+                    value={editUseCase}
+                    onChange={(e) => setEditUseCase(e.target.value)}
+                    placeholder="Enter use case (optional)..."
+                    className="flex-1"
+                  />
+                  {editUseCase !== ((selectedMaterial as any).use_case || '') && (
+                    <Button
+                      onClick={saveMaterialDetails}
+                      disabled={savingDetails}
+                      size="sm"
+                      className="gradient-primary"
+                    >
+                      {savingDetails ? 'Saving...' : 'Save'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Length */}
+              <div className="space-y-2">
+                <Label htmlFor="material-length" className="text-base font-semibold">Length</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="material-length"
+                    value={editLength}
+                    onChange={(e) => setEditLength(e.target.value)}
+                    placeholder="Enter length (optional)..."
+                    className="flex-1"
+                  />
+                  {editLength !== (selectedMaterial.length || '') && (
+                    <Button
+                      onClick={saveMaterialDetails}
+                      disabled={savingDetails}
+                      size="sm"
+                      className="gradient-primary"
+                    >
+                      {savingDetails ? 'Saving...' : 'Save'}
+                    </Button>
+                  )}
+                </div>
+              </div>
               
               {/* Quantity Editor */}
               <div className="space-y-3">
@@ -597,13 +706,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   </div>
                 )}
               </div>
-              
-              {selectedMaterial.length && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <Label className="text-xs text-muted-foreground">Length</Label>
-                  <p className="font-medium text-lg">{selectedMaterial.length}</p>
-                </div>
-              )}
 
               {/* Status Update */}
               <div className="space-y-3">
