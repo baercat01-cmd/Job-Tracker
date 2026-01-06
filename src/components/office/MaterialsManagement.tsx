@@ -1380,21 +1380,36 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SelectTrigger 
                                   className={`h-auto min-h-8 text-xs font-semibold border-2 rounded-md ${getStatusColor(material.status)} hover:shadow-md cursor-pointer transition-all flex-1`}
                                 >
-                                  <div className="w-full py-1 text-left">
-                                    <div className="flex items-center justify-between mb-0.5">
-                                      <span>{getStatusLabel(material.status)}</span>
+                                  <div className="w-full py-1.5 text-left space-y-0.5">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5">
+                                        <div className={`w-2 h-2 rounded-full ${STATUS_OPTIONS.find(s => s.value === material.status)?.color.replace('bg-', 'bg-')}`} />
+                                        <span className="font-bold">{getStatusLabel(material.status)}</span>
+                                      </div>
                                       <ChevronDownIcon className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
                                     </div>
-                                    {material.date_needed_by && (
-                                      <div className="text-[10px] opacity-90 font-normal">
-                                        Need: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                      </div>
-                                    )}
-                                    {material.ordered_by && (
-                                      <div className="text-[10px] opacity-80 font-normal">
-                                        Ordered: {material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Yes'}
-                                      </div>
-                                    )}
+                                    
+                                    {/* Material Flow Timeline */}
+                                    <div className="text-[10px] opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                      {material.order_requested_at && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="opacity-70">📦</span>
+                                          <span>Ordered: {new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      )}
+                                      {material.date_needed_by && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="opacity-70">📅</span>
+                                          <span>Need by: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      )}
+                                      {material.updated_at && material.status !== 'not_ordered' && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="opacity-70">🔄</span>
+                                          <span>Updated: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </SelectTrigger>
                                 <SelectContent className="min-w-[180px]">

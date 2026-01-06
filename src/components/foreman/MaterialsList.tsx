@@ -1037,19 +1037,36 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             <SelectTrigger 
                               className={`h-auto min-h-11 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
                             >
-                              <div className="w-full py-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span>{STATUS_CONFIG[material.status].label}</span>
+                              <div className="w-full py-2 text-left space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[material.status].color}`} />
+                                    <span className="font-bold">{STATUS_CONFIG[material.status].label}</span>
+                                  </div>
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
-                                {material.date_needed_by && (
-                                  <div className="text-xs opacity-90 font-normal text-left">
-                                    Need by: {new Date(material.date_needed_by).toLocaleDateString()}
-                                  </div>
-                                )}
-                                {material.order_requested_at && (
-                                  <div className="text-xs opacity-80 font-normal text-left">
-                                    Ordered: {new Date(material.order_requested_at).toLocaleDateString()}
+                                
+                                {/* Material Flow Timeline */}
+                                {(material.order_requested_at || material.date_needed_by || material.updated_at) && (
+                                  <div className="text-xs opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                    {material.order_requested_at && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📦</span>
+                                        <span>Ordered: {new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
+                                    {material.date_needed_by && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📅</span>
+                                        <span>Need by: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
+                                    {material.updated_at && material.status !== 'not_ordered' && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>🔄</span>
+                                        <span>Status: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1252,19 +1269,36 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             <SelectTrigger 
                               className={`h-auto min-h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
-                              <div className="w-full py-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span>{STATUS_CONFIG[group.primaryStatus].label}</span>
+                              <div className="w-full py-2 text-left space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[group.primaryStatus].color}`} />
+                                    <span className="font-bold">{STATUS_CONFIG[group.primaryStatus].label}</span>
+                                  </div>
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
-                                {group.materials[0].date_needed_by && (
-                                  <div className="text-xs opacity-90 font-normal text-left">
-                                    Need by: {new Date(group.materials[0].date_needed_by).toLocaleDateString()}
-                                  </div>
-                                )}
-                                {group.materials[0].order_requested_at && (
-                                  <div className="text-xs opacity-80 font-normal text-left">
-                                    Ordered: {new Date(group.materials[0].order_requested_at).toLocaleDateString()}
+                                
+                                {/* Material Flow Timeline */}
+                                {(group.materials[0].order_requested_at || group.materials[0].date_needed_by || group.materials[0].updated_at) && (
+                                  <div className="text-xs opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                    {group.materials[0].order_requested_at && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📦</span>
+                                        <span>Ordered: {new Date(group.materials[0].order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
+                                    {group.materials[0].date_needed_by && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📅</span>
+                                        <span>Need by: {new Date(group.materials[0].date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
+                                    {group.materials[0].updated_at && group.primaryStatus !== 'not_ordered' && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>🔄</span>
+                                        <span>Status: {new Date(group.materials[0].updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
