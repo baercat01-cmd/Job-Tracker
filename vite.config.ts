@@ -8,9 +8,8 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Use the current page protocol and host for WebSocket connection
-      protocol: 'wss',
-      host: typeof window !== 'undefined' ? window.location.hostname : 'localhost',
+      // Use client port for WebSocket connection (works with OnSpace proxy)
+      clientPort: 443,
     },
   },
   plugins: [
