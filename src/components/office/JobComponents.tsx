@@ -39,6 +39,7 @@ interface JobComponent {
   id: string;
   name: string;
   isActive: boolean;
+  isTask: boolean;
   createdAt: string;
 }
 
@@ -258,6 +259,7 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
           id: compId,
           name: global?.name || '',
           isActive: true,
+          isTask: false,
           createdAt: new Date().toISOString(),
         };
       });
@@ -305,6 +307,37 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
       onUpdate();
     } catch (error: any) {
       toast.error('Failed to update component');
+      console.error(error);
+    }
+  }
+
+  async function toggleComponentTask(componentId: string) {
+    if (!isOffice) return;
+
+    try {
+      const component = jobComponents.find(c => c.id === componentId);
+      if (!component) return;
+
+      const updatedComponents = jobComponents.map(comp =>
+        comp.id === componentId
+          ? { ...comp, isTask: !comp.isTask }
+          : comp
+      );
+
+      const { error } = await supabase
+        .from('jobs')
+        .update({
+          components: updatedComponents,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      if (error) throw error;
+
+      toast.success(component.isTask ? 'Removed from tasks' : 'Marked as task for crew');
+      onUpdate();
+    } catch (error: any) {
+      toast.error('Failed to update task status');
       console.error(error);
     }
   }
@@ -368,13 +401,20 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
       ) : (
         <div className="grid gap-2">
           {jobComponents.map((component) => (
-            <Card key={component.id}>
+            <Card key={component.id} className={component.isTask ? 'border-2 border-primary/40 bg-primary/5' : ''}>
               <CardContent className="py-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${component.isActive ? 'bg-success' : 'bg-muted-foreground'}`} />
                     <div>
-                      <p className="font-medium">{component.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{component.name}</p>
+                        {component.isTask && (
+                          <Badge variant="default" className="text-xs bg-primary">
+                            Task
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         Added {new Date(component.createdAt).toLocaleDateString()}
                       </p>
@@ -386,6 +426,15 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
                     </Badge>
                     {isOffice && (
                       <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleComponentTask(component.id)}
+                          className={component.isTask ? 'text-primary' : ''}
+                          title={component.isTask ? 'Remove from tasks' : 'Mark as task for crew'}
+                        >
+                          <ListChecks className={`w-4 h-4 ${component.isTask ? 'text-primary' : 'text-muted-foreground'}`} />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

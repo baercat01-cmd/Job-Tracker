@@ -228,7 +228,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         return;
       }
 
-      setComponents(data || []);
+      // Sort components: tasks first, then alphabetically
+      const sortedComponents = (data || []).sort((a, b) => {
+        const aIsTask = jobComponents.find(jc => jc.id === a.id)?.isTask || false;
+        const bIsTask = jobComponents.find(jc => jc.id === b.id)?.isTask || false;
+        
+        if (aIsTask && !bIsTask) return -1;
+        if (!aIsTask && bIsTask) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      setComponents(sortedComponents);
     } else {
       // Fallback: load all active components if job has no components assigned
       const { data, error } = await supabase
@@ -244,6 +254,11 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       setComponents(data || []);
     }
+  }
+
+  function isComponentTask(componentId: string): boolean {
+    const jobComponents = Array.isArray(job.components) ? job.components : [];
+    return jobComponents.find(c => c.id === componentId)?.isTask || false;
   }
 
   function startTimer() {
@@ -670,6 +685,45 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </CardContent>
       </Card>
 
+      {/* Task Components - Show Prominently */}
+      {entryMode === 'none' && components.some(c => isComponentTask(c.id)) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ListChecks className="w-5 h-5 text-primary" />
+            <h3 className="font-bold text-lg">Active Tasks</h3>
+          </div>
+          {components
+            .filter(c => isComponentTask(c.id))
+            .map((component) => (
+              <Card key={component.id} className="border-2 border-primary shadow-md bg-gradient-to-r from-primary/5 to-primary/10">
+                <CardContent className="py-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-lg">{component.name}</p>
+                        {component.description && (
+                          <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
+                        )}
+                      </div>
+                      <Badge className="bg-primary text-white">Task</Badge>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setSelectedComponent(component.id);
+                        setEntryMode('manual');
+                      }}
+                      className="w-full h-12 gradient-primary"
+                    >
+                      <Plus className="w-5 h-5 mr-2" />
+                      Log Time
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+        </div>
+      )}
+
       {/* Add Component Button - Show when no mode selected */}
       {entryMode === 'none' && (
         <Card className="border-2 border-primary/30 shadow-md">
@@ -876,9 +930,16 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                               setComponentSearch('');
                               setShowComponentDropdown(false);
                             }}
-                            className="w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0"
+                            className={`w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0 ${
+                              isComponentTask(comp.id) ? 'bg-primary/5 border-l-4 border-l-primary' : ''
+                            }`}
                           >
-                            <p className="font-medium">{comp.name}</p>
+                            <div className="flex items-center justify-between">
+                              <p className="font-medium">{comp.name}</p>
+                              {isComponentTask(comp.id) && (
+                                <Badge variant="default" className="text-xs bg-primary">Task</Badge>
+                              )}
+                            </div>
                             {comp.description && (
                               <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
                             )}
@@ -1339,9 +1400,16 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                                 setManualComponentSearch('');
                                 setShowManualComponentDropdown(false);
                               }}
-                              className="w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0"
+                              className={`w-full text-left p-3 hover:bg-muted/50 transition-colors border-b last:border-b-0 ${
+                                isComponentTask(comp.id) ? 'bg-primary/5 border-l-4 border-l-primary' : ''
+                              }`}
                             >
-                              <p className="font-medium">{comp.name}</p>
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium">{comp.name}</p>
+                                {isComponentTask(comp.id) && (
+                                  <Badge variant="default" className="text-xs bg-primary">Task</Badge>
+                                )}
+                              </div>
                               {comp.description && (
                                 <p className="text-xs text-muted-foreground mt-1">{comp.description}</p>
                               )}
