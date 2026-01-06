@@ -348,19 +348,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 setActiveTab('timer');
               }}
             />
-            
-            {/* Time History Button - Bottom right, smaller */}
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setShowTimeHistory(true)}
-                variant="outline"
-                size="sm"
-                className="text-xs h-7 px-3"
-              >
-                <History className="w-3 h-3 mr-1.5" />
-                View Time History
-              </Button>
-            </div>
           </div>
         </div>
       </div>
