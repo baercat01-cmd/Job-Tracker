@@ -211,15 +211,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
             
-            {/* Time History Button */}
-            <Button
-              onClick={() => setShowTimeHistory(true)}
-              className="w-full h-10 gradient-primary text-sm"
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              My Time History
-            </Button>
-            
             {/* Quick Time Entry Button */}
             <QuickTimeEntry 
               userId={profile?.id || ''} 
@@ -232,6 +223,19 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             />
             
             <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
+            
+            {/* Time History Button - Smaller at bottom */}
+            <div className="pt-2">
+              <Button
+                onClick={() => setShowTimeHistory(true)}
+                variant="outline"
+                size="sm"
+                className="w-full text-xs h-8"
+              >
+                <History className="w-3 h-3 mr-1.5" />
+                View Time History
+              </Button>
+            </div>
           </div>
         </main>
       </div>
