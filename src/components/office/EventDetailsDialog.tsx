@@ -60,7 +60,10 @@ export function EventDetailsDialog({ event, open, onClose, onUpdate }: EventDeta
     if (!event) return;
 
     // Extract material ID from event ID (format: "order-{id}", "delivery-{id}", etc.)
-    const materialId = event.id.split('-')[1];
+    // event.id format: "order-aa24a202-1234-5678-90ab-cdef12345678"
+    // We need to get everything after the first dash to preserve the full UUID
+    const parts = event.id.split('-');
+    const materialId = parts.slice(1).join('-');
     if (!materialId) return;
 
     try {
