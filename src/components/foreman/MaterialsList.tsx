@@ -639,70 +639,37 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               
               {/* Quantity Editor */}
               <div className="space-y-3">
-                <Label className="text-base font-semibold">Quantity</Label>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => adjustQuantity(-10)}
-                    className="h-14 w-14 text-xl font-bold"
-                  >
-                    <Minus className="w-6 h-6" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => adjustQuantity(-1)}
-                    className="h-14 w-14 text-xl font-bold"
-                  >
-                    -1
-                  </Button>
-                  <div className="flex-1 text-center">
-                    <Input
-                      type="number"
-                      min="0"
-                      value={editQuantity}
-                      onChange={(e) => setEditQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="h-14 text-center text-2xl font-bold"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => adjustQuantity(1)}
-                    className="h-14 w-14 text-xl font-bold"
-                  >
-                    +1
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => adjustQuantity(10)}
-                    className="h-14 w-14 text-xl font-bold"
-                  >
-                    <Plus className="w-6 h-6" />
-                  </Button>
-                </div>
-                {editQuantity !== selectedMaterial.quantity && (
-                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-lg border border-primary/20">
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Original: </span>
-                      <span className="font-medium">{selectedMaterial.quantity}</span>
-                      <span className="mx-2 text-muted-foreground">→</span>
-                      <span className="font-medium text-primary">{editQuantity}</span>
-                      <span className="ml-2 text-muted-foreground">(
-                        {editQuantity > selectedMaterial.quantity ? '+' : ''}
-                        {editQuantity - selectedMaterial.quantity}
-                      )</span>
-                    </div>
+                <Label htmlFor="material-quantity" className="text-base font-semibold">Quantity</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="material-quantity"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={editQuantity}
+                    onChange={(e) => setEditQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
+                    placeholder="Enter quantity..."
+                    className="flex-1 h-12 text-lg"
+                  />
+                  {editQuantity !== selectedMaterial.quantity && (
                     <Button
                       onClick={updateMaterialQuantity}
                       disabled={savingQuantity}
                       className="gradient-primary"
-                      size="sm"
                     >
                       {savingQuantity ? 'Saving...' : 'Save'}
                     </Button>
+                  )}
+                </div>
+                {editQuantity !== selectedMaterial.quantity && (
+                  <div className="text-sm text-muted-foreground bg-primary/5 p-2 rounded">
+                    Original: <span className="font-medium">{selectedMaterial.quantity}</span>
+                    <span className="mx-1">→</span>
+                    New: <span className="font-medium text-primary">{editQuantity}</span>
+                    <span className="ml-2">
+                      ({editQuantity > selectedMaterial.quantity ? '+' : ''}
+                      {editQuantity - selectedMaterial.quantity})
+                    </span>
                   </div>
                 )}
               </div>
