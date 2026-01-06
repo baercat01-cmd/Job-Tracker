@@ -771,16 +771,22 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         className="p-4 border-2 rounded-lg bg-muted/30 space-y-3"
                       >
                         <div>
-                          <p className="font-semibold text-base">{material.name}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-base">{material.name}</p>
+                            <span className="text-base text-muted-foreground">•</span>
+                            <span className="font-medium text-base">Qty: {material.quantity}</span>
+                            {material.length && (
+                              <>
+                                <span className="text-base text-muted-foreground">•</span>
+                                <span className="text-base text-muted-foreground">Length: {material.length}</span>
+                              </>
+                            )}
+                          </div>
                           {material.use_case && (
                             <p className="text-sm text-muted-foreground mt-1">
                               Use: {material.use_case}
                             </p>
                           )}
-                          <div className="flex gap-4 text-base text-muted-foreground mt-2">
-                            <span className="font-medium">Qty: {material.quantity}</span>
-                            {material.length && <span>Length: {material.length}</span>}
-                          </div>
                         </div>
                         <div onClick={(e) => e.stopPropagation()}>
                           <Select
@@ -932,10 +938,18 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                           className="cursor-pointer" 
                           onClick={() => !selectionMode && openMaterialDetail(material)}
                         >
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="font-semibold text-base flex-1">{material.name}</p>
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <p className="font-semibold text-base">{material.name}</p>
+                            <span className="text-base text-muted-foreground">•</span>
+                            <span className="font-medium text-base">Qty: {material.quantity}</span>
+                            {material.length && (
+                              <>
+                                <span className="text-base text-muted-foreground">•</span>
+                                <span className="text-base text-muted-foreground">Length: {material.length}</span>
+                              </>
+                            )}
                             {isInBundle && (
-                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 ml-auto">
                                 <Layers className="w-3 h-3 mr-1" />
                                 {bundleInfo.bundleName}
                               </Badge>
@@ -946,10 +960,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               Use: {(material as any).use_case}
                             </p>
                           )}
-                          <div className="flex gap-4 text-base text-muted-foreground">
-                            <span className="font-medium">Qty: {material.quantity}</span>
-                            {material.length && <span>Length: {material.length}</span>}
-                          </div>
                         </div>
                         
                         <div onClick={(e) => e.stopPropagation()}>
