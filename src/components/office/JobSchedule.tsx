@@ -36,6 +36,12 @@ import {
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 
+// Helper function to parse date string as local date (not UTC)
+function parseDateLocal(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 interface Subcontractor {
   id: string;
   name: string;
@@ -467,8 +473,8 @@ function ScheduleCard({
   onDelete: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
 }) {
-  const startDate = new Date(schedule.start_date);
-  const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
+  const startDate = parseDateLocal(schedule.start_date);
+  const endDate = schedule.end_date ? parseDateLocal(schedule.end_date) : null;
   const isPast = (endDate || startDate) < new Date();
   const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
     ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`

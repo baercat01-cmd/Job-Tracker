@@ -17,6 +17,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
+
+// Helper function to parse date string as local date (not UTC)
+function parseDateLocal(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
 import {
   Select,
   SelectContent,
@@ -234,8 +240,8 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
       if (!subError && subcontractorSchedules) {
         subcontractorSchedules.forEach((schedule: any) => {
           const jobColor = getJobColor(schedule.jobs.name);
-          const startDate = new Date(schedule.start_date);
-          const endDate = schedule.end_date ? new Date(schedule.end_date) : startDate;
+          const startDate = parseDateLocal(schedule.start_date);
+          const endDate = schedule.end_date ? parseDateLocal(schedule.end_date) : startDate;
           
           // Create date range string for display
           const dateRangeStr = endDate.getTime() !== startDate.getTime()

@@ -6,6 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Helper function to parse date string as local date (not UTC)
+function parseDateLocal(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 interface CalendarEvent {
   id: string;
   type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed' | 'subcontractor';
@@ -127,8 +133,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
 
       if (!subError && subcontractorSchedules) {
         subcontractorSchedules.forEach((schedule: any) => {
-          const startDate = new Date(schedule.start_date);
-          const endDate = schedule.end_date ? new Date(schedule.end_date) : startDate;
+          const startDate = parseDateLocal(schedule.start_date);
+          const endDate = schedule.end_date ? parseDateLocal(schedule.end_date) : startDate;
           
           // Create date range string for display
           const dateRangeStr = endDate.getTime() !== startDate.getTime()
