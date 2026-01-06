@@ -42,7 +42,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [documentTab, setDocumentTab] = useState<string>('documents');
   const [showTimeHistory, setShowTimeHistory] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
+  const [showCalendarPage, setShowCalendarPage] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -105,6 +105,56 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     toast.success('Signed out successfully');
   };
 
+  // If showing calendar page, render that view
+  if (showCalendarPage) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => setShowCalendarPage(false)}>
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <div className="border-l pl-3">
+                <p className="font-bold">Calendar</p>
+                <p className="text-xs text-muted-foreground">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-4 py-6">
+          <JobsCalendar 
+            onJobSelect={(jobId) => {
+              // Load and select the job
+              supabase
+                .from('jobs')
+                .select('*')
+                .eq('id', jobId)
+                .single()
+                .then(({ data, error }) => {
+                  if (!error && data) {
+                    setSelectedJob(data);
+                    setShowCalendarPage(false);
+                  }
+                });
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
+
   // If showing time history, render that view
   if (showTimeHistory) {
     return (
@@ -126,6 +176,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowCalendarPage(true)}
+                className="relative h-9 w-9"
+              >
+                <CalendarIcon className="w-5 h-5" />
+              </Button>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 <LogOut className="w-4 h-4" />
               </Button>
@@ -167,11 +225,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <div className="flex items-center gap-2">
               <Button 
                 variant="ghost" 
-                size="sm" 
-                onClick={() => setShowCalendar(true)}
-                className="relative"
+                size="icon" 
+                onClick={() => setShowCalendarPage(true)}
+                className="relative h-9 w-9"
               >
-                <CalendarIcon className="w-4 h-4" />
+                <CalendarIcon className="w-5 h-5" />
               </Button>
               <NotificationBell
                 onNotificationClick={(notification) => {
@@ -265,34 +323,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
           </div>
         </div>
-        
-        {/* Calendar Dialog */}
-        <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5" />
-                Job Calendar
-              </DialogTitle>
-            </DialogHeader>
-            <JobsCalendar 
-              onJobSelect={(jobId) => {
-                // Load and select the job
-                supabase
-                  .from('jobs')
-                  .select('*')
-                  .eq('id', jobId)
-                  .single()
-                  .then(({ data, error }) => {
-                    if (!error && data) {
-                      setSelectedJob(data);
-                      setShowCalendar(false);
-                    }
-                  });
-              }}
-            />
-          </DialogContent>
-        </Dialog>
       </div>
     );
   }
