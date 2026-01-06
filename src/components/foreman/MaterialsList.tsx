@@ -1104,25 +1104,42 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
                                 
+                                {/* Delivery Date - Prominent Display */}
+                                {(material.delivery_date || material.actual_delivery_date) && (
+                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                    {material.actual_delivery_date ? (
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                        <span>✅</span>
+                                        <span>Delivered: {new Date(material.actual_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                      </div>
+                                    ) : material.delivery_date ? (
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                        <span>🚚</span>
+                                        <span>Delivery: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
+                                
                                 {/* Material Flow Timeline */}
-                                {(material.order_requested_at || material.date_needed_by || material.updated_at) && (
+                                {(material.order_requested_at || material.order_by_date || material.pull_by_date) && (
                                   <div className="text-xs opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                    {material.order_by_date && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📋</span>
+                                        <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
                                     {material.order_requested_at && (
                                       <div className="flex items-center gap-1.5">
                                         <span>📦</span>
                                         <span>Ordered: {new Date(material.order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                       </div>
                                     )}
-                                    {material.date_needed_by && (
+                                    {material.pull_by_date && (
                                       <div className="flex items-center gap-1.5">
-                                        <span>📅</span>
-                                        <span>Need by: {new Date(material.date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                      </div>
-                                    )}
-                                    {material.updated_at && material.status !== 'not_ordered' && (
-                                      <div className="flex items-center gap-1.5">
-                                        <span>🔄</span>
-                                        <span>Status: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        <span>🏪</span>
+                                        <span>Pull by: {new Date(material.pull_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                       </div>
                                     )}
                                   </div>
@@ -1336,25 +1353,42 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
                                 
+                                {/* Delivery Date - Prominent Display */}
+                                {(group.materials[0].delivery_date || group.materials[0].actual_delivery_date) && (
+                                  <div className="bg-black/10 rounded px-2 py-1 mt-1">
+                                    {group.materials[0].actual_delivery_date ? (
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                        <span>✅</span>
+                                        <span>Delivered: {new Date(group.materials[0].actual_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                      </div>
+                                    ) : group.materials[0].delivery_date ? (
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                        <span>🚚</span>
+                                        <span>Delivery: {new Date(group.materials[0].delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
+                                
                                 {/* Material Flow Timeline */}
-                                {(group.materials[0].order_requested_at || group.materials[0].date_needed_by || group.materials[0].updated_at) && (
+                                {(group.materials[0].order_requested_at || group.materials[0].order_by_date || group.materials[0].pull_by_date) && (
                                   <div className="text-xs opacity-85 font-normal space-y-0.5 pt-1 border-t border-current/20">
+                                    {group.materials[0].order_by_date && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span>📋</span>
+                                        <span>Order by: {new Date(group.materials[0].order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    )}
                                     {group.materials[0].order_requested_at && (
                                       <div className="flex items-center gap-1.5">
                                         <span>📦</span>
                                         <span>Ordered: {new Date(group.materials[0].order_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                       </div>
                                     )}
-                                    {group.materials[0].date_needed_by && (
+                                    {group.materials[0].pull_by_date && (
                                       <div className="flex items-center gap-1.5">
-                                        <span>📅</span>
-                                        <span>Need by: {new Date(group.materials[0].date_needed_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                      </div>
-                                    )}
-                                    {group.materials[0].updated_at && group.primaryStatus !== 'not_ordered' && (
-                                      <div className="flex items-center gap-1.5">
-                                        <span>🔄</span>
-                                        <span>Status: {new Date(group.materials[0].updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                        <span>🏪</span>
+                                        <span>Pull by: {new Date(group.materials[0].pull_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                       </div>
                                     )}
                                   </div>
