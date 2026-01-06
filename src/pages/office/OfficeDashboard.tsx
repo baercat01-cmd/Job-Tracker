@@ -29,7 +29,7 @@ export function OfficeDashboard() {
   const [activeTab, setActiveTab] = useState('jobs');
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
+  const [viewMode, setViewMode] = useState<'office' | 'field'>('field');
 
   useEffect(() => {
     loadUnreadCount();
