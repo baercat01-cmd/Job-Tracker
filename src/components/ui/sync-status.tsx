@@ -24,20 +24,13 @@ export function SyncStatusDetailed() {
     return null;
   }
 
-  // Simple, minimal indicator - just shows what's happening
+  // Minimal indicator - tiny badge in top-right corner
   return (
-    <div className="fixed bottom-4 right-4 z-40">
+    <div className="fixed top-4 right-4 z-40">
       <Popover>
         <PopoverTrigger asChild>
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 hover:bg-primary/20 backdrop-blur-sm border border-primary/20 rounded-full text-xs font-medium text-primary transition-all duration-200 shadow-sm cursor-pointer">
-            <RefreshCw className="w-3 h-3 animate-spin" />
-            <span>
-              {isSyncing && isUploading
-                ? 'Syncing'
-                : isSyncing
-                ? 'Syncing'
-                : 'Uploading'}
-            </span>
+          <button className="flex items-center gap-1 px-1.5 py-1 bg-primary/10 hover:bg-primary/15 backdrop-blur-sm border border-primary/20 rounded-full transition-all duration-200 cursor-pointer">
+            <RefreshCw className="w-2.5 h-2.5 animate-spin text-primary" />
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-72" align="end">
