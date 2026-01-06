@@ -773,14 +773,14 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-bold text-lg text-foreground">{material.name}</p>
-                            <span className="text-base text-muted-foreground">•</span>
-                            <span className="font-medium text-base">Qty: {material.quantity}</span>
                             {material.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
                                 <span className="text-base text-muted-foreground">L: {material.length}</span>
                               </>
                             )}
+                            <span className="text-base text-muted-foreground">•</span>
+                            <span className="font-medium text-base">Qty: {material.quantity}</span>
                           </div>
                           {material.use_case && (
                             <p className="text-sm text-muted-foreground mt-1">
@@ -940,14 +940,14 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-2">
                             <p className="font-bold text-lg text-foreground">{material.name}</p>
-                            <span className="text-base text-muted-foreground">•</span>
-                            <span className="font-medium text-base">Qty: {material.quantity}</span>
                             {material.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
                                 <span className="text-base text-muted-foreground">L: {material.length}</span>
                               </>
                             )}
+                            <span className="text-base text-muted-foreground">•</span>
+                            <span className="font-medium text-base">Qty: {material.quantity}</span>
                             {isInBundle && (
                               <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 ml-auto">
                                 <Layers className="w-3 h-3 mr-1" />
