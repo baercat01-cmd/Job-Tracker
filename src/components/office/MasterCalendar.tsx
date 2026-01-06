@@ -220,7 +220,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
           notes,
           status,
           job_id,
-          subcontractors!inner(id, name, phone, trade),
+          subcontractors!inner(id, name, phone, trades),
           jobs!inner(id, name, client_name, status)
         `)
         .eq('jobs.status', 'active');
@@ -247,7 +247,8 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
             jobName: schedule.jobs.name,
             jobColor,
             title: `${schedule.subcontractors.name}${dateRangeStr}`,
-            description: `${schedule.subcontractors.trade || 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+            description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+            subcontractorTrades: schedule.subcontractors.trades,
             subcontractorName: schedule.subcontractors.name,
             subcontractorPhone: schedule.subcontractors.phone,
             status: schedule.status,

@@ -30,7 +30,7 @@ interface Subcontractor {
   company_name: string | null;
   phone: string | null;
   email: string | null;
-  trade: string | null;
+  trades: string[];
   notes: string | null;
   active: boolean;
   created_at: string;
@@ -41,7 +41,7 @@ interface SubcontractorFormData {
   company_name: string;
   phone: string;
   email: string;
-  trade: string;
+  trades: string[];
   notes: string;
   active: boolean;
 }
@@ -77,7 +77,7 @@ export function SubcontractorManagement() {
     company_name: '',
     phone: '',
     email: '',
-    trade: '',
+    trades: [],
     notes: '',
     active: true,
   });
@@ -121,7 +121,7 @@ export function SubcontractorManagement() {
             company_name: formData.company_name.trim() || null,
             phone: formData.phone.trim() || null,
             email: formData.email.trim() || null,
-            trade: formData.trade || null,
+            trades: formData.trades.length > 0 ? formData.trades : [],
             notes: formData.notes.trim() || null,
             active: formData.active,
           })
@@ -137,7 +137,7 @@ export function SubcontractorManagement() {
             company_name: formData.company_name.trim() || null,
             phone: formData.phone.trim() || null,
             email: formData.email.trim() || null,
-            trade: formData.trade || null,
+            trades: formData.trades.length > 0 ? formData.trades : [],
             notes: formData.notes.trim() || null,
             active: formData.active,
             created_by: profile?.id,
@@ -183,7 +183,7 @@ export function SubcontractorManagement() {
       company_name: subcontractor.company_name || '',
       phone: subcontractor.phone || '',
       email: subcontractor.email || '',
-      trade: subcontractor.trade || '',
+      trades: subcontractor.trades || [],
       notes: subcontractor.notes || '',
       active: subcontractor.active,
     });
@@ -197,7 +197,7 @@ export function SubcontractorManagement() {
       company_name: '',
       phone: '',
       email: '',
-      trade: '',
+      trades: [],
       notes: '',
       active: true,
     });
@@ -214,7 +214,7 @@ export function SubcontractorManagement() {
       return (
         sub.name.toLowerCase().includes(search) ||
         sub.company_name?.toLowerCase().includes(search) ||
-        sub.trade?.toLowerCase().includes(search) ||
+        sub.trades?.some(t => t.toLowerCase().includes(search)) ||
         sub.phone?.includes(search) ||
         sub.email?.toLowerCase().includes(search)
       );
@@ -240,7 +240,7 @@ export function SubcontractorManagement() {
       <div className="flex gap-4">
         <div className="flex-1">
           <Input
-            placeholder="Search by name, company, trade, phone, or email..."
+            placeholder="Search by name, company, trades, phone, or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -297,10 +297,16 @@ export function SubcontractorManagement() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {sub.trade && (
+                  {sub.trades && sub.trades.length > 0 && (
                     <div>
-                      <p className="text-xs text-muted-foreground">Trade</p>
-                      <p className="font-medium">{sub.trade}</p>
+                      <p className="text-xs text-muted-foreground">Trades</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {sub.trades.map((trade, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {trade}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -420,17 +426,45 @@ export function SubcontractorManagement() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="trade">Trade/Specialty</Label>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="trades">Trades/Specialties</Label>
+                <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[42px] bg-background">
+                  {formData.trades.map((trade, idx) => (
+                    <Badge 
+                      key={idx} 
+                      variant="secondary" 
+                      className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors" 
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          trades: formData.trades.filter((_, i) => i !== idx)
+                        });
+                      }}
+                    >
+                      {trade}
+                      <span className="ml-1 text-xs">×</span>
+                    </Badge>
+                  ))}
+                  {formData.trades.length === 0 && (
+                    <span className="text-sm text-muted-foreground">Select trades below to add</span>
+                  )}
+                </div>
                 <Select
-                  value={formData.trade}
-                  onValueChange={(value) => setFormData({ ...formData, trade: value })}
+                  value=""
+                  onValueChange={(value) => {
+                    if (value && !formData.trades.includes(value)) {
+                      setFormData({
+                        ...formData,
+                        trades: [...formData.trades, value]
+                      });
+                    }
+                  }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select trade" />
+                    <SelectValue placeholder="Add a trade" />
                   </SelectTrigger>
                   <SelectContent>
-                    {COMMON_TRADES.map((trade) => (
+                    {COMMON_TRADES.filter(t => !formData.trades.includes(t)).map((trade) => (
                       <SelectItem key={trade} value={trade}>
                         {trade}
                       </SelectItem>

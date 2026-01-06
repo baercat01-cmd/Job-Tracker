@@ -40,7 +40,7 @@ interface Subcontractor {
   id: string;
   name: string;
   company_name: string | null;
-  trade: string | null;
+  trades: string[] | null;
   phone: string | null;
 }
 
@@ -96,7 +96,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
       .from('subcontractor_schedules')
       .select(`
         *,
-        subcontractors(id, name, company_name, trade, phone)
+        subcontractors(id, name, company_name, trades, phone)
       `)
       .eq('job_id', job.id)
       .order('start_date', { ascending: true });
@@ -112,7 +112,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
   async function loadSubcontractors() {
     const { data, error } = await supabase
       .from('subcontractors')
-      .select('id, name, company_name, trade, phone')
+      .select('id, name, company_name, trades, phone')
       .eq('active', true)
       .order('name');
 
@@ -372,7 +372,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
                   <SelectContent>
                     {subcontractors.map(sub => (
                       <SelectItem key={sub.id} value={sub.id}>
-                        {sub.name} {sub.trade && `- ${sub.trade}`}
+                        {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -483,10 +483,14 @@ function ScheduleCard({
               <User className="w-5 h-5 text-primary" />
               {schedule.subcontractors.name}
             </CardTitle>
-            {schedule.subcontractors.trade && (
-              <p className="text-sm text-muted-foreground mt-1">
-                {schedule.subcontractors.trade}
-              </p>
+            {schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {schedule.subcontractors.trades.map((trade, idx) => (
+                  <Badge key={idx} variant="outline" className="text-xs">
+                    {trade}
+                  </Badge>
+                ))}
+              </div>
             )}
           </div>
           <Badge

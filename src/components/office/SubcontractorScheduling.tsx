@@ -28,7 +28,7 @@ interface Subcontractor {
   id: string;
   name: string;
   company_name: string | null;
-  trade: string | null;
+  trades: string[] | null;
   phone: string | null;
 }
 
@@ -103,7 +103,7 @@ export function SubcontractorScheduling() {
       .from('subcontractor_schedules')
       .select(`
         *,
-        subcontractors(id, name, company_name, trade, phone),
+        subcontractors(id, name, company_name, trades, phone),
         jobs(id, name, client_name)
       `)
       .order('start_date', { ascending: true });
@@ -120,7 +120,7 @@ export function SubcontractorScheduling() {
   async function loadSubcontractors() {
     const { data, error } = await supabase
       .from('subcontractors')
-      .select('id, name, company_name, trade, phone')
+      .select('id, name, company_name, trades, phone')
       .eq('active', true)
       .order('name');
 
@@ -393,7 +393,7 @@ export function SubcontractorScheduling() {
                   <SelectContent>
                     {subcontractors.map(sub => (
                       <SelectItem key={sub.id} value={sub.id}>
-                        {sub.name} {sub.trade && `- ${sub.trade}`}
+                        {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -522,8 +522,14 @@ function ScheduleCard({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg">{schedule.subcontractors.name}</CardTitle>
-            {schedule.subcontractors.trade && (
-              <p className="text-sm text-muted-foreground">{schedule.subcontractors.trade}</p>
+            {schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {schedule.subcontractors.trades.map((trade, idx) => (
+                  <Badge key={idx} variant="outline" className="text-xs">
+                    {trade}
+                  </Badge>
+                ))}
+              </div>
             )}
           </div>
           <Badge variant={
