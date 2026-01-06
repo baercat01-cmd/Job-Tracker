@@ -34,23 +34,10 @@ export function SyncStatusDetailed() {
   }, [lastSyncTime]);
 
   // Show different states based on sync status
-  // Priority: Syncing > Offline > Synced
+  // Priority: Offline > Synced
+  // Note: We don't show the syncing state to avoid visual distraction
   
-  // State 1: Actively syncing - show animated spinner
-  if (isSyncing) {
-    return (
-      <div className="fixed top-4 right-4 z-40">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-full shadow-sm">
-          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
-          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-            Syncing...
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  // State 2: Offline - show static offline indicator
+  // State 1: Offline - show static offline indicator
   if (connectionStatus === 'offline') {
     return (
       <div className="fixed top-4 right-4 z-40">
@@ -64,7 +51,7 @@ export function SyncStatusDetailed() {
     );
   }
 
-  // State 3: Synced - show static checkmark with last sync time
+  // State 2: Synced - show static checkmark with last sync time
   if (lastSyncTime) {
     return (
       <div className="fixed top-4 right-4 z-40">
