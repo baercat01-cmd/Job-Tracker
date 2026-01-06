@@ -12,7 +12,8 @@ import {
   Truck, 
   AlertCircle,
   Filter,
-  X
+  X,
+  Palette
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
@@ -23,6 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface CalendarEvent {
   id: string;
@@ -76,6 +82,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
   const [filterTrade, setFilterTrade] = useState<string>('all');
   const [jobs, setJobs] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
+  const [showJobLegend, setShowJobLegend] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -455,28 +462,43 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
                 Clear Filters
               </Button>
             )}
-          </div>
 
-          {/* Job Color Legend */}
-          {activeJobs.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-3 bg-muted/20 rounded-lg border">
-              <span className="text-xs font-semibold text-muted-foreground mr-2">Job Colors:</span>
-              {activeJobs.map(job => (
-                <Badge 
-                  key={job.id} 
-                  variant="outline"
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => onJobSelect(job.id)}
-                >
-                  <div 
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: getJobColor(job.name) }}
-                  />
-                  {job.name}
-                </Badge>
-              ))}
-            </div>
-          )}
+            {/* Job Colors Legend Button */}
+            {activeJobs.length > 0 && (
+              <Popover open={showJobLegend} onOpenChange={setShowJobLegend}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="ml-auto">
+                    <Palette className="w-4 h-4 mr-2" />
+                    Job Colors
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto max-w-md" align="end">
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-sm">Job Color Legend</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {activeJobs.map(job => (
+                        <Badge 
+                          key={job.id} 
+                          variant="outline"
+                          className="cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => {
+                            onJobSelect(job.id);
+                            setShowJobLegend(false);
+                          }}
+                        >
+                          <div 
+                            className="w-3 h-3 rounded-full mr-2"
+                            style={{ backgroundColor: getJobColor(job.name) }}
+                          />
+                          {job.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
       </CardHeader>
 
