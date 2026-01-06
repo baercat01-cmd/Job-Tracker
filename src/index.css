@@ -144,11 +144,11 @@
   }
   
   .border-gradient-orange {
-    @apply border-2 border-transparent bg-gradient-to-r from-orange-accent via-orange to-orange-dark bg-clip-border;
+    @apply border-2 border-orange;
   }
   
   .border-gradient-green {
-    @apply border-2 border-transparent bg-gradient-to-r from-primary via-accent to-primary bg-clip-border;
+    @apply border-2 border-primary;
   }
   
   .stat-card {
