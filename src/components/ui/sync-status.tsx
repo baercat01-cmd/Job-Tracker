@@ -1,7 +1,8 @@
-// Last sync time indicator - static display only
+// Data synced indicator with icon showing last update time
 
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { useEffect, useState } from 'react';
+import { CheckCircle } from 'lucide-react';
 
 function getTimeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -35,11 +36,14 @@ export function SyncStatusDetailed() {
     return null;
   }
 
-  // Simple text display in top-right corner
+  // Icon-based status indicator in top-right corner
   return (
     <div className="fixed top-4 right-4 z-40">
-      <div className="text-xs text-muted-foreground/60">
-        Last synced {timeAgo}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-background/95 backdrop-blur-sm border rounded-full shadow-sm">
+        <CheckCircle className="h-4 w-4 text-green-500" />
+        <span className="text-xs text-muted-foreground">
+          Synced {timeAgo}
+        </span>
       </div>
     </div>
   );
