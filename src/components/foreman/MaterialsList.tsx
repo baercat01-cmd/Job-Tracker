@@ -37,6 +37,15 @@ interface Material {
   use_case?: string;
 }
 
+interface GroupedMaterial {
+  name: string;
+  length: string | null;
+  groupKey: string;
+  materials: Material[];
+  totalQuantity: number;
+  primaryStatus: Material['status'];
+}
+
 interface MaterialBundle {
   id: string;
   job_id: string;
@@ -54,6 +63,7 @@ interface Category {
   name: string;
   order_index: number;
   materials: Material[];
+  groupedMaterials?: GroupedMaterial[];
 }
 
 interface MaterialPhoto {
@@ -85,6 +95,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -230,6 +241,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       newExpanded.add(bundleId);
     }
     setExpandedBundles(newExpanded);
+  }
+
+  function toggleGroup(groupKey: string) {
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(groupKey)) {
+      newExpanded.delete(groupKey);
+    } else {
+      newExpanded.add(groupKey);
+    }
+    setExpandedGroups(newExpanded);
   }
 
   function openMaterialDetail(material: Material) {
@@ -566,6 +587,44 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     }
   }
 
+  function groupMaterialsByNameAndLength(materials: Material[]): GroupedMaterial[] {
+    const groups = new Map<string, Material[]>();
+    
+    materials.forEach(material => {
+      const key = `${material.name}|||${material.length || 'no-length'}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(material);
+    });
+
+    return Array.from(groups.values()).map(groupMaterials => {
+      const totalQuantity = groupMaterials.reduce((sum, m) => sum + m.quantity, 0);
+      // Determine primary status (most common or first)
+      const statusCounts = new Map<Material['status'], number>();
+      groupMaterials.forEach(m => {
+        statusCounts.set(m.status, (statusCounts.get(m.status) || 0) + 1);
+      });
+      let primaryStatus = groupMaterials[0].status;
+      let maxCount = 0;
+      statusCounts.forEach((count, status) => {
+        if (count > maxCount) {
+          maxCount = count;
+          primaryStatus = status;
+        }
+      });
+
+      return {
+        name: groupMaterials[0].name,
+        length: groupMaterials[0].length,
+        groupKey: `${groupMaterials[0].name}|||${groupMaterials[0].length || 'no-length'}`,
+        materials: groupMaterials,
+        totalQuantity,
+        primaryStatus,
+      };
+    });
+  }
+
   function getFilteredCategories() {
     return categories.map(cat => {
       let filteredMaterials = cat.materials;
@@ -585,9 +644,13 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         );
       }
 
+      // Group materials by name and length
+      const groupedMaterials = groupMaterialsByNameAndLength(filteredMaterials);
+
       return {
         ...cat,
         materials: filteredMaterials,
+        groupedMaterials,
       };
     }).filter(cat => cat.materials.length > 0);
   }
@@ -881,7 +944,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </h3>
       )}
 
-      {/* Categories - Mobile Optimized */}
+      {/* Categories - Mobile Optimized with Grouping */}
       {filteredCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground text-base">
@@ -909,47 +972,72 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
             {expandedCategories.has(category.id) && (
               <CardContent className="space-y-3">
-                {category.materials.map((material) => {
-                  const bundleInfo = materialBundleMap.get(material.id);
+                {category.groupedMaterials?.map((group) => {
+                  const hasMultipleUseCases = group.materials.length > 1;
+                  const firstMaterial = group.materials[0];
+                  const bundleInfo = materialBundleMap.get(firstMaterial.id);
                   const isInBundle = !!bundleInfo;
+                  const isExpanded = expandedGroups.has(group.groupKey);
 
                   return (
                     <div
-                      key={material.id}
+                      key={group.groupKey}
                       className={`p-3 border-2 rounded-lg transition-colors space-y-2 ${
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
-                      {selectionMode && (
-                        <div className="flex items-center gap-2 pb-2 border-b">
-                          <Checkbox
-                            checked={selectedMaterialIds.has(material.id)}
-                            onCheckedChange={() => toggleMaterialSelection(material.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            disabled={isInBundle}
-                            className="h-5 w-5"
-                          />
-                          <span className="text-xs text-muted-foreground">
-                            {isInBundle ? 'Already in bundle' : 'Select this material'}
-                          </span>
-                        </div>
-                      )}
+                      {selectionMode && group.materials.map(material => {
+                        const materialBundleInfo = materialBundleMap.get(material.id);
+                        const materialIsInBundle = !!materialBundleInfo;
+                        
+                        return (
+                          <div key={material.id} className="flex items-center gap-2 pb-2 border-b">
+                            <Checkbox
+                              checked={selectedMaterialIds.has(material.id)}
+                              onCheckedChange={() => toggleMaterialSelection(material.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              disabled={materialIsInBundle}
+                              className="h-5 w-5"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {materialIsInBundle ? 'Already in bundle' : `Select ${material.use_case || 'this material'}`}
+                            </span>
+                          </div>
+                        );
+                      })}
                       
                       <div className="space-y-2">
                         <div 
                           className="cursor-pointer" 
-                          onClick={() => !selectionMode && openMaterialDetail(material)}
+                          onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && openMaterialDetail(firstMaterial)}
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-bold text-lg text-foreground">{material.name}</p>
-                            {material.length && (
+                            <p className="font-bold text-lg text-foreground">{group.name}</p>
+                            {group.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
-                                <span className="text-base text-muted-foreground">L: {material.length}</span>
+                                <span className="text-base text-muted-foreground">L: {group.length}</span>
                               </>
                             )}
                             <span className="text-base text-muted-foreground">•</span>
-                            <span className="font-medium text-base">Qty: {material.quantity}</span>
+                            <span className="font-medium text-base">Total Qty: {group.totalQuantity}</span>
+                            {hasMultipleUseCases && (
+                              <>
+                                <span className="text-base text-muted-foreground">•</span>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-6 px-2 text-xs text-primary hover:text-primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleGroup(group.groupKey);
+                                  }}
+                                >
+                                  {isExpanded ? <ChevronDown className="w-4 h-4 mr-1" /> : <ChevronRight className="w-4 h-4 mr-1" />}
+                                  {group.materials.length} uses
+                                </Button>
+                              </>
+                            )}
                             {isInBundle && (
                               <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 ml-auto">
                                 <Layers className="w-3 h-3 mr-1" />
@@ -957,36 +1045,63 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               </Badge>
                             )}
                           </div>
-                          {(material as any).use_case && (
+                          {!hasMultipleUseCases && firstMaterial.use_case && (
                             <p className="text-sm text-muted-foreground">
-                              Use: {(material as any).use_case}
+                              Use: {firstMaterial.use_case}
                             </p>
                           )}
                         </div>
+
+                        {/* Use Cases Dropdown */}
+                        {hasMultipleUseCases && isExpanded && (
+                          <div className="pl-4 border-l-2 border-primary/30 space-y-2">
+                            {group.materials.map((material) => (
+                              <div 
+                                key={material.id} 
+                                className="p-2 bg-muted/30 rounded border cursor-pointer hover:bg-muted"
+                                onClick={() => !selectionMode && openMaterialDetail(material)}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium">
+                                    {material.use_case || 'General Use'}
+                                  </span>
+                                  <Badge variant="secondary" className="text-sm">
+                                    Qty: {material.quantity}
+                                  </Badge>
+                                </div>
+                                {material.notes && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Note: {material.notes}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         
                         <div onClick={(e) => e.stopPropagation()}>
                           <Select
-                            value={material.status}
+                            value={group.primaryStatus}
                             onValueChange={async (value) => {
                               try {
-                                const oldStatus = material.status;
+                                const materialIds = group.materials.map(m => m.id);
                                 const { error } = await supabase
                                   .from('materials')
                                   .update({ status: value, updated_at: new Date().toISOString() })
-                                  .eq('id', material.id);
+                                  .in('id', materialIds);
                                 
                                 if (error) throw error;
-                                toast.success('Status updated');
+                                toast.success(`All ${group.materials.length} variants updated to ${STATUS_CONFIG[value as Material['status']].label}`);
                                 
                                 await createNotification({
                                   jobId: job.id,
                                   createdBy: userId,
                                   type: 'material_status',
-                                  brief: getMaterialStatusBrief(material.name, oldStatus, value as Material['status']),
-                                  referenceId: material.id,
+                                  brief: `${group.name} (${group.materials.length} variants) → ${STATUS_CONFIG[value as Material['status']].label}`,
+                                  referenceId: firstMaterial.id,
                                   referenceData: { 
-                                    materialName: material.name,
-                                    oldStatus,
+                                    materialName: group.name,
+                                    count: group.materials.length,
                                     newStatus: value,
                                   },
                                 });
@@ -999,10 +1114,10 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
+                              className={`h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
                               <div className="flex items-center justify-between w-full">
-                                <span>{STATUS_CONFIG[material.status].label}</span>
+                                <span>{STATUS_CONFIG[group.primaryStatus].label}</span>
                                 <ChevronDownIcon className="w-4 h-4 opacity-70" />
                               </div>
                             </SelectTrigger>
@@ -1023,12 +1138,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                           </Select>
                         </div>
                       </div>
-                      
-                      {material.notes && (
-                        <p className="text-xs text-muted-foreground cursor-pointer border-t pt-1.5" onClick={() => !selectionMode && openMaterialDetail(material)}>
-                          Note: {material.notes}
-                        </p>
-                      )}
                       
                       {isInBundle && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1.5 border-t">
