@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, MapPin, ExternalLink, Target } from 'lucide-react';
+import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { Job } from '@/types';
@@ -12,6 +12,7 @@ import type { Job } from '@/types';
 interface JobSelectorProps {
   onSelectJob: (job: Job) => void;
   userId: string;
+  onShowJobCalendar?: (job: Job) => void;
 }
 
 interface JobWithProgress extends Job {
@@ -21,7 +22,7 @@ interface JobWithProgress extends Job {
   isOverBudget: boolean;
 }
 
-export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
+export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -130,6 +131,18 @@ export function JobSelector({ onSelectJob, userId }: JobSelectorProps) {
                         {job.client_name}
                       </p>
                     </div>
+                    {/* Calendar icon - prevent propagation to not trigger job selection */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShowJobCalendar?.(job);
+                      }}
+                    >
+                      <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4 space-y-3">

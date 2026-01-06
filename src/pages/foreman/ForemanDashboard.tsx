@@ -27,6 +27,7 @@ import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
 import { JobCalendar } from '@/components/office/JobCalendar';
+import { JobCalendarPage } from '@/components/office/JobCalendarPage';
 
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
@@ -43,6 +44,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [documentTab, setDocumentTab] = useState<string>('documents');
   const [showTimeHistory, setShowTimeHistory] = useState(false);
   const [showCalendarPage, setShowCalendarPage] = useState(false);
+  const [showJobCalendar, setShowJobCalendar] = useState<Job | null>(null);
 
   useEffect(() => {
     if (profile?.id) {
@@ -104,6 +106,45 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     clearUser();
     toast.success('Signed out successfully');
   };
+
+  // If showing job-specific calendar, render that view
+  if (showJobCalendar) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-8 w-auto"
+              />
+              <div className="border-l pl-3">
+                <p className="text-xs text-muted-foreground">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-4 py-6">
+          <JobCalendarPage
+            job={showJobCalendar}
+            onBack={() => setShowJobCalendar(null)}
+          />
+        </main>
+      </div>
+    );
+  }
 
   // If showing calendar page, render that view
   if (showCalendarPage) {
@@ -286,7 +327,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
             </div>
             
-            <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
+            <JobSelector 
+              onSelectJob={handleJobSelect} 
+              userId={profile?.id || ''}
+              onShowJobCalendar={(job) => setShowJobCalendar(job)}
+            />
           </div>
         </main>
 
