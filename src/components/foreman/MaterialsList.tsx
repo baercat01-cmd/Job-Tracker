@@ -20,9 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
+import { getLocalDateString } from '@/lib/utils';
 import type { Job } from '@/types';
 
 interface Material {
@@ -35,6 +36,9 @@ interface Material {
   notes: string | null;
   updated_at: string;
   use_case?: string;
+  date_needed_by?: string | null;
+  ordered_by?: string | null;
+  order_requested_at?: string | null;
 }
 
 interface GroupedMaterial {
@@ -102,6 +106,14 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   // Selection mode for creating bundles
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
+  
+  // Order mode for requesting materials
+  const [orderMode, setOrderMode] = useState(false);
+  const [orderMaterialIds, setOrderMaterialIds] = useState<Set<string>>(new Set());
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
+  const [orderDateNeeded, setOrderDateNeeded] = useState(getLocalDateString());
+  const [orderNotes, setOrderNotes] = useState('');
+  const [submittingOrder, setSubmittingOrder] = useState(false);
   
   // Bundle creation
   const [showCreateBundle, setShowCreateBundle] = useState(false);
@@ -265,6 +277,15 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   function toggleSelectionMode() {
     setSelectionMode(!selectionMode);
+    setOrderMode(false);
+    setSelectedMaterialIds(new Set());
+    setOrderMaterialIds(new Set());
+  }
+
+  function toggleOrderMode() {
+    setOrderMode(!orderMode);
+    setSelectionMode(false);
+    setOrderMaterialIds(new Set());
     setSelectedMaterialIds(new Set());
   }
 
@@ -282,6 +303,79 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
       newSelection.add(materialId);
     }
     setSelectedMaterialIds(newSelection);
+  }
+
+  function toggleMaterialOrder(materialId: string) {
+    const newSelection = new Set(orderMaterialIds);
+    if (newSelection.has(materialId)) {
+      newSelection.delete(materialId);
+    } else {
+      newSelection.add(materialId);
+    }
+    setOrderMaterialIds(newSelection);
+  }
+
+  function openOrderDialog() {
+    if (orderMaterialIds.size === 0) {
+      toast.error('Please select at least one material to order');
+      return;
+    }
+    // Set default date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
+    setOrderNotes('');
+    setShowOrderDialog(true);
+  }
+
+  async function submitMaterialOrder() {
+    if (!orderDateNeeded) {
+      toast.error('Please select a date needed by');
+      return;
+    }
+
+    setSubmittingOrder(true);
+
+    try {
+      // Update all selected materials
+      const materialIds = Array.from(orderMaterialIds);
+      const { error } = await supabase
+        .from('materials')
+        .update({
+          date_needed_by: orderDateNeeded,
+          ordered_by: userId,
+          order_requested_at: new Date().toISOString(),
+          notes: orderNotes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', materialIds);
+
+      if (error) throw error;
+
+      // Create notification for office
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'material_request',
+        brief: `Material order request: ${materialIds.length} item${materialIds.length > 1 ? 's' : ''} needed by ${new Date(orderDateNeeded).toLocaleDateString()}`,
+        referenceData: {
+          materialCount: materialIds.length,
+          dateNeeded: orderDateNeeded,
+          notes: orderNotes,
+        },
+      });
+
+      toast.success(`Order request submitted for ${materialIds.length} material${materialIds.length > 1 ? 's' : ''}`);
+      setShowOrderDialog(false);
+      setOrderMode(false);
+      setOrderMaterialIds(new Set());
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error submitting order:', error);
+      toast.error('Failed to submit order request');
+    } finally {
+      setSubmittingOrder(false);
+    }
   }
 
   function openCreateBundleDialog() {
@@ -683,16 +777,26 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
       {/* Action Bar - Mobile Optimized */}
       <div className="flex gap-2">
-        {!selectionMode ? (
-          <Button
-            onClick={toggleSelectionMode}
-            variant="outline"
-            className="flex-1 h-12 text-base font-semibold"
-          >
-            <PackagePlus className="w-5 h-5 mr-2" />
-            Create Bundle
-          </Button>
-        ) : (
+        {!selectionMode && !orderMode ? (
+          <>
+            <Button
+              onClick={toggleOrderMode}
+              variant="default"
+              className="flex-1 h-12 text-base font-semibold gradient-primary"
+            >
+              <ShoppingCart className="w-5 h-5 mr-2" />
+              Order Materials
+            </Button>
+            <Button
+              onClick={toggleSelectionMode}
+              variant="outline"
+              className="flex-1 h-12 text-base font-semibold"
+            >
+              <PackagePlus className="w-5 h-5 mr-2" />
+              Create Bundle
+            </Button>
+          </>
+        ) : selectionMode ? (
           <>
             <Button
               onClick={openCreateBundleDialog}
@@ -704,6 +808,24 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
             </Button>
             <Button
               onClick={toggleSelectionMode}
+              variant="outline"
+              className="h-12 px-4"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              onClick={openOrderDialog}
+              disabled={orderMaterialIds.size === 0}
+              className="flex-1 h-12 text-base font-semibold gradient-primary"
+            >
+              <ShoppingCart className="w-5 h-5 mr-2" />
+              Order ({orderMaterialIds.size})
+            </Button>
+            <Button
+              onClick={toggleOrderMode}
               variant="outline"
               className="h-12 px-4"
             >
@@ -986,21 +1108,25 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
-                      {selectionMode && group.materials.map(material => {
+                      {/* Selection checkbox for bundle/order modes */}
+                      {(selectionMode || orderMode) && group.materials.map(material => {
                         const materialBundleInfo = materialBundleMap.get(material.id);
                         const materialIsInBundle = !!materialBundleInfo;
                         
                         return (
                           <div key={material.id} className="flex items-center gap-2 pb-2 border-b">
                             <Checkbox
-                              checked={selectedMaterialIds.has(material.id)}
-                              onCheckedChange={() => toggleMaterialSelection(material.id)}
+                              checked={selectionMode ? selectedMaterialIds.has(material.id) : orderMaterialIds.has(material.id)}
+                              onCheckedChange={() => selectionMode ? toggleMaterialSelection(material.id) : toggleMaterialOrder(material.id)}
                               onClick={(e) => e.stopPropagation()}
-                              disabled={materialIsInBundle}
+                              disabled={selectionMode && materialIsInBundle}
                               className="h-5 w-5"
                             />
                             <span className="text-xs text-muted-foreground">
-                              {materialIsInBundle ? 'Already in bundle' : `Select ${material.use_case || 'this material'}`}
+                              {selectionMode 
+                                ? (materialIsInBundle ? 'Already in bundle' : `Select ${material.use_case || 'this material'}`)
+                                : `Order ${material.use_case || 'this material'}`
+                              }
                             </span>
                           </div>
                         );
@@ -1009,7 +1135,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       <div className="space-y-2">
                         <div 
                           className="cursor-pointer" 
-                          onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && openMaterialDetail(firstMaterial)}
+                          onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && !orderMode && openMaterialDetail(firstMaterial)}
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <p className="font-bold text-lg text-foreground">{group.name}</p>
@@ -1044,6 +1170,12 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                                 {bundleInfo.bundleName}
                               </Badge>
                             )}
+                            {firstMaterial.date_needed_by && (
+                              <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300">
+                                <Calendar className="w-3 h-3 mr-1" />
+                                Need by {new Date(firstMaterial.date_needed_by).toLocaleDateString()}
+                              </Badge>
+                            )}
                           </div>
                           {!hasMultipleUseCases && firstMaterial.use_case && (
                             <p className="text-sm text-muted-foreground">
@@ -1059,7 +1191,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               <div 
                                 key={material.id} 
                                 className="p-2 bg-muted/30 rounded border cursor-pointer hover:bg-muted"
-                                onClick={() => !selectionMode && openMaterialDetail(material)}
+                                onClick={() => !selectionMode && !orderMode && openMaterialDetail(material)}
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-sm font-medium">
@@ -1350,6 +1482,82 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Materials Dialog */}
+      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Order Material Request
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <p className="text-base font-medium">Materials Selected: {orderMaterialIds.size}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This will notify the office to order these materials
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="order-date" className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Date Needed By *
+              </Label>
+              <Input
+                id="order-date"
+                type="date"
+                value={orderDateNeeded}
+                onChange={(e) => setOrderDateNeeded(e.target.value)}
+                min={getLocalDateString()}
+                className="h-12 text-base"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="order-notes" className="text-base font-semibold">Additional Notes (Optional)</Label>
+              <Textarea
+                id="order-notes"
+                value={orderNotes}
+                onChange={(e) => setOrderNotes(e.target.value)}
+                placeholder="Any special instructions or urgency notes..."
+                rows={4}
+                className="resize-none text-base"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4 border-t">
+              <Button
+                onClick={submitMaterialOrder}
+                disabled={submittingOrder || !orderDateNeeded}
+                className="h-12 text-base gradient-primary"
+              >
+                {submittingOrder ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="w-5 h-5 mr-2" />
+                    Submit Order Request
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowOrderDialog(false)}
+                disabled={submittingOrder}
+                className="h-12 text-base"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
