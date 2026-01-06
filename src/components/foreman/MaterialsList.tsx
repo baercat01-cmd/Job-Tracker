@@ -1020,7 +1020,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               </>
                             )}
                             <span className="text-base text-muted-foreground">•</span>
-                            <span className="font-medium text-base">Total Qty: {group.totalQuantity}</span>
+                            <span className="font-medium text-base">Qty: {group.totalQuantity}</span>
                             {hasMultipleUseCases && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
