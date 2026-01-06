@@ -39,6 +39,10 @@ interface Material {
   date_needed_by?: string | null;
   ordered_by?: string | null;
   order_requested_at?: string | null;
+  order_by_date?: string | null;
+  pull_by_date?: string | null;
+  delivery_date?: string | null;
+  actual_delivery_date?: string | null;
 }
 
 interface GroupedMaterial {
@@ -107,12 +111,16 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
   
-  // Order dialog for individual material ordering (triggered by status change)
-  const [orderingMaterial, setOrderingMaterial] = useState<Material | null>(null);
-  const [orderingMaterialGroup, setOrderingMaterialGroup] = useState<Material[] | null>(null);
-  const [orderDateNeeded, setOrderDateNeeded] = useState('');
-  const [orderNotes, setOrderNotes] = useState('');
-  const [submittingOrder, setSubmittingOrder] = useState(false);
+  // Status change dialog with date tracking
+  const [statusChangeMaterial, setStatusChangeMaterial] = useState<Material | null>(null);
+  const [statusChangeMaterialGroup, setStatusChangeMaterialGroup] = useState<Material[] | null>(null);
+  const [newStatus, setNewStatus] = useState<Material['status']>('not_ordered');
+  const [orderByDate, setOrderByDate] = useState('');
+  const [pullByDate, setPullByDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [actualDeliveryDate, setActualDeliveryDate] = useState('');
+  const [dateNotes, setDateNotes] = useState('');
+  const [submittingStatus, setSubmittingStatus] = useState(false);
   
   // Bundle creation
   const [showCreateBundle, setShowCreateBundle] = useState(false);
@@ -295,35 +303,72 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setSelectedMaterialIds(newSelection);
   }
 
-  function handleMaterialStatusChange(material: Material, newStatus: Material['status']) {
-    // If changing to "ordered", show date picker dialog
-    if (newStatus === 'ordered') {
-      setOrderingMaterial(material);
-      setOrderingMaterialGroup(null);
-      // Set default date to tomorrow
+  function handleMaterialStatusChange(material: Material, newStatusValue: Material['status']) {
+    // Show date dialog for status changes that need date tracking
+    if (newStatusValue === 'ordered' || newStatusValue === 'at_shop' || newStatusValue === 'at_job') {
+      setStatusChangeMaterial(material);
+      setStatusChangeMaterialGroup(null);
+      setNewStatus(newStatusValue);
+      
+      // Pre-populate existing dates
+      setOrderByDate(material.order_by_date || '');
+      setPullByDate(material.pull_by_date || '');
+      setDeliveryDate(material.delivery_date || '');
+      setActualDeliveryDate(material.actual_delivery_date || '');
+      setDateNotes('');
+      
+      // Set default dates based on status
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
-      setOrderNotes('');
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      if (newStatusValue === 'ordered' && !material.order_by_date) {
+        setOrderByDate(tomorrowStr);
+        setDeliveryDate(tomorrowStr);
+      } else if (newStatusValue === 'at_shop' && !material.pull_by_date) {
+        setPullByDate(tomorrowStr);
+      } else if (newStatusValue === 'at_job' && !material.actual_delivery_date) {
+        setActualDeliveryDate(todayStr);
+      }
     } else {
-      // Direct status change for other statuses
-      updateMaterialStatusDirect(material.id, newStatus);
+      // Direct status change for other statuses (installed, missing, not_ordered)
+      updateMaterialStatusDirect(material.id, newStatusValue);
     }
   }
 
-  function handleGroupStatusChange(group: GroupedMaterial, newStatus: Material['status']) {
-    // If changing to "ordered", show date picker dialog
-    if (newStatus === 'ordered') {
-      setOrderingMaterial(null);
-      setOrderingMaterialGroup(group.materials);
-      // Set default date to tomorrow
+  function handleGroupStatusChange(group: GroupedMaterial, newStatusValue: Material['status']) {
+    // Show date dialog for status changes that need date tracking
+    if (newStatusValue === 'ordered' || newStatusValue === 'at_shop' || newStatusValue === 'at_job') {
+      setStatusChangeMaterial(null);
+      setStatusChangeMaterialGroup(group.materials);
+      setNewStatus(newStatusValue);
+      
+      const firstMaterial = group.materials[0];
+      // Pre-populate existing dates from first material
+      setOrderByDate(firstMaterial.order_by_date || '');
+      setPullByDate(firstMaterial.pull_by_date || '');
+      setDeliveryDate(firstMaterial.delivery_date || '');
+      setActualDeliveryDate(firstMaterial.actual_delivery_date || '');
+      setDateNotes('');
+      
+      // Set default dates based on status
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
-      setOrderNotes('');
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      if (newStatusValue === 'ordered' && !firstMaterial.order_by_date) {
+        setOrderByDate(tomorrowStr);
+        setDeliveryDate(tomorrowStr);
+      } else if (newStatusValue === 'at_shop' && !firstMaterial.pull_by_date) {
+        setPullByDate(tomorrowStr);
+      } else if (newStatusValue === 'at_job' && !firstMaterial.actual_delivery_date) {
+        setActualDeliveryDate(todayStr);
+      }
     } else {
-      // Direct status change for other statuses
-      updateGroupStatusDirect(group.materials.map(m => m.id), newStatus);
+      // Direct status change for other statuses (installed, missing, not_ordered)
+      updateGroupStatusDirect(group.materials.map(m => m.id), newStatusValue);
     }
   }
 
@@ -359,64 +404,77 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     }
   }
 
-  async function confirmMaterialOrder() {
-    if (!orderDateNeeded) {
-      toast.error('Please select a date needed by');
-      return;
-    }
+  async function confirmStatusChange() {
+    if (!statusChangeMaterial && !statusChangeMaterialGroup) return;
 
-    setSubmittingOrder(true);
+    setSubmittingStatus(true);
 
     try {
       let materialIds: string[];
       let materialCount: number;
 
-      if (orderingMaterial) {
-        materialIds = [orderingMaterial.id];
+      if (statusChangeMaterial) {
+        materialIds = [statusChangeMaterial.id];
         materialCount = 1;
-      } else if (orderingMaterialGroup) {
-        materialIds = orderingMaterialGroup.map(m => m.id);
-        materialCount = orderingMaterialGroup.length;
+      } else if (statusChangeMaterialGroup) {
+        materialIds = statusChangeMaterialGroup.map(m => m.id);
+        materialCount = statusChangeMaterialGroup.length;
       } else {
         return;
       }
 
+      const updateData: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update dates based on status
+      if (newStatus === 'ordered') {
+        if (orderByDate) updateData.order_by_date = orderByDate;
+        if (deliveryDate) updateData.delivery_date = deliveryDate;
+        updateData.ordered_by = userId;
+        updateData.order_requested_at = new Date().toISOString();
+      } else if (newStatus === 'at_shop') {
+        if (pullByDate) updateData.pull_by_date = pullByDate;
+      } else if (newStatus === 'at_job') {
+        if (actualDeliveryDate) updateData.actual_delivery_date = actualDeliveryDate;
+      }
+
+      if (dateNotes) {
+        updateData.notes = dateNotes;
+      }
+
       const { error } = await supabase
         .from('materials')
-        .update({
-          status: 'ordered',
-          date_needed_by: orderDateNeeded,
-          ordered_by: userId,
-          order_requested_at: new Date().toISOString(),
-          notes: orderNotes || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .in('id', materialIds);
 
       if (error) throw error;
 
-      // Create notification for office
-      await createNotification({
-        jobId: job.id,
-        createdBy: userId,
-        type: 'material_request',
-        brief: `Material order: ${materialCount} item${materialCount > 1 ? 's' : ''} needed by ${new Date(orderDateNeeded).toLocaleDateString()}`,
-        referenceData: {
-          materialCount,
-          dateNeeded: orderDateNeeded,
-          notes: orderNotes,
-        },
-      });
+      // Create notification for office based on status change
+      if (newStatus === 'ordered') {
+        await createNotification({
+          jobId: job.id,
+          createdBy: userId,
+          type: 'material_request',
+          brief: `Material order: ${materialCount} item${materialCount > 1 ? 's' : ''} ${deliveryDate ? `needed by ${new Date(deliveryDate).toLocaleDateString()}` : 'requested'}`,
+          referenceData: {
+            materialCount,
+            deliveryDate,
+            notes: dateNotes,
+          },
+        });
+      }
 
-      toast.success(`Material${materialCount > 1 ? 's' : ''} ordered - needed by ${new Date(orderDateNeeded).toLocaleDateString()}`);
-      setOrderingMaterial(null);
-      setOrderingMaterialGroup(null);
+      toast.success(`Status updated to ${STATUS_CONFIG[newStatus].label}`);
+      setStatusChangeMaterial(null);
+      setStatusChangeMaterialGroup(null);
       loadMaterials();
     } catch (error: any) {
-      console.error('Error ordering material:', error);
-      toast.error('Failed to order material');
+      console.error('Error updating status:', error);
+      toast.error('Failed to update status');
     } finally {
-      setSubmittingOrder(false);
+      setSubmittingStatus(false);
     }
   }
 
@@ -1535,96 +1593,152 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Order Material Dialog */}
-      <Dialog open={!!(orderingMaterial || orderingMaterialGroup)} onOpenChange={() => {
-        setOrderingMaterial(null);
-        setOrderingMaterialGroup(null);
+      {/* Status Change Dialog with Date Tracking */}
+      <Dialog open={!!(statusChangeMaterial || statusChangeMaterialGroup)} onOpenChange={() => {
+        setStatusChangeMaterial(null);
+        setStatusChangeMaterialGroup(null);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" />
-              Order Material
+              <Calendar className="w-5 h-5" />
+              Update Material Status
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
-              {orderingMaterial ? (
+              {statusChangeMaterial ? (
                 <>
-                  <p className="font-semibold text-base">{orderingMaterial.name}</p>
-                  {orderingMaterial.use_case && (
-                    <p className="text-sm text-muted-foreground mt-1">Use: {orderingMaterial.use_case}</p>
+                  <p className="font-semibold text-base">{statusChangeMaterial.name}</p>
+                  {statusChangeMaterial.use_case && (
+                    <p className="text-sm text-muted-foreground mt-1">Use: {statusChangeMaterial.use_case}</p>
                   )}
                   <div className="flex items-center gap-4 mt-2 text-sm">
-                    <span>Qty: <span className="font-semibold">{orderingMaterial.quantity}</span></span>
-                    {orderingMaterial.length && (
-                      <span>Length: <span className="font-semibold">{orderingMaterial.length}</span></span>
+                    <span>Qty: <span className="font-semibold">{statusChangeMaterial.quantity}</span></span>
+                    {statusChangeMaterial.length && (
+                      <span>Length: <span className="font-semibold">{statusChangeMaterial.length}</span></span>
                     )}
                   </div>
                 </>
-              ) : orderingMaterialGroup && (
+              ) : statusChangeMaterialGroup && (
                 <>
-                  <p className="font-semibold text-base">{orderingMaterialGroup[0].name}</p>
+                  <p className="font-semibold text-base">{statusChangeMaterialGroup[0].name}</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {orderingMaterialGroup.length} variant{orderingMaterialGroup.length > 1 ? 's' : ''}
+                    {statusChangeMaterialGroup.length} variant{statusChangeMaterialGroup.length > 1 ? 's' : ''}
                   </p>
                 </>
               )}
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-sm font-medium mb-1">Changing to:</p>
+                <Badge className={STATUS_CONFIG[newStatus].bgClass}>
+                  {STATUS_CONFIG[newStatus].label}
+                </Badge>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="order-date" className="text-base font-semibold flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Date Needed By *
-              </Label>
-              <Input
-                id="order-date"
-                type="date"
-                value={orderDateNeeded}
-                onChange={(e) => setOrderDateNeeded(e.target.value)}
-                min={getLocalDateString()}
-                className="h-12 text-base"
-              />
-            </div>
+            {/* Date inputs based on status */}
+            {newStatus === 'ordered' && (
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2">
+                    📋 Order By Date
+                  </Label>
+                  <Input
+                    id="order-by-date"
+                    type="date"
+                    value={orderByDate}
+                    onChange={(e) => setOrderByDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Deadline to place this order</p>
+                </div>
+                <div>
+                  <Label htmlFor="delivery-date" className="flex items-center gap-2">
+                    🚚 Expected Delivery Date
+                  </Label>
+                  <Input
+                    id="delivery-date"
+                    type="date"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">When material should arrive at shop</p>
+                </div>
+              </div>
+            )}
+
+            {newStatus === 'at_shop' && (
+              <div>
+                <Label htmlFor="pull-by-date" className="flex items-center gap-2">
+                  🏪 Pull By Date
+                </Label>
+                <Input
+                  id="pull-by-date"
+                  type="date"
+                  value={pullByDate}
+                  onChange={(e) => setPullByDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When to pull this material from shop</p>
+              </div>
+            )}
+
+            {newStatus === 'at_job' && (
+              <div>
+                <Label htmlFor="actual-delivery-date" className="flex items-center gap-2">
+                  ✅ Actual Delivery Date
+                </Label>
+                <Input
+                  id="actual-delivery-date"
+                  type="date"
+                  value={actualDeliveryDate}
+                  onChange={(e) => setActualDeliveryDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">When material arrived at job site</p>
+              </div>
+            )}
 
             <div className="space-y-3">
-              <Label htmlFor="order-notes" className="text-base font-semibold">Additional Notes (Optional)</Label>
+              <Label htmlFor="date-notes">Notes (Optional)</Label>
               <Textarea
-                id="order-notes"
-                value={orderNotes}
-                onChange={(e) => setOrderNotes(e.target.value)}
-                placeholder="Any special instructions or urgency notes..."
-                rows={4}
+                id="date-notes"
+                value={dateNotes}
+                onChange={(e) => setDateNotes(e.target.value)}
+                placeholder="Any additional notes..."
+                rows={3}
                 className="resize-none text-base"
               />
             </div>
 
             <div className="flex flex-col gap-3 pt-4 border-t">
               <Button
-                onClick={confirmMaterialOrder}
-                disabled={submittingOrder || !orderDateNeeded}
+                onClick={confirmStatusChange}
+                disabled={submittingStatus}
                 className="h-12 text-base gradient-primary"
               >
-                {submittingOrder ? (
+                {submittingStatus ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Ordering...
+                    Updating...
                   </>
                 ) : (
-                  <>
-                    <ShoppingCart className="w-5 h-5 mr-2" />
-                    Confirm Order
-                  </>
+                  <>Confirm Update</>
                 )}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => {
-                  setOrderingMaterial(null);
-                  setOrderingMaterialGroup(null);
+                  setStatusChangeMaterial(null);
+                  setStatusChangeMaterialGroup(null);
                 }}
-                disabled={submittingOrder}
+                disabled={submittingStatus}
                 className="h-12 text-base"
               >
                 Cancel
