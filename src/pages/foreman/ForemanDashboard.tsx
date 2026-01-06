@@ -28,9 +28,10 @@ import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
 import { JobCalendar } from '@/components/office/JobCalendar';
 import { JobCalendarPage } from '@/components/office/JobCalendarPage';
+import { JobSchedule } from '@/components/office/JobSchedule';
 
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -471,11 +472,17 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             userId={profile?.id || ''}
           />
         )}
+
+        {activeTab === 'schedule' && (
+          <JobSchedule
+            job={selectedJob}
+          />
+        )}
       </main>
 
-      {/* Bottom Navigation - 5 tabs for job features */}
+      {/* Bottom Navigation - 6 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg">
-        <div className="container mx-auto px-4 py-2 grid grid-cols-5 gap-1">
+        <div className="container mx-auto px-4 py-2 grid grid-cols-6 gap-1">
           <Button
             variant={activeTab === 'timer' ? 'default' : 'ghost'}
             className="flex-col h-auto py-3 touch-target relative"
@@ -518,6 +525,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           >
             <History className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">History</span>
+          </Button>
+          <Button
+            variant={activeTab === 'schedule' ? 'default' : 'ghost'}
+            className="flex-col h-auto py-3 touch-target"
+            onClick={() => setActiveTab('schedule')}
+          >
+            <CalendarIcon className="w-6 h-6 mb-1" />
+            <span className="text-xs font-medium">Schedule</span>
           </Button>
         </div>
       </nav>

@@ -21,9 +21,10 @@ import { JobTimeEntries } from './JobTimeEntries';
 import { JobDetailedView } from './JobDetailedView';
 import { MaterialsManagement } from './MaterialsManagement';
 import { JobPhotosView } from './JobPhotosView';
+import { JobSchedule } from './JobSchedule';
 import { useAuth } from '@/hooks/useAuth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package } from 'lucide-react';
+import { Package, Calendar as CalendarIcon } from 'lucide-react';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -405,12 +406,16 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                 </div>
 
                 <Tabs value={selectedTab} onValueChange={setSelectedTab} className="mt-3">
-                  <TabsList className="grid w-full grid-cols-5 h-9">
+                  <TabsList className="grid w-full grid-cols-6 h-9">
                     <TabsTrigger value="overview" className="flex items-center gap-1.5 text-xs">
                       <BarChart3 className="w-3.5 h-3.5" />
                       Overview
                     </TabsTrigger>
                     <TabsTrigger value="components" className="text-xs">Components</TabsTrigger>
+                    <TabsTrigger value="schedule" className="flex items-center gap-1.5 text-xs">
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      Schedule
+                    </TabsTrigger>
                     <TabsTrigger value="documents" className="text-xs">Documents</TabsTrigger>
                     <TabsTrigger value="materials" className="flex items-center gap-1.5 text-xs">
                       <Package className="w-3.5 h-3.5" />
@@ -428,6 +433,10 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
 
                   <TabsContent value="components" className="mt-3">
                     <JobComponents job={selectedJob} onUpdate={reloadSelectedJob} />
+                  </TabsContent>
+
+                  <TabsContent value="schedule" className="mt-3">
+                    <JobSchedule job={selectedJob} />
                   </TabsContent>
 
                   <TabsContent value="documents" className="mt-3">
