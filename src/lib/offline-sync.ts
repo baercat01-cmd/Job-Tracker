@@ -38,6 +38,23 @@ interface SyncProgress {
 
 type SyncProgressCallback = (progress: SyncProgress) => void;
 
+// Verify backend connectivity before syncing
+async function verifyConnection(): Promise<boolean> {
+  try {
+    // Try a simple query to check if backend is reachable
+    const { error } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+    
+    return !error;
+  } catch (err) {
+    console.error('[Sync] Connection verification failed:', err);
+    return false;
+  }
+}
+
 // Sync all data from Supabase to IndexedDB
 export async function syncAllData(
   onProgress?: SyncProgressCallback
@@ -50,6 +67,13 @@ export async function syncAllData(
   if (!isOnline()) {
     console.log('[Sync] Offline, skipping sync');
     return;
+  }
+
+  // Verify backend is actually reachable
+  const connected = await verifyConnection();
+  if (!connected) {
+    console.log('[Sync] Backend not reachable, skipping sync');
+    throw new Error('Backend not reachable');
   }
 
   isSyncing = true;
@@ -98,11 +122,21 @@ export async function syncTable(tableName: SyncTable): Promise<void> {
     // Get the correct timestamp column for this table
     const timestampColumn = TABLE_TIMESTAMP_COLUMNS[tableName];
 
-    // Fetch all data from Supabase
-    const { data, error } = await supabase
+    // Fetch all data from Supabase with timeout
+    const fetchPromise = supabase
       .from(tableName)
       .select('*')
       .order(timestampColumn, { ascending: false });
+
+    // Add 10 second timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), 10000)
+    );
+
+    const { data, error } = await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ]) as any;
 
     if (error) {
       console.error(`[Sync] Error fetching ${tableName}:`, error);

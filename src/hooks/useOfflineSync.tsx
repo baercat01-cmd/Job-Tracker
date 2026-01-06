@@ -102,14 +102,25 @@ export function useOfflineSync() {
     };
   }, []);
 
-  // Sync when coming back online
+  // Sync when coming back online (with delay to ensure connection is stable)
   useEffect(() => {
     if (connectionStatus === 'online') {
-      manualSync();
+      // Wait 2 seconds before syncing to ensure connection is stable
+      const timer = setTimeout(() => {
+        manualSync();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
     }
   }, [connectionStatus]);
 
   const manualSync = async () => {
+    // Don't sync if we're not actually online
+    if (connectionStatus !== 'online') {
+      console.log('[Sync Hook] Not online, skipping manual sync');
+      return;
+    }
+
     setStatus((prev) => ({ ...prev, isSyncing: true, error: null }));
 
     try {
@@ -131,6 +142,7 @@ export function useOfflineSync() {
       }));
     } catch (error) {
       console.error('[Sync Hook] Manual sync failed:', error);
+      // Only update error state, don't show it as syncing
       setStatus((prev) => ({
         ...prev,
         isSyncing: false,
