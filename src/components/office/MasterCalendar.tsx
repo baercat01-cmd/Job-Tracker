@@ -214,9 +214,8 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
         .from('subcontractor_schedules')
         .select(`
           id,
-          scheduled_date,
-          start_time,
-          end_time,
+          start_date,
+          end_date,
           work_description,
           notes,
           status,
@@ -235,22 +234,24 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
       if (!subError && subcontractorSchedules) {
         subcontractorSchedules.forEach((schedule: any) => {
           const jobColor = getJobColor(schedule.jobs.name);
-          const timeStr = schedule.start_time 
-            ? ` (${schedule.start_time.substring(0, 5)}${schedule.end_time ? ` - ${schedule.end_time.substring(0, 5)}` : ''})`
+          const startDate = new Date(schedule.start_date);
+          const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
+          const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
+            ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
             : '';
           events.push({
             id: `sub-${schedule.id}`,
             type: 'subcontractor',
-            date: schedule.scheduled_date,
+            date: schedule.start_date,
             jobId: schedule.jobs.id,
             jobName: schedule.jobs.name,
             jobColor,
-            title: `${schedule.subcontractors.name}${timeStr}`,
+            title: `${schedule.subcontractors.name}${dateRangeStr}`,
             description: `${schedule.subcontractors.trade || 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
             subcontractorName: schedule.subcontractors.name,
             subcontractorPhone: schedule.subcontractors.phone,
             status: schedule.status,
-            priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.scheduled_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
+            priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
           });
         });
       }

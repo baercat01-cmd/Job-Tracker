@@ -47,9 +47,8 @@ interface Subcontractor {
 interface Schedule {
   id: string;
   subcontractor_id: string;
-  scheduled_date: string;
-  start_time: string | null;
-  end_time: string | null;
+  start_date: string;
+  end_date: string | null;
   work_description: string | null;
   notes: string | null;
   status: string;
@@ -69,9 +68,8 @@ export function JobSchedule({ job }: JobScheduleProps) {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [formData, setFormData] = useState({
     subcontractor_id: '',
-    scheduled_date: '',
-    start_time: '',
-    end_time: '',
+    start_date: '',
+    end_date: '',
     work_description: '',
     notes: '',
     status: 'scheduled',
@@ -101,7 +99,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
         subcontractors(id, name, company_name, trade, phone)
       `)
       .eq('job_id', job.id)
-      .order('scheduled_date', { ascending: true });
+      .order('start_date', { ascending: true });
 
     if (error) {
       console.error('Error loading schedules:', error);
@@ -129,8 +127,8 @@ export function JobSchedule({ job }: JobScheduleProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!formData.subcontractor_id || !formData.scheduled_date) {
-      toast.error('Please select a subcontractor and date');
+    if (!formData.subcontractor_id || !formData.start_date) {
+      toast.error('Please select a subcontractor and start date');
       return;
     }
 
@@ -138,9 +136,8 @@ export function JobSchedule({ job }: JobScheduleProps) {
       const scheduleData = {
         job_id: job.id,
         subcontractor_id: formData.subcontractor_id,
-        scheduled_date: formData.scheduled_date,
-        start_time: formData.start_time || null,
-        end_time: formData.end_time || null,
+        start_date: formData.start_date,
+        end_date: formData.end_date || null,
         work_description: formData.work_description || null,
         notes: formData.notes || null,
         status: formData.status,
@@ -210,9 +207,8 @@ export function JobSchedule({ job }: JobScheduleProps) {
     setEditingSchedule(schedule);
     setFormData({
       subcontractor_id: schedule.subcontractor_id,
-      scheduled_date: schedule.scheduled_date,
-      start_time: schedule.start_time || '',
-      end_time: schedule.end_time || '',
+      start_date: schedule.start_date,
+      end_date: schedule.end_date || '',
       work_description: schedule.work_description || '',
       notes: schedule.notes || '',
       status: schedule.status,
@@ -225,9 +221,8 @@ export function JobSchedule({ job }: JobScheduleProps) {
     setEditingSchedule(null);
     setFormData({
       subcontractor_id: '',
-      scheduled_date: '',
-      start_time: '',
-      end_time: '',
+      start_date: '',
+      end_date: '',
       work_description: '',
       notes: '',
       status: 'scheduled',
@@ -238,13 +233,13 @@ export function JobSchedule({ job }: JobScheduleProps) {
   today.setHours(0, 0, 0, 0);
 
   const upcomingSchedules = schedules.filter(s => {
-    const scheduleDate = new Date(s.scheduled_date);
-    return scheduleDate >= today && s.status === 'scheduled';
+    const startDate = new Date(s.start_date);
+    return startDate >= today && s.status === 'scheduled';
   });
 
   const pastSchedules = schedules.filter(s => {
-    const scheduleDate = new Date(s.scheduled_date);
-    return scheduleDate < today || s.status !== 'scheduled';
+    const endDate = new Date(s.end_date || s.start_date);
+    return endDate < today || s.status !== 'scheduled';
   });
 
   if (loading) {
@@ -390,30 +385,22 @@ export function JobSchedule({ job }: JobScheduleProps) {
               </div>
 
               <div className="space-y-2">
-                <Label>Date *</Label>
+                <Label>Start Date *</Label>
                 <Input
                   type="date"
-                  value={formData.scheduled_date}
-                  onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Start Time</Label>
+                <Label>End Date</Label>
                 <Input
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={formData.end_time}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                  min={formData.start_date}
                 />
               </div>
 
@@ -480,10 +467,11 @@ function ScheduleCard({
   onDelete: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
 }) {
-  const scheduleDate = new Date(schedule.scheduled_date);
-  const isPast = scheduleDate < new Date();
-  const timeStr = schedule.start_time
-    ? ` ${schedule.start_time.substring(0, 5)}${schedule.end_time ? ` - ${schedule.end_time.substring(0, 5)}` : ''}`
+  const startDate = new Date(schedule.start_date);
+  const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
+  const isPast = (endDate || startDate) < new Date();
+  const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
+    ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : '';
 
   return (
@@ -519,19 +507,14 @@ function ScheduleCard({
           <div className="flex items-center gap-2 text-sm">
             <Calendar className="w-4 h-4 text-muted-foreground" />
             <span className="font-medium">
-              {scheduleDate.toLocaleDateString('en-US', {
+              {startDate.toLocaleDateString('en-US', {
                 weekday: 'short',
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
               })}
+              {dateRangeStr}
             </span>
-            {timeStr && (
-              <>
-                <Clock className="w-4 h-4 text-muted-foreground ml-2" />
-                <span>{timeStr}</span>
-              </>
-            )}
           </div>
 
           {schedule.work_description && (

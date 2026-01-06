@@ -42,9 +42,8 @@ interface Schedule {
   id: string;
   subcontractor_id: string;
   job_id: string;
-  scheduled_date: string;
-  start_time: string | null;
-  end_time: string | null;
+  start_date: string;
+  end_date: string | null;
   work_description: string | null;
   notes: string | null;
   status: string;
@@ -55,9 +54,8 @@ interface Schedule {
 interface ScheduleFormData {
   subcontractor_id: string;
   job_id: string;
-  scheduled_date: string;
-  start_time: string;
-  end_time: string;
+  start_date: string;
+  end_date: string;
   work_description: string;
   notes: string;
   status: string;
@@ -76,9 +74,8 @@ export function SubcontractorScheduling() {
   const [formData, setFormData] = useState<ScheduleFormData>({
     subcontractor_id: '',
     job_id: '',
-    scheduled_date: '',
-    start_time: '',
-    end_time: '',
+    start_date: '',
+    end_date: '',
     work_description: '',
     notes: '',
     status: 'scheduled',
@@ -109,7 +106,7 @@ export function SubcontractorScheduling() {
         subcontractors(id, name, company_name, trade, phone),
         jobs(id, name, client_name)
       `)
-      .order('scheduled_date', { ascending: true });
+      .order('start_date', { ascending: true });
 
     if (error) {
       console.error('Error loading schedules:', error);
@@ -153,7 +150,7 @@ export function SubcontractorScheduling() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!formData.subcontractor_id || !formData.job_id || !formData.scheduled_date) {
+    if (!formData.subcontractor_id || !formData.job_id || !formData.start_date) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -162,9 +159,8 @@ export function SubcontractorScheduling() {
       const scheduleData = {
         subcontractor_id: formData.subcontractor_id,
         job_id: formData.job_id,
-        scheduled_date: formData.scheduled_date,
-        start_time: formData.start_time || null,
-        end_time: formData.end_time || null,
+        start_date: formData.start_date,
+        end_date: formData.end_date || null,
         work_description: formData.work_description || null,
         notes: formData.notes || null,
         status: formData.status,
@@ -238,9 +234,8 @@ export function SubcontractorScheduling() {
     setFormData({
       subcontractor_id: schedule.subcontractor_id,
       job_id: schedule.job_id,
-      scheduled_date: schedule.scheduled_date,
-      start_time: schedule.start_time || '',
-      end_time: schedule.end_time || '',
+      start_date: schedule.start_date,
+      end_date: schedule.end_date || '',
       work_description: schedule.work_description || '',
       notes: schedule.notes || '',
       status: schedule.status,
@@ -253,9 +248,8 @@ export function SubcontractorScheduling() {
     setFormData({
       subcontractor_id: '',
       job_id: '',
-      scheduled_date: '',
-      start_time: '',
-      end_time: '',
+      start_date: '',
+      end_date: '',
       work_description: '',
       notes: '',
       status: 'scheduled',
@@ -269,17 +263,17 @@ export function SubcontractorScheduling() {
   });
 
   const upcomingSchedules = filteredSchedules.filter(s => {
-    const scheduleDate = new Date(s.scheduled_date);
+    const startDate = new Date(s.start_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return scheduleDate >= today && s.status === 'scheduled';
+    return startDate >= today && s.status === 'scheduled';
   });
 
   const pastSchedules = filteredSchedules.filter(s => {
-    const scheduleDate = new Date(s.scheduled_date);
+    const endDate = new Date(s.end_date || s.start_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return scheduleDate < today || s.status !== 'scheduled';
+    return endDate < today || s.status !== 'scheduled';
   });
 
   return (
@@ -427,13 +421,24 @@ export function SubcontractorScheduling() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="scheduled_date">Date *</Label>
+                <Label htmlFor="start_date">Start Date *</Label>
                 <Input
-                  id="scheduled_date"
+                  id="start_date"
                   type="date"
-                  value={formData.scheduled_date}
-                  onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                   required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="end_date">End Date</Label>
+                <Input
+                  id="end_date"
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                  min={formData.start_date}
                 />
               </div>
 
@@ -454,25 +459,7 @@ export function SubcontractorScheduling() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="start_time">Start Time</Label>
-                <Input
-                  id="start_time"
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="end_time">End Time</Label>
-                <Input
-                  id="end_time"
-                  type="time"
-                  value={formData.end_time}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                />
-              </div>
             </div>
 
             <div className="space-y-2">
@@ -522,10 +509,11 @@ function ScheduleCard({
   onDelete: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
 }) {
-  const scheduleDate = new Date(schedule.scheduled_date);
-  const isPast = scheduleDate < new Date();
-  const timeStr = schedule.start_time
-    ? ` at ${schedule.start_time.substring(0, 5)}${schedule.end_time ? ` - ${schedule.end_time.substring(0, 5)}` : ''}`
+  const startDate = new Date(schedule.start_date);
+  const endDate = schedule.end_date ? new Date(schedule.end_date) : null;
+  const isPast = (endDate || startDate) < new Date();
+  const dateRangeStr = endDate && endDate.getTime() !== startDate.getTime()
+    ? ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     : '';
 
   return (
@@ -559,13 +547,13 @@ function ScheduleCard({
           <div>
             <p className="text-xs text-muted-foreground">Date & Time</p>
             <p className="font-medium">
-              {scheduleDate.toLocaleDateString('en-US', {
+              {startDate.toLocaleDateString('en-US', {
                 weekday: 'short',
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
               })}
-              {timeStr}
+              {dateRangeStr}
             </p>
           </div>
 
