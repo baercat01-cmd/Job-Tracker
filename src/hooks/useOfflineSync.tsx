@@ -114,6 +114,22 @@ export function useOfflineSync() {
     }
   }, [connectionStatus]);
 
+  // Auto-sync every 5 minutes when online (background sync)
+  useEffect(() => {
+    if (connectionStatus !== 'online') return;
+
+    console.log('[Sync Hook] Starting 5-minute auto-sync interval');
+    const interval = setInterval(() => {
+      console.log('[Sync Hook] Running background auto-sync');
+      manualSync();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => {
+      console.log('[Sync Hook] Clearing auto-sync interval');
+      clearInterval(interval);
+    };
+  }, [connectionStatus]);
+
   const manualSync = async () => {
     // Don't sync if we're not actually online
     if (connectionStatus !== 'online') {
