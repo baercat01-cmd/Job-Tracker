@@ -650,54 +650,56 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         )}
       </div>
 
-      {/* Search Bar - Mobile Optimized */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-        <Input
-          placeholder="Search materials..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-11 pr-12 h-12 text-base"
-        />
-        {searchTerm && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSearchTerm('')}
-            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-10 w-10 p-0"
-          >
-            <X className="w-5 h-5" />
-          </Button>
-        )}
-      </div>
+      {/* Search Bar and Status Filter - Side by Side */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <Input
+            placeholder="Search materials..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-11 pr-12 h-12 text-base"
+          />
+          {searchTerm && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-10 w-10 p-0"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          )}
+        </div>
 
-      {/* Status Filter - Mobile Optimized */}
-      <div>
-        <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-          <SelectTrigger className="h-12 text-base">
-            <SelectValue>
-              {statusFilter === 'all' ? (
-                'All Materials'
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].color}`} />
-                  {STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].label}
-                </div>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="text-base py-3">All Materials</SelectItem>
-            {Object.entries(STATUS_CONFIG).map(([status, config]) => (
-              <SelectItem key={status} value={status} className="text-base py-3">
-                <div className="flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${config.color}`} />
-                  {config.label}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Status Filter Tab - Compact */}
+        <div className="w-44">
+          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+            <SelectTrigger className="h-12 text-sm">
+              <SelectValue>
+                {statusFilter === 'all' ? (
+                  'All'
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].color}`} />
+                    {STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].label}
+                  </div>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-sm py-2">All Materials</SelectItem>
+              {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                <SelectItem key={status} value={status} className="text-sm py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${config.color}`} />
+                    {config.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Bundles */}
@@ -768,7 +770,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                     {bundle.materials.map((material) => (
                       <div
                         key={material.id}
-                        className="p-4 border-2 rounded-lg bg-muted/30 space-y-3"
+                        className="p-3 border-2 rounded-lg bg-muted/30 space-y-2"
                       >
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -914,31 +916,31 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                   return (
                     <div
                       key={material.id}
-                      className={`p-4 border-2 rounded-lg transition-colors space-y-3 ${
+                      className={`p-3 border-2 rounded-lg transition-colors space-y-2 ${
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
                       {selectionMode && (
-                        <div className="flex items-center gap-3 pb-3 border-b">
+                        <div className="flex items-center gap-2 pb-2 border-b">
                           <Checkbox
                             checked={selectedMaterialIds.has(material.id)}
                             onCheckedChange={() => toggleMaterialSelection(material.id)}
                             onClick={(e) => e.stopPropagation()}
                             disabled={isInBundle}
-                            className="h-6 w-6"
+                            className="h-5 w-5"
                           />
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {isInBundle ? 'Already in bundle' : 'Select this material'}
                           </span>
                         </div>
                       )}
                       
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         <div 
                           className="cursor-pointer" 
                           onClick={() => !selectionMode && openMaterialDetail(material)}
                         >
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
                             <p className="font-bold text-lg text-foreground">{material.name}</p>
                             {material.length && (
                               <>
@@ -956,7 +958,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             )}
                           </div>
                           {(material as any).use_case && (
-                            <p className="text-sm text-muted-foreground mb-2">
+                            <p className="text-sm text-muted-foreground">
                               Use: {(material as any).use_case}
                             </p>
                           )}
@@ -997,7 +999,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-12 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
+                              className={`h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
                               <div className="flex items-center justify-between w-full">
                                 <span>{STATUS_CONFIG[material.status].label}</span>
@@ -1023,14 +1025,14 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       </div>
                       
                       {material.notes && (
-                        <p className="text-sm text-muted-foreground cursor-pointer border-t pt-2" onClick={() => !selectionMode && openMaterialDetail(material)}>
+                        <p className="text-xs text-muted-foreground cursor-pointer border-t pt-1.5" onClick={() => !selectionMode && openMaterialDetail(material)}>
                           Note: {material.notes}
                         </p>
                       )}
                       
                       {isInBundle && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2 border-t">
-                          <Layers className="w-4 h-4" />
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1.5 border-t">
+                          <Layers className="w-3.5 h-3.5" />
                           <span>Part of "{bundleInfo.bundleName}" bundle</span>
                         </div>
                       )}
