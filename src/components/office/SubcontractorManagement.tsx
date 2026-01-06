@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Edit, Trash2, Phone, Mail, Building2, Calendar, User } from 'lucide-react';
+import { Plus, Edit, Trash2, Phone, Mail, Building2, Calendar, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Subcontractor {
@@ -62,6 +62,21 @@ const COMMON_TRADES = [
   'Other',
 ];
 
+// Phone number formatting utility
+function formatPhoneNumber(value: string): string {
+  // Remove all non-digits
+  const numbers = value.replace(/\D/g, '');
+  
+  // Format based on length
+  if (numbers.length <= 3) {
+    return numbers;
+  } else if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 3)}) ${numbers.slice(3)}`;
+  } else {
+    return `(${numbers.slice(0, 3)}) ${numbers.slice(3, 6)}-${numbers.slice(6, 10)}`;
+  }
+}
+
 export function SubcontractorManagement() {
   const { profile } = useAuth();
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
@@ -72,6 +87,7 @@ export function SubcontractorManagement() {
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<Subcontractor | null>(null);
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active');
   const [searchTerm, setSearchTerm] = useState('');
+  const [newTrade, setNewTrade] = useState('');
   const [formData, setFormData] = useState<SubcontractorFormData>({
     name: '',
     company_name: '',
@@ -104,6 +120,37 @@ export function SubcontractorManagement() {
     }
   }
 
+  function handleAddTrade() {
+    const trade = newTrade.trim();
+    if (!trade) {
+      toast.error('Please enter a trade name');
+      return;
+    }
+    
+    if (formData.trades.includes(trade)) {
+      toast.error('This trade is already added');
+      return;
+    }
+    
+    setFormData({
+      ...formData,
+      trades: [...formData.trades, trade]
+    });
+    setNewTrade('');
+  }
+
+  function handleRemoveTrade(tradeToRemove: string) {
+    setFormData({
+      ...formData,
+      trades: formData.trades.filter(t => t !== tradeToRemove)
+    });
+  }
+
+  function handlePhoneChange(value: string) {
+    const formatted = formatPhoneNumber(value);
+    setFormData({ ...formData, phone: formatted });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -113,13 +160,16 @@ export function SubcontractorManagement() {
     }
 
     try {
+      // Remove formatting from phone number before saving (store digits only)
+      const phoneDigits = formData.phone.replace(/\D/g, '');
+      
       if (editingId) {
         const { error } = await supabase
           .from('subcontractors')
           .update({
             name: formData.name.trim(),
             company_name: formData.company_name.trim() || null,
-            phone: formData.phone.trim() || null,
+            phone: phoneDigits || null,
             email: formData.email.trim() || null,
             trades: formData.trades.length > 0 ? formData.trades : [],
             notes: formData.notes.trim() || null,
@@ -135,7 +185,7 @@ export function SubcontractorManagement() {
           .insert({
             name: formData.name.trim(),
             company_name: formData.company_name.trim() || null,
-            phone: formData.phone.trim() || null,
+            phone: phoneDigits || null,
             email: formData.email.trim() || null,
             trades: formData.trades.length > 0 ? formData.trades : [],
             notes: formData.notes.trim() || null,
@@ -178,10 +228,12 @@ export function SubcontractorManagement() {
 
   function openEditDialog(subcontractor: Subcontractor) {
     setEditingId(subcontractor.id);
+    // Format phone number when editing
+    const formattedPhone = subcontractor.phone ? formatPhoneNumber(subcontractor.phone) : '';
     setFormData({
       name: subcontractor.name,
       company_name: subcontractor.company_name || '',
-      phone: subcontractor.phone || '',
+      phone: formattedPhone,
       email: subcontractor.email || '',
       trades: subcontractor.trades || [],
       notes: subcontractor.notes || '',
@@ -192,6 +244,7 @@ export function SubcontractorManagement() {
 
   function resetForm() {
     setEditingId(null);
+    setNewTrade('');
     setFormData({
       name: '',
       company_name: '',
@@ -314,7 +367,7 @@ export function SubcontractorManagement() {
                     <div className="flex items-center gap-2 text-sm">
                       <Phone className="w-4 h-4 text-muted-foreground" />
                       <a href={`tel:${sub.phone}`} className="hover:underline">
-                        {sub.phone}
+                        {formatPhoneNumber(sub.phone)}
                       </a>
                     </div>
                   )}
@@ -410,8 +463,9 @@ export function SubcontractorManagement() {
                   id="phone"
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
                   placeholder="(555) 123-4567"
+                  maxLength={14}
                 />
               </div>
 
@@ -428,49 +482,70 @@ export function SubcontractorManagement() {
 
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="trades">Trades/Specialties</Label>
+                
+                {/* Selected Trades Display */}
                 <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[42px] bg-background">
                   {formData.trades.map((trade, idx) => (
                     <Badge 
                       key={idx} 
                       variant="secondary" 
-                      className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors" 
-                      onClick={() => {
-                        setFormData({
-                          ...formData,
-                          trades: formData.trades.filter((_, i) => i !== idx)
-                        });
-                      }}
+                      className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors gap-1" 
+                      onClick={() => handleRemoveTrade(trade)}
                     >
                       {trade}
-                      <span className="ml-1 text-xs">×</span>
+                      <X className="w-3 h-3" />
                     </Badge>
                   ))}
                   {formData.trades.length === 0 && (
-                    <span className="text-sm text-muted-foreground">Select trades below to add</span>
+                    <span className="text-sm text-muted-foreground">Add trades using the input below</span>
                   )}
                 </div>
-                <Select
-                  value=""
-                  onValueChange={(value) => {
-                    if (value && !formData.trades.includes(value)) {
-                      setFormData({
-                        ...formData,
-                        trades: [...formData.trades, value]
-                      });
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add a trade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COMMON_TRADES.filter(t => !formData.trades.includes(t)).map((trade) => (
-                      <SelectItem key={trade} value={trade}>
-                        {trade}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+                {/* Manual Trade Input */}
+                <div className="flex gap-2">
+                  <Input
+                    id="new-trade"
+                    placeholder="Type trade name (e.g., Electrical, Plumbing)"
+                    value={newTrade}
+                    onChange={(e) => setNewTrade(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTrade();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddTrade}
+                    disabled={!newTrade.trim()}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {/* Quick Add Common Trades */}
+                <div className="flex flex-wrap gap-1">
+                  <span className="text-xs text-muted-foreground mr-1">Quick add:</span>
+                  {COMMON_TRADES.filter(t => !formData.trades.includes(t)).slice(0, 6).map((trade) => (
+                    <Button
+                      key={trade}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          trades: [...formData.trades, trade]
+                        });
+                      }}
+                    >
+                      + {trade}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-2">
