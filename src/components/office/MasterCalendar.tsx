@@ -406,10 +406,6 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
                 Clear Filters
               </Button>
             )}
-
-            <div className="ml-auto text-sm text-muted-foreground">
-              {events.length} event{events.length !== 1 ? 's' : ''} scheduled
-            </div>
           </div>
 
           {/* Job Color Legend */}
