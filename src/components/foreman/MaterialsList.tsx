@@ -107,11 +107,10 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
   
-  // Order mode for requesting materials
-  const [orderMode, setOrderMode] = useState(false);
-  const [orderMaterialIds, setOrderMaterialIds] = useState<Set<string>>(new Set());
-  const [showOrderDialog, setShowOrderDialog] = useState(false);
-  const [orderDateNeeded, setOrderDateNeeded] = useState(getLocalDateString());
+  // Order dialog for individual material ordering (triggered by status change)
+  const [orderingMaterial, setOrderingMaterial] = useState<Material | null>(null);
+  const [orderingMaterialGroup, setOrderingMaterialGroup] = useState<Material[] | null>(null);
+  const [orderDateNeeded, setOrderDateNeeded] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [submittingOrder, setSubmittingOrder] = useState(false);
   
@@ -277,15 +276,6 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   function toggleSelectionMode() {
     setSelectionMode(!selectionMode);
-    setOrderMode(false);
-    setSelectedMaterialIds(new Set());
-    setOrderMaterialIds(new Set());
-  }
-
-  function toggleOrderMode() {
-    setOrderMode(!orderMode);
-    setSelectionMode(false);
-    setOrderMaterialIds(new Set());
     setSelectedMaterialIds(new Set());
   }
 
@@ -305,30 +295,71 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setSelectedMaterialIds(newSelection);
   }
 
-  function toggleMaterialOrder(materialId: string) {
-    const newSelection = new Set(orderMaterialIds);
-    if (newSelection.has(materialId)) {
-      newSelection.delete(materialId);
+  function handleMaterialStatusChange(material: Material, newStatus: Material['status']) {
+    // If changing to "ordered", show date picker dialog
+    if (newStatus === 'ordered') {
+      setOrderingMaterial(material);
+      setOrderingMaterialGroup(null);
+      // Set default date to tomorrow
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
+      setOrderNotes('');
     } else {
-      newSelection.add(materialId);
+      // Direct status change for other statuses
+      updateMaterialStatusDirect(material.id, newStatus);
     }
-    setOrderMaterialIds(newSelection);
   }
 
-  function openOrderDialog() {
-    if (orderMaterialIds.size === 0) {
-      toast.error('Please select at least one material to order');
-      return;
+  function handleGroupStatusChange(group: GroupedMaterial, newStatus: Material['status']) {
+    // If changing to "ordered", show date picker dialog
+    if (newStatus === 'ordered') {
+      setOrderingMaterial(null);
+      setOrderingMaterialGroup(group.materials);
+      // Set default date to tomorrow
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
+      setOrderNotes('');
+    } else {
+      // Direct status change for other statuses
+      updateGroupStatusDirect(group.materials.map(m => m.id), newStatus);
     }
-    // Set default date to tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    setOrderDateNeeded(tomorrow.toISOString().split('T')[0]);
-    setOrderNotes('');
-    setShowOrderDialog(true);
   }
 
-  async function submitMaterialOrder() {
+  async function updateMaterialStatusDirect(materialId: string, status: Material['status']) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', materialId);
+      
+      if (error) throw error;
+      toast.success('Status updated');
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update status');
+      console.error(error);
+    }
+  }
+
+  async function updateGroupStatusDirect(materialIds: string[], status: Material['status']) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ status, updated_at: new Date().toISOString() })
+        .in('id', materialIds);
+      
+      if (error) throw error;
+      toast.success(`All ${materialIds.length} variants updated to ${STATUS_CONFIG[status].label}`);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update status');
+      console.error(error);
+    }
+  }
+
+  async function confirmMaterialOrder() {
     if (!orderDateNeeded) {
       toast.error('Please select a date needed by');
       return;
@@ -337,11 +368,23 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
     setSubmittingOrder(true);
 
     try {
-      // Update all selected materials
-      const materialIds = Array.from(orderMaterialIds);
+      let materialIds: string[];
+      let materialCount: number;
+
+      if (orderingMaterial) {
+        materialIds = [orderingMaterial.id];
+        materialCount = 1;
+      } else if (orderingMaterialGroup) {
+        materialIds = orderingMaterialGroup.map(m => m.id);
+        materialCount = orderingMaterialGroup.length;
+      } else {
+        return;
+      }
+
       const { error } = await supabase
         .from('materials')
         .update({
+          status: 'ordered',
           date_needed_by: orderDateNeeded,
           ordered_by: userId,
           order_requested_at: new Date().toISOString(),
@@ -357,22 +400,21 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         jobId: job.id,
         createdBy: userId,
         type: 'material_request',
-        brief: `Material order request: ${materialIds.length} item${materialIds.length > 1 ? 's' : ''} needed by ${new Date(orderDateNeeded).toLocaleDateString()}`,
+        brief: `Material order: ${materialCount} item${materialCount > 1 ? 's' : ''} needed by ${new Date(orderDateNeeded).toLocaleDateString()}`,
         referenceData: {
-          materialCount: materialIds.length,
+          materialCount,
           dateNeeded: orderDateNeeded,
           notes: orderNotes,
         },
       });
 
-      toast.success(`Order request submitted for ${materialIds.length} material${materialIds.length > 1 ? 's' : ''}`);
-      setShowOrderDialog(false);
-      setOrderMode(false);
-      setOrderMaterialIds(new Set());
+      toast.success(`Material${materialCount > 1 ? 's' : ''} ordered - needed by ${new Date(orderDateNeeded).toLocaleDateString()}`);
+      setOrderingMaterial(null);
+      setOrderingMaterialGroup(null);
       loadMaterials();
     } catch (error: any) {
-      console.error('Error submitting order:', error);
-      toast.error('Failed to submit order request');
+      console.error('Error ordering material:', error);
+      toast.error('Failed to order material');
     } finally {
       setSubmittingOrder(false);
     }
@@ -776,64 +818,34 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   return (
     <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
       {/* Action Bar - Mobile Optimized */}
-      <div className="flex gap-2">
-        {!selectionMode && !orderMode ? (
-          <>
-            <Button
-              onClick={toggleOrderMode}
-              variant="default"
-              className="flex-1 h-12 text-base font-semibold gradient-primary"
-            >
-              <ShoppingCart className="w-5 h-5 mr-2" />
-              Order Materials
-            </Button>
-            <Button
-              onClick={toggleSelectionMode}
-              variant="outline"
-              className="flex-1 h-12 text-base font-semibold"
-            >
-              <PackagePlus className="w-5 h-5 mr-2" />
-              Create Bundle
-            </Button>
-          </>
-        ) : selectionMode ? (
-          <>
-            <Button
-              onClick={openCreateBundleDialog}
-              disabled={selectedMaterialIds.size === 0}
-              className="flex-1 h-12 text-base font-semibold gradient-primary"
-            >
-              <Layers className="w-5 h-5 mr-2" />
-              Bundle ({selectedMaterialIds.size})
-            </Button>
-            <Button
-              onClick={toggleSelectionMode}
-              variant="outline"
-              className="h-12 px-4"
-            >
-              <X className="w-5 h-5" />
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              onClick={openOrderDialog}
-              disabled={orderMaterialIds.size === 0}
-              className="flex-1 h-12 text-base font-semibold gradient-primary"
-            >
-              <ShoppingCart className="w-5 h-5 mr-2" />
-              Order ({orderMaterialIds.size})
-            </Button>
-            <Button
-              onClick={toggleOrderMode}
-              variant="outline"
-              className="h-12 px-4"
-            >
-              <X className="w-5 h-5" />
-            </Button>
-          </>
-        )}
-      </div>
+      {!selectionMode ? (
+        <Button
+          onClick={toggleSelectionMode}
+          variant="default"
+          className="w-full h-12 text-base font-semibold gradient-primary"
+        >
+          <PackagePlus className="w-5 h-5 mr-2" />
+          Create Bundle
+        </Button>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            onClick={openCreateBundleDialog}
+            disabled={selectedMaterialIds.size === 0}
+            className="flex-1 h-12 text-base font-semibold gradient-primary"
+          >
+            <Layers className="w-5 h-5 mr-2" />
+            Bundle ({selectedMaterialIds.size})
+          </Button>
+          <Button
+            onClick={toggleSelectionMode}
+            variant="outline"
+            className="h-12 px-4"
+          >
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
 
       {/* Search Bar and Status Filter - Side by Side */}
       <div className="flex gap-2">
@@ -1108,25 +1120,22 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
-                      {/* Selection checkbox for bundle/order modes */}
-                      {(selectionMode || orderMode) && group.materials.map(material => {
+                      {/* Selection checkbox for bundle mode */}
+                      {selectionMode && group.materials.map(material => {
                         const materialBundleInfo = materialBundleMap.get(material.id);
                         const materialIsInBundle = !!materialBundleInfo;
                         
                         return (
                           <div key={material.id} className="flex items-center gap-2 pb-2 border-b">
                             <Checkbox
-                              checked={selectionMode ? selectedMaterialIds.has(material.id) : orderMaterialIds.has(material.id)}
-                              onCheckedChange={() => selectionMode ? toggleMaterialSelection(material.id) : toggleMaterialOrder(material.id)}
+                              checked={selectedMaterialIds.has(material.id)}
+                              onCheckedChange={() => toggleMaterialSelection(material.id)}
                               onClick={(e) => e.stopPropagation()}
-                              disabled={selectionMode && materialIsInBundle}
+                              disabled={materialIsInBundle}
                               className="h-5 w-5"
                             />
                             <span className="text-xs text-muted-foreground">
-                              {selectionMode 
-                                ? (materialIsInBundle ? 'Already in bundle' : `Select ${material.use_case || 'this material'}`)
-                                : `Order ${material.use_case || 'this material'}`
-                              }
+                              {materialIsInBundle ? 'Already in bundle' : `Select ${material.use_case || 'this material'}`}
                             </span>
                           </div>
                         );
@@ -1135,7 +1144,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                       <div className="space-y-2">
                         <div 
                           className="cursor-pointer" 
-                          onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && !orderMode && openMaterialDetail(firstMaterial)}
+                          onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && openMaterialDetail(firstMaterial)}
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <p className="font-bold text-lg text-foreground">{group.name}</p>
@@ -1191,7 +1200,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                               <div 
                                 key={material.id} 
                                 className="p-2 bg-muted/30 rounded border cursor-pointer hover:bg-muted"
-                                onClick={() => !selectionMode && !orderMode && openMaterialDetail(material)}
+                                onClick={() => !selectionMode && openMaterialDetail(material)}
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-sm font-medium">
@@ -1214,36 +1223,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         <div onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={group.primaryStatus}
-                            onValueChange={async (value) => {
-                              try {
-                                const materialIds = group.materials.map(m => m.id);
-                                const { error } = await supabase
-                                  .from('materials')
-                                  .update({ status: value, updated_at: new Date().toISOString() })
-                                  .in('id', materialIds);
-                                
-                                if (error) throw error;
-                                toast.success(`All ${group.materials.length} variants updated to ${STATUS_CONFIG[value as Material['status']].label}`);
-                                
-                                await createNotification({
-                                  jobId: job.id,
-                                  createdBy: userId,
-                                  type: 'material_status',
-                                  brief: `${group.name} (${group.materials.length} variants) → ${STATUS_CONFIG[value as Material['status']].label}`,
-                                  referenceId: firstMaterial.id,
-                                  referenceData: { 
-                                    materialName: group.name,
-                                    count: group.materials.length,
-                                    newStatus: value,
-                                  },
-                                });
-                                
-                                await Promise.all([loadMaterials(), loadBundles()]);
-                              } catch (error: any) {
-                                toast.error('Failed to update status');
-                                console.error(error);
-                              }
-                            }}
+                            onValueChange={(value) => handleGroupStatusChange(group, value as Material['status'])}
                           >
                             <SelectTrigger 
                               className={`h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
@@ -1485,22 +1465,42 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Order Materials Dialog */}
-      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
+      {/* Order Material Dialog */}
+      <Dialog open={!!(orderingMaterial || orderingMaterialGroup)} onOpenChange={() => {
+        setOrderingMaterial(null);
+        setOrderingMaterialGroup(null);
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" />
-              Order Material Request
+              Order Material
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
-              <p className="text-base font-medium">Materials Selected: {orderMaterialIds.size}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                This will notify the office to order these materials
-              </p>
+              {orderingMaterial ? (
+                <>
+                  <p className="font-semibold text-base">{orderingMaterial.name}</p>
+                  {orderingMaterial.use_case && (
+                    <p className="text-sm text-muted-foreground mt-1">Use: {orderingMaterial.use_case}</p>
+                  )}
+                  <div className="flex items-center gap-4 mt-2 text-sm">
+                    <span>Qty: <span className="font-semibold">{orderingMaterial.quantity}</span></span>
+                    {orderingMaterial.length && (
+                      <span>Length: <span className="font-semibold">{orderingMaterial.length}</span></span>
+                    )}
+                  </div>
+                </>
+              ) : orderingMaterialGroup && (
+                <>
+                  <p className="font-semibold text-base">{orderingMaterialGroup[0].name}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {orderingMaterialGroup.length} variant{orderingMaterialGroup.length > 1 ? 's' : ''}
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -1532,25 +1532,28 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
             <div className="flex flex-col gap-3 pt-4 border-t">
               <Button
-                onClick={submitMaterialOrder}
+                onClick={confirmMaterialOrder}
                 disabled={submittingOrder || !orderDateNeeded}
                 className="h-12 text-base gradient-primary"
               >
                 {submittingOrder ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Submitting...
+                    Ordering...
                   </>
                 ) : (
                   <>
                     <ShoppingCart className="w-5 h-5 mr-2" />
-                    Submit Order Request
+                    Confirm Order
                   </>
                 )}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setShowOrderDialog(false)}
+                onClick={() => {
+                  setOrderingMaterial(null);
+                  setOrderingMaterialGroup(null);
+                }}
                 disabled={submittingOrder}
                 className="h-12 text-base"
               >
