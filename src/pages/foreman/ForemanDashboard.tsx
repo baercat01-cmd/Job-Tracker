@@ -114,8 +114,9 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" onClick={() => setShowCalendarPage(false)}>
-                <ArrowLeft className="w-4 h-4" />
+              <Button variant="outline" size="sm" onClick={() => setShowCalendarPage(false)}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
               </Button>
               <div className="border-l pl-3">
                 <p className="font-bold">Calendar</p>
