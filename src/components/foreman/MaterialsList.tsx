@@ -617,7 +617,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full lg:max-w-3xl lg:mx-auto">
       {/* Action Bar - Mobile Optimized */}
       <div className="flex gap-2">
         {!selectionMode ? (
