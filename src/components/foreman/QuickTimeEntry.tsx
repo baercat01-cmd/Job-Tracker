@@ -228,11 +228,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
       if (error) throw error;
       
-      // Filter out Misc Jobs from selection list
-      const filteredJobs = (data || []).filter(job => job.name !== 'Misc Jobs');
-      
       // Sort: regular jobs first, then internal jobs at bottom
-      const sortedJobs = filteredJobs.sort((a, b) => {
+      const sortedJobs = (data || []).sort((a, b) => {
         // If both are internal or both are not, sort by name
         if (a.is_internal === b.is_internal) {
           return a.name.localeCompare(b.name);
