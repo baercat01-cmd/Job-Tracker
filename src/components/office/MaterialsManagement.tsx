@@ -1453,8 +1453,358 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Material List rendering omitted for brevity - keeping existing implementation */}
-      {/* Other dialogs omitted - keeping existing implementation */}
+      {/* Materials List */}
+      {filteredCategories.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredCategories.map((category) => {
+            const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+            
+            return (
+              <Card key={category.id} className="overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                      <Badge variant="secondary" className="font-semibold">
+                        {filteredMaterials.length} {filteredMaterials.length === 1 ? 'item' : 'items'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadCategoryTemplate(category)}
+                        className="bg-green-50 hover:bg-green-100 border-green-300"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 mr-2" />
+                        Template
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => openAddMaterial(category.id)}
+                        className="gradient-primary"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Material
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditCategory(category)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => moveCategoryUp(category)}
+                        disabled={category.order_index === 0}
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => moveCategoryDown(category)}
+                        disabled={category.order_index === categories.length - 1}
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteCategory(category.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {category.sheet_image_url && (
+                    <div className="mt-3 p-2 bg-white rounded-lg border">
+                      <img
+                        src={category.sheet_image_url}
+                        alt={`${category.name} sheet`}
+                        className="max-h-40 w-auto mx-auto object-contain"
+                      />
+                    </div>
+                  )}
+                </CardHeader>
+                <CardContent className="p-0">
+                  {filteredMaterials.length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      No materials in this category
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-muted/50 border-b">
+                          <tr>
+                            <th className="text-left p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('name')}
+                                className="font-semibold -ml-3"
+                              >
+                                Material Name
+                                <SortIcon column="name" />
+                              </Button>
+                            </th>
+                            <th className="text-left p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('useCase')}
+                                className="font-semibold -ml-3"
+                              >
+                                Use Case
+                                <SortIcon column="useCase" />
+                              </Button>
+                            </th>
+                            <th className="text-center p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('quantity')}
+                                className="font-semibold -ml-3"
+                              >
+                                Quantity
+                                <SortIcon column="quantity" />
+                              </Button>
+                            </th>
+                            <th className="text-center p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('length')}
+                                className="font-semibold -ml-3"
+                              >
+                                Length
+                                <SortIcon column="length" />
+                              </Button>
+                            </th>
+                            <th className="text-center p-3 font-semibold">Status</th>
+                            <th className="text-right p-3 font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredMaterials.map((material) => (
+                            <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                              <td className="p-3">
+                                <div className="font-medium">{material.name}</div>
+                                {material.import_source && material.import_source !== 'manual' && (
+                                  <Badge variant="outline" className="mt-1 text-xs">
+                                    {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
+                                  </Badge>
+                                )}
+                              </td>
+                              <td className="p-3 text-sm text-muted-foreground">
+                                {material.use_case || '-'}
+                              </td>
+                              <td className="p-3 text-center font-semibold">
+                                {material.quantity}
+                              </td>
+                              <td className="p-3 text-center">
+                                {material.length || '-'}
+                              </td>
+                              <td className="p-3">
+                                <div className="flex justify-center">
+                                  <Select
+                                    value={material.status}
+                                    onValueChange={(newStatus) => handleStatusChange(material, newStatus)}
+                                  >
+                                    <SelectTrigger className={`w-[140px] font-medium border-2 ${getStatusColor(material.status)}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STATUS_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                          <span className={`inline-flex items-center px-2 py-1 rounded ${opt.color}`}>
+                                            {opt.label}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => openEditMaterial(material)}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => deleteMaterial(material.id)}
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Category Modal */}
+      <Dialog open={showCategoryModal} onOpenChange={setShowCategoryModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingCategory ? 'Edit Category' : 'Create Category'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="category-name">Category Name</Label>
+              <Input
+                id="category-name"
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                placeholder="e.g., Lumber, Steel, Roofing"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
+              <div className="space-y-2">
+                {categorySheetPreview ? (
+                  <div className="relative">
+                    <img
+                      src={categorySheetPreview}
+                      alt="Sheet preview"
+                      className="max-h-48 w-auto mx-auto border rounded-lg"
+                    />
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={removeSheetImage}
+                      className="absolute top-2 right-2"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById('sheet-image')?.click()}
+                    className="w-full"
+                  >
+                    <ImageIcon className="w-4 h-4 mr-2" />
+                    Upload Sheet Image
+                  </Button>
+                )}
+                <input
+                  id="sheet-image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleSheetImageSelect}
+                  className="hidden"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button onClick={saveCategory} className="flex-1">
+                {editingCategory ? 'Update' : 'Create'}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCategoryModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Material Modal */}
+      <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingMaterial ? 'Edit Material' : 'Add Material'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="material-name">Material Name *</Label>
+              <Input
+                id="material-name"
+                value={materialName}
+                onChange={(e) => setMaterialName(e.target.value)}
+                placeholder="e.g., 2x4 Stud, Metal Panel"
+              />
+            </div>
+            <div>
+              <Label htmlFor="material-use-case">Use Case</Label>
+              <Input
+                id="material-use-case"
+                value={materialUseCase}
+                onChange={(e) => setMaterialUseCase(e.target.value)}
+                placeholder="e.g., Wall framing, Roof installation"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="material-quantity">Quantity *</Label>
+                <Input
+                  id="material-quantity"
+                  type="number"
+                  step="0.01"
+                  value={materialQuantity}
+                  onChange={(e) => setMaterialQuantity(e.target.value)}
+                  placeholder="100"
+                />
+              </div>
+              <div>
+                <Label htmlFor="material-length">Length</Label>
+                <Input
+                  id="material-length"
+                  value={materialLength}
+                  onChange={(e) => setMaterialLength(e.target.value)}
+                  placeholder="e.g., 8ft, 12ft"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="material-status">Status</Label>
+              <Select value={materialStatus} onValueChange={setMaterialStatus}>
+                <SelectTrigger id="material-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button onClick={saveMaterial} className="flex-1">
+                {editingMaterial ? 'Update' : 'Add'}
+              </Button>
+              <Button variant="outline" onClick={() => setShowMaterialModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
