@@ -88,6 +88,7 @@ interface MaterialsListProps {
   job: Job;
   userId: string;
   allowBundleCreation?: boolean;
+  defaultTab?: 'all' | 'ready';
 }
 
 const STATUS_CONFIG = {
@@ -99,12 +100,12 @@ const STATUS_CONFIG = {
   missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-100 text-red-700 border-red-300' },
 };
 
-export function MaterialsList({ job, userId, allowBundleCreation = false }: MaterialsListProps) {
+export function MaterialsList({ job, userId, allowBundleCreation = false, defaultTab = 'all' }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'ready'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'ready'>(defaultTab);
   const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
@@ -169,11 +170,6 @@ export function MaterialsList({ job, userId, allowBundleCreation = false }: Mate
       
       const count = data?.length || 0;
       setReadyMaterialsCount(count);
-      
-      // Auto-select 'ready' tab if there are ready materials
-      if (count > 0) {
-        setActiveTab('ready');
-      }
     } catch (error: any) {
       console.error('Error checking ready materials:', error);
     }
