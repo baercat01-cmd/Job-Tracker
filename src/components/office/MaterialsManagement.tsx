@@ -1794,7 +1794,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                       <table className="w-full">
                         <thead className="bg-muted/50 border-b">
                           <tr>
-                            <th className="text-left p-3">
+                            <th className="text-left p-3 min-w-[300px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1805,7 +1805,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="name" />
                               </Button>
                             </th>
-                            <th className="text-left p-3">
+                            <th className="text-left p-3 min-w-[280px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1816,7 +1816,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="useCase" />
                               </Button>
                             </th>
-                            <th className="text-center p-3">
+                            <th className="text-center p-3 w-[120px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1827,7 +1827,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="quantity" />
                               </Button>
                             </th>
-                            <th className="text-center p-3">
+                            <th className="text-center p-3 w-[120px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1838,28 +1838,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="length" />
                               </Button>
                             </th>
-                            <th className="text-center p-3 font-semibold">Status</th>
-                            <th className="text-right p-3 font-semibold">Actions</th>
+                            <th className="text-center p-3 font-semibold w-[160px]">Status</th>
+                            <th className="text-right p-3 font-semibold w-[140px]">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredMaterials.map((material) => (
                             <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="p-3">
-                                <div className="font-medium">{material.name}</div>
+                              <td className="p-3 min-w-[300px]">
+                                <div className="font-medium whitespace-normal">{material.name}</div>
                                 {material.import_source && material.import_source !== 'manual' && (
                                   <Badge variant="outline" className="mt-1 text-xs">
                                     {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
                                   </Badge>
                                 )}
                               </td>
-                              <td className="p-3 text-sm text-muted-foreground">
-                                {material.use_case || '-'}
+                              <td className="p-3 text-sm text-muted-foreground min-w-[280px]">
+                                <div className="whitespace-normal">{material.use_case || '-'}</div>
                               </td>
-                              <td className="p-3 text-center font-semibold">
+                              <td className="p-3 text-center font-semibold w-[120px]">
                                 {material.quantity}
                               </td>
-                              <td className="p-3 text-center">
+                              <td className="p-3 text-center w-[120px]">
                                 {material.length || '-'}
                               </td>
                               <td className="p-3">
