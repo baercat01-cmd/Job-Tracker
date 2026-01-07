@@ -20,6 +20,7 @@ import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { SubcontractorManagement } from '@/components/office/SubcontractorManagement';
 import { SubcontractorScheduling } from '@/components/office/SubcontractorScheduling';
+import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -240,10 +241,32 @@ export function OfficeDashboard() {
           </TabsContent>
 
           <TabsContent value="calendar">
-            <JobsCalendar onJobSelect={(jobId) => {
-              setSelectedJobId(jobId);
-              setActiveTab('jobs');
-            }} />
+            <Tabs defaultValue="calendar" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="calendar">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Calendar View
+                </TabsTrigger>
+                <TabsTrigger value="gantt">
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Gantt Chart
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="calendar">
+                <JobsCalendar onJobSelect={(jobId) => {
+                  setSelectedJobId(jobId);
+                  setActiveTab('jobs');
+                }} />
+              </TabsContent>
+
+              <TabsContent value="gantt">
+                <JobGanttChart onJobSelect={(jobId) => {
+                  setSelectedJobId(jobId);
+                  setActiveTab('jobs');
+                }} />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="time">
