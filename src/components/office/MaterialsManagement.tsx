@@ -599,19 +599,48 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
 
-      // Create calendar event for order-by date
-      if (newStatus === 'ordered' && orderByDate) {
+      // Create/update/delete calendar event for order-by date
+      if (orderByDate) {
+        // Check if calendar event already exists for this material's order reminder
+        const { data: existingEvent } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`)
+          .single();
+
+        if (existingEvent) {
+          // Update existing event
+          await supabase
+            .from('calendar_events')
+            .update({
+              event_date: orderByDate,
+              description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            })
+            .eq('id', existingEvent.id);
+        } else {
+          // Create new event
+          await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Order Material: ${statusChangeMaterial.name}`,
+              description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+              event_date: orderByDate,
+              event_type: 'material_order_reminder',
+              all_day: true,
+              created_by: userId,
+            });
+        }
+      } else if (statusChangeMaterial.order_by_date) {
+        // If order by date was removed, delete the calendar event
         await supabase
           .from('calendar_events')
-          .insert({
-            job_id: job.id,
-            title: `Order Material: ${statusChangeMaterial.name}`,
-            description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
-            event_date: orderByDate,
-            event_type: 'material_order_reminder',
-            all_day: true,
-            created_by: userId,
-          });
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`);
       }
 
       // Create notification and calendar event for pickup assignment
