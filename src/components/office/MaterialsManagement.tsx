@@ -520,10 +520,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function confirmStatusChange() {
     if (!statusChangeMaterial) return;
 
-    // Validate pickup assignment if pickup method selected
-    if (deliveryMethod === 'pickup' && newStatus === 'ordered' && !pickupBy) {
-      toast.error('Please assign a user for pickup');
-      return;
+    // Validate pickup/delivery dates
+    if (newStatus === 'ordered') {
+      if (deliveryMethod === 'pickup') {
+        if (!pickupBy) {
+          toast.error('Please assign a user for pickup');
+          return;
+        }
+        if (!pickupDate) {
+          toast.error('Please set a pickup date');
+          return;
+        }
+      } else if (deliveryMethod === 'delivery') {
+        if (!deliveryDate) {
+          toast.error('Please set a delivery date');
+          return;
+        }
+      }
     }
 
     setSubmittingStatus(true);
@@ -573,7 +586,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
 
-      // Create notification for pickup assignment
+      // Create notification and calendar event for pickup assignment
       if (deliveryMethod === 'pickup' && newStatus === 'ordered' && pickupBy) {
         const assignedUser = users.find(u => u.id === pickupBy);
         const materialName = statusChangeMaterial.name;
@@ -581,6 +594,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           ? new Date(pickupDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : 'ASAP';
         
+        // Create notification
         await supabase
           .from('notifications')
           .insert({
@@ -598,6 +612,36 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               assigned_to_id: pickupBy,
             },
             is_read: false,
+          });
+
+        // Create calendar event for pickup
+        if (pickupDate) {
+          await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Material Pickup: ${materialName}`,
+              description: `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}\n\nAssigned to: ${assignedUser?.username || assignedUser?.email}`,
+              event_date: pickupDate,
+              event_type: 'material_pickup',
+              all_day: true,
+              created_by: userId,
+            });
+        }
+      }
+
+      // Create calendar event for delivery
+      if (deliveryMethod === 'delivery' && newStatus === 'ordered' && deliveryDate) {
+        await supabase
+          .from('calendar_events')
+          .insert({
+            job_id: job.id,
+            title: `Material Delivery: ${statusChangeMaterial.name}`,
+            description: `Delivery of ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            event_date: deliveryDate,
+            event_type: 'material_delivery',
+            all_day: true,
+            created_by: userId,
           });
       }
 
@@ -1275,7 +1319,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               <div className="space-y-3">
                 <div>
                   <Label htmlFor="order-by-date" className="flex items-center gap-2">
-                    📋 Order By Date
+                    📋 Order By Date (Optional)
                   </Label>
                   <Input
                     id="order-by-date"
@@ -1285,7 +1329,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     min={new Date().toISOString().split('T')[0]}
                     className="h-10"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Deadline to place this order</p>
+                  <p className="text-xs text-muted-foreground mt-1">Deadline to place this order (separate from delivery/pickup date)</p>
                 </div>
 
                 {/* Delivery Method Selection */}
@@ -1320,7 +1364,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <div>
                     <Label htmlFor="delivery-date" className="flex items-center gap-2">
                       <Truck className="w-4 h-4" />
-                      Expected Delivery Date
+                      Expected Delivery Date *
                     </Label>
                     <Input
                       id="delivery-date"
@@ -1330,7 +1374,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                       min={new Date().toISOString().split('T')[0]}
                       className="h-10"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Target delivery date to job site</p>
+                    <p className="text-xs text-muted-foreground mt-1">When material will be delivered to job site (will be added to calendar)</p>
                   </div>
                 )}
 
@@ -1360,7 +1404,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     </div>
                     <div>
                       <Label htmlFor="pickup-date" className="flex items-center gap-2">
-                        📅 Pickup Date
+                        📅 Pickup Date *
                       </Label>
                       <Input
                         id="pickup-date"
@@ -1370,7 +1414,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                         min={new Date().toISOString().split('T')[0]}
                         className="h-10"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">When this material should be picked up</p>
+                      <p className="text-xs text-muted-foreground mt-1">When this material should be picked up (will be added to calendar)</p>
                     </div>
                   </>
                 )}
