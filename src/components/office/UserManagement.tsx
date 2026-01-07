@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Users, UserPlus, Edit, Trash2, Shield, Briefcase } from 'lucide-react';
+import { Users, UserPlus, Edit, Trash2, Shield, Briefcase, Package, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserProfile } from '@/types';
 
@@ -29,7 +29,7 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   
   const [formUsername, setFormUsername] = useState('');
-  const [formRole, setFormRole] = useState<'crew' | 'office'>('crew');
+  const [formRole, setFormRole] = useState<'crew' | 'office' | 'shop' | 'payroll'>('crew');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -170,16 +170,32 @@ export function UserManagement() {
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                   {user.role === 'office' ? (
                     <Shield className="w-6 h-6 text-primary" />
+                  ) : user.role === 'shop' ? (
+                    <Package className="w-6 h-6 text-purple-600" />
+                  ) : user.role === 'payroll' ? (
+                    <DollarSign className="w-6 h-6 text-green-600" />
                   ) : (
                     <Briefcase className="w-6 h-6 text-primary" />
                   )}
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold">{user.username || 'Unnamed User'}</p>
-                  <p className="text-sm text-muted-foreground capitalize">{user.role} Member</p>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    {user.role === 'crew' ? 'Field Crew' : 
+                     user.role === 'office' ? 'Office Staff' : 
+                     user.role === 'shop' ? 'Shop User' : 
+                     user.role === 'payroll' ? 'Payroll' : user.role}
+                  </p>
                 </div>
-                <Badge variant={user.role === 'office' ? 'default' : 'secondary'}>
-                  {user.role === 'office' ? 'Office' : 'Crew'}
+                <Badge variant={user.role === 'office' ? 'default' : 'secondary'} 
+                  className={
+                    user.role === 'shop' ? 'bg-purple-100 text-purple-700 border-purple-300' : 
+                    user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : ''
+                  }>
+                  {user.role === 'crew' ? 'Crew' : 
+                   user.role === 'office' ? 'Office' : 
+                   user.role === 'shop' ? 'Shop' : 
+                   user.role === 'payroll' ? 'Payroll' : user.role}
                 </Badge>
                 <div className="flex gap-2">
                   <Button
@@ -232,6 +248,8 @@ export function UserManagement() {
                 <SelectContent>
                   <SelectItem value="crew">Crew (Field Worker)</SelectItem>
                   <SelectItem value="office">Office Staff (Admin)</SelectItem>
+                  <SelectItem value="shop">Shop (Materials Processing)</SelectItem>
+                  <SelectItem value="payroll">Payroll (Time Tracking)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
