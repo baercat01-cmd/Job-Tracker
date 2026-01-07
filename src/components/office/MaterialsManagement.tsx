@@ -601,27 +601,45 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       // Create/update/delete calendar event for order-by date
       if (orderByDate) {
+        console.log('Creating/updating order-by-date calendar task:', {
+          material: statusChangeMaterial.name,
+          orderByDate,
+          jobId: job.id,
+        });
+        
         // Check if calendar event already exists for this material's order reminder
-        const { data: existingEvent } = await supabase
+        const { data: existingEvent, error: searchError } = await supabase
           .from('calendar_events')
           .select('id')
           .eq('job_id', job.id)
           .eq('event_type', 'material_order_reminder')
           .eq('title', `Order Material: ${statusChangeMaterial.name}`)
-          .single();
+          .maybeSingle();
+
+        if (searchError) {
+          console.error('Error searching for existing order reminder event:', searchError);
+        }
 
         if (existingEvent) {
           // Update existing event
-          await supabase
+          console.log('Updating existing order reminder event:', existingEvent.id);
+          const { error: updateError } = await supabase
             .from('calendar_events')
             .update({
               event_date: orderByDate,
               description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
             })
             .eq('id', existingEvent.id);
+          
+          if (updateError) {
+            console.error('Error updating order reminder event:', updateError);
+            throw updateError;
+          }
+          console.log('Order reminder event updated successfully');
         } else {
           // Create new event
-          await supabase
+          console.log('Creating new order reminder event');
+          const { data: newEvent, error: insertError } = await supabase
             .from('calendar_events')
             .insert({
               job_id: job.id,
@@ -631,16 +649,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               event_type: 'material_order_reminder',
               all_day: true,
               created_by: userId,
-            });
+            })
+            .select();
+          
+          if (insertError) {
+            console.error('Error creating order reminder event:', insertError);
+            throw insertError;
+          }
+          console.log('Order reminder event created successfully:', newEvent);
         }
       } else if (statusChangeMaterial.order_by_date) {
         // If order by date was removed, delete the calendar event
-        await supabase
+        console.log('Deleting order reminder calendar event for:', statusChangeMaterial.name);
+        const { error: deleteError } = await supabase
           .from('calendar_events')
           .delete()
           .eq('job_id', job.id)
           .eq('event_type', 'material_order_reminder')
           .eq('title', `Order Material: ${statusChangeMaterial.name}`);
+        
+        if (deleteError) {
+          console.error('Error deleting order reminder event:', deleteError);
+        }
       }
 
       // Handle pickup calendar event and notification
