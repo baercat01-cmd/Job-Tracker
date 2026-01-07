@@ -104,6 +104,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'ready'>('all');
+  const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -152,7 +153,30 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   useEffect(() => {
     loadMaterials();
     loadBundles();
+    checkReadyMaterials();
   }, [job.id]);
+
+  async function checkReadyMaterials() {
+    try {
+      const { data, error } = await supabase
+        .from('materials')
+        .select('id', { count: 'exact', head: true })
+        .eq('job_id', job.id)
+        .eq('status', 'at_shop');
+
+      if (error) throw error;
+      
+      const count = data?.length || 0;
+      setReadyMaterialsCount(count);
+      
+      // Auto-select 'ready' tab if there are ready materials
+      if (count > 0) {
+        setActiveTab('ready');
+      }
+    } catch (error: any) {
+      console.error('Error checking ready materials:', error);
+    }
+  }
 
   async function loadMaterials() {
     try {

@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { Job } from '@/types';
@@ -20,11 +21,13 @@ interface JobWithProgress extends Job {
   progressPercent: number;
   actualProgressPercent: number;
   isOverBudget: boolean;
+  ready_materials_count?: number;
 }
 
 export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
 
   useEffect(() => {
     loadJobs();
@@ -69,26 +72,37 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
       const filteredJobs = (jobsData || [])
         .filter(job => job.name !== 'Misc Jobs');
 
-      // Add progress data to each job
-      const jobsWithProgress: JobWithProgress[] = filteredJobs.map((job) => {
-        const totalManHours = jobManHours.get(job.id) || 0;
-        const estimatedHours = job.estimated_hours || 0;
-        const actualProgressPercent = estimatedHours > 0 
-          ? (totalManHours / estimatedHours) * 100
-          : 0;
-        const progressPercent = Math.min(actualProgressPercent, 100);
-        const isOverBudget = totalManHours > estimatedHours && estimatedHours > 0;
+      // Load ready materials count for each job
+      const jobsWithMaterials = await Promise.all(
+        filteredJobs.map(async (job) => {
+          const { count } = await supabase
+            .from('materials')
+            .select('id', { count: 'exact', head: true })
+            .eq('job_id', job.id)
+            .eq('status', 'at_shop');
+          
+          const totalManHours = jobManHours.get(job.id) || 0;
+          const estimatedHours = job.estimated_hours || 0;
+          const actualProgressPercent = estimatedHours > 0 
+            ? (totalManHours / estimatedHours) * 100
+            : 0;
+          const progressPercent = Math.min(actualProgressPercent, 100);
+          const isOverBudget = totalManHours > estimatedHours && estimatedHours > 0;
 
-        return {
-          ...job,
-          totalManHours,
-          progressPercent,
-          actualProgressPercent,
-          isOverBudget,
-        };
-      });
-
-      setJobs(jobsWithProgress);
+          return {
+            ...job,
+            totalManHours,
+            progressPercent,
+            actualProgressPercent,
+            isOverBudget,
+            ready_materials_count: count || 0,
+          };
+        })
+      );
+      
+      const total = jobsWithMaterials.reduce((sum, job) => sum + (job.ready_materials_count || 0), 0);
+      setTotalReadyMaterials(total);
+      setJobs(jobsWithMaterials);
     } catch (error) {
       console.error('Error loading jobs:', error);
     } finally {
@@ -101,6 +115,23 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
 
   return (
     <div className="space-y-4">
+      {/* Ready Materials Notification */}
+      {totalReadyMaterials > 0 && (
+        <Alert className="border-2 border-blue-500 bg-blue-50">
+          <Package className="h-5 w-5 text-blue-600" />
+          <AlertDescription className="ml-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-blue-900">
+                {totalReadyMaterials} material{totalReadyMaterials > 1 ? 's' : ''} ready to go to job sites
+              </span>
+            </div>
+            <p className="text-sm text-blue-700 mt-1">
+              Select a job below to view and mark materials as delivered
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {loading ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
@@ -129,6 +160,12 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
                       <p className="text-base font-medium text-muted-foreground">
                         {job.client_name}
                       </p>
+                      {job.ready_materials_count && job.ready_materials_count > 0 && (
+                        <Badge className="mt-2 bg-blue-100 text-blue-700 hover:bg-blue-200">
+                          <Package className="w-3 h-3 mr-1" />
+                          {job.ready_materials_count} ready for job
+                        </Badge>
+                      )}
                     </div>
                     {/* Calendar icon - prevent propagation to not trigger job selection */}
                     <Button
