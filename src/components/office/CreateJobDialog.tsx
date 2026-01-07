@@ -11,8 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Building2 } from 'lucide-react';
+import { Building2, FileCheck } from 'lucide-react';
 
 interface CreateJobDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     address: '',
     description: '',
     notes: '',
+    status: 'quoting' as 'quoting' | 'active',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,7 +56,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           notes: formData.notes.trim() || null,
           documents: [], // Empty array for custom folders
           components: [], // Empty array for job components
-          status: 'active',
+          status: formData.status,
           created_by: profile.id,
         })
         .select()
@@ -65,7 +67,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         throw new Error(error.message || 'Failed to create job');
       }
 
-      toast.success(`Job "${formData.name}" created successfully`);
+      toast.success(`Job "${formData.name}" created as ${formData.status === 'quoting' ? 'Quote' : 'Active'}`);
       
       // Reset form
       setFormData({
@@ -74,6 +76,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         address: '',
         description: '',
         notes: '',
+        status: 'quoting',
       });
       
       // Close dialog and refresh
@@ -96,6 +99,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         address: '',
         description: '',
         notes: '',
+        status: 'quoting',
       });
     }
   }
@@ -144,6 +148,41 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
                 disabled={loading}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="status">Job Status *</Label>
+            <Select
+              value={formData.status}
+              onValueChange={(value: 'quoting' | 'active') =>
+                setFormData({ ...formData, status: value })
+              }
+              disabled={loading}
+            >
+              <SelectTrigger id="status" className="h-12">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="quoting">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="w-4 h-4" />
+                    <div>
+                      <p className="font-medium">Quoting</p>
+                      <p className="text-xs text-muted-foreground">Hidden from crew - office only</p>
+                    </div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="active">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    <div>
+                      <p className="font-medium">Active</p>
+                      <p className="text-xs text-muted-foreground">Visible to crew members</p>
+                    </div>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -112,6 +112,25 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
     }
   }
 
+  async function toggleJobStatus(jobId: string, currentStatus: string) {
+    try {
+      const newStatus = currentStatus === 'quoting' ? 'active' : 'quoting';
+      
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success(newStatus === 'active' ? 'Job activated - now visible to crew' : 'Job set to quoting - hidden from crew');
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error toggling job status:', error);
+      toast.error('Failed to update job status');
+    }
+  }
+
   async function loadJobStats(jobId: string) {
     const [clockInData, photosData] = await Promise.all([
       // Only load CLOCK-IN hours (component_id IS NULL) for progress calculation
@@ -190,7 +209,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {jobs
-            .filter((job) => showArchived ? job.status === 'archived' : job.status === 'active')
+            .filter((job) => showArchived ? job.status === 'archived' : (job.status === 'active' || job.status === 'quoting'))
             .filter((job) => !job.is_internal) // Exclude internal jobs like Shop from job cards
             .map((job) => {
             const jobStats = stats[job.id] || {};
@@ -211,30 +230,61 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      <Badge variant={job.status === 'active' ? 'default' : 'secondary'}>
-                        {job.status}
+                      <Badge variant={
+                        job.status === 'active' ? 'default' : 
+                        job.status === 'quoting' ? 'secondary' : 
+                        'outline'
+                      }>
+                        {job.status === 'quoting' ? 'Quoting' : job.status}
                       </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleArchiveJob(job.id, job.status);
-                        }}
-                        className="h-7 px-2"
-                      >
-                        {job.status === 'archived' ? (
-                          <>
-                            <ArchiveRestore className="w-3 h-3 mr-1" />
-                            <span className="text-xs">Restore</span>
-                          </>
-                        ) : (
-                          <>
-                            <Archive className="w-3 h-3 mr-1" />
-                            <span className="text-xs">Archive</span>
-                          </>
+                      <div className="flex gap-1">
+                        {/* Toggle between Quoting and Active */}
+                        {(job.status === 'quoting' || job.status === 'active') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleJobStatus(job.id, job.status);
+                            }}
+                            className="h-7 px-2"
+                          >
+                            {job.status === 'quoting' ? (
+                              <>
+                                <FileCheck className="w-3 h-3 mr-1" />
+                                <span className="text-xs">Activate</span>
+                              </>
+                            ) : (
+                              <>
+                                <FileCheck className="w-3 h-3 mr-1" />
+                                <span className="text-xs">Quote</span>
+                              </>
+                            )}
+                          </Button>
                         )}
-                      </Button>
+                        {/* Archive button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleArchiveJob(job.id, job.status);
+                          }}
+                          className="h-7 px-2"
+                        >
+                          {job.status === 'archived' ? (
+                            <>
+                              <ArchiveRestore className="w-3 h-3 mr-1" />
+                              <span className="text-xs">Restore</span>
+                            </>
+                          ) : (
+                            <>
+                              <Archive className="w-3 h-3 mr-1" />
+                              <span className="text-xs">Archive</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>

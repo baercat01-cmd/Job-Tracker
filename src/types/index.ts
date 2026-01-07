@@ -54,7 +54,7 @@ export interface Job {
   documents: DocumentFolder[];
   components: JobComponent[];
   notes: string | null;
-  status: 'active' | 'completed' | 'on_hold';
+  status: 'quoting' | 'active' | 'completed' | 'on_hold' | 'archived';
   created_at: string;
   updated_at: string;
   created_by: string | null;
