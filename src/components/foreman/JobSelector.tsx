@@ -64,7 +64,17 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
         jobManHours.set(entry.job_id, current + manHours);
       });
 
-      const filteredJobs = (jobsData || []);
+      // Filter out Misc Jobs and sort: regular jobs first, then internal jobs
+      const filteredJobs = (jobsData || [])
+        .filter(job => job.name !== 'Misc Jobs')
+        .sort((a, b) => {
+          // If both are internal or both are not, keep original order
+          if (a.is_internal === b.is_internal) {
+            return 0;
+          }
+          // Regular jobs (is_internal = false) come first
+          return a.is_internal ? 1 : -1;
+        });
 
       // Add progress data to each job
       const jobsWithProgress: JobWithProgress[] = filteredJobs.map((job) => {
@@ -93,7 +103,8 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
     }
   }
 
-  const filteredJobs = jobs;
+  // Filter out internal jobs from job cards display (but they're still available in time tracking dropdowns)
+  const filteredJobs = jobs.filter(job => !job.is_internal);
 
   return (
     <div className="space-y-4">

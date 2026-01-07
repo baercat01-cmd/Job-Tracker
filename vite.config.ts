@@ -7,10 +7,12 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
-    hmr: false, // Disable HMR to prevent WebSocket errors on published domains
-  },
-  optimizeDeps: {
-    exclude: [],
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 8080,
+      overlay: true,
+    },
   },
   plugins: [
     react(),
