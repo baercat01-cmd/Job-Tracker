@@ -3,7 +3,12 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -91,7 +96,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
   const [showJobLegend, setShowJobLegend] = useState(false);
-  const [activeTab, setActiveTab] = useState('to_order');
+  const [openDialog, setOpenDialog] = useState<'to_order' | 'deliveries' | 'subcontractors' | null>(null);
 
   useEffect(() => {
     loadJobs();
@@ -414,540 +419,605 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl flex items-center gap-2">
-              <CalendarIcon className="w-6 h-6 text-primary" />
-              Master Calendar - All Jobs
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={previousMonth}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="min-w-[200px] text-center">
-                <p className="text-xl font-bold">{monthYear}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={goToToday}>
-                Today
-              </Button>
-              <Button variant="outline" size="icon" onClick={nextMonth}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/30 rounded-lg">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filters:</span>
-            </div>
-            
-            <Select value={filterJob} onValueChange={setFilterJob}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Filter by Job Site" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Job Sites</SelectItem>
-                {jobs.map(job => (
-                  <SelectItem key={job.id} value={job.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: getJobColor(job.name) }}
-                      />
-                      {job.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filterTrade} onValueChange={setFilterTrade}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Filter by Trade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Trades</SelectItem>
-                {components.map(comp => (
-                  <SelectItem key={comp.id} value={comp.id}>
-                    {comp.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {(filterJob !== 'all' || filterTrade !== 'all') && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="w-4 h-4 mr-1" />
-                Clear Filters
-              </Button>
-            )}
-
-            {/* Job Colors Legend Button */}
-            {activeJobs.length > 0 && (
-              <Popover open={showJobLegend} onOpenChange={setShowJobLegend}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="ml-auto">
-                    <Palette className="w-4 h-4 mr-2" />
-                    Job Colors
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto max-w-md" align="end">
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-sm">Job Color Legend</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {activeJobs.map(job => (
-                        <Badge 
-                          key={job.id} 
-                          variant="outline"
-                          className="cursor-pointer hover:shadow-md transition-shadow"
-                          onClick={() => {
-                            onJobSelect(job.id);
-                            setShowJobLegend(false);
-                          }}
-                        >
-                          <div 
-                            className="w-3 h-3 rounded-full mr-2"
-                            style={{ backgroundColor: getJobColor(job.name) }}
-                          />
-                          {job.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        {/* Calendar Grid */}
-        <div className="grid grid-cols-7 gap-2">
-          {/* Day headers */}
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="text-center font-semibold text-sm text-muted-foreground py-2">
-              {day}
-            </div>
-          ))}
-
-          {/* Calendar days */}
-          {calendarDays.map((day, index) => {
-            if (!day) {
-              return <div key={`empty-${index}`} className="min-h-28 p-2 border rounded-lg bg-muted/30" />;
-            }
-
-            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = getEventsForDate(dateStr);
-            const isToday = dateStr === new Date().toISOString().split('T')[0];
-            const isSelected = dateStr === selectedDate;
-
-            return (
-              <div
-                key={day}
-                className={`min-h-28 p-2 border rounded-lg cursor-pointer transition-all ${
-                  isToday ? 'bg-primary/10 border-primary ring-2 ring-primary/20' : 'hover:bg-muted/50'
-                } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-                onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-              >
-                <div className={`text-sm font-bold mb-2 ${isToday ? 'text-primary' : ''}`}>
-                  {day}
+    <>
+      <Card className="w-full">
+        <CardHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-2xl flex items-center gap-2">
+                <CalendarIcon className="w-6 h-6 text-primary" />
+                Master Calendar - All Jobs
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={previousMonth}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <div className="min-w-[200px] text-center">
+                  <p className="text-xl font-bold">{monthYear}</p>
                 </div>
-                <div className="space-y-1">
-                  {dayEvents.slice(0, 4).map(event => {
-                    const config = EVENT_TYPE_CONFIG[event.type];
-                    const Icon = config.icon;
-                    const isMaterialEvent = event.type.startsWith('material_');
-                    return (
-                      <div
-                        key={event.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isMaterialEvent) {
-                            setSelectedEvent(event);
-                            setShowEventDialog(true);
-                          } else {
-                            onJobSelect(event.jobId);
-                          }
-                        }}
-                        className={`text-xs px-2 py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-4 ${
-                          event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
-                          event.priority === 'medium' ? 'bg-warning/20 text-warning-foreground' :
-                          'bg-muted text-muted-foreground'
-                        }`}
-                        style={{ borderLeftColor: event.jobColor }}
-                        title={`${event.jobName}: ${event.title}\n${isMaterialEvent ? 'Click to edit' : 'Click to view job'}`}
-                      >
-                        <Icon className="w-3 h-3 inline mr-1" />
-                        <span className="truncate block">{event.title}</span>
-                      </div>
-                    );
-                  })}
-                  {dayEvents.length > 4 && (
-                    <div 
-                      className="text-xs text-muted-foreground font-semibold cursor-pointer hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedDate(dateStr);
-                      }}
-                    >
-                      +{dayEvents.length - 4} more
-                    </div>
-                  )}
-                </div>
+                <Button variant="outline" size="sm" onClick={goToToday}>
+                  Today
+                </Button>
+                <Button variant="outline" size="icon" onClick={nextMonth}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Selected Date Details */}
-        {selectedDate && (
-          <div className="mt-6 p-4 border-t">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold">
-                {new Date(selectedDate).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </h3>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedDate(null)}>
-                <X className="w-4 h-4 mr-1" />
-                Close
-              </Button>
             </div>
-            <div className="grid gap-3">
-              {getEventsForDate(selectedDate).map(event => {
-                const config = EVENT_TYPE_CONFIG[event.type];
-                const Icon = config.icon;
-                const isMaterialEvent = event.type.startsWith('material_');
-                return (
-                  <Card
-                    key={event.id}
-                    className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
-                      event.priority === 'high' ? 'border-destructive' : ''
-                    }`}
-                    style={{ borderLeftColor: event.jobColor }}
-                    onClick={() => {
-                      if (isMaterialEvent) {
-                        setSelectedEvent(event);
-                        setShowEventDialog(true);
-                      } else {
-                        onJobSelect(event.jobId);
-                      }
-                    }}
-                  >
-                    <CardContent className="py-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg ${config.color} text-white`}>
-                          <Icon className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="font-bold text-lg">{event.title}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge 
-                                  variant="outline"
-                                  style={{ 
-                                    borderColor: event.jobColor,
-                                    color: event.jobColor 
-                                  }}
-                                >
-                                  {event.jobName}
-                                </Badge>
-                                <Badge variant="secondary">{config.label}</Badge>
-                              </div>
-                            </div>
-                            {event.priority === 'high' && (
-                              <Badge variant="destructive" className="ml-2">Overdue</Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{event.description}</p>
-                          {event.subcontractorPhone && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              📞 {event.subcontractorPhone}
-                            </p>
-                          )}
-                          {isMaterialEvent && (
-                            <Badge variant="outline" className="mt-2 text-xs">
-                              Click to edit material details
-                            </Badge>
-                          )}
-                        </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Filters:</span>
+              </div>
+              
+              <Select value={filterJob} onValueChange={setFilterJob}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Filter by Job Site" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Job Sites</SelectItem>
+                  {jobs.map(job => (
+                    <SelectItem key={job.id} value={job.id}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: getJobColor(job.name) }}
+                        />
+                        {job.name}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-              {getEventsForDate(selectedDate).length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No events scheduled for this date
-                </p>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={filterTrade} onValueChange={setFilterTrade}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Filter by Trade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Trades</SelectItem>
+                  {components.map(comp => (
+                    <SelectItem key={comp.id} value={comp.id}>
+                      {comp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {(filterJob !== 'all' || filterTrade !== 'all') && (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="w-4 h-4 mr-1" />
+                  Clear Filters
+                </Button>
+              )}
+
+              {/* Job Colors Legend Button */}
+              {activeJobs.length > 0 && (
+                <Popover open={showJobLegend} onOpenChange={setShowJobLegend}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="ml-auto">
+                      <Palette className="w-4 h-4 mr-2" />
+                      Job Colors
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto max-w-md" align="end">
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-sm">Job Color Legend</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {activeJobs.map(job => (
+                          <Badge 
+                            key={job.id} 
+                            variant="outline"
+                            className="cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => {
+                              onJobSelect(job.id);
+                              setShowJobLegend(false);
+                            }}
+                          >
+                            <div 
+                              className="w-3 h-3 rounded-full mr-2"
+                              style={{ backgroundColor: getJobColor(job.name) }}
+                            />
+                            {job.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
             </div>
           </div>
-        )}
+        </CardHeader>
 
-        {/* Interactive Tabs */}
-        <div className="mt-6 pt-6 border-t">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="to_order" className="flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                To Order ({events.filter(e => e.type === 'material_order').length})
-              </TabsTrigger>
-              <TabsTrigger value="deliveries" className="flex items-center gap-2">
-                <Truck className="w-4 h-4" />
-                Deliveries ({events.filter(e => e.type === 'material_delivery').length})
-              </TabsTrigger>
-              <TabsTrigger value="subcontractors" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Subcontractors ({events.filter(e => e.type === 'subcontractor').length})
-              </TabsTrigger>
-            </TabsList>
+        <CardContent>
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-2">
+            {/* Day headers */}
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} className="text-center font-semibold text-sm text-muted-foreground py-2">
+                {day}
+              </div>
+            ))}
 
-            {/* To Order Tab */}
-            <TabsContent value="to_order" className="mt-4">
-              <div className="space-y-3">
-                {events.filter(e => e.type === 'material_order').length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">No materials to order</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  events
-                    .filter(e => e.type === 'material_order')
-                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .map(event => (
-                      <Card
-                        key={event.id}
-                        className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
-                          event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-yellow-500'
-                        }`}
-                        style={{ borderLeftColor: event.jobColor }}
-                        onClick={() => {
-                          setSelectedEvent(event);
-                          setShowEventDialog(true);
+            {/* Calendar days */}
+            {calendarDays.map((day, index) => {
+              if (!day) {
+                return <div key={`empty-${index}`} className="min-h-28 p-2 border rounded-lg bg-muted/30" />;
+              }
+
+              const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const dayEvents = getEventsForDate(dateStr);
+              const isToday = dateStr === new Date().toISOString().split('T')[0];
+              const isSelected = dateStr === selectedDate;
+
+              return (
+                <div
+                  key={day}
+                  className={`min-h-28 p-2 border rounded-lg cursor-pointer transition-all ${
+                    isToday ? 'bg-primary/10 border-primary ring-2 ring-primary/20' : 'hover:bg-muted/50'
+                  } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                >
+                  <div className={`text-sm font-bold mb-2 ${isToday ? 'text-primary' : ''}`}>
+                    {day}
+                  </div>
+                  <div className="space-y-1">
+                    {dayEvents.slice(0, 4).map(event => {
+                      const config = EVENT_TYPE_CONFIG[event.type];
+                      const Icon = config.icon;
+                      const isMaterialEvent = event.type.startsWith('material_');
+                      return (
+                        <div
+                          key={event.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isMaterialEvent) {
+                              setSelectedEvent(event);
+                              setShowEventDialog(true);
+                            } else {
+                              onJobSelect(event.jobId);
+                            }
+                          }}
+                          className={`text-xs px-2 py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-4 ${
+                            event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
+                            event.priority === 'medium' ? 'bg-warning/20 text-warning-foreground' :
+                            'bg-muted text-muted-foreground'
+                          }`}
+                          style={{ borderLeftColor: event.jobColor }}
+                          title={`${event.jobName}: ${event.title}\n${isMaterialEvent ? 'Click to edit' : 'Click to view job'}`}
+                        >
+                          <Icon className="w-3 h-3 inline mr-1" />
+                          <span className="truncate block">{event.title}</span>
+                        </div>
+                      );
+                    })}
+                    {dayEvents.length > 4 && (
+                      <div 
+                        className="text-xs text-muted-foreground font-semibold cursor-pointer hover:text-primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedDate(dateStr);
                         }}
                       >
-                        <CardContent className="py-4">
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 rounded-lg bg-yellow-500 text-white">
-                              <Package className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-2">
-                                <div>
-                                  <p className="font-bold text-lg">{event.title}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Badge 
-                                      variant="outline"
-                                      style={{ 
-                                        borderColor: event.jobColor,
-                                        color: event.jobColor 
-                                      }}
-                                    >
-                                      {event.jobName}
-                                    </Badge>
-                                    <Badge variant="secondary">
-                                      Order by: {new Date(event.date).toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric'
-                                      })}
-                                    </Badge>
-                                  </div>
+                        +{dayEvents.length - 4} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Selected Date Details */}
+          {selectedDate && (
+            <div className="mt-6 p-4 border-t">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold">
+                  {new Date(selectedDate).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </h3>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedDate(null)}>
+                  <X className="w-4 h-4 mr-1" />
+                  Close
+                </Button>
+              </div>
+              <div className="grid gap-3">
+                {getEventsForDate(selectedDate).map(event => {
+                  const config = EVENT_TYPE_CONFIG[event.type];
+                  const Icon = config.icon;
+                  const isMaterialEvent = event.type.startsWith('material_');
+                  return (
+                    <Card
+                      key={event.id}
+                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                        event.priority === 'high' ? 'border-destructive' : ''
+                      }`}
+                      style={{ borderLeftColor: event.jobColor }}
+                      onClick={() => {
+                        if (isMaterialEvent) {
+                          setSelectedEvent(event);
+                          setShowEventDialog(true);
+                        } else {
+                          onJobSelect(event.jobId);
+                        }
+                      }}
+                    >
+                      <CardContent className="py-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`p-2 rounded-lg ${config.color} text-white`}>
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="font-bold text-lg">{event.title}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge 
+                                    variant="outline"
+                                    style={{ 
+                                      borderColor: event.jobColor,
+                                      color: event.jobColor 
+                                    }}
+                                  >
+                                    {event.jobName}
+                                  </Badge>
+                                  <Badge variant="secondary">{config.label}</Badge>
                                 </div>
-                                {event.priority === 'high' && (
-                                  <Badge variant="destructive">Overdue</Badge>
-                                )}
                               </div>
-                              <p className="text-sm text-muted-foreground">{event.description}</p>
+                              {event.priority === 'high' && (
+                                <Badge variant="destructive" className="ml-2">Overdue</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{event.description}</p>
+                            {event.subcontractorPhone && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                📞 {event.subcontractorPhone}
+                              </p>
+                            )}
+                            {isMaterialEvent && (
                               <Badge variant="outline" className="mt-2 text-xs">
                                 Click to edit material details
                               </Badge>
-                            </div>
+                            )}
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+                {getEventsForDate(selectedDate).length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No events scheduled for this date
+                  </p>
                 )}
               </div>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* Deliveries Tab */}
-            <TabsContent value="deliveries" className="mt-4">
-              <div className="space-y-3">
-                {events.filter(e => e.type === 'material_delivery').length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <Truck className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">No scheduled deliveries</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  events
-                    .filter(e => e.type === 'material_delivery')
-                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .map(event => (
-                      <Card
-                        key={event.id}
-                        className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
-                          event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-blue-500'
-                        }`}
-                        style={{ borderLeftColor: event.jobColor }}
-                        onClick={() => {
-                          setSelectedEvent(event);
-                          setShowEventDialog(true);
-                        }}
-                      >
-                        <CardContent className="py-4">
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 rounded-lg bg-blue-500 text-white">
-                              <Truck className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-2">
-                                <div>
-                                  <p className="font-bold text-lg">{event.title}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Badge 
-                                      variant="outline"
-                                      style={{ 
-                                        borderColor: event.jobColor,
-                                        color: event.jobColor 
-                                      }}
-                                    >
-                                      {event.jobName}
-                                    </Badge>
-                                    <Badge variant="secondary">
-                                      Delivery: {new Date(event.date).toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric'
-                                      })}
-                                    </Badge>
-                                  </div>
-                                </div>
-                                {event.priority === 'high' && (
-                                  <Badge variant="destructive">Overdue</Badge>
-                                )}
-                              </div>
-                              <p className="text-sm text-muted-foreground">{event.description}</p>
-                              <Badge variant="outline" className="mt-2 text-xs">
-                                Click to edit material details
-                              </Badge>
-                            </div>
+          {/* Quick Access Buttons */}
+          <div className="mt-6 pt-6 border-t">
+            <div className="grid grid-cols-3 gap-3">
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-auto py-4 flex-col gap-2"
+                onClick={() => setOpenDialog('to_order')}
+              >
+                <Package className="w-5 h-5" />
+                <div className="text-center">
+                  <div className="font-semibold">To Order</div>
+                  <div className="text-xs text-muted-foreground">
+                    {events.filter(e => e.type === 'material_order').length} items
+                  </div>
+                </div>
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-auto py-4 flex-col gap-2"
+                onClick={() => setOpenDialog('deliveries')}
+              >
+                <Truck className="w-5 h-5" />
+                <div className="text-center">
+                  <div className="font-semibold">Deliveries</div>
+                  <div className="text-xs text-muted-foreground">
+                    {events.filter(e => e.type === 'material_delivery').length} scheduled
+                  </div>
+                </div>
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-auto py-4 flex-col gap-2"
+                onClick={() => setOpenDialog('subcontractors')}
+              >
+                <Users className="w-5 h-5" />
+                <div className="text-center">
+                  <div className="font-semibold">Subcontractors</div>
+                  <div className="text-xs text-muted-foreground">
+                    {events.filter(e => e.type === 'subcontractor').length} scheduled
+                  </div>
+                </div>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* To Order Dialog */}
+      <Dialog open={openDialog === 'to_order'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              Materials To Order
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="space-y-3">
+              {events.filter(e => e.type === 'material_order').length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                    <p className="text-muted-foreground">No materials to order</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                events
+                  .filter(e => e.type === 'material_order')
+                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                  .map(event => (
+                    <Card
+                      key={event.id}
+                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                        event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-yellow-500'
+                      }`}
+                      style={{ borderLeftColor: event.jobColor }}
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setShowEventDialog(true);
+                        setOpenDialog(null);
+                      }}
+                    >
+                      <CardContent className="py-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-lg bg-yellow-500 text-white">
+                            <Package className="w-5 h-5" />
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                )}
-              </div>
-            </TabsContent>
-
-            {/* Subcontractors Tab */}
-            <TabsContent value="subcontractors" className="mt-4">
-              <div className="space-y-3">
-                {events.filter(e => e.type === 'subcontractor').length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">No scheduled subcontractors</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  // Group subcontractor events by subcontractor and job to show date ranges
-                  (() => {
-                    const subEvents = events.filter(e => e.type === 'subcontractor');
-                    // Create unique key for each subcontractor-job combination
-                    const grouped = new Map<string, CalendarEvent[]>();
-                    
-                    subEvents.forEach(event => {
-                      const key = `${event.subcontractorName}-${event.jobId}`;
-                      if (!grouped.has(key)) {
-                        grouped.set(key, []);
-                      }
-                      grouped.get(key)!.push(event);
-                    });
-
-                    return Array.from(grouped.entries())
-                      .sort((a, b) => {
-                        const dateA = new Date(a[1][0].date).getTime();
-                        const dateB = new Date(b[1][0].date).getTime();
-                        return dateA - dateB;
-                      })
-                      .map(([key, groupEvents]) => {
-                        const firstEvent = groupEvents[0];
-                        const dates = groupEvents.map(e => e.date).sort();
-                        const startDate = dates[0];
-                        const endDate = dates[dates.length - 1];
-                        const dateRangeDisplay = startDate === endDate 
-                          ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                          : `${new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-
-                        return (
-                          <Card
-                            key={key}
-                            className="cursor-pointer hover:shadow-lg transition-all border-l-4 border-indigo-500"
-                            style={{ borderLeftColor: firstEvent.jobColor }}
-                            onClick={() => onJobSelect(firstEvent.jobId)}
-                          >
-                            <CardContent className="py-4">
-                              <div className="flex items-start gap-3">
-                                <div className="p-2 rounded-lg bg-indigo-500 text-white">
-                                  <Users className="w-5 h-5" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <p className="font-bold text-lg">{firstEvent.subcontractorName}</p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <Badge 
-                                          variant="outline"
-                                          style={{ 
-                                            borderColor: firstEvent.jobColor,
-                                            color: firstEvent.jobColor 
-                                          }}
-                                        >
-                                          {firstEvent.jobName}
-                                        </Badge>
-                                        <Badge variant="secondary">
-                                          {dateRangeDisplay}
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <p className="text-sm text-muted-foreground">{firstEvent.description}</p>
-                                  {firstEvent.subcontractorPhone && (
-                                    <p className="text-xs text-muted-foreground mt-2">
-                                      📞 {firstEvent.subcontractorPhone}
-                                    </p>
-                                  )}
-                                  <Badge variant="outline" className="mt-2 text-xs">
-                                    Click to view job details
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="font-bold text-lg">{event.title}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge 
+                                    variant="outline"
+                                    style={{ 
+                                      borderColor: event.jobColor,
+                                      color: event.jobColor 
+                                    }}
+                                  >
+                                    {event.jobName}
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    Order by: {new Date(event.date).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric'
+                                    })}
                                   </Badge>
                                 </div>
                               </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      });
-                  })()
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </CardContent>
+                              {event.priority === 'high' && (
+                                <Badge variant="destructive">Overdue</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{event.description}</p>
+                            <Badge variant="outline" className="mt-2 text-xs">
+                              Click to edit material details
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deliveries Dialog */}
+      <Dialog open={openDialog === 'deliveries'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="w-5 h-5" />
+              Scheduled Deliveries
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="space-y-3">
+              {events.filter(e => e.type === 'material_delivery').length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Truck className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                    <p className="text-muted-foreground">No scheduled deliveries</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                events
+                  .filter(e => e.type === 'material_delivery')
+                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                  .map(event => (
+                    <Card
+                      key={event.id}
+                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                        event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-blue-500'
+                      }`}
+                      style={{ borderLeftColor: event.jobColor }}
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setShowEventDialog(true);
+                        setOpenDialog(null);
+                      }}
+                    >
+                      <CardContent className="py-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-lg bg-blue-500 text-white">
+                            <Truck className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="font-bold text-lg">{event.title}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge 
+                                    variant="outline"
+                                    style={{ 
+                                      borderColor: event.jobColor,
+                                      color: event.jobColor 
+                                    }}
+                                  >
+                                    {event.jobName}
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    Delivery: {new Date(event.date).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric'
+                                    })}
+                                  </Badge>
+                                </div>
+                              </div>
+                              {event.priority === 'high' && (
+                                <Badge variant="destructive">Overdue</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{event.description}</p>
+                            <Badge variant="outline" className="mt-2 text-xs">
+                              Click to edit material details
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subcontractors Dialog */}
+      <Dialog open={openDialog === 'subcontractors'} onOpenChange={(open) => !open && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Scheduled Subcontractors
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="space-y-3">
+              {events.filter(e => e.type === 'subcontractor').length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                    <p className="text-muted-foreground">No scheduled subcontractors</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                // Group subcontractor events by subcontractor and job to show date ranges
+                (() => {
+                  const subEvents = events.filter(e => e.type === 'subcontractor');
+                  // Create unique key for each subcontractor-job combination
+                  const grouped = new Map<string, CalendarEvent[]>();
+                  
+                  subEvents.forEach(event => {
+                    const key = `${event.subcontractorName}-${event.jobId}`;
+                    if (!grouped.has(key)) {
+                      grouped.set(key, []);
+                    }
+                    grouped.get(key)!.push(event);
+                  });
+
+                  return Array.from(grouped.entries())
+                    .sort((a, b) => {
+                      const dateA = new Date(a[1][0].date).getTime();
+                      const dateB = new Date(b[1][0].date).getTime();
+                      return dateA - dateB;
+                    })
+                    .map(([key, groupEvents]) => {
+                      const firstEvent = groupEvents[0];
+                      const dates = groupEvents.map(e => e.date).sort();
+                      const startDate = dates[0];
+                      const endDate = dates[dates.length - 1];
+                      const dateRangeDisplay = startDate === endDate 
+                        ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : `${new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+                      return (
+                        <Card
+                          key={key}
+                          className="cursor-pointer hover:shadow-lg transition-all border-l-4 border-indigo-500"
+                          style={{ borderLeftColor: firstEvent.jobColor }}
+                          onClick={() => {
+                            onJobSelect(firstEvent.jobId);
+                            setOpenDialog(null);
+                          }}
+                        >
+                          <CardContent className="py-4">
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 rounded-lg bg-indigo-500 text-white">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div>
+                                    <p className="font-bold text-lg">{firstEvent.subcontractorName}</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <Badge 
+                                        variant="outline"
+                                        style={{ 
+                                          borderColor: firstEvent.jobColor,
+                                          color: firstEvent.jobColor 
+                                        }}
+                                      >
+                                        {firstEvent.jobName}
+                                      </Badge>
+                                      <Badge variant="secondary">
+                                        {dateRangeDisplay}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{firstEvent.description}</p>
+                                {firstEvent.subcontractorPhone && (
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    📞 {firstEvent.subcontractorPhone}
+                                  </p>
+                                )}
+                                <Badge variant="outline" className="mt-2 text-xs">
+                                  Click to view job details
+                                </Badge>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    });
+                })()
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Event Details Dialog */}
       <EventDetailsDialog
@@ -961,6 +1031,6 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
           loadCalendarEvents();
         }}
       />
-    </Card>
+    </>
   );
 }
