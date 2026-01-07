@@ -113,7 +113,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         `)
         .eq('status', 'pull_from_shop')
         .eq('jobs.status', 'active')
-        .order('jobs.name');
+        .order('name'); // Order by material name instead
 
       if (materialsError) {
         console.error('❌ Error loading materials:', materialsError);
