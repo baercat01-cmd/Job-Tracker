@@ -1436,7 +1436,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 ) : (
                   <>
                     <CheckCircle2 className="w-5 h-5 mr-2" />
-                    Confirm Update
+                    {statusChangeMaterial?.status === newStatus ? 'Update Information' : 'Confirm Status Change'}
                   </>
                 )}
               </Button>
@@ -1640,7 +1640,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    onClick={() => handleStatusChange(material, material.status)}
+                                    title="Edit dates, notes, and delivery info"
+                                  >
+                                    <Calendar className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
                                     onClick={() => openEditMaterial(material)}
+                                    title="Edit material details"
                                   >
                                     <Edit className="w-4 h-4" />
                                   </Button>
@@ -1649,6 +1658,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                     variant="ghost"
                                     onClick={() => deleteMaterial(material.id)}
                                     className="text-destructive hover:text-destructive"
+                                    title="Delete material"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
