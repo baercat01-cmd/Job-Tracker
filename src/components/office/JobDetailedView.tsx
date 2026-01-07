@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
+import { MaterialsManagement } from './MaterialsManagement';
+import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
 interface JobDetailedViewProps {
@@ -89,7 +91,7 @@ interface DailyLog {
 }
 
 export function JobDetailedView({ job }: JobDetailedViewProps) {
-
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
   const [componentGroups, setComponentGroups] = useState<ComponentGroup[]>([]);
@@ -1007,6 +1009,21 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Materials Management */}
+      {user?.id && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              Materials Management
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MaterialsManagement job={job} userId={user.id} />
           </CardContent>
         </Card>
       )}
