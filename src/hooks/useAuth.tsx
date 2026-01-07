@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
       
-      if (!data.role || (data.role !== 'crew' && data.role !== 'foreman' && data.role !== 'office' && data.role !== 'payroll')) {
+      if (!data.role || (data.role !== 'crew' && data.role !== 'foreman' && data.role !== 'office' && data.role !== 'payroll' && data.role !== 'shop')) {
         throw new Error('Invalid user role');
       }
       
