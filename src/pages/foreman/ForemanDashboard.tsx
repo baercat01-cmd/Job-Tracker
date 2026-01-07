@@ -369,6 +369,17 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 setActiveTab('timer');
               }}
             />
+            
+            {/* View My Time History Button - Small, below time clock */}
+            <Button
+              onClick={() => setShowTimeHistory(true)}
+              variant="ghost"
+              size="sm"
+              className="w-full text-muted-foreground hover:text-primary"
+            >
+              <History className="w-4 h-4 mr-2" />
+              View & Edit My Time History
+            </Button>
           </div>
         </div>
       </div>
