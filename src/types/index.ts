@@ -193,3 +193,18 @@ export interface ActiveTimer {
   start_time: string;
   crew_count: number;
 }
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  event_type: 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other';
+  job_id: string | null;
+  all_day: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}

@@ -7,6 +7,7 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListCheck
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
+import { DayViewDialog } from '../foreman/DayViewDialog';
 
 // Helper function to parse date string as local date (not UTC)
 function parseDateLocal(dateString: string): Date {
@@ -40,6 +41,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
+  const [showDayView, setShowDayView] = useState(false);
 
   useEffect(() => {
     loadCalendarEvents();
@@ -370,7 +372,10 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                     className={`min-h-32 p-1 border rounded cursor-pointer transition-colors ${
                       isToday ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'
                     } ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                    onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                    onClick={() => {
+                      setSelectedDate(dateStr);
+                      setShowDayView(true);
+                    }}
                   >
                     <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : ''}`}>
                       {day}
@@ -633,6 +638,19 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
         onClose={() => {
           setShowEventDialog(false);
           setSelectedEvent(null);
+        }}
+        onUpdate={() => {
+          loadCalendarEvents();
+        }}
+      />
+
+      {/* Day View Dialog */}
+      <DayViewDialog
+        date={selectedDate}
+        open={showDayView}
+        onClose={() => {
+          setShowDayView(false);
+          setSelectedDate(null);
         }}
         onUpdate={() => {
           loadCalendarEvents();
