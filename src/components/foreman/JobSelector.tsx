@@ -41,7 +41,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
-        .eq('status', 'active')
+        .eq('status', 'active') // Only active jobs - no quoting or on_hold
         .eq('is_internal', false)
         .or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`)
         .order('created_at', { ascending: false });

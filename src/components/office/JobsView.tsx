@@ -40,6 +40,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [selectedTab, setSelectedTab] = useState('overview');
   const [stats, setStats] = useState<Record<string, any>>({});
+  const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
 
   useEffect(() => {
     loadJobs();
@@ -181,7 +182,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">{showArchived ? 'Archived Jobs' : 'Active Jobs'}</h2>
+          <h2 className="text-2xl font-bold">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
           <p className="text-sm text-muted-foreground">
             {showArchived ? 'View and restore archived jobs' : 'Manage job sites, documents, and assignments'}
           </p>
@@ -193,6 +194,42 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
           </Button>
         )}
       </div>
+
+      {/* Status Filter Tabs - Only show for non-archived view */}
+      {!showArchived && (
+        <div className="flex items-center gap-2 border-b pb-2">
+          <Button
+            variant={statusFilter === 'active' ? 'default' : 'outline'}
+            onClick={() => setStatusFilter('active')}
+            className={statusFilter === 'active' ? 'gradient-primary' : ''}
+          >
+            Active
+            <Badge variant="secondary" className="ml-2">
+              {jobs.filter(j => j.status === 'active' && !j.is_internal).length}
+            </Badge>
+          </Button>
+          <Button
+            variant={statusFilter === 'quoting' ? 'default' : 'outline'}
+            onClick={() => setStatusFilter('quoting')}
+            className={statusFilter === 'quoting' ? 'gradient-primary' : ''}
+          >
+            Quoting
+            <Badge variant="secondary" className="ml-2">
+              {jobs.filter(j => j.status === 'quoting' && !j.is_internal).length}
+            </Badge>
+          </Button>
+          <Button
+            variant={statusFilter === 'on_hold' ? 'default' : 'outline'}
+            onClick={() => setStatusFilter('on_hold')}
+            className={statusFilter === 'on_hold' ? 'gradient-primary' : ''}
+          >
+            On Hold
+            <Badge variant="secondary" className="ml-2">
+              {jobs.filter(j => j.status === 'on_hold' && !j.is_internal).length}
+            </Badge>
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <Card>
@@ -209,7 +246,10 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {jobs
-            .filter((job) => showArchived ? job.status === 'archived' : (job.status === 'active' || job.status === 'quoting'))
+            .filter((job) => {
+              if (showArchived) return job.status === 'archived';
+              return job.status === statusFilter;
+            })
             .filter((job) => !job.is_internal) // Exclude internal jobs like Shop from job cards
             .map((job) => {
             const jobStats = stats[job.id] || {};
