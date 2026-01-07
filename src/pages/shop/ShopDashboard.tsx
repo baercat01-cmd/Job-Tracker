@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { ShopMaterialsView } from '@/components/shop/ShopMaterialsView';
 import { ShopTasksList } from '@/components/shop/ShopTasksList';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
-import { TimeTracker } from '@/components/foreman/TimeTracker';
+import { ShopClockIn } from '@/components/shop/ShopClockIn';
 import type { Job } from '@/types';
 
 export function ShopDashboard() {
@@ -111,19 +111,11 @@ export function ShopDashboard() {
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading shop job...</p>
               </div>
-            ) : shopJob ? (
-              <TimeTracker
-                job={shopJob}
-                userId={profile?.id || ''}
-                onBack={() => {}}
-                onTimerUpdate={() => {}}
-              />
             ) : (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">
-                  Shop job not found. Please contact office staff to create an internal "Shop" job.
-                </p>
-              </div>
+              <ShopClockIn
+                userId={profile?.id || ''}
+                shopJob={shopJob}
+              />
             )}
           </TabsContent>
 
