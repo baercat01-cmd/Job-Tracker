@@ -31,10 +31,30 @@ import {
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('jobs');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('office-active-tab') || 'jobs';
+  });
+  const [calendarView, setCalendarView] = useState(() => {
+    return localStorage.getItem('office-calendar-view') || 'calendar';
+  });
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'office' | 'field'>('field');
+  const [viewMode, setViewMode] = useState<'office' | 'field'>(() => {
+    return (localStorage.getItem('office-view-mode') as 'office' | 'field') || 'field';
+  });
+
+  // Save view state to localStorage
+  useEffect(() => {
+    localStorage.setItem('office-active-tab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('office-calendar-view', calendarView);
+  }, [calendarView]);
+
+  useEffect(() => {
+    localStorage.setItem('office-view-mode', viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     loadUnreadCount();
@@ -241,7 +261,7 @@ export function OfficeDashboard() {
           </TabsContent>
 
           <TabsContent value="calendar">
-            <Tabs defaultValue="calendar" className="w-full">
+            <Tabs value={calendarView} onValueChange={setCalendarView} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="calendar">
                   <Calendar className="w-4 h-4 mr-2" />
