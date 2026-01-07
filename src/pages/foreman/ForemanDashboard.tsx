@@ -476,6 +476,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           <MaterialsList
             job={selectedJob}
             userId={profile?.id || ''}
+            allowBundleCreation={false}
           />
         )}
 

@@ -87,6 +87,7 @@ type StatusFilter = 'all' | 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | '
 interface MaterialsListProps {
   job: Job;
   userId: string;
+  allowBundleCreation?: boolean;
 }
 
 const STATUS_CONFIG = {
@@ -98,7 +99,7 @@ const STATUS_CONFIG = {
   missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-100 text-red-700 border-red-300' },
 };
 
-export function MaterialsList({ job, userId }: MaterialsListProps) {
+export function MaterialsList({ job, userId, allowBundleCreation = false }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
@@ -1012,34 +1013,36 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
         </TabsList>
 
         <TabsContent value="all" className="space-y-3">
-      {/* Action Bar - Mobile Optimized */}
-      {!selectionMode ? (
-        <Button
-          onClick={toggleSelectionMode}
-          variant="default"
-          className="w-full h-12 text-base font-semibold gradient-primary"
-        >
-          <PackagePlus className="w-5 h-5 mr-2" />
-          Create Bundle
-        </Button>
-      ) : (
-        <div className="flex gap-2">
-          <Button
-            onClick={openCreateBundleDialog}
-            disabled={selectedMaterialIds.size === 0}
-            className="flex-1 h-12 text-base font-semibold gradient-primary"
-          >
-            <Layers className="w-5 h-5 mr-2" />
-            Bundle ({selectedMaterialIds.size})
-          </Button>
+      {/* Action Bar - Mobile Optimized - Only show for office/shop users */}
+      {allowBundleCreation && (
+        !selectionMode ? (
           <Button
             onClick={toggleSelectionMode}
-            variant="outline"
-            className="h-12 px-4"
+            variant="default"
+            className="w-full h-12 text-base font-semibold gradient-primary"
           >
-            <X className="w-5 h-5" />
+            <PackagePlus className="w-5 h-5 mr-2" />
+            Create Bundle
           </Button>
-        </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button
+              onClick={openCreateBundleDialog}
+              disabled={selectedMaterialIds.size === 0}
+              className="flex-1 h-12 text-base font-semibold gradient-primary"
+            >
+              <Layers className="w-5 h-5 mr-2" />
+              Bundle ({selectedMaterialIds.size})
+            </Button>
+            <Button
+              onClick={toggleSelectionMode}
+              variant="outline"
+              className="h-12 px-4"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+        )
       )}
 
       {/* Search, Sort, and Status Filter */}
@@ -1394,8 +1397,8 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
                         isInBundle ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 active:bg-muted'
                       }`}
                     >
-                      {/* Selection checkbox for bundle mode */}
-                      {selectionMode && group.materials.map(material => {
+                      {/* Selection checkbox for bundle mode - only show if bundle creation is allowed */}
+                      {allowBundleCreation && selectionMode && group.materials.map(material => {
                         const materialBundleInfo = materialBundleMap.get(material.id);
                         const materialIsInBundle = !!materialBundleInfo;
                         
