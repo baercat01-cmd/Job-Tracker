@@ -7,12 +7,11 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
-    // Disable HMR entirely in production/published environments
-    // HMR only works during local development
-    hmr: process.env.NODE_ENV === 'production' ? false : {
+    hmr: {
       protocol: 'ws',
       host: 'localhost',
       port: 8080,
+      overlay: true,
     },
   },
   plugins: [
