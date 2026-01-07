@@ -1794,7 +1794,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                       <table className="w-full">
                         <thead className="bg-muted/50 border-b">
                           <tr>
-                            <th className="text-left p-3 min-w-[300px]">
+                            <th className="text-left p-3">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1805,7 +1805,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="name" />
                               </Button>
                             </th>
-                            <th className="text-left p-3 min-w-[280px]">
+                            <th className="text-left p-3">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1816,18 +1816,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="useCase" />
                               </Button>
                             </th>
-                            <th className="text-center p-3 w-[120px]">
+                            <th className="text-center p-3 w-[100px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleSort('quantity')}
                                 className="font-semibold -ml-3"
                               >
-                                Quantity
+                                Qty
                                 <SortIcon column="quantity" />
                               </Button>
                             </th>
-                            <th className="text-center p-3 w-[120px]">
+                            <th className="text-center p-3 w-[100px]">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1838,43 +1838,43 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="length" />
                               </Button>
                             </th>
-                            <th className="text-center p-3 font-semibold w-[160px]">Status</th>
+                            <th className="text-center p-3 font-semibold w-[180px]">Status</th>
                             <th className="text-right p-3 font-semibold w-[140px]">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredMaterials.map((material) => (
                             <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="p-3 min-w-[300px]">
-                                <div className="font-medium whitespace-normal">{material.name}</div>
+                              <td className="p-3">
+                                <div className="font-medium">{material.name}</div>
                                 {material.import_source && material.import_source !== 'manual' && (
                                   <Badge variant="outline" className="mt-1 text-xs">
                                     {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
                                   </Badge>
                                 )}
                               </td>
-                              <td className="p-3 text-sm text-muted-foreground min-w-[280px]">
-                                <div className="whitespace-normal">{material.use_case || '-'}</div>
+                              <td className="p-3 text-sm text-muted-foreground">
+                                <div>{material.use_case || '-'}</div>
                               </td>
-                              <td className="p-3 text-center font-semibold w-[120px]">
+                              <td className="p-3 text-center font-semibold w-[100px]">
                                 {material.quantity}
                               </td>
-                              <td className="p-3 text-center w-[120px]">
+                              <td className="p-3 text-center w-[100px]">
                                 {material.length || '-'}
                               </td>
-                              <td className="p-3">
+                              <td className="p-3 w-[180px]">
                                 <div className="flex justify-center">
                                   <Select
                                     value={material.status}
                                     onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
                                   >
-                                    <SelectTrigger className={`w-[140px] font-medium border-2 ${getStatusColor(material.status)}`}>
+                                    <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                       {STATUS_OPTIONS.map(opt => (
                                         <SelectItem key={opt.value} value={opt.value}>
-                                          <span className={`inline-flex items-center px-2 py-1 rounded ${opt.color}`}>
+                                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
                                             {opt.label}
                                           </span>
                                         </SelectItem>
@@ -1883,7 +1883,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   </Select>
                                 </div>
                               </td>
-                              <td className="p-3">
+                              <td className="p-3 w-[140px]">
                                 <div className="flex items-center justify-end gap-1">
                                   <Button
                                     size="sm"
