@@ -7,12 +7,7 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: 8080,
-      overlay: true,
-    },
+    hmr: false, // Disable HMR to prevent WebSocket errors on published domains
   },
   optimizeDeps: {
     exclude: [],
