@@ -8,9 +8,8 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: 8080,
+      // Auto-detect the correct HMR host based on browser location
+      clientPort: 443,
       overlay: true,
     },
   },
