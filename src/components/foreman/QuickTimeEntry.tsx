@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -156,16 +157,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     startTime: '06:00',
     endTime: '17:00',
   });
-  const [jobType, setJobType] = useState<'existing' | 'misc'>('existing');
-  const [miscJobData, setMiscJobData] = useState({
-    name: '',
-    address: '',
-    date: new Date().toISOString().split('T')[0],
-    startTime: '06:00',
-    endTime: '17:00',
-    notes: '',
-  });
-  const [miscJobsId, setMiscJobsId] = useState<string | null>(null);
+
   const [components, setComponents] = useState<Component[]>([]);
   const [jobComponents, setJobComponents] = useState<Array<{
     componentId: string;
@@ -176,7 +168,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
   useEffect(() => {
     loadJobs();
     loadClockedInStatus();
-    loadOrCreateMiscJobsCategory();
   }, [userId]);
 
   useEffect(() => {
@@ -227,21 +218,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
         .order('name');
 
       if (error) throw error;
-      
-      // Filter out Misc Jobs from selection list
-      const filteredJobs = (data || []).filter(job => job.name !== 'Misc Jobs');
-      
-      // Sort: regular jobs first, then internal jobs at bottom
-      const sortedJobs = filteredJobs.sort((a, b) => {
-        // If both are internal or both are not, sort by name
-        if (a.is_internal === b.is_internal) {
-          return a.name.localeCompare(b.name);
-        }
-        // Regular jobs (is_internal = false) come first
-        return a.is_internal ? 1 : -1;
-      });
-      
-      setJobs(sortedJobs);
+      setJobs(data || []);
     } catch (error) {
       console.error('Error loading jobs:', error);
     }
@@ -288,26 +265,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
     }
   }
 
-  async function loadOrCreateMiscJobsCategory() {
-    try {
-      // Check if Misc Jobs internal job exists (created manually by crew member)
-      const { data: existing, error: fetchError } = await supabase
-        .from('jobs')
-        .select('id')
-        .eq('name', 'Misc Jobs')
-        .eq('is_internal', true)
-        .maybeSingle();
 
-      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
-
-      if (existing) {
-        setMiscJobsId(existing.id);
-      }
-      // No auto-creation - user must manually create via Internal Jobs Management
-    } catch (error) {
-      console.error('Error loading Misc Jobs category:', error);
-    }
-  }
 
   async function loadClockedInStatus() {
     try {
@@ -519,91 +477,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
 
 
-  async function handleMiscJobEntry() {
-    if (!miscJobData.name.trim()) {
-      toast.error('Please enter a job name');
-      return;
-    }
 
-    if (!miscJobData.address.trim()) {
-      toast.error('Please enter a job address');
-      return;
-    }
-
-    if (!miscJobData.startTime || !miscJobData.endTime) {
-      toast.error('Please enter both start and end times');
-      return;
-    }
-
-    if (!miscJobsId) {
-      toast.error('Misc Jobs category not available');
-      return;
-    }
-
-    // Calculate total hours
-    const start = new Date(`${miscJobData.date}T${miscJobData.startTime}`);
-    const end = new Date(`${miscJobData.date}T${miscJobData.endTime}`);
-    
-    if (end <= start) {
-      toast.error('Clock out time must be after clock in time');
-      return;
-    }
-    
-    const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-
-    setLoading(true);
-
-    try {
-      const startDateTime = new Date(`${miscJobData.date}T${miscJobData.startTime}`).toISOString();
-      const endDateTime = new Date(`${miscJobData.date}T${miscJobData.endTime}`).toISOString();
-
-      // Create structured notes with job details
-      const notesData = {
-        type: 'misc_job',
-        jobName: miscJobData.name,
-        address: miscJobData.address,
-        notes: miscJobData.notes || '',
-      };
-
-      const { error } = await supabase
-        .from('time_entries')
-        .insert({
-          job_id: miscJobsId,
-          component_id: null,
-          user_id: userId,
-          start_time: startDateTime,
-          end_time: endDateTime,
-          total_hours: Math.round(totalHours * 4) / 4,
-          crew_count: 1,
-          is_manual: true,
-          is_active: false,
-          notes: JSON.stringify(notesData),
-          worker_names: [],
-        });
-
-      if (error) throw error;
-
-      toast.success(`${totalHours.toFixed(2)} hours logged to misc job: ${miscJobData.name}`);
-      
-      // Reset and close
-      setShowDialog(false);
-      setMiscJobData({
-        name: '',
-        address: '',
-        date: new Date().toISOString().split('T')[0],
-        startTime: '06:00',
-        endTime: '17:00',
-        notes: '',
-      });
-      onSuccess?.();
-      onBack?.();
-    } catch (error: any) {
-      console.error('Misc job entry error:', error);
-      toast.error('Failed to log time');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleClockOut() {
     if (!clockedInEntry) return;
@@ -727,14 +601,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
               startTime: '06:00',
               endTime: '17:00',
             });
-            setMiscJobData({
-              name: '',
-              address: '',
-              date: new Date().toISOString().split('T')[0],
-              startTime: '06:00',
-              endTime: '17:00',
-              notes: '',
-            });
             setJobComponents([]);
             onBack?.(); // Go back to jobs page
           }
@@ -750,32 +616,10 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
             </div>
           </DialogHeader>
 
-          {/* Job Type Selection */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
-            <Button
-              variant={jobType === 'existing' ? 'secondary' : 'ghost'}
-              onClick={() => setJobType('existing')}
-              size="sm"
-              className="h-8 text-xs"
-            >
-              <Briefcase className="w-3 h-3 mr-1.5" />
-              Existing Job
-            </Button>
-            <Button
-              variant={jobType === 'misc' ? 'secondary' : 'ghost'}
-              onClick={() => setJobType('misc')}
-              size="sm"
-              className="h-8 text-xs"
-            >
-              <FileText className="w-3 h-3 mr-1.5" />
-              Misc Job
-            </Button>
-          </div>
+
 
           <div className="space-y-4">
-            {/* Existing Job Flow */}
-            {jobType === 'existing' && (
-              <>
+              {/* This fragment was unclosed */}
                 {/* Mode Toggle */}
                 <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
                   <Button
@@ -1018,112 +862,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
                     )}
                   </Button>
                 </div>
-              </>
-            )}
-
-            {/* Misc Job Flow */}
-            {jobType === 'misc' && (
-              <>
-                <div className="bg-warning/10 border border-warning/30 rounded-lg p-3">
-                  <p className="text-sm text-warning-foreground">
-                    Use this for odd jobs not in the system. All details will be visible in payroll.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="misc-job-name" className="text-base font-semibold">Job Name *</Label>
-                  <Input
-                    id="misc-job-name"
-                    placeholder="Enter job name..."
-                    className="h-12"
-                    value={miscJobData.name}
-                    onChange={(e) => setMiscJobData({ ...miscJobData, name: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="misc-job-address" className="text-base font-semibold flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Address *
-                  </Label>
-                  <Input
-                    id="misc-job-address"
-                    placeholder="Enter job address..."
-                    className="h-12"
-                    value={miscJobData.address}
-                    onChange={(e) => setMiscJobData({ ...miscJobData, address: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="misc-date" className="text-base font-semibold">Date *</Label>
-                  <Input
-                    id="misc-date"
-                    type="date"
-                    className="h-12"
-                    value={miscJobData.date}
-                    onChange={(e) => setMiscJobData({ ...miscJobData, date: e.target.value })}
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-
-                <TimeDropdownPicker
-                  label="Clock In Time"
-                  value={miscJobData.startTime}
-                  onChange={(time) => setMiscJobData({ ...miscJobData, startTime: time })}
-                />
-
-                <TimeDropdownPicker
-                  label="Clock Out Time"
-                  value={miscJobData.endTime}
-                  onChange={(time) => setMiscJobData({ ...miscJobData, endTime: time })}
-                />
-
-                <div className="space-y-2">
-                  <Label htmlFor="misc-notes" className="text-base font-semibold">Notes (Optional)</Label>
-                  <Textarea
-                    id="misc-notes"
-                    placeholder="Additional notes..."
-                    className="resize-none"
-                    rows={3}
-                    value={miscJobData.notes}
-                    onChange={(e) => setMiscJobData({ ...miscJobData, notes: e.target.value })}
-                  />
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowDialog(false);
-                      setMiscJobData({
-                        name: '',
-                        address: '',
-                        date: new Date().toISOString().split('T')[0],
-                        startTime: '06:00',
-                        endTime: '17:00',
-                        notes: '',
-                      });
-                      onBack?.();
-                    }}
-                    className="flex-1 h-12"
-                    disabled={loading}
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleMiscJobEntry}
-                    disabled={loading || !miscJobData.name.trim() || !miscJobData.address.trim()}
-                    className="flex-1 h-12 gradient-primary"
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    {loading ? 'Logging...' : 'Log Time'}
-                  </Button>
-                </div>
-              </>
-            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -210,7 +210,6 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {jobs
             .filter((job) => showArchived ? job.status === 'archived' : (job.status === 'active' || job.status === 'quoting'))
-            .filter((job) => !job.is_internal) // Exclude internal jobs like Shop from job cards
             .map((job) => {
             const jobStats = stats[job.id] || {};
             

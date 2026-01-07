@@ -12,7 +12,7 @@ import { PhotosView } from '@/components/office/PhotosView';
 import { ComponentsManagement } from '@/components/office/ComponentsManagement';
 import { UserManagement } from '@/components/office/UserManagement';
 import { WorkerManagement } from '@/components/office/WorkerManagement';
-import { InternalJobsManagement } from '@/components/office/InternalJobsManagement';
+
 import { DataExport } from '@/components/office/DataExport';
 import { NotificationsCenter } from '@/components/office/NotificationsCenter';
 import { NotificationBell } from '@/components/office/NotificationBell';
@@ -262,7 +262,7 @@ export function OfficeDashboard() {
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-8">
+                <TabsList className="grid w-full grid-cols-7">
                   <TabsTrigger value="export">
                     <Download className="w-4 h-4 mr-2" />
                     Export
@@ -283,10 +283,7 @@ export function OfficeDashboard() {
                     <Calendar className="w-4 h-4 mr-2" />
                     Schedule
                   </TabsTrigger>
-                  <TabsTrigger value="internal">
-                    <Briefcase className="w-4 h-4 mr-2" />
-                    Internal
-                  </TabsTrigger>
+
                   <TabsTrigger value="users">
                     <Users className="w-4 h-4 mr-2" />
                     Users
@@ -317,9 +314,7 @@ export function OfficeDashboard() {
                   <SubcontractorScheduling />
                 </TabsContent>
 
-                <TabsContent value="internal" className="mt-6">
-                  <InternalJobsManagement userId={profile?.id || ''} />
-                </TabsContent>
+
 
                 <TabsContent value="users" className="mt-6">
                   <UserManagement />

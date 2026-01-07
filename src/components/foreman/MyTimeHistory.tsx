@@ -30,7 +30,6 @@ interface TimeEntry {
   jobs: {
     name: string;
     client_name: string;
-    is_internal: boolean;
   };
   components: {
     name: string;
@@ -89,7 +88,7 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
         .from('time_entries')
         .select(`
           *,
-          jobs(name, client_name, is_internal),
+          jobs(name, client_name),
           components(name)
         `)
         .eq('user_id', userId)
