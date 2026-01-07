@@ -36,12 +36,13 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-      // Only show active jobs to crew members
+      // Only show active, non-internal jobs to crew members
       // If projected_start_date is set, only show jobs on or after that date
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active')
+        .eq('is_internal', false)
         .or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`)
         .order('created_at', { ascending: false });
 
@@ -64,17 +65,9 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
         jobManHours.set(entry.job_id, current + manHours);
       });
 
-      // Filter out Misc Jobs and sort: regular jobs first, then internal jobs
+      // Filter out Misc Jobs (internal jobs already excluded from query)
       const filteredJobs = (jobsData || [])
-        .filter(job => job.name !== 'Misc Jobs')
-        .sort((a, b) => {
-          // If both are internal or both are not, keep original order
-          if (a.is_internal === b.is_internal) {
-            return 0;
-          }
-          // Regular jobs (is_internal = false) come first
-          return a.is_internal ? 1 : -1;
-        });
+        .filter(job => job.name !== 'Misc Jobs');
 
       // Add progress data to each job
       const jobsWithProgress: JobWithProgress[] = filteredJobs.map((job) => {
@@ -103,8 +96,8 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
     }
   }
 
-  // Filter out internal jobs from job cards display (but they're still available in time tracking dropdowns)
-  const filteredJobs = jobs.filter(job => !job.is_internal);
+  // Jobs are already filtered (no internal jobs)
+  const filteredJobs = jobs;
 
   return (
     <div className="space-y-4">
