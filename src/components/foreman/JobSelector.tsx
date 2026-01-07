@@ -5,15 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package } from 'lucide-react';
 import type { Job } from '@/types';
 
 interface JobSelectorProps {
   onSelectJob: (job: Job) => void;
   userId: string;
   onShowJobCalendar?: (job: Job) => void;
+  onSelectJobForMaterials?: (job: Job) => void;
 }
 
 interface JobWithProgress extends Job {
@@ -24,7 +24,7 @@ interface JobWithProgress extends Job {
   ready_materials_count?: number;
 }
 
-export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelectorProps) {
+export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJobForMaterials }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
@@ -115,23 +115,6 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
 
   return (
     <div className="space-y-4">
-      {/* Ready Materials Notification */}
-      {totalReadyMaterials > 0 && (
-        <Alert className="border-2 border-blue-500 bg-blue-50">
-          <Package className="h-5 w-5 text-blue-600" />
-          <AlertDescription className="ml-2">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-blue-900">
-                {totalReadyMaterials} material{totalReadyMaterials > 1 ? 's' : ''} ready to go to job sites
-              </span>
-            </div>
-            <p className="text-sm text-blue-700 mt-1">
-              Select a job below to view and mark materials as delivered
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {loading ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
@@ -161,10 +144,20 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
                         {job.client_name}
                       </p>
                       {job.ready_materials_count && job.ready_materials_count > 0 && (
-                        <Badge className="mt-2 bg-blue-100 text-blue-700 hover:bg-blue-200">
-                          <Package className="w-3 h-3 mr-1" />
-                          {job.ready_materials_count} ready for job
-                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2 h-auto p-0 hover:bg-transparent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectJobForMaterials?.(job);
+                          }}
+                        >
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
+                            <Package className="w-3 h-3 mr-1" />
+                            {job.ready_materials_count} ready for job
+                          </Badge>
+                        </Button>
                       )}
                     </div>
                     {/* Calendar icon - prevent propagation to not trigger job selection */}

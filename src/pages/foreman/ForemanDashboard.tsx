@@ -98,6 +98,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     setActiveTab('timer'); // Default to timer tab when selecting a job
   };
 
+  const handleJobSelectForMaterials = (job: Job) => {
+    setSelectedJob(job);
+    setActiveTab('materials'); // Open directly to materials tab
+  };
+
   const handleBackToJobs = () => {
     setSelectedJob(null);
     setActiveTab('timer');
@@ -352,6 +357,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               onSelectJob={handleJobSelect} 
               userId={profile?.id || ''}
               onShowJobCalendar={(job) => setShowJobCalendar(job)}
+              onSelectJobForMaterials={handleJobSelectForMaterials}
             />
           </div>
         </main>
