@@ -94,6 +94,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
+      console.log('🔍 Loading materials with pull_from_shop status...');
+      
       // Get all materials with status "pull_from_shop" from active jobs
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
@@ -113,7 +115,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         .eq('jobs.status', 'active')
         .order('jobs.name');
 
-      if (materialsError) throw materialsError;
+      if (materialsError) {
+        console.error('❌ Error loading materials:', materialsError);
+        throw materialsError;
+      }
+
+      console.log(`✅ Found ${materialsData?.length || 0} materials with pull_from_shop status`);
+      if (materialsData && materialsData.length > 0) {
+        console.log('📦 Materials:', materialsData);
+      }
 
       const materialsWithJob = (materialsData || []).map((m: any) => ({
         id: m.id,
@@ -140,6 +150,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
 
   async function updateMaterialStatus(materialId: string, newStatus: string) {
     try {
+      console.log(`🔄 Updating material ${materialId} to status: ${newStatus}`);
+      
       const { error } = await supabase
         .from('materials')
         .update({ 
@@ -148,8 +160,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         })
         .eq('id', materialId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error updating material status:', error);
+        throw error;
+      }
 
+      console.log('✅ Material status updated successfully');
       toast.success(`Material marked as ${getStatusLabel(newStatus)}`);
       loadMaterials();
     } catch (error: any) {
