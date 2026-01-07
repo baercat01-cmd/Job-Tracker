@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, TrendingUp, CheckCircle2 } from 'lucide-react';
+import { Clock, Users, Calendar, TrendingUp, CheckCircle2, History } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { MyTimeHistory } from './MyTimeHistory';
 import type { Job } from '@/types';
 
 interface FieldJobDashboardProps {
@@ -40,6 +41,7 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
   const [weekStats, setWeekStats] = useState<WeekStats>({ totalHours: 0, totalManHours: 0, daysWorked: 0 });
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [totalJobHours, setTotalJobHours] = useState(0);
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -212,6 +214,19 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
   const progressPercent = estimatedHours > 0 ? Math.min((totalJobHours / estimatedHours) * 100, 100) : 0;
   const isOverBudget = totalJobHours > estimatedHours && estimatedHours > 0;
 
+  // If showing time history, render that instead
+  if (showTimeHistory) {
+    return (
+      <MyTimeHistory
+        userId={userId}
+        onBack={() => {
+          setShowTimeHistory(false);
+          loadDashboardData(); // Reload in case they edited entries
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Active Status Banner */}
@@ -359,6 +374,19 @@ export function FieldJobDashboard({ job, userId, activeTimerCount = 0 }: FieldJo
           </CardContent>
         </Card>
       )}
+
+      {/* My Time History Button - Small, at bottom */}
+      <div className="pb-4">
+        <Button
+          onClick={() => setShowTimeHistory(true)}
+          variant="ghost"
+          size="sm"
+          className="w-full text-muted-foreground hover:text-primary"
+        >
+          <History className="w-4 h-4 mr-2" />
+          View & Edit My Time History
+        </Button>
+      </div>
     </div>
   );
 }
