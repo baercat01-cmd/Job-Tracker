@@ -649,9 +649,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         const materialName = statusChangeMaterial.name;
         const pickupDateStr = new Date(pickupDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         
+        console.log('Creating/updating pickup calendar event:', {
+          material: materialName,
+          pickupDate,
+          assignedUser: assignedUser?.username || assignedUser?.email,
+          jobId: job.id,
+        });
+        
         // Create notification only if newly assigned or status changed to ordered
         if (newStatus === 'ordered' || statusChangeMaterial.pickup_by !== pickupBy) {
-          await supabase
+          const { error: notifError } = await supabase
             .from('notifications')
             .insert({
               job_id: job.id,
@@ -669,6 +676,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               },
               is_read: false,
             });
+          
+          if (notifError) {
+            console.error('Error creating notification:', notifError);
+          }
         }
 
         // Create or update calendar event for pickup
@@ -680,26 +691,38 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
 
         // Check if calendar event already exists
-        const { data: existingPickupEvent } = await supabase
+        const { data: existingPickupEvent, error: searchError } = await supabase
           .from('calendar_events')
           .select('id')
           .eq('job_id', job.id)
           .eq('event_type', 'material_pickup')
           .eq('title', `Material Pickup: ${materialName}`)
-          .single();
+          .maybeSingle();
+
+        if (searchError) {
+          console.error('Error searching for existing pickup event:', searchError);
+        }
 
         if (existingPickupEvent) {
           // Update existing event
-          await supabase
+          console.log('Updating existing pickup event:', existingPickupEvent.id);
+          const { error: updateError } = await supabase
             .from('calendar_events')
             .update({
               event_date: pickupDate,
               description: pickupDesc.join('\n\n'),
             })
             .eq('id', existingPickupEvent.id);
+          
+          if (updateError) {
+            console.error('Error updating pickup event:', updateError);
+            throw updateError;
+          }
+          console.log('Pickup event updated successfully');
         } else {
           // Create new event
-          await supabase
+          console.log('Creating new pickup event');
+          const { data: newEvent, error: insertError } = await supabase
             .from('calendar_events')
             .insert({
               job_id: job.id,
@@ -709,16 +732,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               event_type: 'material_pickup',
               all_day: true,
               created_by: userId,
-            });
+            })
+            .select();
+          
+          if (insertError) {
+            console.error('Error creating pickup event:', insertError);
+            throw insertError;
+          }
+          console.log('Pickup event created successfully:', newEvent);
         }
       } else if (statusChangeMaterial.delivery_method === 'pickup' && (!hasDeliveryMethod || deliveryMethod !== 'pickup' || !pickupDate)) {
         // If pickup was removed, delete the calendar event
-        await supabase
+        console.log('Deleting pickup calendar event for:', statusChangeMaterial.name);
+        const { error: deleteError } = await supabase
           .from('calendar_events')
           .delete()
           .eq('job_id', job.id)
           .eq('event_type', 'material_pickup')
           .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
+        
+        if (deleteError) {
+          console.error('Error deleting pickup event:', deleteError);
+        }
       }
 
       // Create calendar event for delivery
