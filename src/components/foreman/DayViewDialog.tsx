@@ -448,24 +448,35 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
 
                 <div className="space-y-2">
                   <Label htmlFor="event-job">Link to Job (Optional)</Label>
-                  <Select
-                    value={formData.job_id}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, job_id: value })
-                    }
-                  >
-                    <SelectTrigger id="event-job" className="h-12">
-                      <SelectValue placeholder="No job selected" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">No job</SelectItem>
-                      {jobs.map(job => (
-                        <SelectItem key={job.id} value={job.id}>
-                          {job.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Select
+                      value={formData.job_id || undefined}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, job_id: value })
+                      }
+                    >
+                      <SelectTrigger id="event-job" className="h-12 flex-1">
+                        <SelectValue placeholder="No job selected" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {jobs.map(job => (
+                          <SelectItem key={job.id} value={job.id}>
+                            {job.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formData.job_id && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setFormData({ ...formData, job_id: '' })}
+                        className="h-12 px-3"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
