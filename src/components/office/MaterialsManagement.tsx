@@ -493,8 +493,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setStatusChangeMaterial(material);
     setNewStatus(newStatusValue);
     
-    // Pre-populate existing data
-    setOrderByDate(material.order_by_date || '');
+    // Pre-populate existing data (except order by date which should be blank)
+    setOrderByDate(''); // Always blank by default
     setPullByDate(material.pull_by_date || '');
     setDeliveryDate(material.delivery_date || '');
     setActualDeliveryDate(material.actual_delivery_date || '');
