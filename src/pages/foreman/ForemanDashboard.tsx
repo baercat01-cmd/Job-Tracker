@@ -370,16 +370,18 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               }}
             />
             
-            {/* View My Time History Button - Small, below time clock */}
-            <Button
-              onClick={() => setShowTimeHistory(true)}
-              variant="ghost"
-              size="sm"
-              className="w-full text-muted-foreground hover:text-primary"
-            >
-              <History className="w-4 h-4 mr-2" />
-              View & Edit My Time History
-            </Button>
+            {/* View My Time History Button - Small, on right side */}
+            <div className="flex justify-end">
+              <Button
+                onClick={() => setShowTimeHistory(true)}
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground hover:text-primary px-2 py-1 h-auto"
+              >
+                <History className="w-3 h-3 mr-1" />
+                My Time
+              </Button>
+            </div>
           </div>
         </div>
       </div>
