@@ -132,6 +132,40 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
     }
   }
 
+  async function setJobOnHold(jobId: string) {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'on_hold', updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job put on hold - hidden from crew');
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error setting job on hold:', error);
+      toast.error('Failed to update job status');
+    }
+  }
+
+  async function activateJob(jobId: string) {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job activated - now visible to crew');
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error activating job:', error);
+      toast.error('Failed to update job status');
+    }
+  }
+
   async function loadJobStats(jobId: string) {
     const [clockInData, photosData] = await Promise.all([
       // Only load CLOCK-IN hours (component_id IS NULL) for progress calculation
@@ -318,27 +352,31 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                       }>
                         {job.status === 'quoting' ? 'Quoting' : job.status}
                       </Badge>
-                      <div className="flex gap-1">
-                        {/* Toggle between Quoting and Active */}
-                        {(job.status === 'quoting' || job.status === 'active') && (
+                      <div className="flex flex-col gap-1">
+                        {/* On Hold button - show for active, quoting, and on_hold jobs */}
+                        {(job.status === 'active' || job.status === 'quoting' || job.status === 'on_hold') && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleJobStatus(job.id, job.status);
+                              if (job.status === 'on_hold') {
+                                activateJob(job.id);
+                              } else {
+                                setJobOnHold(job.id);
+                              }
                             }}
-                            className="h-7 px-2"
+                            className="h-7 px-2 justify-start"
                           >
-                            {job.status === 'quoting' ? (
+                            {job.status === 'on_hold' ? (
                               <>
                                 <FileCheck className="w-3 h-3 mr-1" />
                                 <span className="text-xs">Activate</span>
                               </>
                             ) : (
                               <>
-                                <FileCheck className="w-3 h-3 mr-1" />
-                                <span className="text-xs">Quote</span>
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                <span className="text-xs">Hold</span>
                               </>
                             )}
                           </Button>
@@ -351,7 +389,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             e.stopPropagation();
                             toggleArchiveJob(job.id, job.status);
                           }}
-                          className="h-7 px-2"
+                          className="h-7 px-2 justify-start"
                         >
                           {job.status === 'archived' ? (
                             <>
