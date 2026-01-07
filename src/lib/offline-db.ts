@@ -133,6 +133,11 @@ export async function initDB(): Promise<IDBDatabase> {
         // Note: No index on 'synced' because booleans are not valid IndexedDB keys
       }
 
+      // Sync metadata store - tracks last sync time per table
+      if (!db.objectStoreNames.contains('sync_metadata')) {
+        db.createObjectStore('sync_metadata', { keyPath: 'table' });
+      }
+
       console.log('[IndexedDB] Database initialized');
     };
   });
@@ -314,4 +319,52 @@ export async function clearSyncedItems(): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+}
+
+// Sync metadata operations
+
+export interface SyncMetadata {
+  table: string;
+  lastSyncTime: number;
+  lastSyncedRecordCount: number;
+}
+
+export async function updateSyncMetadata(table: string, recordCount: number): Promise<void> {
+  const metadata: SyncMetadata = {
+    table,
+    lastSyncTime: Date.now(),
+    lastSyncedRecordCount: recordCount,
+  };
+
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('sync_metadata', 'readwrite');
+    const store = transaction.objectStore('sync_metadata');
+    const request = store.put(metadata);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getSyncMetadata(table: string): Promise<SyncMetadata | null> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('sync_metadata', 'readonly');
+    const store = transaction.objectStore('sync_metadata');
+    const request = store.get(table);
+
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getAllSyncMetadata(): Promise<SyncMetadata[]> {
+  return getAll<SyncMetadata>('sync_metadata');
+}
+
+// Get count of pending sync items
+export async function getPendingSyncCount(): Promise<number> {
+  const pendingItems = await getPendingSyncItems();
+  return pendingItems.length;
 }

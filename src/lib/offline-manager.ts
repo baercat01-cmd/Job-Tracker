@@ -1,12 +1,17 @@
 // Offline manager - handles online/offline detection and sync coordination
 
 import { useEffect, useState } from 'react';
+import { getPendingSyncCount } from './offline-db';
 
 export type ConnectionStatus = 'online' | 'offline' | 'syncing';
 
 // Global connection status
 let currentStatus: ConnectionStatus = navigator.onLine ? 'online' : 'offline';
 const listeners = new Set<(status: ConnectionStatus) => void>();
+
+// Pending changes tracking
+let pendingChangesCount = 0;
+const pendingChangesListeners = new Set<(count: number) => void>();
 
 // Connection verification tracking
 let lastConnectionCheck = Date.now();
@@ -142,4 +147,53 @@ export async function checkConnection(): Promise<boolean> {
     updateStatus(online ? 'online' : 'offline');
   }
   return online;
+}
+
+// Pending changes management
+export async function updatePendingChangesCount(): Promise<number> {
+  try {
+    const count = await getPendingSyncCount();
+    pendingChangesCount = count;
+    pendingChangesListeners.forEach((listener) => listener(count));
+    return count;
+  } catch (error) {
+    console.error('[OfflineManager] Failed to get pending changes count:', error);
+    return pendingChangesCount;
+  }
+}
+
+export function getPendingChangesCount(): number {
+  return pendingChangesCount;
+}
+
+export function subscribeToPendingChanges(listener: (count: number) => void): () => void {
+  pendingChangesListeners.add(listener);
+  // Immediately call with current count
+  listener(pendingChangesCount);
+  return () => pendingChangesListeners.delete(listener);
+}
+
+// React hook for pending changes count
+export function usePendingChangesCount(): number {
+  const [count, setCount] = useState<number>(pendingChangesCount);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToPendingChanges(setCount);
+    // Update count on mount
+    updatePendingChangesCount();
+    return unsubscribe;
+  }, []);
+
+  return count;
+}
+
+// Initialize pending changes tracking
+if (typeof window !== 'undefined') {
+  // Update pending changes count periodically (every 30 seconds)
+  setInterval(() => {
+    updatePendingChangesCount();
+  }, 30000);
+
+  // Initial count
+  updatePendingChangesCount();
 }

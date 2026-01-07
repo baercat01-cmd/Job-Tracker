@@ -3,7 +3,7 @@
 
 import { supabase } from './supabase';
 import { put, remove, addToSyncQueue } from './offline-db';
-import { isOnline } from './offline-manager';
+import { isOnline, updatePendingChangesCount } from './offline-manager';
 import { syncTable } from './offline-sync';
 import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
 
@@ -57,6 +57,9 @@ export async function createOffline<T extends { id?: string }>(
       data: offlineData,
       recordId: tempId,
     });
+
+    // Update pending changes count
+    updatePendingChangesCount();
 
     console.log(`[Mutations] ⏱ Queued create for ${tableName} (offline)`);
     return { data: offlineData, error: null };
@@ -132,6 +135,9 @@ export async function updateOffline<T extends { id: string }>(
       recordId: id,
     });
 
+    // Update pending changes count
+    updatePendingChangesCount();
+
     console.log(`[Mutations] ⏱ Queued update for ${tableName}/${id} (offline)`);
     return { data: updatedData, error: null };
   } catch (error) {
@@ -190,6 +196,9 @@ export async function deleteOffline(
       data: null,
       recordId: id,
     });
+
+    // Update pending changes count
+    updatePendingChangesCount();
 
     console.log(`[Mutations] ⏱ Queued delete for ${tableName}/${id} (offline)`);
     return { error: null };

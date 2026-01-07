@@ -1,14 +1,20 @@
-// Sync processor - processes pending sync queue items
+// Sync processor - processes pending sync queue items with delta syncing
 
 import { supabase } from './supabase';
-import { getPendingSyncItems, markSynced, clearSyncedItems, SyncQueueItem } from './offline-db';
-import { isOnline, setStatus } from './offline-manager';
+import { getPendingSyncItems, markSynced, clearSyncedItems, SyncQueueItem, updateSyncMetadata, getSyncMetadata } from './offline-db';
+import { isOnline, setStatus, updatePendingChangesCount } from './offline-manager';
 import { syncTable } from './offline-sync';
 import { resolveAndSync } from './conflict-resolver';
 import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
 
 let isProcessing = false;
 let lastProcessTime = 0;
+
+// Sync interval: 15 minutes (in milliseconds)
+const SYNC_INTERVAL = 15 * 60 * 1000;
+
+// Batch size for delta syncs (process in small batches)
+const SYNC_BATCH_SIZE = 10;
 
 export interface SyncProgress {
   total: number;
@@ -19,17 +25,18 @@ export interface SyncProgress {
 
 type SyncProgressCallback = (progress: SyncProgress) => void;
 
-// Process all pending sync items
+// Process pending sync items in batches (delta sync)
 export async function processSyncQueue(
-  onProgress?: SyncProgressCallback
+  onProgress?: SyncProgressCallback,
+  forceFull: boolean = false
 ): Promise<{ succeeded: number; failed: number }> {
   if (isProcessing) {
-    console.log('[Sync Processor] Already processing, skipping...');
+    console.log('[Delta Sync] Already processing, skipping...');
     return { succeeded: 0, failed: 0 };
   }
 
   if (!isOnline()) {
-    console.log('[Sync Processor] Offline, skipping sync');
+    console.log('[Delta Sync] Offline, skipping sync');
     return { succeeded: 0, failed: 0 };
   }
 
@@ -43,17 +50,21 @@ export async function processSyncQueue(
     const pendingItems = await getPendingSyncItems();
     
     if (pendingItems.length === 0) {
-      console.log('[Sync Processor] No pending items');
+      console.log('[Delta Sync] No pending changes');
       return { succeeded: 0, failed: 0 };
     }
 
-    console.log(`[Sync Processor] Processing ${pendingItems.length} items...`);
+    // Determine batch size
+    const batchSize = forceFull ? pendingItems.length : Math.min(SYNC_BATCH_SIZE, pendingItems.length);
+    const itemsToProcess = pendingItems.slice(0, batchSize);
 
-    for (let i = 0; i < pendingItems.length; i++) {
-      const item = pendingItems[i];
+    console.log(`[Delta Sync] Processing ${itemsToProcess.length} of ${pendingItems.length} pending items (batch mode)`);
+
+    for (let i = 0; i < itemsToProcess.length; i++) {
+      const item = itemsToProcess[i];
       
       onProgress?.({
-        total: pendingItems.length,
+        total: itemsToProcess.length,
         completed: i,
         failed,
         currentItem: `${item.operation} ${item.table}`,
@@ -67,42 +78,45 @@ export async function processSyncQueue(
           { maxRetries: 3 }
         );
         
-        // Mark as synced on main thread to avoid UI blocking
+        // Mark as synced
         if (item.id) {
-          requestAnimationFrame(async () => {
-            await markSynced(item.id!);
-          });
+          await markSynced(item.id);
         }
         
         succeeded++;
-        console.log(`[Sync Processor] ✓ Synced ${item.operation} ${item.table}/${item.recordId}`);
+        console.log(`[Delta Sync] ✓ Synced ${item.operation} ${item.table}/${item.recordId}`);
       } catch (error: any) {
         failed++;
         const httpStatus = extractHttpStatus(error);
         logError(`Sync ${item.operation} ${item.table}/${item.recordId}`, error, httpStatus);
-        console.error(`[Sync Processor] ✗ Failed to sync ${item.operation} ${item.table}/${item.recordId}:`, error);
+        console.error(`[Delta Sync] ✗ Failed to sync ${item.operation} ${item.table}/${item.recordId}:`, error);
       }
 
-      // Add small delay to avoid overwhelming the server
+      // Small delay to avoid overwhelming the server
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     // Clean up synced items
     await clearSyncedItems();
 
-    console.log(`[Sync Processor] Complete: ${succeeded} succeeded, ${failed} failed`);
+    // Update metadata for synced tables
+    const syncedTables = new Set(itemsToProcess.map(item => item.table));
+    for (const table of syncedTables) {
+      await updateSyncMetadata(table, succeeded);
+    }
+
+    console.log(`[Delta Sync] Complete: ${succeeded} succeeded, ${failed} failed, ${pendingItems.length - itemsToProcess.length} remaining`);
     lastProcessTime = Date.now();
 
-    // Show summary toast on main thread
-    if (succeeded > 0 || failed > 0) {
+    // Update pending changes count
+    await updatePendingChangesCount();
+
+    // Only show toast if there were failures (quiet success)
+    if (failed > 0) {
       requestAnimationFrame(() => {
-        if (failed === 0) {
-          // All succeeded - no toast needed, quiet success
-        } else if (succeeded === 0) {
-          // All failed
+        if (succeeded === 0) {
           showErrorToast(new Error('Sync failed'), 'Sync');
         } else {
-          // Mixed results
           showErrorToast(new Error(`${failed} items failed to sync`), 'Partial sync');
         }
       });
@@ -193,41 +207,72 @@ async function syncDelete(table: string, recordId: string): Promise<void> {
   console.log(`[Sync Processor] ✓ Deleted ${table}/${recordId}`);
 }
 
-// Auto-sync when coming online with background retry
+// Auto-sync with 15-minute interval (delta syncs)
 export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
+  let intervalId: NodeJS.Timeout | null = null;
   let retryTimeout: NodeJS.Timeout | null = null;
 
-  const handler = async () => {
-    console.log('[Sync Processor] Device came online, starting auto-sync...');
+  // Sync on coming online
+  const onlineHandler = async () => {
+    console.log('[Delta Sync] Device came online, starting sync...');
     
-    // Wait a bit to ensure connection is stable
+    // Wait to ensure connection is stable
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     if (isOnline()) {
       try {
         const result = await processSyncQueue(onProgress);
         
-        // If some items failed, retry after delay
+        // If items failed, retry after delay
         if (result.failed > 0) {
-          console.log(`[Sync Processor] ${result.failed} items failed, will retry in 30s`);
+          console.log(`[Delta Sync] ${result.failed} items failed, will retry in 30s`);
           retryTimeout = setTimeout(async () => {
             if (isOnline()) {
-              console.log('[Sync Processor] Retrying failed items...');
+              console.log('[Delta Sync] Retrying failed items...');
               await processSyncQueue(onProgress);
             }
-          }, 30000); // Retry after 30 seconds
+          }, 30000);
         }
       } catch (error) {
-        console.error('[Sync Processor] Auto-sync error:', error);
+        console.error('[Delta Sync] Auto-sync error:', error);
       }
     }
   };
 
-  window.addEventListener('online', handler);
+  // Periodic delta sync every 15 minutes
+  const startPeriodicSync = () => {
+    intervalId = setInterval(async () => {
+      if (isOnline() && !isProcessing) {
+        const pendingCount = await updatePendingChangesCount();
+        if (pendingCount > 0) {
+          console.log(`[Delta Sync] Periodic sync: ${pendingCount} pending changes`);
+          await processSyncQueue(onProgress);
+        }
+      }
+    }, SYNC_INTERVAL);
+  };
+
+  window.addEventListener('online', onlineHandler);
+  startPeriodicSync();
+
+  // Initial sync if online
+  if (isOnline()) {
+    setTimeout(() => {
+      updatePendingChangesCount().then(count => {
+        if (count > 0) {
+          console.log(`[Delta Sync] Initial sync: ${count} pending changes`);
+          processSyncQueue(onProgress);
+        }
+      });
+    }, 2000); // Delay initial sync by 2 seconds
+  }
 
   // Return cleanup function
   return () => {
-    window.removeEventListener('online', handler);
+    window.removeEventListener('online', onlineHandler);
+    if (intervalId) {
+      clearInterval(intervalId);
+    }
     if (retryTimeout) {
       clearTimeout(retryTimeout);
     }
@@ -239,5 +284,13 @@ export function getSyncStatus() {
   return {
     isProcessing,
     lastProcessTime: lastProcessTime > 0 ? new Date(lastProcessTime) : null,
+    nextSyncTime: lastProcessTime > 0 ? new Date(lastProcessTime + SYNC_INTERVAL) : null,
   };
+}
+
+// Manual sync trigger (for "Sync Now" button)
+export async function triggerManualSync(onProgress?: SyncProgressCallback): Promise<{ succeeded: number; failed: number }> {
+  console.log('[Delta Sync] Manual sync triggered');
+  // Force full sync of all pending items
+  return await processSyncQueue(onProgress, true);
 }
