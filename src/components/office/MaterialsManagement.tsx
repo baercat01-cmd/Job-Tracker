@@ -489,6 +489,26 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  async function handleQuickStatusChange(materialId: string, newStatusValue: string) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          status: newStatusValue, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+
+      toast.success(`Status updated to ${getStatusLabel(newStatusValue)}`);
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error updating status:', error);
+      toast.error('Failed to update status');
+    }
+  }
+
   function handleStatusChange(material: Material, newStatusValue: string) {
     setStatusChangeMaterial(material);
     setNewStatus(newStatusValue);
@@ -1845,7 +1865,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <div className="flex justify-center">
                                   <Select
                                     value={material.status}
-                                    onValueChange={(newStatus) => handleStatusChange(material, newStatus)}
+                                    onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
                                   >
                                     <SelectTrigger className={`w-[140px] font-medium border-2 ${getStatusColor(material.status)}`}>
                                       <SelectValue />
