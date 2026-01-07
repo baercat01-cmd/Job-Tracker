@@ -141,6 +141,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('delivery');
   const [pickupBy, setPickupBy] = useState('');
   const [pickupDate, setPickupDate] = useState('');
+  const [deliveryVendor, setDeliveryVendor] = useState('');
+  const [pickupVendor, setPickupVendor] = useState('');
+  const [hasDeliveryMethod, setHasDeliveryMethod] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   
   // Bulk status change
@@ -490,28 +493,24 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setStatusChangeMaterial(material);
     setNewStatus(newStatusValue);
     
-    // Pre-populate existing dates
+    // Pre-populate existing data
     setOrderByDate(material.order_by_date || '');
     setPullByDate(material.pull_by_date || '');
     setDeliveryDate(material.delivery_date || '');
     setActualDeliveryDate(material.actual_delivery_date || '');
     setPickupDate(material.pickup_date || '');
     setPickupBy(material.pickup_by || '');
-    setDeliveryMethod(material.delivery_method || 'delivery');
+    setDeliveryVendor((material as any).delivery_vendor || '');
+    setPickupVendor((material as any).pickup_vendor || '');
     setDateNotes('');
     
-    // Set default dates based on status
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-    
-    if (newStatusValue === 'ordered' && !material.order_by_date) {
-      setOrderByDate(tomorrowStr);
-      setDeliveryDate(tomorrowStr);
-    } else if (newStatusValue === 'at_shop' && !material.pull_by_date) {
-      setPullByDate(tomorrowStr);
-    } else if (newStatusValue === 'at_job' && !material.actual_delivery_date) {
-      setActualDeliveryDate(new Date().toISOString().split('T')[0]);
+    // Set delivery method if exists
+    if (material.delivery_method) {
+      setDeliveryMethod(material.delivery_method);
+      setHasDeliveryMethod(true);
+    } else {
+      setDeliveryMethod('delivery');
+      setHasDeliveryMethod(false);
     }
     
     setShowStatusDialog(true);
@@ -520,8 +519,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function confirmStatusChange() {
     if (!statusChangeMaterial) return;
 
-    // Validate pickup/delivery dates
-    if (newStatus === 'ordered') {
+    // Validate only if delivery method is selected
+    if (newStatus === 'ordered' && hasDeliveryMethod) {
       if (deliveryMethod === 'pickup') {
         if (!pickupBy) {
           toast.error('Please assign a user for pickup');
@@ -550,16 +549,30 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       if (newStatus === 'ordered') {
         if (orderByDate) updateData.order_by_date = orderByDate;
         
-        updateData.delivery_method = deliveryMethod;
-        
-        if (deliveryMethod === 'delivery') {
-          if (deliveryDate) updateData.delivery_date = deliveryDate;
+        if (hasDeliveryMethod) {
+          updateData.delivery_method = deliveryMethod;
+          
+          if (deliveryMethod === 'delivery') {
+            if (deliveryDate) updateData.delivery_date = deliveryDate;
+            if (deliveryVendor) updateData.delivery_vendor = deliveryVendor;
+            updateData.pickup_by = null;
+            updateData.pickup_date = null;
+            updateData.pickup_vendor = null;
+          } else if (deliveryMethod === 'pickup') {
+            updateData.pickup_by = pickupBy;
+            if (pickupDate) updateData.pickup_date = pickupDate;
+            if (pickupVendor) updateData.pickup_vendor = pickupVendor;
+            updateData.delivery_date = null;
+            updateData.delivery_vendor = null;
+          }
+        } else {
+          // Clear delivery method fields if not selected
+          updateData.delivery_method = null;
+          updateData.delivery_date = null;
+          updateData.delivery_vendor = null;
           updateData.pickup_by = null;
           updateData.pickup_date = null;
-        } else if (deliveryMethod === 'pickup') {
-          updateData.pickup_by = pickupBy;
-          if (pickupDate) updateData.pickup_date = pickupDate;
-          updateData.delivery_date = null;
+          updateData.pickup_vendor = null;
         }
         
         updateData.ordered_by = userId;
@@ -586,8 +599,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
 
+      // Create calendar event for order-by date
+      if (newStatus === 'ordered' && orderByDate) {
+        await supabase
+          .from('calendar_events')
+          .insert({
+            job_id: job.id,
+            title: `Order Material: ${statusChangeMaterial.name}`,
+            description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            event_date: orderByDate,
+            event_type: 'material_order_reminder',
+            all_day: true,
+            created_by: userId,
+          });
+      }
+
       // Create notification and calendar event for pickup assignment
-      if (deliveryMethod === 'pickup' && newStatus === 'ordered' && pickupBy) {
+      if (hasDeliveryMethod && deliveryMethod === 'pickup' && newStatus === 'ordered' && pickupBy) {
         const assignedUser = users.find(u => u.id === pickupBy);
         const materialName = statusChangeMaterial.name;
         const pickupDateStr = pickupDate 
@@ -616,12 +644,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
         // Create calendar event for pickup
         if (pickupDate) {
+          const pickupDesc = [
+            `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}`,
+            `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            `Assigned to: ${assignedUser?.username || assignedUser?.email}`,
+          ];
+          if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
+          
           await supabase
             .from('calendar_events')
             .insert({
               job_id: job.id,
               title: `Material Pickup: ${materialName}`,
-              description: `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}\n\nAssigned to: ${assignedUser?.username || assignedUser?.email}`,
+              description: pickupDesc.join('\n\n'),
               event_date: pickupDate,
               event_type: 'material_pickup',
               all_day: true,
@@ -631,15 +666,36 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       }
 
       // Create calendar event for delivery
-      if (deliveryMethod === 'delivery' && newStatus === 'ordered' && deliveryDate) {
+      if (hasDeliveryMethod && deliveryMethod === 'delivery' && newStatus === 'ordered' && deliveryDate) {
+        const deliveryDesc = [
+          `Delivery of ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}`,
+          `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
+        ];
+        if (deliveryVendor) deliveryDesc.push(`Vendor: ${deliveryVendor}`);
+        
         await supabase
           .from('calendar_events')
           .insert({
             job_id: job.id,
             title: `Material Delivery: ${statusChangeMaterial.name}`,
-            description: `Delivery of ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            description: deliveryDesc.join('\n\n'),
             event_date: deliveryDate,
             event_type: 'material_delivery',
+            all_day: true,
+            created_by: userId,
+          });
+      }
+
+      // Create calendar event for pull-by date
+      if (newStatus === 'at_shop' && pullByDate) {
+        await supabase
+          .from('calendar_events')
+          .insert({
+            job_id: job.id,
+            title: `Pull Material: ${statusChangeMaterial.name}`,
+            description: `Pull ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name} from shop\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            event_date: pullByDate,
+            event_type: 'material_pull',
             all_day: true,
             created_by: userId,
           });
@@ -1316,10 +1372,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
             {/* Date inputs based on status */}
             {newStatus === 'ordered' && (
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="order-by-date" className="flex items-center gap-2">
-                    📋 Order By Date (Optional)
+              <div className="space-y-4">
+                {/* Order By Date - Optional Reminder */}
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                    <Calendar className="w-4 h-4" />
+                    Order By Date (Optional)
                   </Label>
                   <Input
                     id="order-by-date"
@@ -1329,102 +1387,156 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     min={new Date().toISOString().split('T')[0]}
                     className="h-10"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Deadline to place this order (separate from delivery/pickup date)</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Creates a calendar reminder to order this material. Leave blank if not needed.
+                  </p>
                 </div>
 
-                {/* Delivery Method Selection */}
-                <div>
-                  <Label className="flex items-center gap-2 mb-2">
-                    🚚 Delivery Method
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      type="button"
-                      variant={deliveryMethod === 'delivery' ? 'default' : 'outline'}
-                      onClick={() => setDeliveryMethod('delivery')}
-                      className="h-12"
-                    >
-                      <Truck className="w-4 h-4 mr-2" />
-                      Delivery
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={deliveryMethod === 'pickup' ? 'default' : 'outline'}
-                      onClick={() => setDeliveryMethod('pickup')}
-                      className="h-12"
-                    >
-                      <User className="w-4 h-4 mr-2" />
-                      Pickup
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Delivery-specific fields */}
-                {deliveryMethod === 'delivery' && (
-                  <div>
-                    <Label htmlFor="delivery-date" className="flex items-center gap-2">
-                      <Truck className="w-4 h-4" />
-                      Expected Delivery Date *
+                {/* Delivery/Pickup Section - Optional */}
+                <div className="border-2 rounded-lg p-4 bg-background">
+                  <div className="flex items-center justify-between mb-3">
+                    <Label className="text-base font-semibold">
+                      Delivery/Pickup Information (Optional)
                     </Label>
-                    <Input
-                      id="delivery-date"
-                      type="date"
-                      value={deliveryDate}
-                      onChange={(e) => setDeliveryDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="h-10"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">When material will be delivered to job site (will be added to calendar)</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setHasDeliveryMethod(!hasDeliveryMethod)}
+                      className="h-8"
+                    >
+                      {hasDeliveryMethod ? 'Remove' : 'Add'}
+                    </Button>
                   </div>
-                )}
 
-                {/* Pickup-specific fields */}
-                {deliveryMethod === 'pickup' && (
-                  <>
-                    <div>
-                      <Label htmlFor="pickup-by" className="flex items-center gap-2">
-                        <User className="w-4 h-4" />
-                        Assign Pickup To *
-                      </Label>
-                      <Select value={pickupBy} onValueChange={setPickupBy}>
-                        <SelectTrigger id="pickup-by" className="h-10">
-                          <SelectValue placeholder="Select user for pickup" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {users.map((user) => (
-                            <SelectItem key={user.id} value={user.id}>
-                              {user.username || user.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        This user will receive a notification and can update status when done
-                      </p>
+                  {hasDeliveryMethod && (
+                    <div className="space-y-3">
+                      {/* Method Selection */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={deliveryMethod === 'delivery' ? 'default' : 'outline'}
+                          onClick={() => setDeliveryMethod('delivery')}
+                          className="h-12"
+                        >
+                          <Truck className="w-4 h-4 mr-2" />
+                          Delivery
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={deliveryMethod === 'pickup' ? 'default' : 'outline'}
+                          onClick={() => setDeliveryMethod('pickup')}
+                          className="h-12"
+                        >
+                          <User className="w-4 h-4 mr-2" />
+                          Pickup
+                        </Button>
+                      </div>
+
+                      {/* Delivery-specific fields */}
+                      {deliveryMethod === 'delivery' && (
+                        <>
+                          <div>
+                            <Label htmlFor="delivery-date">
+                              Delivery Date *
+                            </Label>
+                            <Input
+                              id="delivery-date"
+                              type="date"
+                              value={deliveryDate}
+                              onChange={(e) => setDeliveryDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="h-10"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Will be added to calendar
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="delivery-vendor">
+                              Delivering To (Vendor)
+                            </Label>
+                            <Input
+                              id="delivery-vendor"
+                              value={deliveryVendor}
+                              onChange={(e) => setDeliveryVendor(e.target.value)}
+                              placeholder="e.g., ABC Supply, Job Site"
+                              className="h-10"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Pickup-specific fields */}
+                      {deliveryMethod === 'pickup' && (
+                        <>
+                          <div>
+                            <Label htmlFor="pickup-by">
+                              Assign Pickup To *
+                            </Label>
+                            <Select value={pickupBy} onValueChange={setPickupBy}>
+                              <SelectTrigger id="pickup-by" className="h-10">
+                                <SelectValue placeholder="Select user" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {users.map((user) => (
+                                  <SelectItem key={user.id} value={user.id}>
+                                    {user.username || user.email}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              User will receive notification
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="pickup-vendor">
+                              Picking Up From (Vendor)
+                            </Label>
+                            <Input
+                              id="pickup-vendor"
+                              value={pickupVendor}
+                              onChange={(e) => setPickupVendor(e.target.value)}
+                              placeholder="e.g., ABC Supply, Shop"
+                              className="h-10"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="pickup-date">
+                              Pickup Date *
+                            </Label>
+                            <Input
+                              id="pickup-date"
+                              type="date"
+                              value={pickupDate}
+                              onChange={(e) => setPickupDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="h-10"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Will be added to calendar
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div>
-                      <Label htmlFor="pickup-date" className="flex items-center gap-2">
-                        📅 Pickup Date *
-                      </Label>
-                      <Input
-                        id="pickup-date"
-                        type="date"
-                        value={pickupDate}
-                        onChange={(e) => setPickupDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">When this material should be picked up (will be added to calendar)</p>
-                    </div>
-                  </>
-                )}
+                  )}
+
+                  {!hasDeliveryMethod && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Click "Add" to include delivery/pickup information
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
             {newStatus === 'at_shop' && (
-              <div>
-                <Label htmlFor="pull-by-date" className="flex items-center gap-2">
-                  🏪 Pull By Date
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <Label htmlFor="pull-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                  <Calendar className="w-4 h-4" />
+                  Pull By Date (Optional)
                 </Label>
                 <Input
                   id="pull-by-date"
@@ -1434,14 +1546,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   min={new Date().toISOString().split('T')[0]}
                   className="h-10"
                 />
-                <p className="text-xs text-muted-foreground mt-1">When to pull this material from shop</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Creates a calendar reminder to pull this material from shop. Leave blank if not needed.
+                </p>
               </div>
             )}
 
             {newStatus === 'at_job' && (
-              <div>
-                <Label htmlFor="actual-delivery-date" className="flex items-center gap-2">
-                  ✅ Actual Delivery Date
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <Label htmlFor="actual-delivery-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                  <Calendar className="w-4 h-4" />
+                  Actual Arrival Date (Optional)
                 </Label>
                 <Input
                   id="actual-delivery-date"
@@ -1451,7 +1566,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   max={new Date().toISOString().split('T')[0]}
                   className="h-10"
                 />
-                <p className="text-xs text-muted-foreground mt-1">When material arrived at job site</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  When material actually arrived at job site. Leave blank if not needed.
+                </p>
               </div>
             )}
 
