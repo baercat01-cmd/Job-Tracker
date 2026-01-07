@@ -61,6 +61,8 @@ export interface Job {
   job_number?: string; // Legacy field, will be removed
   estimated_hours?: number;
   is_internal?: boolean; // For internal jobs like Shop that don't show as cards
+  projected_start_date?: string | null; // When job becomes visible to field crew
+  projected_end_date?: string | null; // Projected completion date
 }
 
 export interface JobAssignment {

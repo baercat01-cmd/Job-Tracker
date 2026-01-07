@@ -31,6 +31,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     description: '',
     notes: '',
     status: 'quoting' as 'quoting' | 'active',
+    projected_start_date: '',
+    projected_end_date: '',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -57,6 +59,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           documents: [], // Empty array for custom folders
           components: [], // Empty array for job components
           status: formData.status,
+          projected_start_date: formData.projected_start_date || null,
+          projected_end_date: formData.projected_end_date || null,
           created_by: profile.id,
         })
         .select()
@@ -77,6 +81,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         description: '',
         notes: '',
         status: 'quoting',
+        projected_start_date: '',
+        projected_end_date: '',
       });
       
       // Close dialog and refresh
@@ -100,6 +106,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         description: '',
         notes: '',
         status: 'quoting',
+        projected_start_date: '',
+        projected_end_date: '',
       });
     }
   }
@@ -147,6 +155,36 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
                 required
                 disabled={loading}
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="start-date">Projected Start Date</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={formData.projected_start_date}
+                onChange={(e) => setFormData({ ...formData, projected_start_date: e.target.value })}
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Job appears in field view on this date
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">Projected End Date</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={formData.projected_end_date}
+                onChange={(e) => setFormData({ ...formData, projected_end_date: e.target.value })}
+                disabled={loading}
+                min={formData.projected_start_date || undefined}
+              />
+              <p className="text-xs text-muted-foreground">
+                Estimated completion date
+              </p>
             </div>
           </div>
 

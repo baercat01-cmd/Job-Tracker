@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -213,12 +213,25 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
             .filter((job) => !job.is_internal) // Exclude internal jobs like Shop from job cards
             .map((job) => {
             const jobStats = stats[job.id] || {};
+            
+            // Calculate scheduling status
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const startDate = job.projected_start_date ? new Date(job.projected_start_date + 'T00:00:00') : null;
+            const endDate = job.projected_end_date ? new Date(job.projected_end_date + 'T00:00:00') : null;
+            
+            const isNotStarted = startDate && startDate > today;
+            const isInProgress = startDate && startDate <= today && (!endDate || endDate >= today);
+            const isOverdue = endDate && endDate < today && job.status !== 'completed';
+            
             return (
               <Card
                 id={`job-${job.id}`}
                 key={job.id}
                 className={`hover:shadow-md transition-all ${
                   selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
+                } ${
+                  isOverdue ? 'border-destructive border-2' : ''
                 }`}
               >
                 <CardHeader>
@@ -228,6 +241,34 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                       <p className="text-sm font-medium text-muted-foreground mt-1">
                         {job.client_name}
                       </p>
+                      {/* Scheduling Status Badges */}
+                      {(startDate || endDate) && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {isNotStarted && (
+                            <Badge variant="secondary" className="text-xs">
+                              <Calendar className="w-3 h-3 mr-1" />
+                              Starts {startDate?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </Badge>
+                          )}
+                          {isInProgress && startDate && (
+                            <Badge variant="default" className="text-xs">
+                              <Calendar className="w-3 h-3 mr-1" />
+                              In Progress
+                            </Badge>
+                          )}
+                          {isOverdue && (
+                            <Badge variant="destructive" className="text-xs">
+                              <AlertTriangle className="w-3 h-3 mr-1" />
+                              Overdue
+                            </Badge>
+                          )}
+                          {endDate && !isOverdue && (
+                            <Badge variant="outline" className="text-xs">
+                              Due {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <Badge variant={
@@ -451,6 +492,36 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                     <div className="md:col-span-4">
                       <Label className="text-xs text-muted-foreground">Notes</Label>
                       <p className="text-sm">{selectedJob.notes}</p>
+                    </div>
+                  )}
+                  {(selectedJob.projected_start_date || selectedJob.projected_end_date) && (
+                    <div className="md:col-span-4 grid md:grid-cols-2 gap-3 pt-2 border-t">
+                      {selectedJob.projected_start_date && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Projected Start</Label>
+                          <p className="text-sm font-medium flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(selectedJob.projected_start_date + 'T00:00:00').toLocaleDateString('en-US', {
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </p>
+                        </div>
+                      )}
+                      {selectedJob.projected_end_date && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Projected End</Label>
+                          <p className="text-sm font-medium flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(selectedJob.projected_end_date + 'T00:00:00').toLocaleDateString('en-US', {
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

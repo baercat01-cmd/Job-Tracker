@@ -35,6 +35,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
     status: 'active',
     job_number: '',
     estimated_hours: '',
+    projected_start_date: '',
+    projected_end_date: '',
   });
 
   useEffect(() => {
@@ -48,6 +50,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
         status: job.status || 'active',
         job_number: job.job_number || '',
         estimated_hours: job.estimated_hours?.toString() || '',
+        projected_start_date: job.projected_start_date || '',
+        projected_end_date: job.projected_end_date || '',
       });
     }
   }, [job]);
@@ -81,6 +85,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
           status: formData.status,
           job_number: formData.job_number.trim() || null,
           estimated_hours: estimatedHours,
+          projected_start_date: formData.projected_start_date || null,
+          projected_end_date: formData.projected_end_date || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', job.id);
@@ -166,6 +172,36 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
             <p className="text-xs text-muted-foreground">
               Set the total estimated hours to track project progress
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-start-date">Projected Start Date</Label>
+              <Input
+                id="edit-start-date"
+                type="date"
+                value={formData.projected_start_date}
+                onChange={(e) => setFormData({ ...formData, projected_start_date: e.target.value })}
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Job appears in field view on this date
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-end-date">Projected End Date</Label>
+              <Input
+                id="edit-end-date"
+                type="date"
+                value={formData.projected_end_date}
+                onChange={(e) => setFormData({ ...formData, projected_end_date: e.target.value })}
+                disabled={loading}
+                min={formData.projected_start_date || undefined}
+              />
+              <p className="text-xs text-muted-foreground">
+                Estimated completion date
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">

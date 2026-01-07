@@ -32,11 +32,17 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar }: JobSelec
 
   async function loadJobs() {
     try {
+      // Get today's date in YYYY-MM-DD format (local timezone)
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
       // Only show active jobs to crew members
+      // If projected_start_date is set, only show jobs on or after that date
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active')
+        .or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`)
         .order('created_at', { ascending: false });
 
       if (jobsError) throw jobsError;
