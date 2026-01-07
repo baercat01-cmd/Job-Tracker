@@ -5,6 +5,7 @@ import { getPendingSyncItems, markSynced, clearSyncedItems, SyncQueueItem } from
 import { isOnline, setStatus } from './offline-manager';
 import { syncTable } from './offline-sync';
 import { resolveAndSync } from './conflict-resolver';
+import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
 
 let isProcessing = false;
 let lastProcessTime = 0;
@@ -59,16 +60,26 @@ export async function processSyncQueue(
       });
 
       try {
-        await processSyncItem(item);
+        // Process item with retry logic
+        await withRetry(
+          async () => await processSyncItem(item),
+          `Sync ${item.operation} ${item.table}/${item.recordId}`,
+          { maxRetries: 3 }
+        );
         
+        // Mark as synced on main thread to avoid UI blocking
         if (item.id) {
-          await markSynced(item.id);
+          requestAnimationFrame(async () => {
+            await markSynced(item.id!);
+          });
         }
         
         succeeded++;
         console.log(`[Sync Processor] ✓ Synced ${item.operation} ${item.table}/${item.recordId}`);
-      } catch (error) {
+      } catch (error: any) {
         failed++;
+        const httpStatus = extractHttpStatus(error);
+        logError(`Sync ${item.operation} ${item.table}/${item.recordId}`, error, httpStatus);
         console.error(`[Sync Processor] ✗ Failed to sync ${item.operation} ${item.table}/${item.recordId}:`, error);
       }
 
@@ -81,6 +92,21 @@ export async function processSyncQueue(
 
     console.log(`[Sync Processor] Complete: ${succeeded} succeeded, ${failed} failed`);
     lastProcessTime = Date.now();
+
+    // Show summary toast on main thread
+    if (succeeded > 0 || failed > 0) {
+      requestAnimationFrame(() => {
+        if (failed === 0) {
+          // All succeeded - no toast needed, quiet success
+        } else if (succeeded === 0) {
+          // All failed
+          showErrorToast(new Error('Sync failed'), 'Sync');
+        } else {
+          // Mixed results
+          showErrorToast(new Error(`${failed} items failed to sync`), 'Partial sync');
+        }
+      });
+    }
 
     return { succeeded, failed };
   } finally {

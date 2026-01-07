@@ -4,6 +4,10 @@ import App from './App.tsx';
 import './index.css';
 import { initDB } from './lib/offline-db';
 
+// Initialize error handling and stress testing
+import './lib/error-handler';
+import './lib/stress-test';
+
 console.log('🚀 FieldTrack Pro v2.0.4 - Starting...');
 console.log('📱 Offline support enabled');
 

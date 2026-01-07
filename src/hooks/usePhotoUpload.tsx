@@ -10,6 +10,8 @@ import {
   enableAutoPhotoUpload,
 } from '@/lib/photo-queue';
 import { useConnectionStatus } from '@/lib/offline-manager';
+import { uploadPhotoChunked, needsChunking } from '@/lib/chunked-upload';
+import { withRetry, logError, showErrorToast } from '@/lib/error-handler';
 
 export interface UploadProgress {
   photoId: string;
@@ -70,6 +72,41 @@ export function usePhotoUpload() {
     }
   ): Promise<string | null> => {
     try {
+      // Check if file needs chunking
+      const useChunking = needsChunking(file);
+      
+      if (useChunking) {
+        console.log(`[Photo Upload] Large file detected (${file.size} bytes), using chunked upload`);
+        
+        // Use chunked upload for large files
+        const uploadResult = await withRetry(
+          async () => {
+            return await uploadPhotoChunked(
+              file,
+              {
+                jobId: metadata.jobId,
+                uploadedBy: metadata.uploadedBy,
+              },
+              (progress) => {
+                // Update progress on main thread
+                requestAnimationFrame(() => {
+                  setUploadProgress((prev) => ({
+                    ...prev,
+                    [file.name]: progress.percentage,
+                  }));
+                });
+              }
+            );
+          },
+          `Upload photo ${file.name}`,
+          { maxRetries: 3 }
+        );
+        
+        toast.success('Photo uploaded successfully');
+        return uploadResult.path;
+      }
+      
+      // Standard queue for smaller files
       const photoId = await queuePhoto(file, metadata);
 
       toast.success(
@@ -84,9 +121,10 @@ export function usePhotoUpload() {
       }
 
       return photoId;
-    } catch (error) {
+    } catch (error: any) {
+      logError('Upload Photo', error);
       console.error('[Photo Upload] Error queueing photo:', error);
-      toast.error('Failed to queue photo');
+      showErrorToast(error, 'Photo upload');
       return null;
     }
   };
@@ -113,20 +151,33 @@ export function usePhotoUpload() {
     setIsUploading(true);
 
     try {
-      await processPhotoQueue((id, progress) => {
-        setUploadProgress((prev) => ({ ...prev, [id]: progress }));
-      });
+      await withRetry(
+        async () => {
+          await processPhotoQueue((id, progress) => {
+            // Update progress on main thread
+            requestAnimationFrame(() => {
+              setUploadProgress((prev) => ({ ...prev, [id]: progress }));
+            });
+          });
+        },
+        'Process photo queue',
+        { maxRetries: 2 }
+      );
 
-      setQueueStatus(getPhotoQueueStatus());
+      // Update queue status on main thread
+      requestAnimationFrame(() => {
+        setQueueStatus(getPhotoQueueStatus());
+      });
       
       if (queueStatus.failed === 0) {
-        toast.success('All photos uploaded successfully');
+        // Quiet success - no toast
       } else {
         toast.warning(`${queueStatus.failed} photo(s) failed to upload`);
       }
-    } catch (error) {
+    } catch (error: any) {
+      logError('Process photo queue', error);
       console.error('[Photo Upload] Queue processing failed:', error);
-      toast.error('Failed to upload photos');
+      showErrorToast(error, 'Photo upload');
     } finally {
       setIsUploading(false);
       setUploadProgress({});
@@ -140,15 +191,29 @@ export function usePhotoUpload() {
     toast.info('Retrying failed uploads...');
 
     try {
-      await retryFailedPhotos((id, progress) => {
-        setUploadProgress((prev) => ({ ...prev, [id]: progress }));
-      });
+      await withRetry(
+        async () => {
+          await retryFailedPhotos((id, progress) => {
+            // Update progress on main thread
+            requestAnimationFrame(() => {
+              setUploadProgress((prev) => ({ ...prev, [id]: progress }));
+            });
+          });
+        },
+        'Retry failed photos',
+        { maxRetries: 1 } // Only retry once for manual retry
+      );
 
-      setQueueStatus(getPhotoQueueStatus());
+      // Update queue status on main thread
+      requestAnimationFrame(() => {
+        setQueueStatus(getPhotoQueueStatus());
+      });
+      
       toast.success('Retry complete');
-    } catch (error) {
+    } catch (error: any) {
+      logError('Retry failed photos', error);
       console.error('[Photo Upload] Retry failed:', error);
-      toast.error('Failed to retry uploads');
+      showErrorToast(error, 'Photo retry');
     } finally {
       setIsUploading(false);
       setUploadProgress({});

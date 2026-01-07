@@ -5,6 +5,7 @@ import { supabase } from './supabase';
 import { put, remove, addToSyncQueue } from './offline-db';
 import { isOnline } from './offline-manager';
 import { syncTable } from './offline-sync';
+import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
 
 // Generic create operation with offline support
 export async function createOffline<T extends { id?: string }>(
@@ -12,23 +13,34 @@ export async function createOffline<T extends { id?: string }>(
   data: T
 ): Promise<{ data: T | null; error: any }> {
   try {
-    // If online, try to create on server first
+    // If online, try to create on server first with retry logic
     if (isOnline()) {
-      const { data: serverData, error } = await supabase
-        .from(tableName)
-        .insert(data)
-        .select()
-        .single();
+      try {
+        const result = await withRetry(
+          async () => {
+            const { data: serverData, error } = await supabase
+              .from(tableName)
+              .insert(data)
+              .select()
+              .single();
 
-      if (!error && serverData) {
+            if (error) throw error;
+            return serverData;
+          },
+          `Create ${tableName}`,
+          { maxRetries: 2 } // Fewer retries for creates to fail fast
+        );
+
         // Store in local cache
-        await put(tableName, serverData);
+        await put(tableName, result);
         console.log(`[Mutations] ✓ Created ${tableName} online`);
-        return { data: serverData as T, error: null };
+        return { data: result as T, error: null };
+      } catch (error: any) {
+        // Log error and fall through to offline mode
+        const httpStatus = extractHttpStatus(error);
+        logError(`Create ${tableName}`, error, httpStatus);
+        console.warn(`[Mutations] Server create failed, queueing for ${tableName}:`, error);
       }
-
-      // If server error, fall through to offline mode
-      console.warn(`[Mutations] Server create failed, queueing for ${tableName}:`, error);
     }
 
     // Offline or server failed - generate temporary ID and queue
@@ -61,23 +73,41 @@ export async function updateOffline<T extends { id: string }>(
   updates: Partial<T>
 ): Promise<{ data: T | null; error: any }> {
   try {
-    // If online, try to update on server first
+    // If online, try to update on server first with retry logic
     if (isOnline()) {
-      const { data: serverData, error } = await supabase
-        .from(tableName)
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+      try {
+        const result = await withRetry(
+          async () => {
+            const { data: serverData, error } = await supabase
+              .from(tableName)
+              .update(updates)
+              .eq('id', id)
+              .select()
+              .single();
 
-      if (!error && serverData) {
-        // Update local cache
-        await put(tableName, serverData);
+            if (error) throw error;
+            return serverData;
+          },
+          `Update ${tableName}/${id}`,
+          { maxRetries: 3 }
+        );
+
+        // Update local cache on main thread
+        requestAnimationFrame(async () => {
+          await put(tableName, result);
+        });
+        
         console.log(`[Mutations] ✓ Updated ${tableName}/${id} online`);
-        return { data: serverData as T, error: null };
+        return { data: result as T, error: null };
+      } catch (error: any) {
+        // Log error and fall through to offline mode
+        const httpStatus = extractHttpStatus(error);
+        logError(`Update ${tableName}/${id}`, error, httpStatus);
+        console.warn(`[Mutations] Server update failed for ${tableName}/${id}:`, error);
+        
+        // Show user-friendly error message
+        showErrorToast(error, `Update ${tableName}`);
       }
-
-      console.warn(`[Mutations] Server update failed for ${tableName}/${id}:`, error);
     }
 
     // Offline or server failed - update locally and queue
@@ -116,21 +146,38 @@ export async function deleteOffline(
   id: string
 ): Promise<{ error: any }> {
   try {
-    // If online, try to delete on server first
+    // If online, try to delete on server first with retry logic
     if (isOnline()) {
-      const { error } = await supabase
-        .from(tableName)
-        .delete()
-        .eq('id', id);
+      try {
+        await withRetry(
+          async () => {
+            const { error } = await supabase
+              .from(tableName)
+              .delete()
+              .eq('id', id);
 
-      if (!error) {
-        // Remove from local cache
-        await remove(tableName, id);
+            if (error) throw error;
+          },
+          `Delete ${tableName}/${id}`,
+          { maxRetries: 2 }
+        );
+
+        // Remove from local cache on main thread
+        requestAnimationFrame(async () => {
+          await remove(tableName, id);
+        });
+        
         console.log(`[Mutations] ✓ Deleted ${tableName}/${id} online`);
         return { error: null };
+      } catch (error: any) {
+        // Log error and fall through to offline mode
+        const httpStatus = extractHttpStatus(error);
+        logError(`Delete ${tableName}/${id}`, error, httpStatus);
+        console.warn(`[Mutations] Server delete failed for ${tableName}/${id}:`, error);
+        
+        // Show user-friendly error message
+        showErrorToast(error, `Delete ${tableName}`);
       }
-
-      console.warn(`[Mutations] Server delete failed for ${tableName}/${id}:`, error);
     }
 
     // Offline or server failed - remove locally and queue
