@@ -492,6 +492,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   async function handleQuickStatusChange(materialId: string, newStatusValue: string) {
     try {
+      // Optimistically update local state first
+      setCategories(prevCategories => 
+        prevCategories.map(category => ({
+          ...category,
+          materials: category.materials.map(material => 
+            material.id === materialId 
+              ? { ...material, status: newStatusValue }
+              : material
+          )
+        }))
+      );
+
       const { error } = await supabase
         .from('materials')
         .update({ 
@@ -503,10 +515,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       if (error) throw error;
 
       toast.success(`Status updated to ${getStatusLabel(newStatusValue)}`);
-      loadMaterials();
+      
+      // Reload to ensure data consistency
+      await loadMaterials();
     } catch (error: any) {
       console.error('Error updating status:', error);
       toast.error('Failed to update status');
+      // Reload on error to revert optimistic update
+      loadMaterials();
     }
   }
 
