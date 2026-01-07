@@ -14,6 +14,9 @@ export default defineConfig({
       overlay: true,
     },
   },
+  optimizeDeps: {
+    exclude: [],
+  },
   plugins: [
     react(),
   ],
