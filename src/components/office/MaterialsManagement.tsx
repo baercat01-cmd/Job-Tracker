@@ -789,19 +789,56 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           });
       }
 
-      // Create calendar event for pull-by date
-      if (newStatus === 'at_shop' && pullByDate) {
+      // When status changes to at_shop (Ready for Job), clean up order/delivery/pickup events
+      if (newStatus === 'at_shop') {
+        // Delete order reminder events
         await supabase
           .from('calendar_events')
-          .insert({
-            job_id: job.id,
-            title: `Pull Material: ${statusChangeMaterial.name}`,
-            description: `Pull ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name} from shop\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
-            event_date: pullByDate,
-            event_type: 'material_pull',
-            all_day: true,
-            created_by: userId,
-          });
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`);
+        
+        // Delete delivery events
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`);
+        
+        // Delete pickup events
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
+        
+        // Create calendar event for pull-by date if specified
+        if (pullByDate) {
+          await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Pull Material: ${statusChangeMaterial.name}`,
+              description: `Pull ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name} from shop\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+              event_date: pullByDate,
+              event_type: 'material_pull',
+              all_day: true,
+              created_by: userId,
+            });
+        }
+      }
+      
+      // When status changes to at_job, clean up pull events
+      if (newStatus === 'at_job') {
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pull')
+          .eq('title', `Pull Material: ${statusChangeMaterial.name}`);
       }
 
       toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
