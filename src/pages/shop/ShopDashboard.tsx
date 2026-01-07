@@ -3,12 +3,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Package, Calendar, ListTodo, Clock } from 'lucide-react';
+import { LogOut, Package, Calendar, ListTodo, Clock, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { ShopMaterialsView } from '@/components/shop/ShopMaterialsView';
 import { ShopTasksList } from '@/components/shop/ShopTasksList';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
-import { ShopClockIn } from '@/components/shop/ShopClockIn';
+import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
+import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import type { Job } from '@/types';
 
 export function ShopDashboard() {
@@ -18,6 +19,7 @@ export function ShopDashboard() {
   });
   const [shopJob, setShopJob] = useState<Job | null>(null);
   const [loadingJob, setLoadingJob] = useState(true);
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
 
   // Save active tab to localStorage
   useEffect(() => {
@@ -54,6 +56,48 @@ export function ShopDashboard() {
     toast.success('Signed out successfully');
   };
 
+  // If showing time history, render that view
+  if (showTimeHistory) {
+    return (
+      <div className="min-h-screen bg-muted/30">
+        {/* Header */}
+        <header className="bg-card border-b shadow-sm">
+          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-10 w-auto"
+              />
+              <div className="border-l pl-4">
+                <h1 className="text-lg font-bold text-foreground">FieldTrack Pro</h1>
+                <p className="text-xs text-muted-foreground">Shop Dashboard</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-medium">{profile?.username || profile?.email}</p>
+                <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="container mx-auto px-4 py-6">
+          <MyTimeHistory
+            userId={profile?.id || ''}
+            onBack={() => setShowTimeHistory(false)}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Header */}
@@ -89,7 +133,7 @@ export function ShopDashboard() {
           <TabsList className="grid w-full grid-cols-4 mb-6">
             <TabsTrigger value="timer" className="flex items-center gap-2">
               <Clock className="w-4 h-4" />
-              <span className="hidden sm:inline">Clock In</span>
+              <span className="hidden sm:inline">Time</span>
             </TabsTrigger>
             <TabsTrigger value="materials" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
@@ -111,11 +155,39 @@ export function ShopDashboard() {
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading shop job...</p>
               </div>
+            ) : shopJob ? (
+              <div className="space-y-4">
+                <QuickTimeEntry
+                  userId={profile?.id || ''}
+                  allowedJobs={[shopJob]}
+                  onSuccess={() => {
+                    toast.success('Time entry saved');
+                  }}
+                />
+                
+                {/* View Time History Button */}
+                <div className="pt-4 border-t">
+                  <Button
+                    onClick={() => setShowTimeHistory(true)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-muted-foreground hover:text-primary"
+                  >
+                    <History className="w-4 h-4 mr-2" />
+                    View & Edit My Time History
+                  </Button>
+                </div>
+              </div>
             ) : (
-              <ShopClockIn
-                userId={profile?.id || ''}
-                shopJob={shopJob}
-              />
+              <div className="text-center py-8">
+                <Clock className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">
+                  Shop job not found
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Please contact office staff to create an internal "Shop" job.
+                </p>
+              </div>
             )}
           </TabsContent>
 

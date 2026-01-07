@@ -141,9 +141,10 @@ interface QuickTimeEntryProps {
   userId: string;
   onSuccess?: () => void;
   onBack?: () => void;
+  allowedJobs?: Job[]; // Optional: restrict to specific jobs only
 }
 
-export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProps) {
+export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: QuickTimeEntryProps) {
   const [loading, setLoading] = useState(false);
   const [clockedInEntry, setClockedInEntry] = useState<ClockInEntry | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -220,6 +221,12 @@ export function QuickTimeEntry({ userId, onSuccess, onBack }: QuickTimeEntryProp
 
   async function loadJobs() {
     try {
+      // If allowedJobs is provided, use those instead of loading from database
+      if (allowedJobs) {
+        setJobs(allowedJobs);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
