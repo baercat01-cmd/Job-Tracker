@@ -64,7 +64,7 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
       const { data, error } = await supabase
         .from('jobs')
         .select('id, name, client_name, status, projected_start_date, projected_end_date, is_internal')
-        .in('status', ['active', 'quoting'])
+        .in('status', ['active', 'quoting', 'on_hold'])
         .order('projected_start_date', { ascending: true, nullsFirst: false });
 
       if (error) throw error;
@@ -253,6 +253,80 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
   const jobsWithDates = jobs.filter(job => job.projected_start_date && job.projected_end_date);
   const jobsWithoutDates = jobs.filter(job => !job.projected_start_date || !job.projected_end_date);
 
+  // Group jobs by status
+  const activeJobs = jobsWithDates.filter(job => job.status === 'active');
+  const quotingJobs = jobsWithDates.filter(job => job.status === 'quoting');
+  const onHoldJobs = jobsWithDates.filter(job => job.status === 'on_hold');
+
+  const unscheduledActive = jobsWithoutDates.filter(job => job.status === 'active');
+  const unscheduledQuoting = jobsWithoutDates.filter(job => job.status === 'quoting');
+  const unscheduledOnHold = jobsWithoutDates.filter(job => job.status === 'on_hold');
+
+  const renderJobRows = (categoryJobs: GanttJob[], emptyMessage: string) => {
+    if (categoryJobs.length === 0) {
+      return (
+        <div className="py-6 text-center text-muted-foreground text-sm">
+          {emptyMessage}
+        </div>
+      );
+    }
+
+    return categoryJobs.map((job) => {
+      const barStyle = getJobBarStyle(job);
+      if (!barStyle) return null;
+
+      return (
+        <div
+          key={job.id}
+          className="flex border-b hover:bg-muted/30 transition-colors group"
+        >
+          <div className="w-64 border-r p-3 flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{job.name}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {job.client_name}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openAddDialog(job)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Edit className="w-3 h-3" />
+            </Button>
+          </div>
+          <div className="flex-1 relative py-3 px-1">
+            <div className="relative h-8">
+              {/* Grid lines */}
+              <div className="absolute inset-0 flex">
+                {timelineUnits.map((_, index) => (
+                  <div
+                    key={index}
+                    className="flex-1 border-r border-dashed border-muted"
+                    style={{ minWidth: `${100 / timelineUnits.length}%` }}
+                  />
+                ))}
+              </div>
+              
+              {/* Job bar */}
+              <div
+                className={`absolute top-0 h-8 rounded cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-xs flex items-center justify-center px-2`}
+                style={barStyle}
+                onClick={() => onJobSelect?.(job.id)}
+                title={`${job.name}\n${new Date(job.projected_start_date!).toLocaleDateString()} - ${new Date(job.projected_end_date!).toLocaleDateString()}`}
+              >
+                <span className="truncate font-medium">
+                  {job.name}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    });
+  };
+
   if (loading) {
     return (
       <Card>
@@ -314,15 +388,24 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
         </CardHeader>
       </Card>
 
-      {/* Gantt Chart */}
+      {/* Active Jobs Section */}
       <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-green-500" />
+              Active Jobs
+              <Badge variant="secondary">{activeJobs.length}</Badge>
+            </CardTitle>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <div className="min-w-[1200px]">
               {/* Timeline Header */}
-              <div className="border-b bg-muted/30 sticky top-0 z-10">
+              <div className="border-b bg-muted/30">
                 <div className="flex">
-                  <div className="w-64 border-r p-3 font-semibold bg-background">
+                  <div className="w-64 border-r p-3 font-semibold bg-background text-sm">
                     Job Name
                   </div>
                   <div className="flex-1 flex">
@@ -341,102 +424,201 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
 
               {/* Job Rows */}
               <div>
-                {jobsWithDates.length === 0 ? (
-                  <div className="py-12 text-center text-muted-foreground">
-                    <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No jobs scheduled for {currentYear}</p>
-                    <p className="text-sm mt-2">Add start and end dates to jobs to see them here</p>
-                  </div>
-                ) : (
-                  jobsWithDates.map((job) => {
-                    const barStyle = getJobBarStyle(job);
-                    if (!barStyle) return null;
-
-                    return (
-                      <div
-                        key={job.id}
-                        className="flex border-b hover:bg-muted/30 transition-colors group"
-                      >
-                        <div className="w-64 border-r p-3 flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{job.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {job.client_name}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openAddDialog(job)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <Edit className="w-3 h-3" />
-                          </Button>
-                        </div>
-                        <div className="flex-1 relative py-3 px-1">
-                          <div className="relative h-8">
-                            {/* Grid lines */}
-                            <div className="absolute inset-0 flex">
-                              {timelineUnits.map((_, index) => (
-                                <div
-                                  key={index}
-                                  className="flex-1 border-r border-dashed border-muted"
-                                  style={{ minWidth: `${100 / timelineUnits.length}%` }}
-                                />
-                              ))}
-                            </div>
-                            
-                            {/* Job bar */}
-                            <div
-                              className={`absolute top-0 h-8 rounded cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-xs flex items-center justify-center px-2`}
-                              style={barStyle}
-                              onClick={() => onJobSelect?.(job.id)}
-                              title={`${job.name}\n${new Date(job.projected_start_date!).toLocaleDateString()} - ${new Date(job.projected_end_date!).toLocaleDateString()}`}
-                            >
-                              <span className="truncate font-medium">
-                                {job.name}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                {renderJobRows(activeJobs, 'No active jobs scheduled')}
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Jobs Without Dates */}
-      {jobsWithoutDates.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Unscheduled Jobs ({jobsWithoutDates.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {jobsWithoutDates.map((job) => (
-              <div
-                key={job.id}
-                className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
-              >
-                <div>
-                  <p className="font-medium">{job.name}</p>
-                  <p className="text-sm text-muted-foreground">{job.client_name}</p>
+      {/* Quoting Jobs Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-blue-500" />
+              Quoting Jobs
+              <Badge variant="secondary">{quotingJobs.length}</Badge>
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1200px]">
+              {/* Timeline Header */}
+              <div className="border-b bg-muted/30">
+                <div className="flex">
+                  <div className="w-64 border-r p-3 font-semibold bg-background text-sm">
+                    Job Name
+                  </div>
+                  <div className="flex-1 flex">
+                    {timelineUnits.map((unit, index) => (
+                      <div
+                        key={index}
+                        className="flex-1 border-r text-center p-2 text-xs font-medium"
+                        style={{ minWidth: `${100 / timelineUnits.length}%` }}
+                      >
+                        {unit.label}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openAddDialog(job)}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add to Schedule
-                </Button>
               </div>
-            ))}
-          </CardContent>
-        </Card>
+
+              {/* Job Rows */}
+              <div>
+                {renderJobRows(quotingJobs, 'No quoting jobs scheduled')}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* On Hold Jobs Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-yellow-500" />
+              On Hold Jobs
+              <Badge variant="secondary">{onHoldJobs.length}</Badge>
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1200px]">
+              {/* Timeline Header */}
+              <div className="border-b bg-muted/30">
+                <div className="flex">
+                  <div className="w-64 border-r p-3 font-semibold bg-background text-sm">
+                    Job Name
+                  </div>
+                  <div className="flex-1 flex">
+                    {timelineUnits.map((unit, index) => (
+                      <div
+                        key={index}
+                        className="flex-1 border-r text-center p-2 text-xs font-medium"
+                        style={{ minWidth: `${100 / timelineUnits.length}%` }}
+                      >
+                        {unit.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Job Rows */}
+              <div>
+                {renderJobRows(onHoldJobs, 'No jobs on hold')}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Unscheduled Jobs by Category */}
+      {jobsWithoutDates.length > 0 && (
+        <div className="space-y-4">
+          {/* Unscheduled Active */}
+          {unscheduledActive.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-green-500" />
+                  Unscheduled Active Jobs ({unscheduledActive.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {unscheduledActive.map((job) => (
+                  <div
+                    key={job.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{job.name}</p>
+                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openAddDialog(job)}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Schedule
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Unscheduled Quoting */}
+          {unscheduledQuoting.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-blue-500" />
+                  Unscheduled Quoting Jobs ({unscheduledQuoting.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {unscheduledQuoting.map((job) => (
+                  <div
+                    key={job.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{job.name}</p>
+                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openAddDialog(job)}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Schedule
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Unscheduled On Hold */}
+          {unscheduledOnHold.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-yellow-500" />
+                  Unscheduled On Hold Jobs ({unscheduledOnHold.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {unscheduledOnHold.map((job) => (
+                  <div
+                    key={job.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{job.name}</p>
+                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openAddDialog(job)}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add to Schedule
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Legend */}
