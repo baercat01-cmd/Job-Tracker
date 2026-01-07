@@ -15,12 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2, Calendar } from 'lucide-react';
+import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2, Calendar, History } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { createNotification } from '@/lib/notifications';
 import type { Job, Component, CompletedTask } from '@/types';
 import { getLocalDateString } from '@/lib/utils';
+import { MyTimeHistory } from './MyTimeHistory';
 
 interface LocalTimer {
   id: string;
@@ -101,6 +102,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [completionDate, setCompletionDate] = useState(getLocalDateString());
   const [completionNotes, setCompletionNotes] = useState('');
   const [savingCompletion, setSavingCompletion] = useState(false);
+  
+  // Time History view state
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
   
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -740,6 +744,20 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
+  // If showing time history, render that instead
+  if (showTimeHistory) {
+    return (
+      <MyTimeHistory
+        userId={userId}
+        onBack={() => {
+          setShowTimeHistory(false);
+          loadTotalComponentHours(); // Reload in case they edited entries
+          loadTotalClockInHours();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Time Tracking Summary */}
@@ -1204,6 +1222,19 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
           )}
         </DialogContent>
       </Dialog>
+
+      {/* My Time History Button - Small, at bottom */}
+      <div className="pb-4">
+        <Button
+          onClick={() => setShowTimeHistory(true)}
+          variant="ghost"
+          size="sm"
+          className="w-full text-muted-foreground hover:text-primary"
+        >
+          <History className="w-4 h-4 mr-2" />
+          View & Edit My Time History
+        </Button>
+      </div>
     </div>
   );
 }
