@@ -1,10 +1,10 @@
-export type UserRole = 'crew' | 'office' | 'payroll';
+export type UserRole = 'crew' | 'office' | 'payroll' | 'shop';
 
 export interface UserProfile {
   id: string;
   username: string | null;
   email: string;
-  role: 'crew' | 'office' | 'payroll'; // Must be exactly 'crew', 'office', or 'payroll'
+  role: 'crew' | 'office' | 'payroll' | 'shop'; // Must be exactly 'crew', 'office', 'payroll', or 'shop'
   phone: string | null;
   created_at: string;
   pin_hash?: string | null;

@@ -6,6 +6,7 @@ import { PinSetupPage } from '@/pages/PinSetupPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
+import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -120,6 +121,11 @@ function AppContent() {
   // Payroll users: time tracking and export for payroll processing
   if (profile.role === 'payroll') {
     return <PayrollDashboard />;
+  }
+
+  // Shop users: material processing and shop tasks
+  if (profile.role === 'shop') {
+    return <ShopDashboard />;
   }
 
   // Fallback: role not recognized - show error and force logout

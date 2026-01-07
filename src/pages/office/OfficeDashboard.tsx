@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -21,6 +21,7 @@ import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { SubcontractorManagement } from '@/components/office/SubcontractorManagement';
 import { SubcontractorScheduling } from '@/components/office/SubcontractorScheduling';
 import { JobGanttChart } from '@/components/office/JobGanttChart';
+import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -305,7 +306,7 @@ export function OfficeDashboard() {
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-8">
+                <TabsList className="grid w-full grid-cols-9">
                   <TabsTrigger value="export">
                     <Download className="w-4 h-4 mr-2" />
                     Export
@@ -337,6 +338,10 @@ export function OfficeDashboard() {
                   <TabsTrigger value="archived">
                     <Archive className="w-4 h-4 mr-2" />
                     Archived
+                  </TabsTrigger>
+                  <TabsTrigger value="shop-tasks">
+                    <ListTodo className="w-4 h-4 mr-2" />
+                    Shop Tasks
                   </TabsTrigger>
                 </TabsList>
 
@@ -370,6 +375,10 @@ export function OfficeDashboard() {
 
                 <TabsContent value="archived" className="mt-6">
                   <JobsView showArchived={true} />
+                </TabsContent>
+
+                <TabsContent value="shop-tasks" className="mt-6">
+                  <ShopTasksManagement userId={profile?.id || ''} />
                 </TabsContent>
               </Tabs>
             </div>
