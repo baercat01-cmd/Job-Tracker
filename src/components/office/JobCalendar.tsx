@@ -14,7 +14,7 @@ function parseDateLocal(dateString: string): Date {
 
 interface CalendarEvent {
   id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed' | 'subcontractor';
+  type: 'material_order' | 'material_delivery' | 'material_pull' | 'material_pickup' | 'task_deadline' | 'task_completed' | 'subcontractor';
   date: string;
   title: string;
   description: string;
@@ -22,6 +22,7 @@ interface CalendarEvent {
   priority?: 'low' | 'medium' | 'high';
   subcontractorName?: string;
   subcontractorPhone?: string;
+  assignedUserName?: string;
 }
 
 interface JobCalendarProps {
@@ -117,6 +118,35 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
         });
       }
 
+      // Get calendar events (pickups, deliveries, order reminders)
+      const { data: calendarEvents, error: calendarEventsError } = await supabase
+        .from('calendar_events')
+        .select('id, title, description, event_date, event_type')
+        .eq('job_id', jobId)
+        .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder']);
+
+      if (!calendarEventsError && calendarEvents) {
+        calendarEvents.forEach((event: any) => {
+          let eventType: CalendarEvent['type'] = 'material_pickup';
+          if (event.event_type === 'material_delivery') {
+            eventType = 'material_delivery';
+          } else if (event.event_type === 'material_order_reminder') {
+            eventType = 'material_order';
+          } else if (event.event_type === 'material_pickup') {
+            eventType = 'material_pickup';
+          }
+          
+          events.push({
+            id: `calendar-${event.id}`,
+            type: eventType,
+            date: event.event_date,
+            title: event.title,
+            description: event.description || '',
+            priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
+          });
+        });
+      }
+
       // Get subcontractor schedules for this job
       const { data: subcontractorSchedules, error: subError } = await supabase
         .from('subcontractor_schedules')
@@ -193,6 +223,7 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
     material_order: { icon: Package, label: 'Order Deadline', color: 'bg-yellow-500' },
     material_delivery: { icon: Truck, label: 'Delivery', color: 'bg-blue-500' },
     material_pull: { icon: Package, label: 'Pull from Shop', color: 'bg-purple-500' },
+    material_pickup: { icon: Package, label: 'Pickup', color: 'bg-orange-500' },
     task_completed: { icon: ListChecks, label: 'Task Completed', color: 'bg-green-500' },
     task_deadline: { icon: AlertCircle, label: 'Task Deadline', color: 'bg-red-500' },
     subcontractor: { icon: CalendarIcon, label: 'Subcontractor', color: 'bg-indigo-500' },
