@@ -8,11 +8,9 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Use client port for WebSocket connection (works with OnSpace proxy)
-      clientPort: 443,
-      protocol: 'wss',
-      // Let browser use current hostname for WebSocket
-      host: undefined,
+      // Disable HMR in production/published environments to prevent WebSocket errors
+      // HMR only works in local development
+      overlay: false,
     },
   },
   plugins: [
