@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -13,7 +14,8 @@ import {
   AlertCircle,
   Filter,
   X,
-  Palette
+  Palette,
+  Users
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
@@ -89,6 +91,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
   const [showJobLegend, setShowJobLegend] = useState(false);
+  const [activeTab, setActiveTab] = useState('to_order');
 
   useEffect(() => {
     loadJobs();
@@ -691,87 +694,258 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
           </div>
         )}
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t">
-          <Card className="bg-red-50 dark:bg-red-950/20">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-red-500 text-white">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-700 dark:text-red-400">
-                    {events.filter(e => e.priority === 'high').length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Overdue</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Interactive Tabs */}
+        <div className="mt-6 pt-6 border-t">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="to_order" className="flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                To Order ({events.filter(e => e.type === 'material_order').length})
+              </TabsTrigger>
+              <TabsTrigger value="deliveries" className="flex items-center gap-2">
+                <Truck className="w-4 h-4" />
+                Deliveries ({events.filter(e => e.type === 'material_delivery').length})
+              </TabsTrigger>
+              <TabsTrigger value="subcontractors" className="flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Subcontractors ({events.filter(e => e.type === 'subcontractor').length})
+              </TabsTrigger>
+            </TabsList>
 
-          <Card className="bg-yellow-50 dark:bg-yellow-950/20">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-yellow-500 text-white">
-                  <Package className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">
-                    {events.filter(e => e.type === 'material_order').length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">To Order</p>
-                </div>
+            {/* To Order Tab */}
+            <TabsContent value="to_order" className="mt-4">
+              <div className="space-y-3">
+                {events.filter(e => e.type === 'material_order').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                      <p className="text-muted-foreground">No materials to order</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  events
+                    .filter(e => e.type === 'material_order')
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .map(event => (
+                      <Card
+                        key={event.id}
+                        className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                          event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-yellow-500'
+                        }`}
+                        style={{ borderLeftColor: event.jobColor }}
+                        onClick={() => {
+                          setSelectedEvent(event);
+                          setShowEventDialog(true);
+                        }}
+                      >
+                        <CardContent className="py-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-yellow-500 text-white">
+                              <Package className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <p className="font-bold text-lg">{event.title}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge 
+                                      variant="outline"
+                                      style={{ 
+                                        borderColor: event.jobColor,
+                                        color: event.jobColor 
+                                      }}
+                                    >
+                                      {event.jobName}
+                                    </Badge>
+                                    <Badge variant="secondary">
+                                      Order by: {new Date(event.date).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                      })}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                {event.priority === 'high' && (
+                                  <Badge variant="destructive">Overdue</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{event.description}</p>
+                              <Badge variant="outline" className="mt-2 text-xs">
+                                Click to edit material details
+                              </Badge>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </TabsContent>
 
-          <Card className="bg-blue-50 dark:bg-blue-950/20">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500 text-white">
-                  <Truck className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">
-                    {events.filter(e => e.type === 'material_delivery').length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Deliveries</p>
-                </div>
+            {/* Deliveries Tab */}
+            <TabsContent value="deliveries" className="mt-4">
+              <div className="space-y-3">
+                {events.filter(e => e.type === 'material_delivery').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Truck className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                      <p className="text-muted-foreground">No scheduled deliveries</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  events
+                    .filter(e => e.type === 'material_delivery')
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .map(event => (
+                      <Card
+                        key={event.id}
+                        className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                          event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-blue-500'
+                        }`}
+                        style={{ borderLeftColor: event.jobColor }}
+                        onClick={() => {
+                          setSelectedEvent(event);
+                          setShowEventDialog(true);
+                        }}
+                      >
+                        <CardContent className="py-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-blue-500 text-white">
+                              <Truck className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <p className="font-bold text-lg">{event.title}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge 
+                                      variant="outline"
+                                      style={{ 
+                                        borderColor: event.jobColor,
+                                        color: event.jobColor 
+                                      }}
+                                    >
+                                      {event.jobName}
+                                    </Badge>
+                                    <Badge variant="secondary">
+                                      Delivery: {new Date(event.date).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                      })}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                {event.priority === 'high' && (
+                                  <Badge variant="destructive">Overdue</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{event.description}</p>
+                              <Badge variant="outline" className="mt-2 text-xs">
+                                Click to edit material details
+                              </Badge>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </TabsContent>
 
-          <Card className="bg-green-50 dark:bg-green-950/20">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-500 text-white">
-                  <ListChecks className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-green-700 dark:text-green-400">
-                    {events.filter(e => e.type === 'task_completed').length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Completed</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            {/* Subcontractors Tab */}
+            <TabsContent value="subcontractors" className="mt-4">
+              <div className="space-y-3">
+                {events.filter(e => e.type === 'subcontractor').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                      <p className="text-muted-foreground">No scheduled subcontractors</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  // Group subcontractor events by subcontractor and job to show date ranges
+                  (() => {
+                    const subEvents = events.filter(e => e.type === 'subcontractor');
+                    // Create unique key for each subcontractor-job combination
+                    const grouped = new Map<string, CalendarEvent[]>();
+                    
+                    subEvents.forEach(event => {
+                      const key = `${event.subcontractorName}-${event.jobId}`;
+                      if (!grouped.has(key)) {
+                        grouped.set(key, []);
+                      }
+                      grouped.get(key)!.push(event);
+                    });
 
-          <Card className="bg-indigo-50 dark:bg-indigo-950/20">
-            <CardContent className="py-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-indigo-500 text-white">
-                  <CalendarIcon className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
-                    {events.filter(e => e.type === 'subcontractor').length}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Subcontractors</p>
-                </div>
+                    return Array.from(grouped.entries())
+                      .sort((a, b) => {
+                        const dateA = new Date(a[1][0].date).getTime();
+                        const dateB = new Date(b[1][0].date).getTime();
+                        return dateA - dateB;
+                      })
+                      .map(([key, groupEvents]) => {
+                        const firstEvent = groupEvents[0];
+                        const dates = groupEvents.map(e => e.date).sort();
+                        const startDate = dates[0];
+                        const endDate = dates[dates.length - 1];
+                        const dateRangeDisplay = startDate === endDate 
+                          ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : `${new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+                        return (
+                          <Card
+                            key={key}
+                            className="cursor-pointer hover:shadow-lg transition-all border-l-4 border-indigo-500"
+                            style={{ borderLeftColor: firstEvent.jobColor }}
+                            onClick={() => onJobSelect(firstEvent.jobId)}
+                          >
+                            <CardContent className="py-4">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2 rounded-lg bg-indigo-500 text-white">
+                                  <Users className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                      <p className="font-bold text-lg">{firstEvent.subcontractorName}</p>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <Badge 
+                                          variant="outline"
+                                          style={{ 
+                                            borderColor: firstEvent.jobColor,
+                                            color: firstEvent.jobColor 
+                                          }}
+                                        >
+                                          {firstEvent.jobName}
+                                        </Badge>
+                                        <Badge variant="secondary">
+                                          {dateRangeDisplay}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">{firstEvent.description}</p>
+                                  {firstEvent.subcontractorPhone && (
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                      📞 {firstEvent.subcontractorPhone}
+                                    </p>
+                                  )}
+                                  <Badge variant="outline" className="mt-2 text-xs">
+                                    Click to view job details
+                                  </Badge>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      });
+                  })()
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </CardContent>
 
