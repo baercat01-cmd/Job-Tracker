@@ -20,11 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import { getLocalDateString } from '@/lib/utils';
 import type { Job } from '@/types';
+import { ReadyForJobMaterials } from './ReadyForJobMaterials';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface Material {
   id: string;
@@ -101,6 +103,7 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'all' | 'ready'>('all');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -971,6 +974,20 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
 
   return (
     <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
+      {/* Tab Switcher */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready')} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="all" className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            All Materials
+          </TabsTrigger>
+          <TabsTrigger value="ready" className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Ready for Job
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="all" className="space-y-3">
       {/* Action Bar - Mobile Optimized */}
       {!selectionMode ? (
         <Button
@@ -2116,6 +2133,12 @@ export function MaterialsList({ job, userId }: MaterialsListProps) {
           </div>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        <TabsContent value="ready">
+          <ReadyForJobMaterials userId={userId} currentJobId={job.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
