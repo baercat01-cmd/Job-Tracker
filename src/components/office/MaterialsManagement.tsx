@@ -643,43 +643,62 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('title', `Order Material: ${statusChangeMaterial.name}`);
       }
 
-      // Create notification and calendar event for pickup assignment
-      if (hasDeliveryMethod && deliveryMethod === 'pickup' && newStatus === 'ordered' && pickupBy) {
+      // Handle pickup calendar event and notification
+      if (hasDeliveryMethod && deliveryMethod === 'pickup' && pickupBy && pickupDate) {
         const assignedUser = users.find(u => u.id === pickupBy);
         const materialName = statusChangeMaterial.name;
-        const pickupDateStr = pickupDate 
-          ? new Date(pickupDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : 'ASAP';
+        const pickupDateStr = new Date(pickupDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         
-        // Create notification
-        await supabase
-          .from('notifications')
-          .insert({
-            job_id: job.id,
-            created_by: userId,
-            type: 'material_request',
-            brief: `Pickup assigned: ${materialName} (Qty: ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? `, ${statusChangeMaterial.length}` : ''}) - Pickup by ${pickupDateStr}`,
-            reference_id: statusChangeMaterial.id,
-            reference_data: {
-              material_name: materialName,
-              quantity: statusChangeMaterial.quantity,
-              length: statusChangeMaterial.length,
-              pickup_date: pickupDate,
-              assigned_to: assignedUser?.username || assignedUser?.email,
-              assigned_to_id: pickupBy,
-            },
-            is_read: false,
-          });
+        // Create notification only if newly assigned or status changed to ordered
+        if (newStatus === 'ordered' || statusChangeMaterial.pickup_by !== pickupBy) {
+          await supabase
+            .from('notifications')
+            .insert({
+              job_id: job.id,
+              created_by: userId,
+              type: 'material_request',
+              brief: `Pickup assigned: ${materialName} (Qty: ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? `, ${statusChangeMaterial.length}` : ''}) - Pickup by ${pickupDateStr}`,
+              reference_id: statusChangeMaterial.id,
+              reference_data: {
+                material_name: materialName,
+                quantity: statusChangeMaterial.quantity,
+                length: statusChangeMaterial.length,
+                pickup_date: pickupDate,
+                assigned_to: assignedUser?.username || assignedUser?.email,
+                assigned_to_id: pickupBy,
+              },
+              is_read: false,
+            });
+        }
 
-        // Create calendar event for pickup
-        if (pickupDate) {
-          const pickupDesc = [
-            `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}`,
-            `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
-            `Assigned to: ${assignedUser?.username || assignedUser?.email}`,
-          ];
-          if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
-          
+        // Create or update calendar event for pickup
+        const pickupDesc = [
+          `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}`,
+          `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
+          `Assigned to: ${assignedUser?.username || assignedUser?.email}`,
+        ];
+        if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
+
+        // Check if calendar event already exists
+        const { data: existingPickupEvent } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${materialName}`)
+          .single();
+
+        if (existingPickupEvent) {
+          // Update existing event
+          await supabase
+            .from('calendar_events')
+            .update({
+              event_date: pickupDate,
+              description: pickupDesc.join('\n\n'),
+            })
+            .eq('id', existingPickupEvent.id);
+        } else {
+          // Create new event
           await supabase
             .from('calendar_events')
             .insert({
@@ -692,6 +711,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               created_by: userId,
             });
         }
+      } else if (statusChangeMaterial.delivery_method === 'pickup' && (!hasDeliveryMethod || deliveryMethod !== 'pickup' || !pickupDate)) {
+        // If pickup was removed, delete the calendar event
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
       }
 
       // Create calendar event for delivery
