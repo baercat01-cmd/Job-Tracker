@@ -33,7 +33,6 @@ interface ReadyForJobMaterialsProps {
 export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMaterialsProps) {
   const [materials, setMaterials] = useState<MaterialWithJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (currentJobId) {
@@ -131,14 +130,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
 
 
 
-  const filteredMaterials = materials.filter(material => {
-    const matchesSearch = searchTerm === '' || 
-      material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (material.use_case && material.use_case.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      material.category_name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesSearch;
-  });
+  const filteredMaterials = materials;
 
   if (loading) {
     return (
@@ -151,26 +143,6 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
 
   return (
     <div className="space-y-4 w-full lg:max-w-4xl lg:mx-auto">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search materials..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 pr-9 h-11"
-        />
-        {searchTerm && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSearchTerm('')}
-            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
-          >
-            <X className="w-4 h-4" />
-          </Button>
-        )}
-      </div>
 
       {/* Materials List */}
       {filteredMaterials.length === 0 ? (
@@ -178,9 +150,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
           <CardContent className="py-12 text-center">
             <Package className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-lg font-medium text-muted-foreground">
-              {searchTerm 
-                ? 'No materials found matching your search' 
-                : 'No materials ready for this job'}
+              No materials ready for this job
             </p>
             <p className="text-sm text-muted-foreground mt-2">
               Materials with "Ready for Job" status will appear here
