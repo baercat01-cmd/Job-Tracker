@@ -413,9 +413,24 @@ export function PayrollDashboard() {
         periodLabel = periodOptions.find(p => p.value === selectedPeriod)?.label || 'period';
       }
       
+      // Calculate exact date range for PDF
+      let startDate: Date;
+      let endDate: Date;
+      
+      if (periodType === 'custom') {
+        startDate = new Date(customStartDate);
+        endDate = new Date(customEndDate);
+      } else {
+        startDate = new Date(selectedPeriod);
+        endDate = new Date(weekData.weekEnd);
+      }
+
       // Prepare data for PDF - keep the same date-based structure as the display
       const pdfData = {
-        title: `Payroll Report - ${periodLabel}`,
+        title: `Payroll Report`,
+        periodLabel: periodLabel,
+        startDate: startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+        endDate: endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
         users: usersToExport.map(user => ({
           name: user.userName,
           totalHours: user.totalHours,

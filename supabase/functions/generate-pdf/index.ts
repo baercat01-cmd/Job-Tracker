@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
 function generatePayrollHTML(data: any): string {
-  const { title, users } = data;
+  const { title, periodLabel, startDate, endDate, users } = data;
   
   return `
     <style>
@@ -30,12 +30,33 @@ function generatePayrollHTML(data: any): string {
       .header h1 {
         color: #2d5f3f;
         font-size: 28px;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
       }
       
       .header .subtitle {
         color: #666;
         font-size: 14px;
+        margin-bottom: 8px;
+      }
+      
+      .period-info {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 10px 20px;
+        margin: 12px auto 0;
+        display: inline-block;
+      }
+      
+      .period-info .period-label {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 4px;
+      }
+      
+      .period-info .period-dates {
+        font-size: 15px;
+        font-weight: 600;
+        color: #2d5f3f;
       }
       
       .user-section {
@@ -178,6 +199,10 @@ function generatePayrollHTML(data: any): string {
     <div class="header">
       <h1>${title}</h1>
       <p class="subtitle">Time & Payroll Report</p>
+      <div class="period-info">
+        <div class="period-label">Report Period</div>
+        <div class="period-dates">${startDate} - ${endDate}</div>
+      </div>
     </div>
     
     ${users.map((user: any) => `
