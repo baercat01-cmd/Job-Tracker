@@ -1147,7 +1147,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   function downloadCategoryTemplate(category: Category) {
-    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length'];
+    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length', 'Color'];
     
     let rows: string[][];
     if (category.materials.length > 0) {
@@ -1157,12 +1157,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         (m as any).use_case || '',
         m.quantity.toString(),
         m.length || '',
+        m.color || '',
       ]);
     } else {
       rows = [
-        [category.name, 'Example Material 1', 'Foundation work', '100', '8ft'],
-        [category.name, 'Example Material 2', 'Framing', '50', '12ft'],
-        [category.name, 'Example Material 3', 'Roofing installation', '200', '16ft'],
+        [category.name, 'Example Material 1', 'Foundation work', '100', '8ft', ''],
+        [category.name, 'Example Material 2', 'Framing', '50', '12ft', ''],
+        [category.name, 'Example Material 3', 'Roofing installation', '200', '16ft', ''],
       ];
     }
 
@@ -1188,13 +1189,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   function downloadAllTemplate() {
-    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length'];
+    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length', 'Color'];
     const exampleRows = [
-      ['Lumber', '2x4 Stud', 'Wall framing', '100', '8ft'],
-      ['Lumber', '2x6 Joist', 'Floor joists', '50', '12ft'],
-      ['Steel', 'I-Beam', 'Main support', '20', '20ft'],
-      ['Roofing', 'Metal Panel', 'Roof covering', '200', '16ft'],
-      ['Hardware', 'Bolts 1/2"', 'General fastening', '500', ''],
+      ['Lumber', '2x4 Stud', 'Wall framing', '100', '8ft', ''],
+      ['Lumber', '2x6 Joist', 'Floor joists', '50', '12ft', ''],
+      ['Steel', 'I-Beam', 'Main support', '20', '20ft', ''],
+      ['Metal', 'Standing Seam Panel', 'Roof covering', '200', '16ft', 'Charcoal Gray'],
+      ['Trim', 'Corner Trim', 'Exterior corners', '50', '10ft', 'White'],
+      ['Hardware', 'Bolts 1/2"', 'General fastening', '500', '', ''],
     ];
 
     const csvContent = [
