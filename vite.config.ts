@@ -8,8 +8,8 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Auto-detect the correct HMR host based on browser location
-      clientPort: 443,
+      // Let Vite auto-detect the correct HMR configuration
+      // This works for both localhost and OnSpace preview domains
       overlay: true,
     },
   },
