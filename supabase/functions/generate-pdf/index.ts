@@ -114,11 +114,10 @@ function generatePayrollHTML(data: any): string {
         border-bottom: 2px solid #ddd;
       }
       
-      .entries-table th:nth-child(1) { width: 25%; }
-      .entries-table th:nth-child(2) { width: 18%; }
-      .entries-table th:nth-child(3) { width: 18%; }
-      .entries-table th:nth-child(4) { width: 15%; text-align: right; }
-      .entries-table th:nth-child(5) { width: 24%; text-align: center; }
+      .entries-table th:nth-child(1) { width: 30%; }
+      .entries-table th:nth-child(2) { width: 25%; }
+      .entries-table th:nth-child(3) { width: 25%; }
+      .entries-table th:nth-child(4) { width: 20%; text-align: right; }
       
       .entries-table td {
         padding: 6px 8px;
@@ -127,7 +126,6 @@ function generatePayrollHTML(data: any): string {
       }
       
       .entries-table td:nth-child(4) { text-align: right; }
-      .entries-table td:nth-child(5) { text-align: center; }
       
       .entries-table tr:last-child td {
         border-bottom: none;
@@ -135,24 +133,6 @@ function generatePayrollHTML(data: any): string {
       
       .entries-table tr:hover {
         background: #fafafa;
-      }
-      
-      .type-badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 600;
-      }
-      
-      .type-timer {
-        background: #e8f5e9;
-        color: #2e7d32;
-      }
-      
-      .type-manual {
-        background: #fff3e0;
-        color: #e65100;
       }
       
       .hours-cell {
@@ -164,6 +144,9 @@ function generatePayrollHTML(data: any): string {
         body {
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
+          max-width: 100%;
+          margin: 0;
+          padding: 20px;
         }
         
         .user-section {
@@ -205,7 +188,6 @@ function generatePayrollHTML(data: any): string {
                   <th>Start Time</th>
                   <th>End Time</th>
                   <th>Hours</th>
-                  <th>Type</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,11 +197,6 @@ function generatePayrollHTML(data: any): string {
                     <td>${entry.startTime}</td>
                     <td>${entry.endTime}</td>
                     <td class="hours-cell">${entry.hours}h</td>
-                    <td>
-                      <span class="type-badge ${entry.type === 'Timer' ? 'type-timer' : 'type-manual'}">
-                        ${entry.type}
-                      </span>
-                    </td>
                   </tr>
                 `).join('')}
               </tbody>
