@@ -710,7 +710,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         }
       }
 
-      // Create calendar event for pickup (if pickup info provided)
+      // Create/update calendar event for pickup (if pickup info provided)
       if (hasDeliveryMethod && deliveryMethod === 'pickup' && pickupBy && pickupDate) {
         const assignedUser = users.find(u => u.id === pickupBy);
         const materialName = statusChangeMaterial.name;
@@ -738,7 +738,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             });
         }
 
-        // Create calendar event for pickup
+        // Create or update calendar event for pickup
         const pickupDesc = [
           `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}`,
           `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
@@ -746,47 +746,144 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         ];
         if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
 
-        // Delete any existing pickup event for this material first
-        await supabase
+        // Check if calendar event already exists for this material's pickup
+        const { data: existingPickupEvent, error: searchPickupError } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${materialName}`)
+          .maybeSingle();
+
+        if (searchPickupError) {
+          console.error('Error searching for existing pickup event:', searchPickupError);
+        }
+
+        if (existingPickupEvent) {
+          // Update existing event
+          console.log('Updating existing pickup event:', existingPickupEvent.id);
+          const { error: updatePickupError } = await supabase
+            .from('calendar_events')
+            .update({
+              event_date: pickupDate,
+              description: pickupDesc.join('\n\n'),
+            })
+            .eq('id', existingPickupEvent.id);
+          
+          if (updatePickupError) {
+            console.error('Error updating pickup event:', updatePickupError);
+            throw updatePickupError;
+          }
+          console.log('Pickup event updated successfully');
+        } else {
+          // Create new pickup calendar event
+          console.log('Creating new pickup calendar event');
+          const { data: newPickupEvent, error: insertPickupError } = await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Material Pickup: ${materialName}`,
+              description: pickupDesc.join('\n\n'),
+              event_date: pickupDate,
+              event_type: 'material_pickup',
+              all_day: true,
+              created_by: userId,
+            })
+            .select();
+          
+          if (insertPickupError) {
+            console.error('Error creating pickup event:', insertPickupError);
+            throw insertPickupError;
+          }
+          console.log('Pickup event created successfully:', newPickupEvent);
+        }
+      } else if (statusChangeMaterial.delivery_method === 'pickup' && statusChangeMaterial.pickup_date && (!hasDeliveryMethod || deliveryMethod !== 'pickup' || !pickupDate)) {
+        // If pickup date was removed or delivery method changed from pickup, delete the calendar event
+        console.log('Deleting pickup calendar event for:', statusChangeMaterial.name);
+        const { error: deletePickupError } = await supabase
           .from('calendar_events')
           .delete()
           .eq('job_id', job.id)
           .eq('event_type', 'material_pickup')
-          .eq('title', `Material Pickup: ${materialName}`);
-
-        // Create new pickup calendar event
-        await supabase
-          .from('calendar_events')
-          .insert({
-            job_id: job.id,
-            title: `Material Pickup: ${materialName}`,
-            description: pickupDesc.join('\n\n'),
-            event_date: pickupDate,
-            event_type: 'material_pickup',
-            all_day: true,
-            created_by: userId,
-          });
+          .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
+        
+        if (deletePickupError) {
+          console.error('Error deleting pickup event:', deletePickupError);
+        }
       }
 
-      // Create calendar event for delivery
-      if (hasDeliveryMethod && deliveryMethod === 'delivery' && newStatus === 'ordered' && deliveryDate) {
+      // Create/update calendar event for delivery
+      if (hasDeliveryMethod && deliveryMethod === 'delivery' && deliveryDate) {
         const deliveryDesc = [
           `Delivery of ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}`,
           `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
         ];
         if (deliveryVendor) deliveryDesc.push(`Vendor: ${deliveryVendor}`);
         
-        await supabase
+        // Check if calendar event already exists for this material's delivery
+        const { data: existingDeliveryEvent, error: searchDeliveryError } = await supabase
           .from('calendar_events')
-          .insert({
-            job_id: job.id,
-            title: `Material Delivery: ${statusChangeMaterial.name}`,
-            description: deliveryDesc.join('\n\n'),
-            event_date: deliveryDate,
-            event_type: 'material_delivery',
-            all_day: true,
-            created_by: userId,
-          });
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`)
+          .maybeSingle();
+
+        if (searchDeliveryError) {
+          console.error('Error searching for existing delivery event:', searchDeliveryError);
+        }
+
+        if (existingDeliveryEvent) {
+          // Update existing event
+          console.log('Updating existing delivery event:', existingDeliveryEvent.id);
+          const { error: updateDeliveryError } = await supabase
+            .from('calendar_events')
+            .update({
+              event_date: deliveryDate,
+              description: deliveryDesc.join('\n\n'),
+            })
+            .eq('id', existingDeliveryEvent.id);
+          
+          if (updateDeliveryError) {
+            console.error('Error updating delivery event:', updateDeliveryError);
+            throw updateDeliveryError;
+          }
+          console.log('Delivery event updated successfully');
+        } else {
+          // Create new delivery calendar event
+          console.log('Creating new delivery calendar event');
+          const { data: newDeliveryEvent, error: insertDeliveryError } = await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Material Delivery: ${statusChangeMaterial.name}`,
+              description: deliveryDesc.join('\n\n'),
+              event_date: deliveryDate,
+              event_type: 'material_delivery',
+              all_day: true,
+              created_by: userId,
+            })
+            .select();
+          
+          if (insertDeliveryError) {
+            console.error('Error creating delivery event:', insertDeliveryError);
+            throw insertDeliveryError;
+          }
+          console.log('Delivery event created successfully:', newDeliveryEvent);
+        }
+      } else if (statusChangeMaterial.delivery_method === 'delivery' && statusChangeMaterial.delivery_date && (!hasDeliveryMethod || deliveryMethod !== 'delivery' || !deliveryDate)) {
+        // If delivery date was removed or delivery method changed from delivery, delete the calendar event
+        console.log('Deleting delivery calendar event for:', statusChangeMaterial.name);
+        const { error: deleteDeliveryError } = await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`);
+        
+        if (deleteDeliveryError) {
+          console.error('Error deleting delivery event:', deleteDeliveryError);
+        }
       }
 
       // When status changes to at_shop (Ready for Job), clean up order/delivery/pickup events
