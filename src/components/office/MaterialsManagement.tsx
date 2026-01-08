@@ -425,18 +425,45 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setShowMaterialModal(true);
   }
 
+  async function quickMoveMaterial(materialId: string, newCategoryId: string) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          category_id: newCategoryId,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+      
+      const newCategory = categories.find(c => c.id === newCategoryId);
+      toast.success(`Moved to ${newCategory?.name}`);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to move material');
+      console.error(error);
+    }
+  }
+
   async function saveMaterial() {
     if (!materialName.trim() || !materialQuantity) {
       toast.error('Please enter material name and quantity');
       return;
     }
 
+    if (!selectedCategoryId) {
+      toast.error('Please select a category');
+      return;
+    }
+
     try {
       if (editingMaterial) {
-        // Update existing
+        // Update existing (including category)
         const { error } = await supabase
           .from('materials')
           .update({
+            category_id: selectedCategoryId,
             name: materialName.trim(),
             quantity: parseFloat(materialQuantity),
             length: materialLength.trim() || null,
@@ -2030,7 +2057,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               </th>
                             )}
                             <th className="text-center p-3 font-semibold w-[180px]">Status</th>
-                            <th className="text-right p-3 font-semibold w-[140px]">Actions</th>
+                            <th className="text-right p-3 font-semibold w-[180px]">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2083,8 +2110,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   </Select>
                                 </div>
                               </td>
-                              <td className="p-3 w-[140px]">
+                              <td className="p-3 w-[180px]">
                                 <div className="flex items-center justify-end gap-1">
+                                  <Select
+                                    value={material.category_id}
+                                    onValueChange={(newCategoryId) => quickMoveMaterial(material.id, newCategoryId)}
+                                  >
+                                    <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-muted" title="Move to category">
+                                      <div className="flex items-center justify-center w-full h-full">
+                                        <ChevronDownIcon className="w-4 h-4" />
+                                      </div>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {categories.map(cat => (
+                                        <SelectItem key={cat.id} value={cat.id}>
+                                          {cat.name} {cat.id === material.category_id ? '(current)' : ''}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -2199,6 +2243,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             <DialogTitle>{editingMaterial ? 'Edit Material' : 'Add Material'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label htmlFor="material-category">Category *</Label>
+              <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                <SelectTrigger id="material-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {editingMaterial && editingMaterial.category_id !== selectedCategoryId && (
+                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  This will move the material to a different category
+                </p>
+              )}
+            </div>
             <div>
               <Label htmlFor="material-name">Material Name *</Label>
               <Input
