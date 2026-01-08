@@ -65,6 +65,7 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
         .from('jobs')
         .select('id, name, client_name, status, projected_start_date, projected_end_date, is_internal')
         .in('status', ['active', 'quoting', 'on_hold'])
+        .eq('is_internal', false)
         .order('projected_start_date', { ascending: true, nullsFirst: false });
 
       if (error) throw error;
