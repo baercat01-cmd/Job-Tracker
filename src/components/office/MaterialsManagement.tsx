@@ -187,12 +187,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     loadAllJobs();
   }, [job.id]);
 
-  // Auto-copy categories from Darrell Richard job if this job has none
-  useEffect(() => {
-    if (!loading && categories.length === 0) {
-      autoCopyTemplateCategories();
-    }
-  }, [loading, categories.length]);
+  // Auto-copy disabled - parent categories should be manually added
+  // useEffect(() => {
+  //   if (!loading && categories.length === 0) {
+  //     autoCopyTemplateCategories();
+  //   }
+  // }, [loading, categories.length]);
 
   async function loadUsers() {
     try {
