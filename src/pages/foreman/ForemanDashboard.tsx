@@ -28,6 +28,7 @@ import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
 import { JobCalendar } from '@/components/office/JobCalendar';
 import { JobSchedule } from '@/components/office/JobSchedule';
+import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule';
@@ -344,17 +345,23 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               }}
             />
             
-            {/* View My Time History Button - Small, on right side */}
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setShowTimeHistory(true)}
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground hover:text-primary px-2 py-1 h-auto"
-              >
-                <History className="w-3 h-3 mr-1" />
-                My Time
-              </Button>
+            {/* Grid layout for calendar and my time button */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Unavailable Calendar - Left side */}
+              <UnavailableCalendar userId={profile?.id || ''} />
+              
+              {/* My Time History Button - Right side */}
+              <div className="flex items-end">
+                <Button
+                  onClick={() => setShowTimeHistory(true)}
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs text-muted-foreground hover:text-primary px-2 py-2 h-auto"
+                >
+                  <History className="w-3 h-3 mr-1" />
+                  My Time
+                </Button>
+              </div>
             </div>
           </div>
         </div>

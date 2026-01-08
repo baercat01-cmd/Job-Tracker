@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -110,10 +111,13 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [components, setComponents] = useState<any[]>([]);
   const [showJobLegend, setShowJobLegend] = useState(false);
   const [openDialog, setOpenDialog] = useState<'to_order' | 'deliveries' | 'subcontractors' | null>(null);
+  const [displayUnavailableDates, setDisplayUnavailableDates] = useState(false);
+  const [unavailableDates, setUnavailableDates] = useState<any[]>([]);
 
   useEffect(() => {
     loadJobs();
     loadComponents();
+    loadUnavailableDates();
     // If jobId prop is provided, set filter to that job
     if (jobId) {
       setFilterJob(jobId);
@@ -152,6 +156,40 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
     } catch (error) {
       console.error('Error loading components:', error);
     }
+  }
+
+  async function loadUnavailableDates() {
+    try {
+      const { data, error } = await supabase
+        .from('user_unavailable_dates')
+        .select(`
+          *,
+          user_profiles!inner(id, username)
+        `)
+        .order('start_date');
+
+      if (error) throw error;
+      setUnavailableDates(data || []);
+    } catch (error) {
+      console.error('Error loading unavailable dates:', error);
+    }
+  }
+
+  function getUnavailableUsers(dateStr: string): string[] {
+    if (!displayUnavailableDates) return [];
+    
+    const date = new Date(dateStr);
+    const unavailableUsers: string[] = [];
+    
+    unavailableDates.forEach(range => {
+      const start = new Date(range.start_date);
+      const end = new Date(range.end_date);
+      if (date >= start && date <= end) {
+        unavailableUsers.push((range.user_profiles as any)?.username || 'Unknown');
+      }
+    });
+    
+    return unavailableUsers;
   }
 
   async function loadCalendarEvents() {
@@ -571,22 +609,31 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               const dayEvents = getEventsForDate(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               const isSelected = dateStr === selectedDate;
+              const unavailableUsers = getUnavailableUsers(dateStr);
 
               return (
                 <div
                   key={day}
                   className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded cursor-pointer transition-all ${
                     isToday ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
-                  } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''}`}
+                  } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''} ${
+                    unavailableUsers.length > 0 ? 'bg-orange-50 border-orange-300' : ''
+                  }`}
                   onClick={() => {
-                    if (dayEvents.length > 0) {
+                    if (dayEvents.length > 0 || unavailableUsers.length > 0) {
                       setSelectedDate(dateStr);
                       setShowDayDialog(true);
                     }
                   }}
+                  title={unavailableUsers.length > 0 ? `Off: ${unavailableUsers.join(', ')}` : undefined}
                 >
-                  <div className={`text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${isToday ? 'text-primary' : ''}`}>
+                  <div className={`text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${
+                    isToday ? 'text-primary' : unavailableUsers.length > 0 ? 'text-orange-600' : ''
+                  }`}>
                     {day}
+                    {unavailableUsers.length > 0 && (
+                      <div className="text-[8px] sm:text-[10px] text-orange-600 font-normal mt-0.5">Off</div>
+                    )}
                   </div>
                   <div className="space-y-0.5 sm:space-y-1">
                     {/* Mobile: Show up to 2 events with dots, Desktop: Show up to 4 events with details */}
@@ -640,8 +687,21 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
 
 
-          {/* Quick Access Buttons */}
-          <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t">
+          {/* Quick Access Buttons + Toggle Unavailable Dates */}
+          <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t space-y-3">
+            {/* Toggle Button for Unavailable Dates */}
+            <div className="flex items-center justify-between px-1">
+              <Label className="text-sm font-medium">Show Staff Time Off</Label>
+              <Button
+                variant={displayUnavailableDates ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDisplayUnavailableDates(!displayUnavailableDates)}
+                className="h-8"
+              >
+                {displayUnavailableDates ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <Button
                 variant="outline"
@@ -974,7 +1034,28 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="mt-4">
-            {selectedDate && getEventsForDate(selectedDate).length === 0 ? (
+            {/* Show unavailable users first if any */}
+            {selectedDate && getUnavailableUsers(selectedDate).length > 0 && (
+              <Card className="mb-4 border-orange-300 bg-orange-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
+                    <Users className="w-4 h-4" />
+                    Staff Unavailable
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {getUnavailableUsers(selectedDate).map((username, idx) => (
+                      <Badge key={idx} variant="outline" className="border-orange-400 text-orange-700">
+                        {username}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {selectedDate && getEventsForDate(selectedDate).length === 0 && getUnavailableUsers(selectedDate).length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <CalendarIcon className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
