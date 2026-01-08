@@ -1520,9 +1520,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             className={filterCategory === 'all' ? 'gradient-primary' : ''}
           >
             All Sections
-            <Badge variant="secondary" className="ml-2">
-              {categories.reduce((sum, cat) => sum + cat.materials.length, 0)}
-            </Badge>
           </Button>
           {categories.map((cat) => (
             <Button
@@ -1532,9 +1529,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               className={filterCategory === cat.id ? 'gradient-primary' : ''}
             >
               {cat.name}
-              <Badge variant="secondary" className="ml-2">
-                {cat.materials.length}
-              </Badge>
             </Button>
           ))}
         </div>
