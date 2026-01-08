@@ -122,6 +122,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [parentCategoryId, setParentCategoryId] = useState<string>('');
   const [categorySheetImage, setCategorySheetImage] = useState<File | null>(null);
   const [categorySheetPreview, setCategorySheetPreview] = useState<string | null>(null);
+  const [selectedChildCategories, setSelectedChildCategories] = useState<string[]>([]);
   
   // Material modal
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -324,6 +325,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setParentCategoryId('');
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
+    setSelectedChildCategories([]);
     setShowCategoryModal(true);
   }
 
@@ -333,6 +335,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setParentCategoryId(category.parent_id || '');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
+    
+    // Find all child categories of this category
+    const childCats = categories.filter(c => c.parent_id === category.id).map(c => c.id);
+    setSelectedChildCategories(childCats);
+    
     setShowCategoryModal(true);
   }
 
@@ -402,6 +409,30 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', editingCategory.id);
 
         if (error) throw error;
+        
+        // Update child categories: assign selected ones, unassign others
+        const currentChildren = categories.filter(c => c.parent_id === editingCategory.id).map(c => c.id);
+        const toAssign = selectedChildCategories.filter(id => !currentChildren.includes(id));
+        const toUnassign = currentChildren.filter(id => !selectedChildCategories.includes(id));
+        
+        // Assign new children
+        if (toAssign.length > 0) {
+          const { error: assignError } = await supabase
+            .from('materials_categories')
+            .update({ parent_id: editingCategory.id })
+            .in('id', toAssign);
+          if (assignError) throw assignError;
+        }
+        
+        // Unassign removed children
+        if (toUnassign.length > 0) {
+          const { error: unassignError } = await supabase
+            .from('materials_categories')
+            .update({ parent_id: null })
+            .in('id', toUnassign);
+          if (unassignError) throw unassignError;
+        }
+        
         toast.success('Category updated');
       } else {
         // Create new
@@ -2382,6 +2413,47 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 Select a parent to group this category under another category
               </p>
             </div>
+            
+            {/* Child Categories Selection (only for editing parent categories) */}
+            {editingCategory && !editingCategory.parent_id && (
+              <div>
+                <Label>Child Categories</Label>
+                <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                  {categories.filter(cat => cat.id !== editingCategory.id && !cat.parent_id).length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-2">
+                      No other top-level categories available to add as children
+                    </p>
+                  ) : (
+                    categories
+                      .filter(cat => cat.id !== editingCategory.id && !cat.parent_id)
+                      .map(cat => (
+                        <div key={cat.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`child-${cat.id}`}
+                            checked={selectedChildCategories.includes(cat.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedChildCategories([...selectedChildCategories, cat.id]);
+                              } else {
+                                setSelectedChildCategories(selectedChildCategories.filter(id => id !== cat.id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-gray-300"
+                          />
+                          <Label htmlFor={`child-${cat.id}`} className="cursor-pointer font-normal">
+                            {cat.name}
+                          </Label>
+                        </div>
+                      ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Select categories to organize under this parent category
+                </p>
+              </div>
+            )}
+            
             <div>
               <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
               <div className="space-y-2">
