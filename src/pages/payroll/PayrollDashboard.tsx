@@ -366,7 +366,7 @@ export function PayrollDashboard() {
         .filter(u => u.totalHours > 0 || u.dateEntries.length > 0)
         .map(u => ({
           ...u,
-          dateEntries: u.dateEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // Most recent first
+          dateEntries: u.dateEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), // Oldest first
         }))
         .sort((a, b) => a.userName.localeCompare(b.userName));
 
