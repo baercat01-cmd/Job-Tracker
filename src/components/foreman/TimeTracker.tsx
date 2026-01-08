@@ -1494,7 +1494,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                       </Button>
 
                       {showManualWorkers && (
-                        <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
+                        <div className="border rounded-lg p-3 max-h-[400px] overflow-y-auto space-y-2">
                           {workers.map((worker) => (
                             <div key={worker.id} className="flex items-center space-x-2">
                               <Checkbox
