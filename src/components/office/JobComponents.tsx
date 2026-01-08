@@ -264,6 +264,8 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
         };
       });
 
+      console.log('Saving job components:', updatedComponents);
+
       const { error } = await supabase
         .from('jobs')
         .update({
@@ -272,14 +274,17 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
         })
         .eq('id', job.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Save error:', error);
+        throw error;
+      }
 
-      toast.success('Job components updated');
+      toast.success(`${updatedComponents.length} component${updatedComponents.length !== 1 ? 's' : ''} assigned to job`);
       setShowManageDialog(false);
       onUpdate();
     } catch (error: any) {
-      toast.error('Failed to update components');
-      console.error(error);
+      toast.error('Failed to update components: ' + (error.message || 'Unknown error'));
+      console.error('Save components error:', error);
     }
   }
 
@@ -383,10 +388,12 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
           Job Components
         </h3>
         {isOffice && (
-          <Button onClick={() => setShowManageDialog(true)} size="sm" variant="outline">
-            <ListChecks className="w-4 h-4 mr-2" />
-            Manage Components
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setShowManageDialog(true)} size="sm" variant="outline">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Components
+            </Button>
+          </div>
         )}
       </div>
 
@@ -468,24 +475,36 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
       <Dialog open={showManageDialog} onOpenChange={setShowManageDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Manage Job Components</DialogTitle>
+            <DialogTitle>Add Components to Job</DialogTitle>
+            <DialogDescription>
+              Select existing components or create new ones to assign to this job
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-3 border-b">
-              <p className="text-sm text-muted-foreground">
-                Select components to assign to this job
+              <p className="text-sm font-medium">
+                {selectedComponents.length} of {globalComponents.length} selected
               </p>
-              <Button size="sm" variant="outline" onClick={() => setShowCreateGlobal(true)}>
+              <Button size="sm" variant="default" onClick={() => setShowCreateGlobal(true)}>
                 <Plus className="w-3 h-3 mr-2" />
-                New Component
+                Create New Component
               </Button>
             </div>
 
             {globalComponents.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">
-                <p>No global components available</p>
-                <p className="text-sm mt-1">Create a component to get started</p>
-              </div>
+              <Alert>
+                <Layers className="w-4 h-4" />
+                <AlertTitle>No components available</AlertTitle>
+                <AlertDescription>
+                  Create your first component to start tracking work categories for this job.
+                  <div className="mt-3">
+                    <Button size="sm" onClick={() => setShowCreateGlobal(true)}>
+                      <Plus className="w-3 h-3 mr-2" />
+                      Create First Component
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
             ) : (
               <div className="space-y-2">
                 {globalComponents.map((component) => (
@@ -539,8 +558,11 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
               <Button variant="outline" onClick={() => setShowManageDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={saveJobComponents}>
-                Save Components
+              <Button 
+                onClick={saveJobComponents}
+                disabled={selectedComponents.length === 0}
+              >
+                Save {selectedComponents.length > 0 ? `(${selectedComponents.length})` : ''}
               </Button>
             </div>
           </div>
