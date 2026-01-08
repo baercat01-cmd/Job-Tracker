@@ -108,7 +108,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       title: '',
       description: '',
       task_type: 'field',
-      assigned_to: '',
+      assigned_to: 'unassigned',
       due_date: '',
       priority: 'medium',
     });
@@ -121,7 +121,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       title: task.title,
       description: task.description || '',
       task_type: task.task_type,
-      assigned_to: task.assigned_to || '',
+      assigned_to: task.assigned_to || 'unassigned',
       due_date: task.due_date || '',
       priority: task.priority,
     });
@@ -140,7 +140,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
         title: formData.title.trim(),
         description: formData.description.trim() || null,
         task_type: formData.task_type,
-        assigned_to: formData.assigned_to || null,
+        assigned_to: formData.assigned_to === 'unassigned' ? null : formData.assigned_to,
         due_date: formData.due_date || null,
         priority: formData.priority,
         created_by: editingTask ? editingTask.created_by : userId,
@@ -562,14 +562,14 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
               <div className="space-y-2">
                 <Label htmlFor="assigned_to">Assign To</Label>
                 <Select
-                  value={formData.assigned_to}
-                  onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+                  value={formData.assigned_to || 'unassigned'}
+                  onValueChange={(value) => setFormData({ ...formData, assigned_to: value === 'unassigned' ? '' : value })}
                 >
                   <SelectTrigger id="assigned_to">
                     <SelectValue placeholder="Select user..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.username || user.email} ({user.role})
