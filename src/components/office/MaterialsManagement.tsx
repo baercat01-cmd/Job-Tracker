@@ -74,8 +74,10 @@ interface Category {
   id: string;
   name: string;
   order_index: number;
+  parent_id?: string | null;
   materials: Material[];
   sheet_image_url?: string | null;
+  subCategories?: Category[];
 }
 
 interface MaterialsManagementProps {
@@ -118,6 +120,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryName, setCategoryName] = useState('');
+  const [categoryParentId, setCategoryParentId] = useState<string>('');
   const [categorySheetImage, setCategorySheetImage] = useState<File | null>(null);
   const [categorySheetPreview, setCategorySheetPreview] = useState<string | null>(null);
   
@@ -237,10 +240,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       console.log('Found template job:', templateJob.name);
 
-      // Load categories from template job
+      // Load ALL categories (parents and children) from template job
       const { data: templateCategories, error: catError } = await supabase
         .from('materials_categories')
-        .select('name, order_index, sheet_image_url')
+        .select('id, name, order_index, parent_id, sheet_image_url')
         .eq('job_id', templateJob.id)
         .order('order_index');
 
@@ -251,20 +254,46 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         return;
       }
 
-      // Create categories in current job
-      const categoriesToInsert = templateCategories.map((cat, index) => ({
-        job_id: job.id,
-        name: cat.name,
-        order_index: index,
-        created_by: userId,
-        sheet_image_url: cat.sheet_image_url,
-      }));
+      // Create a mapping of old IDs to new IDs for parent-child relationships
+      const idMapping: Record<string, string> = {};
 
-      const { error: insertError } = await supabase
-        .from('materials_categories')
-        .insert(categoriesToInsert);
+      // First, create all parent categories
+      const parentCategories = templateCategories.filter(cat => !cat.parent_id);
+      for (const cat of parentCategories) {
+        const { data, error } = await supabase
+          .from('materials_categories')
+          .insert({
+            job_id: job.id,
+            name: cat.name,
+            order_index: cat.order_index,
+            parent_id: null,
+            created_by: userId,
+            sheet_image_url: cat.sheet_image_url,
+          })
+          .select('id')
+          .single();
 
-      if (insertError) throw insertError;
+        if (error) throw error;
+        idMapping[cat.id] = data.id;
+      }
+
+      // Then, create all sub-categories with mapped parent IDs
+      const childCategories = templateCategories.filter(cat => cat.parent_id);
+      for (const cat of childCategories) {
+        const newParentId = idMapping[cat.parent_id];
+        if (!newParentId) continue; // Skip if parent wasn't created
+
+        await supabase
+          .from('materials_categories')
+          .insert({
+            job_id: job.id,
+            name: cat.name,
+            order_index: cat.order_index,
+            parent_id: newParentId,
+            created_by: userId,
+            sheet_image_url: cat.sheet_image_url,
+          });
+      }
 
       console.log(`Auto-copied ${templateCategories.length} categories from ${templateJob.name}`);
       toast.success(`Categories set up from ${templateJob.name}`);
@@ -297,15 +326,29 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (materialsError) throw materialsError;
 
-      const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
+      // Build hierarchy: parent categories with their sub-categories
+      const allCategories: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
         order_index: cat.order_index,
+        parent_id: cat.parent_id,
         sheet_image_url: (cat as any).sheet_image_url,
         materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
+        subCategories: [],
       }));
 
-      setCategories(categoriesWithMaterials);
+      // Separate parents and children
+      const parentCategories = allCategories.filter(c => !c.parent_id);
+      const childCategories = allCategories.filter(c => c.parent_id);
+
+      // Attach children to their parents
+      parentCategories.forEach(parent => {
+        parent.subCategories = childCategories
+          .filter(child => child.parent_id === parent.id)
+          .sort((a, b) => a.order_index - b.order_index);
+      });
+
+      setCategories(parentCategories);
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error('Failed to load materials');
@@ -314,9 +357,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  function openAddCategory() {
+  function openAddCategory(parentId?: string) {
     setEditingCategory(null);
     setCategoryName('');
+    setCategoryParentId(parentId || '');
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
     setShowCategoryModal(true);
@@ -325,6 +369,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openEditCategory(category: Category) {
     setEditingCategory(category);
     setCategoryName(category.name);
+    setCategoryParentId(category.parent_id || '');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
     setShowCategoryModal(true);
@@ -358,6 +403,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       return;
     }
 
+    // Handle the "__NONE__" special value for parent selection
+    const finalParentId = categoryParentId === '__NONE__' ? '' : categoryParentId;
+
     try {
       let sheetImageUrl: string | null = null;
 
@@ -382,7 +430,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (editingCategory) {
         // Update existing
-        const updateData: any = { name: categoryName.trim() };
+        const updateData: any = { 
+          name: categoryName.trim(),
+          parent_id: finalParentId || null,
+        };
         if (sheetImageUrl) {
           updateData.sheet_image_url = sheetImageUrl;
         }
@@ -396,20 +447,32 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         toast.success('Category updated');
       } else {
         // Create new
-        const maxOrder = Math.max(...categories.map(c => c.order_index), -1);
+        // Calculate max order based on parent context
+        let maxOrder = -1;
+        if (finalParentId) {
+          // Get max order among siblings with same parent
+          const parent = categories.find(c => c.id === finalParentId);
+          if (parent && parent.subCategories) {
+            maxOrder = Math.max(...parent.subCategories.map(c => c.order_index), -1);
+          }
+        } else {
+          // Get max order among root categories
+          maxOrder = Math.max(...categories.map(c => c.order_index), -1);
+        }
         
         const { error } = await supabase
           .from('materials_categories')
           .insert({
             job_id: job.id,
             name: categoryName.trim(),
+            parent_id: finalParentId || null,
             order_index: maxOrder + 1,
             created_by: userId,
             sheet_image_url: sheetImageUrl,
           });
 
         if (error) throw error;
-        toast.success('Category created');
+        toast.success(finalParentId ? 'Sub-category created' : 'Parent category created');
       }
 
       setShowCategoryModal(false);
@@ -1701,14 +1764,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           >
             All Sections
           </Button>
-          {categories.map((cat) => (
+          {categories.map((parent) => (
             <Button
-              key={cat.id}
-              variant={filterCategory === cat.id ? 'default' : 'outline'}
-              onClick={() => setFilterCategory(cat.id)}
-              className={filterCategory === cat.id ? 'gradient-primary' : ''}
+              key={parent.id}
+              variant={filterCategory === parent.id ? 'default' : 'outline'}
+              onClick={() => setFilterCategory(parent.id)}
+              className={filterCategory === parent.id ? 'gradient-primary' : ''}
             >
-              {cat.name}
+              {parent.name}
             </Button>
           ))}
         </div>
@@ -1716,9 +1779,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       {/* Header Actions */}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={openAddCategory} className="gradient-primary">
+        <Button onClick={() => openAddCategory()} className="gradient-primary">
           <Plus className="w-4 h-4 mr-2" />
-          Add Category
+          Add Parent Category
         </Button>
         <Button
           onClick={downloadAllTemplate}
@@ -2052,260 +2115,298 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       {filteredCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+            <p className="text-muted-foreground">No categories yet. Create a parent category to get started.</p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {filteredCategories.map((category) => {
-            const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-            const showColorColumn = /metal|trim/i.test(category.name);
-            
-            return (
-              <Card key={category.id} className="overflow-hidden">
-                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+        <div className="space-y-6">
+          {filteredCategories.map((parentCategory) => (
+            <div key={parentCategory.id} className="space-y-3">
+              {/* Parent Category Header */}
+              <Card className="bg-gradient-to-r from-primary/20 to-primary/10 border-2 border-primary/30">
+                <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                      <CardTitle className="text-2xl font-bold">{parentCategory.name}</CardTitle>
+                      <Badge variant="outline" className="bg-white">
+                        {(parentCategory.subCategories?.length || 0)} sub-categories
+                      </Badge>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => downloadCategoryTemplate(category)}
-                        className="bg-green-50 hover:bg-green-100 border-green-300"
-                      >
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        Template
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => openAddMaterial(category.id)}
+                        onClick={() => openAddCategory(parentCategory.id)}
                         className="gradient-primary"
                       >
                         <Plus className="w-4 h-4 mr-2" />
-                        Add Material
+                        Add Sub-Category
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => openEditCategory(category)}
+                        onClick={() => openEditCategory(parentCategory)}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => moveCategoryUp(category)}
-                        disabled={category.order_index === 0}
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => moveCategoryDown(category)}
-                        disabled={category.order_index === categories.length - 1}
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteCategory(category.id)}
+                        onClick={() => deleteCategory(parentCategory.id)}
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
-                  {category.sheet_image_url && (
-                    <div className="mt-3 p-2 bg-white rounded-lg border">
-                      <img
-                        src={category.sheet_image_url}
-                        alt={`${category.name} sheet`}
-                        className="max-h-40 w-auto mx-auto object-contain"
-                      />
-                    </div>
-                  )}
                 </CardHeader>
-                <CardContent className="p-0">
-                  {filteredMaterials.length === 0 ? (
-                    <div className="py-8 text-center text-muted-foreground">
-                      No materials in this category
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-muted/50 border-b">
-                          <tr>
-                            <th className="text-left p-3">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSort('name')}
-                                className="font-semibold -ml-3"
-                              >
-                                Material Name
-                                <SortIcon column="name" />
-                              </Button>
-                            </th>
-                            <th className="text-left p-3">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSort('useCase')}
-                                className="font-semibold -ml-3"
-                              >
-                                Use Case
-                                <SortIcon column="useCase" />
-                              </Button>
-                            </th>
-                            <th className="text-center p-3 w-[100px]">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSort('quantity')}
-                                className="font-semibold -ml-3"
-                              >
-                                Qty
-                                <SortIcon column="quantity" />
-                              </Button>
-                            </th>
-                            <th className="text-center p-3 w-[100px]">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSort('length')}
-                                className="font-semibold -ml-3"
-                              >
-                                Length
-                                <SortIcon column="length" />
-                              </Button>
-                            </th>
-                            {showColorColumn && (
-                              <th className="text-center p-3 w-[120px]">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleSort('color')}
-                                  className="font-semibold -ml-3"
-                                >
-                                  Color
-                                  <SortIcon column="color" />
-                                </Button>
-                              </th>
-                            )}
-                            <th className="text-center p-3 font-semibold w-[180px]">Status</th>
-                            <th className="text-right p-3 font-semibold w-[180px]">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredMaterials.map((material) => (
-                            <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="p-3">
-                                <div className="font-medium">{material.name}</div>
-                                {material.import_source && material.import_source !== 'manual' && (
-                                  <Badge variant="outline" className="mt-1 text-xs">
-                                    {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
-                                  </Badge>
-                                )}
-                              </td>
-                              <td className="p-3 text-sm text-muted-foreground">
-                                <div>{material.use_case || '-'}</div>
-                              </td>
-                              <td className="p-3 text-center font-semibold w-[100px]">
-                                {material.quantity}
-                              </td>
-                              <td className="p-3 text-center w-[100px]">
-                                {material.length || '-'}
-                              </td>
-                              {showColorColumn && (
-                                <td className="p-3 text-center w-[120px]">
-                                  {material.color ? (
-                                    <Badge variant="outline" className="font-medium">
-                                      {material.color}
-                                    </Badge>
-                                  ) : ('-')}
-                                </td>
-                              )}
-                              <td className="p-3 w-[180px]">
-                                <div className="flex justify-center">
-                                  <Select
-                                    value={material.status}
-                                    onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
-                                  >
-                                    <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {STATUS_OPTIONS.map(opt => (
-                                        <SelectItem key={opt.value} value={opt.value}>
-                                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
-                                            {opt.label}
-                                          </span>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </td>
-                              <td className="p-3 w-[180px]">
-                                <div className="flex items-center justify-end gap-1">
-                                  <Select
-                                    value={material.category_id}
-                                    onValueChange={(newCategoryId) => quickMoveMaterial(material.id, newCategoryId)}
-                                  >
-                                    <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-muted" title="Move to category">
-                                      <div className="flex items-center justify-center w-full h-full">
-                                        <ChevronDownIcon className="w-4 h-4" />
-                                      </div>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {categories.map(cat => (
-                                        <SelectItem key={cat.id} value={cat.id}>
-                                          {cat.name} {cat.id === material.category_id ? '(current)' : ''}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleStatusChange(material, material.status)}
-                                    title="Edit dates, notes, and delivery info"
-                                  >
-                                    <Calendar className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => openEditMaterial(material)}
-                                    title="Edit material details"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => deleteMaterial(material.id)}
-                                    className="text-destructive hover:text-destructive"
-                                    title="Delete material"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
               </Card>
-            );
-          })}
+
+              {/* Sub-Categories */}
+              {parentCategory.subCategories && parentCategory.subCategories.length > 0 ? (
+                <div className="grid gap-4 ml-6">
+                  {parentCategory.subCategories.map((category) => {
+                    const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+                    const showColorColumn = /metal|trim/i.test(category.name);
+                    
+                    return (
+                      <Card key={category.id} className="overflow-hidden">
+                        <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => downloadCategoryTemplate(category)}
+                                className="bg-green-50 hover:bg-green-100 border-green-300"
+                              >
+                                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                                Template
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => openAddMaterial(category.id)}
+                                className="gradient-primary"
+                              >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add Material
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openEditCategory(category)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => deleteCategory(category.id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          {category.sheet_image_url && (
+                            <div className="mt-3 p-2 bg-white rounded-lg border">
+                              <img
+                                src={category.sheet_image_url}
+                                alt={`${category.name} sheet`}
+                                className="max-h-40 w-auto mx-auto object-contain"
+                              />
+                            </div>
+                          )}
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          {filteredMaterials.length === 0 ? (
+                            <div className="py-8 text-center text-muted-foreground">
+                              No materials in this category
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full">
+                                <thead className="bg-muted/50 border-b">
+                                  <tr>
+                                    <th className="text-left p-3">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleSort('name')}
+                                        className="font-semibold -ml-3"
+                                      >
+                                        Material Name
+                                        <SortIcon column="name" />
+                                      </Button>
+                                    </th>
+                                    <th className="text-left p-3">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleSort('useCase')}
+                                        className="font-semibold -ml-3"
+                                      >
+                                        Use Case
+                                        <SortIcon column="useCase" />
+                                      </Button>
+                                    </th>
+                                    <th className="text-center p-3 w-[100px]">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleSort('quantity')}
+                                        className="font-semibold -ml-3"
+                                      >
+                                        Qty
+                                        <SortIcon column="quantity" />
+                                      </Button>
+                                    </th>
+                                    <th className="text-center p-3 w-[100px]">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleSort('length')}
+                                        className="font-semibold -ml-3"
+                                      >
+                                        Length
+                                        <SortIcon column="length" />
+                                      </Button>
+                                    </th>
+                                    {showColorColumn && (
+                                      <th className="text-center p-3 w-[120px]">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleSort('color')}
+                                          className="font-semibold -ml-3"
+                                        >
+                                          Color
+                                          <SortIcon column="color" />
+                                        </Button>
+                                      </th>
+                                    )}
+                                    <th className="text-center p-3 font-semibold w-[180px]">Status</th>
+                                    <th className="text-right p-3 font-semibold w-[180px]">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredMaterials.map((material) => (
+                                    <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                                      <td className="p-3">
+                                        <div className="font-medium">{material.name}</div>
+                                        {material.import_source && material.import_source !== 'manual' && (
+                                          <Badge variant="outline" className="mt-1 text-xs">
+                                            {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-sm text-muted-foreground">
+                                        <div>{material.use_case || '-'}</div>
+                                      </td>
+                                      <td className="p-3 text-center font-semibold w-[100px]">
+                                        {material.quantity}
+                                      </td>
+                                      <td className="p-3 text-center w-[100px]">
+                                        {material.length || '-'}
+                                      </td>
+                                      {showColorColumn && (
+                                        <td className="p-3 text-center w-[120px]">
+                                          {material.color ? (
+                                            <Badge variant="outline" className="font-medium">
+                                              {material.color}
+                                            </Badge>
+                                          ) : ('-')}
+                                        </td>
+                                      )}
+                                      <td className="p-3 w-[180px]">
+                                        <div className="flex justify-center">
+                                          <Select
+                                            value={material.status}
+                                            onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                          >
+                                            <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {STATUS_OPTIONS.map(opt => (
+                                                <SelectItem key={opt.value} value={opt.value}>
+                                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
+                                                    {opt.label}
+                                                  </span>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </td>
+                                      <td className="p-3 w-[180px]">
+                                        <div className="flex items-center justify-end gap-1">
+                                          <Select
+                                            value={category.id}
+                                            onValueChange={(newCategoryId) => quickMoveMaterial(material.id, newCategoryId)}
+                                          >
+                                            <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-muted" title="Move to category">
+                                              <div className="flex items-center justify-center w-full h-full">
+                                                <ChevronDownIcon className="w-4 h-4" />
+                                              </div>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {categories.flatMap(parent => [
+                                                ...parent.subCategories || []
+                                              ]).map(cat => (
+                                                <SelectItem key={cat.id} value={cat.id}>
+                                                  {cat.name} {cat.id === material.category_id ? '(current)' : ''}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => handleStatusChange(material, material.status)}
+                                            title="Edit dates, notes, and delivery info"
+                                          >
+                                            <Calendar className="w-4 h-4" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => openEditMaterial(material)}
+                                            title="Edit material details"
+                                          >
+                                            <Edit className="w-4 h-4" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => deleteMaterial(material.id)}
+                                            className="text-destructive hover:text-destructive"
+                                            title="Delete material"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="ml-6 p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground">
+                  <p>No sub-categories yet. Add a sub-category to organize materials.</p>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -2324,6 +2425,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 onChange={(e) => setCategoryName(e.target.value)}
                 placeholder="e.g., Lumber, Steel, Roofing"
               />
+            </div>
+            <div>
+              <Label htmlFor="category-parent">Parent Category (Optional)</Label>
+              <Select value={categoryParentId} onValueChange={setCategoryParentId}>
+                <SelectTrigger id="category-parent">
+                  <SelectValue placeholder="None (Top-level parent category)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__NONE__">None (Top-level parent category)</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave empty to create a top-level parent category, or select a parent to create a sub-category
+              </p>
             </div>
             <div>
               <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
@@ -2390,7 +2510,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map(cat => (
+                  {categories.flatMap(parent => [
+                    ...(parent.subCategories || [])
+                  ]).map(cat => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>
