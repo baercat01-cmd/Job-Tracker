@@ -458,10 +458,10 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
           })}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-3 h-[calc(100vh-300px)]">
+        <div className="grid gap-4 md:grid-cols-3">
           {/* Active Column */}
           <div className="flex flex-col">
-            <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-200 rounded-lg p-3 mb-3 sticky top-0 z-10">
+            <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-200 rounded-lg p-3 mb-3">
               <h3 className="text-lg font-bold text-green-900 flex items-center gap-2">
                 Active
                 <Badge variant="secondary" className="bg-green-200 text-green-900">
@@ -469,7 +469,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                 </Badge>
               </h3>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+            <div className="space-y-3">
               {jobs
                 .filter((job) => job.status === 'active' && !job.is_internal)
                 .map((job) => {
@@ -652,7 +652,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
 
           {/* Quoting Column */}
           <div className="flex flex-col">
-            <div className="bg-gradient-to-r from-yellow-100 to-yellow-50 border-2 border-yellow-200 rounded-lg p-3 mb-3 sticky top-0 z-10">
+            <div className="bg-gradient-to-r from-yellow-100 to-yellow-50 border-2 border-yellow-200 rounded-lg p-3 mb-3">
               <h3 className="text-lg font-bold text-yellow-900 flex items-center gap-2">
                 Quoting
                 <Badge variant="secondary" className="bg-yellow-200 text-yellow-900">
@@ -660,7 +660,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                 </Badge>
               </h3>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+            <div className="space-y-3">
               {jobs
                 .filter((job) => job.status === 'quoting' && !job.is_internal)
                 .map((job) => {
@@ -744,7 +744,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
 
           {/* On Hold Column */}
           <div className="flex flex-col">
-            <div className="bg-gradient-to-r from-orange-100 to-orange-50 border-2 border-orange-200 rounded-lg p-3 mb-3 sticky top-0 z-10">
+            <div className="bg-gradient-to-r from-orange-100 to-orange-50 border-2 border-orange-200 rounded-lg p-3 mb-3">
               <h3 className="text-lg font-bold text-orange-900 flex items-center gap-2">
                 On Hold
                 <Badge variant="secondary" className="bg-orange-200 text-orange-900">
@@ -752,7 +752,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                 </Badge>
               </h3>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+            <div className="space-y-3">
               {jobs
                 .filter((job) => job.status === 'on_hold' && !job.is_internal)
                 .map((job) => {
