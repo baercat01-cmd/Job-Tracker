@@ -1055,15 +1055,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               <Label htmlFor="category-parent">Parent Category (Optional)</Label>
               <Select value={categoryParentId} onValueChange={setCategoryParentId}>
                 <SelectTrigger id="category-parent">
-                  <SelectValue placeholder="None (Main Category)" />
+                  <SelectValue placeholder="None (Create as Main/Parent Category)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__NONE__">None (Main Category)</SelectItem>
-                  {categories.filter(c => c.id !== editingCategory?.id).map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  <SelectItem value="__NONE__">None (Create as Main/Parent Category)</SelectItem>
+                  {categories.filter(c => c.id !== editingCategory?.id && !c.parent_id).map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name} (Main Category)</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Select a main category to create this as a subcategory, or leave as "None" to create a new main/parent category
+              </p>
             </div>
             <div>
               <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
