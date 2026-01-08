@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +59,7 @@ interface CalendarEvent {
   subcontractorName?: string;
   subcontractorPhone?: string;
   assignedUserName?: string;
+  subcontractorTrades?: string[]; // Added this to fix an issue later if needed
 }
 
 interface MasterCalendarProps {
@@ -148,85 +150,92 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       setLoading(true);
       const events: CalendarEvent[] = [];
 
-      // Only load material events if viewing a specific job (jobId is provided)
-      // Master calendar (all jobs view) should NOT show material events
+      // Load material events for all active jobs
+      let materialsQuery = supabase
+        .from('materials')
+        .select(`
+          id,
+          name,
+          job_id,
+          order_by_date,
+          delivery_date,
+          pull_by_date,
+          actual_delivery_date,
+          status,
+          jobs!inner(id, name, client_name)
+        `)
+        .eq('jobs.status', 'active')
+        .or('order_by_date.not.is.null,delivery_date.not.is.null,pull_by_date.not.is.null');
+
+      // If viewing a specific job, filter to that job only
       if (jobId) {
-        // Build job filter for materials - only for specific job view
-        const { data: materials, error: materialsError } = await supabase
-          .from('materials')
-          .select(`
-            id,
-            name,
-            job_id,
-            order_by_date,
-            delivery_date,
-            pull_by_date,
-            actual_delivery_date,
-            status,
-            jobs!inner(id, name, client_name)
-          `)
-          .eq('jobs.status', 'active')
-          .eq('job_id', jobId)
-          .or('order_by_date.not.is.null,delivery_date.not.is.null,pull_by_date.not.is.null');
+        materialsQuery = materialsQuery.eq('job_id', jobId);
+      }
 
-        if (!materialsError && materials) {
-          materials.forEach((material: any) => {
-            const job = material.jobs;
-            const jobColor = getJobColor(job.name);
-            
-            // Order by date
-            if (material.order_by_date && material.status === 'not_ordered') {
-              events.push({
-                id: `order-${material.id}`,
-                type: 'material_order',
-                date: material.order_by_date,
-                jobId: job.id,
-                jobName: job.name,
-                jobColor,
-                title: `Order: ${material.name}`,
-                description: `Must order by this date`,
-                status: material.status,
-                materialId: material.id,
-                priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
-              });
-            }
+      // If master calendar filter is active, apply it
+      if (filterJob !== 'all' && !jobId) {
+        materialsQuery = materialsQuery.eq('job_id', filterJob);
+      }
 
-            // Delivery date
-            if (material.delivery_date && material.status === 'ordered') {
-              events.push({
-                id: `delivery-${material.id}`,
-                type: 'material_delivery',
-                date: material.delivery_date,
-                jobId: job.id,
-                jobName: job.name,
-                jobColor,
-                title: `Delivery: ${material.name}`,
-                description: `Expected delivery to shop`,
-                status: material.status,
-                materialId: material.id,
-                priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
-              });
-            }
+      const { data: materials, error: materialsError } = await materialsQuery;
 
-            // Pull by date - only show when material is NOT yet at shop (still ordered)
-            // Once at shop, the pull event is no longer needed on calendar
-            if (material.pull_by_date && material.status === 'ordered') {
-              events.push({
-                id: `pull-${material.id}`,
-                type: 'material_pull',
-                date: material.pull_by_date,
-                jobId: job.id,
-                jobName: job.name,
-                jobColor,
-                title: `Pull: ${material.name}`,
-                description: `Pull from shop for delivery`,
-                status: material.status,
-                materialId: material.id,
-                priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
-              });
-            }
-          });
-        }
+      if (!materialsError && materials) {
+        materials.forEach((material: any) => {
+          const job = material.jobs;
+          const jobColor = getJobColor(job.name);
+          
+          // Order by date
+          if (material.order_by_date && material.status === 'not_ordered') {
+            events.push({
+              id: `order-${material.id}`,
+              type: 'material_order',
+              date: material.order_by_date,
+              jobId: job.id,
+              jobName: job.name,
+              jobColor,
+              title: `Order: ${material.name}`,
+              description: `${job.name} - Must order by this date`,
+              status: material.status,
+              materialId: material.id,
+              priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
+            });
+          }
+
+          // Delivery date
+          if (material.delivery_date && material.status === 'ordered') {
+            events.push({
+              id: `delivery-${material.id}`,
+              type: 'material_delivery',
+              date: material.delivery_date,
+              jobId: job.id,
+              jobName: job.name,
+              jobColor,
+              title: `Delivery: ${material.name}`,
+              description: `${job.name} - Expected delivery to shop`,
+              status: material.status,
+              materialId: material.id,
+              priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
+            });
+          }
+
+          // Pull by date - only show when material is NOT yet at shop (still ordered)
+          // Once at shop, the pull event is no longer needed on calendar
+          if (material.pull_by_date && material.status === 'ordered') {
+            events.push({
+              id: `pull-${material.id}`,
+              type: 'material_pull',
+              date: material.pull_by_date,
+              jobId: job.id,
+              jobName: job.name,
+              jobColor,
+              title: `Pull: ${material.name}`,
+              description: `${job.name} - Pull from shop for delivery`,
+              status: material.status,
+              materialId: material.id,
+              priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
+            });
+          }
+        });
       }
 
       // Get subcontractor schedules
@@ -289,50 +298,59 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         });
       }
 
-      // Get calendar events (pickups, deliveries, order reminders) - only for job-specific view
-      if (jobId) {
-        const { data: calendarEvents, error: calendarEventsError } = await supabase
-          .from('calendar_events')
-          .select(`
-            id,
-            title,
-            description,
-            event_date,
-            event_type,
-            job_id,
-            jobs!inner(id, name, client_name, status)
-          `)
-          .eq('jobs.status', 'active')
-          .eq('job_id', jobId)
-          .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder']);
+      // Get calendar events (pickups, deliveries, order reminders)
+      let calendarEventsQuery = supabase
+        .from('calendar_events')
+        .select(`
+          id,
+          title,
+          description,
+          event_date,
+          event_type,
+          job_id,
+          jobs!inner(id, name, client_name, status)
+        `)
+        .eq('jobs.status', 'active')
+        .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder']);
 
-        if (!calendarEventsError && calendarEvents) {
-          calendarEvents.forEach((event: any) => {
-            const job = event.jobs;
-            const jobColor = getJobColor(job.name);
-            
-            let eventType: CalendarEvent['type'] = 'material_pickup';
-            if (event.event_type === 'material_delivery') {
-              eventType = 'material_delivery';
-            } else if (event.event_type === 'material_order_reminder') {
-              eventType = 'material_order';
-            } else if (event.event_type === 'material_pickup') {
-              eventType = 'material_pickup';
-            }
-            
-            events.push({
-              id: `calendar-${event.id}`,
-              type: eventType,
-              date: event.event_date,
-              jobId: job.id,
-              jobName: job.name,
-              jobColor,
-              title: event.title,
-              description: event.description || '',
-              priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-            });
+      // If viewing a specific job, filter to that job
+      if (jobId) {
+        calendarEventsQuery = calendarEventsQuery.eq('job_id', jobId);
+      }
+
+      // If master calendar filter is active, apply it
+      if (filterJob !== 'all' && !jobId) {
+        calendarEventsQuery = calendarEventsQuery.eq('job_id', filterJob);
+      }
+
+      const { data: calendarEvents, error: calendarEventsError } = await calendarEventsQuery;
+
+      if (!calendarEventsError && calendarEvents) {
+        calendarEvents.forEach((event: any) => {
+          const job = event.jobs;
+          const jobColor = getJobColor(job.name);
+          
+          let eventType: CalendarEvent['type'] = 'material_pickup';
+          if (event.event_type === 'material_delivery') {
+            eventType = 'material_delivery';
+          } else if (event.event_type === 'material_order_reminder') {
+            eventType = 'material_order';
+          } else if (event.event_type === 'material_pickup') {
+            eventType = 'material_pickup';
+          }
+          
+          events.push({
+            id: `calendar-${event.id}`,
+            type: eventType,
+            date: event.event_date,
+            jobId: job.id,
+            jobName: job.name,
+            jobColor,
+            title: event.title,
+            description: `${job.name} - ${event.description || ''}`,
+            priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
           });
-        }
+        });
       }
 
       // Load tasks with due dates (excluding completed tasks)
@@ -413,7 +431,21 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   }
 
   function getEventsForDate(dateStr: string): CalendarEvent[] {
-    return events.filter(event => event.date === dateStr);
+    // Filter by trade if filterTrade is not 'all'
+    const filteredByTrade = filterTrade === 'all'
+      ? events
+      : events.filter(event => {
+          // If it's a subcontractor event, check its trades
+          if (event.type === 'subcontractor' && event.subcontractorTrades) {
+            return event.subcontractorTrades.includes(components.find(c => c.id === filterTrade)?.name);
+          }
+          // For other event types, we might need a different filtering logic
+          // or assume they don't have a 'trade' for this filter.
+          // For now, let's exclude non-subcontractor events if a trade is selected.
+          return false;
+        });
+
+    return filteredByTrade.filter(event => event.date === dateStr);
   }
 
   function previousMonth() {
@@ -453,7 +485,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
     material_pickup: { icon: Package, label: 'Pickup', color: 'bg-orange-500' },
     task_completed: { icon: ListChecks, label: 'Task Completed', color: 'bg-green-500' },
     task_deadline: { icon: AlertCircle, label: 'Task Deadline', color: 'bg-red-500' },
-    subcontractor: { icon: CalendarIcon, label: 'Subcontractor', color: 'bg-indigo-500' },
+    subcontractor: { icon: Users, label: 'Subcontractor', color: 'bg-indigo-500' }, // Changed to Users icon
   };
 
   // Get job color legend
@@ -631,7 +663,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                           key={event.id}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (isMaterialEvent && jobId) {
+                            if (isMaterialEvent && event.materialId) { // Check for materialId to confirm it's an editable material event
                               setSelectedEvent(event);
                               setShowEventDialog(true);
                             } else {
@@ -640,11 +672,11 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                           }}
                           className={`text-xs px-2 py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-4 ${
                             event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
-                            event.priority === 'medium' ? 'bg-warning/20 text-warning-foreground' :
+                            event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-800' : // Adjusted for better visibility
                             'bg-muted text-muted-foreground'
                           }`}
                           style={{ borderLeftColor: event.jobColor }}
-                          title={`${event.jobName}: ${event.title}\n${isMaterialEvent && jobId ? 'Click to edit' : 'Click to view job'}`}
+                          title={`${event.jobName}: ${event.title}\n${isMaterialEvent && event.materialId ? 'Click to edit' : 'Click to view job'}`}
                         >
                           <Icon className="w-3 h-3 inline mr-1" />
                           <span className="truncate block">{event.title}</span>
@@ -698,7 +730,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                       }`}
                       style={{ borderLeftColor: event.jobColor }}
                       onClick={() => {
-                        if (isMaterialEvent && jobId) {
+                        if (isMaterialEvent && event.materialId) { // Check for materialId to confirm it's an editable material event
                           setSelectedEvent(event);
                           setShowEventDialog(true);
                         } else {
@@ -738,7 +770,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                                 📞 {event.subcontractorPhone}
                               </p>
                             )}
-                            {isMaterialEvent && jobId && (
+                            {isMaterialEvent && event.materialId && ( // Check for materialId
                               <Badge variant="outline" className="mt-2 text-xs">
                                 Click to edit material details
                               </Badge>
@@ -758,8 +790,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             </div>
           )}
 
-          {/* Quick Access Buttons - Only show material buttons if viewing specific job */}
-          {jobId && (
+          {/* Quick Access Buttons */}
           <div className="mt-6 pt-6 border-t">
             <div className="grid grid-cols-3 gap-3">
               <Button
@@ -806,7 +837,6 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               </Button>
             </div>
           </div>
-          )}
         </CardContent>
       </Card>
 
