@@ -2537,12 +2537,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
                 <div>
                   <Label>Use Case Column (Optional)</Label>
-                  <Select value={columnMapping.useCase} onValueChange={(v) => setColumnMapping({ ...columnMapping, useCase: v })}>
+                  <Select value={columnMapping.useCase} onValueChange={(v) => setColumnMapping({ ...columnMapping, useCase: v === '__NONE__' ? '' : v })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select column for use case" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="__NONE__">None</SelectItem>
                       {csvColumns.map(col => (
                         <SelectItem key={col} value={col}>{col}</SelectItem>
                       ))}
@@ -2552,12 +2552,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
                 <div>
                   <Label>Length Column (Optional)</Label>
-                  <Select value={columnMapping.length} onValueChange={(v) => setColumnMapping({ ...columnMapping, length: v })}>
+                  <Select value={columnMapping.length} onValueChange={(v) => setColumnMapping({ ...columnMapping, length: v === '__NONE__' ? '' : v })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select column for length" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="__NONE__">None</SelectItem>
                       {csvColumns.map(col => (
                         <SelectItem key={col} value={col}>{col}</SelectItem>
                       ))}
