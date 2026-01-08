@@ -994,9 +994,21 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
   }
 
   return (
-    <div className="space-y-3 w-full">
-      {/* Materials Content */}
-      <div className="space-y-3">
+    <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
+      {/* Tab Switcher */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready')} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="all" className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            All Materials
+          </TabsTrigger>
+          <TabsTrigger value="ready" className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Ready for Job
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="all" className="space-y-3">
       {/* Action Bar - Mobile Optimized - Only show for office/shop users */}
       {allowBundleCreation && (
         !selectionMode ? (
@@ -1028,6 +1040,74 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
           </div>
         )
       )}
+
+      {/* Search, Sort, and Status Filter */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <Input
+            placeholder="Search materials..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-11 pr-12 h-12 text-base"
+          />
+          {searchTerm && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-10 w-10 p-0"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          )}
+        </div>
+
+        {/* Sort Dropdown */}
+        <div className="w-36">
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'name' | 'status' | 'date' | 'quantity')}>
+            <SelectTrigger className="h-12 text-sm">
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="quantity">Quantity</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Status Filter Tab - Compact */}
+        <div className="w-44">
+          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+            <SelectTrigger className="h-12 text-sm">
+              <SelectValue>
+                {statusFilter === 'all' ? (
+                  'All'
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].color}`} />
+                    {STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG].label}
+                  </div>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-sm py-2">All Materials</SelectItem>
+              {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                <SelectItem key={status} value={status} className="text-sm py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${config.color}`} />
+                    {config.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* Bundles */}
       {bundles.length > 0 && (
@@ -2076,7 +2156,12 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
           </div>
         </DialogContent>
       </Dialog>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="ready">
+          <ReadyForJobMaterials userId={userId} currentJobId={job.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
