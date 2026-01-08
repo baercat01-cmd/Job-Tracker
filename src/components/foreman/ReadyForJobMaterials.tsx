@@ -151,26 +151,6 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
 
   return (
     <div className="space-y-4 w-full lg:max-w-4xl lg:mx-auto">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-600" />
-                Ready for Job
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Materials at shop ready to go to this job site
-              </p>
-            </div>
-            <Badge variant="secondary" className="text-base px-3 py-1">
-              {filteredMaterials.length} {filteredMaterials.length === 1 ? 'item' : 'items'}
-            </Badge>
-          </div>
-        </CardHeader>
-      </Card>
-
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
