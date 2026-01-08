@@ -366,7 +366,11 @@ export function PayrollDashboard() {
         .filter(u => u.totalHours > 0 || u.dateEntries.length > 0)
         .map(u => ({
           ...u,
-          dateEntries: u.dateEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), // Oldest first
+          dateEntries: u.dateEntries.sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateA - dateB; // Ascending: oldest to newest
+          }),
         }))
         .sort((a, b) => a.userName.localeCompare(b.userName));
 
