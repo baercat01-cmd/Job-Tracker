@@ -2207,6 +2207,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import</DialogTitle>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
