@@ -64,6 +64,10 @@ function generatePayrollHTML(data: any): string {
         page-break-inside: avoid;
       }
       
+      .user-section.page-break {
+        page-break-after: always;
+      }
+      
       .user-header {
         background: #f8f9fa;
         padding: 12px 15px;
@@ -205,8 +209,8 @@ function generatePayrollHTML(data: any): string {
       </div>
     </div>
     
-    ${users.map((user: any) => `
-      <div class="user-section">
+    ${users.map((user: any, userIdx: number) => `
+      <div class="user-section${userIdx < users.length - 1 ? ' page-break' : ''}">
         <div class="user-header">
           <div class="user-name">${user.name}</div>
           <div class="user-total">${user.totalHours.toFixed(2)}h</div>
