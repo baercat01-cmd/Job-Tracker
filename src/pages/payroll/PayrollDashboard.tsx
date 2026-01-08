@@ -843,88 +843,103 @@ export function PayrollDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {user.dateEntries.map((dateEntry, dateIdx) => (
-                              dateEntry.entries.map((entry, entryIdx) => {
-                                const isTimeOff = entry.entryId.startsWith('timeoff-');
-                                const isFirstEntryOfDay = entryIdx === 0;
-                                const rowsForThisDay = dateEntry.entries.length;
-                                
-                                return (
-                                  <tr 
-                                    key={`${dateIdx}-${entryIdx}`}
-                                    className={`border-b transition-colors ${
-                                      isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
-                                    }`}
-                                  >
-                                    {/* Date column - show only for first entry of the day */}
-                                    {isFirstEntryOfDay ? (
-                                      <td className="p-2 align-top font-medium" rowSpan={rowsForThisDay}>
-                                        <div className="text-sm">
-                                          {new Date(dateEntry.date).toLocaleDateString('en-US', {
-                                            weekday: 'short',
-                                            month: 'short',
-                                            day: 'numeric',
-                                          })}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-1">
-                                          {dateEntry.totalHours.toFixed(2)}h
-                                        </div>
-                                      </td>
-                                    ) : null}
+                            {user.dateEntries.map((dateEntry, dateIdx) => {
+                              const hasMultipleJobs = dateEntry.entries.length > 1;
+                              return (
+                                <>
+                                  {dateEntry.entries.map((entry, entryIdx) => {
+                                    const isTimeOff = entry.entryId.startsWith('timeoff-');
+                                    const isFirstEntryOfDay = entryIdx === 0;
+                                    const rowsForThisDay = dateEntry.entries.length;
                                     
-                                    <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
-                                      <div>
-                                        <div className="font-medium">{entry.jobName}</div>
-                                        {entry.clientName && !isTimeOff && (
-                                          <div className="text-xs text-muted-foreground">{entry.clientName}</div>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-2 font-mono text-xs">
-                                      {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })}
-                                    </td>
-                                    <td className="p-2 font-mono text-xs">
-                                      {isTimeOff ? '-' : (entry.endTime 
-                                        ? new Date(entry.endTime).toLocaleTimeString([], {
+                                    return (
+                                      <tr 
+                                        key={`${dateIdx}-${entryIdx}`}
+                                        className={`border-b transition-colors ${
+                                          isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
+                                        }`}
+                                      >
+                                        {/* Date column - show only for first entry of the day */}
+                                        {isFirstEntryOfDay ? (
+                                          <td className="p-2 align-top font-medium" rowSpan={rowsForThisDay}>
+                                            <div className="text-sm">
+                                              {new Date(dateEntry.date).toLocaleDateString('en-US', {
+                                                weekday: 'short',
+                                                month: 'short',
+                                                day: 'numeric',
+                                              })}
+                                            </div>
+                                          </td>
+                                        ) : null}
+                                        
+                                        <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
+                                          <div>
+                                            <div className="font-medium">{entry.jobName}</div>
+                                            {entry.clientName && !isTimeOff && (
+                                              <div className="text-xs text-muted-foreground">{entry.clientName}</div>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2 font-mono text-xs">
+                                          {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
                                             hour: '2-digit',
                                             minute: '2-digit',
-                                          })
-                                        : '-')}
-                                    </td>
-                                    <td className={`p-2 text-right font-bold ${
-                                      isTimeOff ? 'text-amber-600' : 'text-primary'
-                                    }`}>
-                                      {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
-                                    </td>
-                                    <td className="p-2">
-                                      {!isTimeOff && (
-                                        <div className="flex items-center justify-center gap-1">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => openEditDialog(entry.entryId)}
-                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                          >
-                                            <Edit className="w-3.5 h-3.5" />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => deleteEntry(entry.entryId)}
-                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                            ))}
+                                          })}
+                                        </td>
+                                        <td className="p-2 font-mono text-xs">
+                                          {isTimeOff ? '-' : (entry.endTime 
+                                            ? new Date(entry.endTime).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                              })
+                                            : '-')}
+                                        </td>
+                                        <td className={`p-2 text-right font-bold ${
+                                          isTimeOff ? 'text-amber-600' : 'text-primary'
+                                        }`}>
+                                          {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
+                                        </td>
+                                        <td className="p-2">
+                                          {!isTimeOff && (
+                                            <div className="flex items-center justify-center gap-1">
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => openEditDialog(entry.entryId)}
+                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                              >
+                                                <Edit className="w-3.5 h-3.5" />
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => deleteEntry(entry.entryId)}
+                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                  {/* Daily Total Row - only show if multiple jobs worked that day */}
+                                  {hasMultipleJobs && (
+                                    <tr className="bg-primary/5 border-b-2">
+                                      <td className="p-2"></td>
+                                      <td className="p-2 text-right font-semibold text-sm" colSpan={3}>
+                                        Daily Total:
+                                      </td>
+                                      <td className="p-2 text-right font-bold text-primary">
+                                        {dateEntry.totalHours.toFixed(2)}
+                                      </td>
+                                      <td className="p-2"></td>
+                                    </tr>
+                                  )}
+                                </>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
