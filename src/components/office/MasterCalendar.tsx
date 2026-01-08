@@ -509,24 +509,29 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   return (
     <>
       <Card className="w-full">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-2xl flex items-center gap-2">
-                <CalendarIcon className="w-6 h-6 text-primary" />
-                {jobId ? `Job Calendar - ${jobs.find(j => j.id === jobId)?.name || 'Loading...'}` : 'Master Calendar - All Jobs'}
+        <CardHeader className="p-3 sm:p-6">
+          <div className="flex flex-col gap-3 sm:gap-4">
+            {/* Mobile-optimized header */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-lg sm:text-2xl flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <span className="truncate">
+                  {jobId ? jobs.find(j => j.id === jobId)?.name || 'Loading...' : 'Calendar'}
+                </span>
               </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={previousMonth}>
+              
+              {/* Mobile-optimized navigation */}
+              <div className="flex items-center justify-between sm:justify-end gap-2">
+                <Button variant="outline" size="icon" onClick={previousMonth} className="h-9 w-9">
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <div className="min-w-[200px] text-center">
-                  <p className="text-xl font-bold">{monthYear}</p>
+                <div className="min-w-[140px] sm:min-w-[200px] text-center">
+                  <p className="text-base sm:text-xl font-bold">{monthYear}</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={goToToday}>
+                <Button variant="outline" size="sm" onClick={goToToday} className="h-9 px-3">
                   Today
                 </Button>
-                <Button variant="outline" size="icon" onClick={nextMonth}>
+                <Button variant="outline" size="icon" onClick={nextMonth} className="h-9 w-9">
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
@@ -534,14 +539,14 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
             {/* Filters - Only show if not locked to a specific job */}
             {!jobId && (
-            <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/30 rounded-lg">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-muted/30 rounded-lg">
+              <div className="hidden sm:flex items-center gap-2">
                 <Filter className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Filters:</span>
               </div>
               
               <Select value={filterJob} onValueChange={setFilterJob}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px] h-10">
                   <SelectValue placeholder="Filter by Job Site" />
                 </SelectTrigger>
                 <SelectContent>
@@ -561,7 +566,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               </Select>
 
               <Select value={filterTrade} onValueChange={setFilterTrade}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px] h-10">
                   <SelectValue placeholder="Filter by Trade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -574,67 +579,70 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 </SelectContent>
               </Select>
 
-              {(filterJob !== 'all' || filterTrade !== 'all') && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="w-4 h-4 mr-1" />
-                  Clear Filters
-                </Button>
-              )}
+              <div className="flex gap-2 sm:ml-auto">
+                {(filterJob !== 'all' || filterTrade !== 'all') && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="flex-1 sm:flex-initial h-10">
+                    <X className="w-4 h-4 mr-1" />
+                    Clear
+                  </Button>
+                )}
 
-              {/* Job Colors Legend Button */}
-              {activeJobs.length > 0 && (
-                <Popover open={showJobLegend} onOpenChange={setShowJobLegend}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="ml-auto">
-                      <Palette className="w-4 h-4 mr-2" />
-                      Job Colors
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto max-w-md" align="end">
-                    <div className="space-y-3">
-                      <h4 className="font-semibold text-sm">Job Color Legend</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {activeJobs.map(job => (
-                          <Badge 
-                            key={job.id} 
-                            variant="outline"
-                            className="cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => {
-                              onJobSelect(job.id);
-                              setShowJobLegend(false);
-                            }}
-                          >
-                            <div 
-                              className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: getJobColor(job.name) }}
-                            />
-                            {job.name}
-                          </Badge>
-                        ))}
+                {/* Job Colors Legend Button */}
+                {activeJobs.length > 0 && (
+                  <Popover open={showJobLegend} onOpenChange={setShowJobLegend}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex-1 sm:flex-initial h-10">
+                        <Palette className="w-4 h-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Job Colors</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto max-w-md" align="end">
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm">Job Color Legend</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {activeJobs.map(job => (
+                            <Badge 
+                              key={job.id} 
+                              variant="outline"
+                              className="cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => {
+                                onJobSelect(job.id);
+                                setShowJobLegend(false);
+                              }}
+                            >
+                              <div 
+                                className="w-3 h-3 rounded-full mr-2"
+                                style={{ backgroundColor: getJobColor(job.name) }}
+                              />
+                              {job.name}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </div>
             </div>
             )}
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="p-2 sm:p-6">
           {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {/* Day headers */}
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <div key={day} className="text-center font-semibold text-sm text-muted-foreground py-2">
-                {day}
+          <div className="grid grid-cols-7 gap-1 sm:gap-2">
+            {/* Day headers - abbreviated on mobile */}
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+              <div key={day} className="text-center font-semibold text-xs sm:text-sm text-muted-foreground py-1 sm:py-2">
+                <span className="hidden sm:inline">{day}</span>
+                <span className="sm:hidden">{['S', 'M', 'T', 'W', 'T', 'F', 'S'][index]}</span>
               </div>
             ))}
 
             {/* Calendar days */}
             {calendarDays.map((day, index) => {
               if (!day) {
-                return <div key={`empty-${index}`} className="min-h-28 p-2 border rounded-lg bg-muted/30" />;
+                return <div key={`empty-${index}`} className="min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded bg-muted/30" />;
               }
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -645,16 +653,17 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               return (
                 <div
                   key={day}
-                  className={`min-h-28 p-2 border rounded-lg cursor-pointer transition-all ${
-                    isToday ? 'bg-primary/10 border-primary ring-2 ring-primary/20' : 'hover:bg-muted/50'
-                  } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                  className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded cursor-pointer transition-all ${
+                    isToday ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
+                  } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''}`}
                   onClick={() => setSelectedDate(isSelected ? null : dateStr)}
                 >
-                  <div className={`text-sm font-bold mb-2 ${isToday ? 'text-primary' : ''}`}>
+                  <div className={`text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${isToday ? 'text-primary' : ''}`}>
                     {day}
                   </div>
-                  <div className="space-y-1">
-                    {dayEvents.slice(0, 4).map(event => {
+                  <div className="space-y-0.5 sm:space-y-1">
+                    {/* Mobile: Show up to 2 events with dots, Desktop: Show up to 4 events with details */}
+                    {dayEvents.slice(0, 2).map(event => {
                       const config = EVENT_TYPE_CONFIG[event.type];
                       const Icon = config.icon;
                       const isMaterialEvent = event.type.startsWith('material_');
@@ -663,35 +672,43 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                           key={event.id}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (isMaterialEvent && event.materialId) { // Check for materialId to confirm it's an editable material event
+                            if (isMaterialEvent && event.materialId) {
                               setSelectedEvent(event);
                               setShowEventDialog(true);
                             } else {
                               onJobSelect(event.jobId);
                             }
                           }}
-                          className={`text-xs px-2 py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-4 ${
+                          className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${
                             event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
-                            event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-800' : // Adjusted for better visibility
+                            event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-800' :
                             'bg-muted text-muted-foreground'
                           }`}
                           style={{ borderLeftColor: event.jobColor }}
                           title={`${event.jobName}: ${event.title}\n${isMaterialEvent && event.materialId ? 'Click to edit' : 'Click to view job'}`}
                         >
-                          <Icon className="w-3 h-3 inline mr-1" />
-                          <span className="truncate block">{event.title}</span>
+                          {/* Desktop: Show icon and text */}
+                          <div className="hidden sm:flex items-center gap-1">
+                            <Icon className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{event.title}</span>
+                          </div>
+                          {/* Mobile: Show dot only */}
+                          <div className="sm:hidden flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                            <span className="truncate text-[10px]">{event.title.substring(0, 15)}{event.title.length > 15 ? '...' : ''}</span>
+                          </div>
                         </div>
                       );
                     })}
-                    {dayEvents.length > 4 && (
+                    {dayEvents.length > 2 && (
                       <div 
-                        className="text-xs text-muted-foreground font-semibold cursor-pointer hover:text-primary"
+                        className="text-[10px] sm:text-xs text-muted-foreground font-semibold cursor-pointer hover:text-primary px-1"
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedDate(dateStr);
                         }}
                       >
-                        +{dayEvents.length - 4} more
+                        +{dayEvents.length - 2}
                       </div>
                     )}
                   </div>
@@ -791,18 +808,18 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           )}
 
           {/* Quick Access Buttons */}
-          <div className="mt-6 pt-6 border-t">
-            <div className="grid grid-cols-3 gap-3">
+          <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-4 flex-col gap-2"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
                 onClick={() => setOpenDialog('to_order')}
               >
                 <Package className="w-5 h-5" />
                 <div className="text-center">
-                  <div className="font-semibold">To Order</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs sm:text-sm font-semibold">To Order</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground">
                     {events.filter(e => e.type === 'material_order').length} items
                   </div>
                 </div>
@@ -810,13 +827,13 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-4 flex-col gap-2"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
                 onClick={() => setOpenDialog('deliveries')}
               >
                 <Truck className="w-5 h-5" />
                 <div className="text-center">
-                  <div className="font-semibold">Deliveries</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs sm:text-sm font-semibold">Deliveries</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground">
                     {events.filter(e => e.type === 'material_delivery').length} scheduled
                   </div>
                 </div>
@@ -824,13 +841,13 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-4 flex-col gap-2"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
                 onClick={() => setOpenDialog('subcontractors')}
               >
                 <Users className="w-5 h-5" />
                 <div className="text-center">
-                  <div className="font-semibold">Subcontractors</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs sm:text-sm font-semibold">Subcontractors</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground">
                     {events.filter(e => e.type === 'subcontractor').length} scheduled
                   </div>
                 </div>
