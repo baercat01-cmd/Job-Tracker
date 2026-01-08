@@ -805,7 +805,10 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         <Card className="border-2 border-primary/30 shadow-md">
           <CardContent className="py-6">
             <Button
-              onClick={() => setEntryMode('manual')}
+              onClick={() => {
+                setShowManualEntry(true);
+                setManualStep(1);
+              }}
               size="lg"
               className="w-full h-16 text-lg gradient-primary"
             >
@@ -853,8 +856,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                         <>
                           <Button
                             onClick={() => {
-                              setSelectedComponent(component.id);
-                              setEntryMode('manual');
+                              setManualComponent(component.id);
+                              setShowManualEntry(true);
+                              setManualStep(1);
                             }}
                             className="w-full h-12 gradient-primary"
                           >
@@ -1235,6 +1239,405 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
           View & Edit My Time History
         </Button>
       </div>
+
+      {/* Manual Entry Dialog - Multi-Step Wizard */}
+      <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5" />
+              Add Component Time - Step {manualStep} of 4
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Step 1: Select Component */}
+          {manualStep === 1 && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <Label htmlFor="manual-component" className="text-base font-semibold">Select Component *</Label>
+                <div className="relative">
+                  <div className="relative">
+                    <Input
+                      id="manual-component-search"
+                      value={manualComponentSearch}
+                      onChange={(e) => {
+                        setManualComponentSearch(e.target.value);
+                        setShowManualComponentDropdown(true);
+                      }}
+                      onFocus={() => setShowManualComponentDropdown(true)}
+                      placeholder="Search components..."
+                      className="h-12 text-base pr-10"
+                    />
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  </div>
+                  
+                  {showManualComponentDropdown && (
+                    <div className="absolute z-50 w-full mt-1 border rounded-lg bg-card shadow-lg max-h-[300px] overflow-y-auto">
+                      {components
+                        .filter(c => 
+                          c.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
+                          (c.description && c.description.toLowerCase().includes(manualComponentSearch.toLowerCase()))
+                        )
+                        .map((component) => (
+                          <button
+                            key={component.id}
+                            type="button"
+                            className={`w-full text-left p-4 hover:bg-muted transition-colors border-b last:border-b-0 ${
+                              manualComponent === component.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''
+                            }`}
+                            onClick={() => {
+                              setManualComponent(component.id);
+                              setManualComponentSearch(component.name);
+                              setShowManualComponentDropdown(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium">{component.name}</p>
+                                {component.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
+                                )}
+                              </div>
+                              {isComponentTask(component.id) && (
+                                <Badge className="bg-primary">Task</Badge>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      {components.filter(c => 
+                        c.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
+                        (c.description && c.description.toLowerCase().includes(manualComponentSearch.toLowerCase()))
+                      ).length === 0 && (
+                        <div className="p-4 text-center text-muted-foreground">
+                          No components found
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {manualComponent && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                    <p className="text-sm text-muted-foreground">Selected:</p>
+                    <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowManualEntry(false);
+                    setManualStep(1);
+                    setManualComponent('');
+                    setManualComponentSearch('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => setManualStep(2)}
+                  disabled={!manualComponent}
+                  className="gradient-primary"
+                >
+                  Next: Set Time
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Set Date & Time */}
+          {manualStep === 2 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="manual-date" className="text-base font-semibold">Date *</Label>
+                <Input
+                  id="manual-date"
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  max={getLocalDateString()}
+                  className="h-12 text-base"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Time Worked *</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-hours">Hours</Label>
+                    <Select value={manualHours} onValueChange={setManualHours}>
+                      <SelectTrigger id="manual-hours" className="h-12 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...Array(13)].map((_, i) => (
+                          <SelectItem key={i} value={i.toString()}>
+                            {i} {i === 1 ? 'hour' : 'hours'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-minutes">Minutes</Label>
+                    <Select value={manualMinutes} onValueChange={setManualMinutes}>
+                      <SelectTrigger id="manual-minutes" className="h-12 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[0, 15, 30, 45].map((m) => (
+                          <SelectItem key={m} value={m.toString()}>
+                            {m} min
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Total: {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours
+                </p>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(1)}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => setManualStep(3)}
+                  disabled={(parseInt(manualHours) + parseInt(manualMinutes) / 60) <= 0}
+                  className="gradient-primary"
+                >
+                  Next: Set Crew
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Set Crew/Workers */}
+          {manualStep === 3 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Time: {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours on {new Date(manualDate).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Entry Mode</Label>
+                <RadioGroup value={manualMode} onValueChange={(v) => setManualMode(v as 'count' | 'workers')}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="count" id="manual-mode-count" />
+                    <Label htmlFor="manual-mode-count" className="cursor-pointer">Crew Count</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="workers" id="manual-mode-workers" />
+                    <Label htmlFor="manual-mode-workers" className="cursor-pointer">Select Workers</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {manualMode === 'count' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="manual-crew">Number of Workers</Label>
+                  <Select value={manualCrewCount} onValueChange={setManualCrewCount}>
+                    <SelectTrigger id="manual-crew" className="h-12 text-base">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">No workers (0 total)</SelectItem>
+                      {[...Array(20)].map((_, i) => (
+                        <SelectItem key={i + 1} value={(i + 1).toString()}>
+                          {i + 1} worker{i + 1 > 1 ? 's' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Select the total number of workers for this time entry
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="text-base">Select Workers</Label>
+                  {workers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">No workers available. Office staff can add workers.</p>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowManualWorkers(!showManualWorkers)}
+                        className="w-full h-12 justify-between"
+                      >
+                        <span>
+                          {manualSelectedWorkers.length > 0 
+                            ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length > 1 ? 's' : ''} selected`
+                            : 'Select workers'}
+                        </span>
+                        {showManualWorkers ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </Button>
+
+                      {showManualWorkers && (
+                        <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
+                          {workers.map((worker) => (
+                            <div key={worker.id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`manual-worker-${worker.id}`}
+                                checked={manualSelectedWorkers.includes(worker.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
+                                  } else {
+                                    setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer">
+                                {worker.name}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {manualSelectedWorkers.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {manualSelectedWorkers.length} worker{manualSelectedWorkers.length > 1 ? 's' : ''} selected
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(2)}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => setManualStep(4)}
+                  className="gradient-primary"
+                >
+                  Next: Add Notes
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Notes & Photos */}
+          {manualStep === 4 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours • {' '}
+                  {manualMode === 'workers' 
+                    ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length !== 1 ? 's' : ''}`
+                    : `${parseInt(manualCrewCount)} worker${parseInt(manualCrewCount) !== 1 ? 's' : ''}`}
+                  {' '} • {new Date(manualDate).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="manual-notes" className="text-base font-semibold">Notes (Optional)</Label>
+                <Textarea
+                  id="manual-notes"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="Add notes about this work..."
+                  rows={3}
+                  className="resize-none text-base"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Photos (Optional)</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-12"
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Add Photos
+                </Button>
+                {manualPhotoUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {manualPhotoUrls.map((url, index) => (
+                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden border">
+                        <img
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(index)}
+                          className="absolute top-1 right-1 bg-destructive text-white rounded-full p-1 hover:bg-destructive/90"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(3)}
+                  disabled={loading}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={saveManualEntry}
+                  disabled={loading}
+                  className="gradient-primary"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Entry'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
