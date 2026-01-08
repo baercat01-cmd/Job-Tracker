@@ -335,8 +335,49 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         }
       }
 
-      // Completed tasks are no longer shown on the calendar
-      // They are removed after being marked as complete
+      // Load tasks with due dates (excluding completed tasks)
+      let tasksQuery = supabase
+        .from('job_tasks')
+        .select(`
+          id,
+          title,
+          description,
+          due_date,
+          priority,
+          status,
+          task_type,
+          job_id,
+          jobs!inner(id, name, client_name, status)
+        `)
+        .eq('jobs.status', 'active')
+        .neq('status', 'completed')
+        .not('due_date', 'is', null);
+
+      if (filterJob !== 'all') {
+        tasksQuery = tasksQuery.eq('job_id', filterJob);
+      }
+
+      const { data: tasks, error: tasksError } = await tasksQuery;
+
+      if (!tasksError && tasks) {
+        tasks.forEach((task: any) => {
+          const job = task.jobs;
+          const jobColor = getJobColor(job.name);
+          
+          events.push({
+            id: `task-${task.id}`,
+            type: 'task_deadline',
+            date: task.due_date,
+            jobId: job.id,
+            jobName: job.name,
+            jobColor,
+            title: task.title,
+            description: task.description || `${task.task_type} task`,
+            status: task.status,
+            priority: isPastDue(task.due_date) ? 'high' : isUpcoming(task.due_date) ? 'medium' : 'low',
+          });
+        });
+      }
 
       setEvents(events);
     } catch (error: any) {
