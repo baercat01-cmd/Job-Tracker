@@ -258,10 +258,9 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
 
   function isPastDue(dateStr: string): boolean {
     const date = new Date(dateStr);
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return date < tomorrow;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
   }
 
   function isUpcoming(dateStr: string, days: number = 7): boolean {
