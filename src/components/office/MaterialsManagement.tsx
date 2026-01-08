@@ -1866,6 +1866,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         <div className="space-y-4">
           {filteredCategories.map((category) => {
             const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+            const showColorColumn = /metal|trim/i.test(category.name);
             
             return (
               <Card key={category.id} className="overflow-hidden">
@@ -1992,17 +1993,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="length" />
                               </Button>
                             </th>
-                            <th className="text-center p-3 w-[120px]">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSort('color')}
-                                className="font-semibold -ml-3"
-                              >
-                                Color
-                                <SortIcon column="color" />
-                              </Button>
-                            </th>
+                            {showColorColumn && (
+                              <th className="text-center p-3 w-[120px]">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSort('color')}
+                                  className="font-semibold -ml-3"
+                                >
+                                  Color
+                                  <SortIcon column="color" />
+                                </Button>
+                              </th>
+                            )}
                             <th className="text-center p-3 font-semibold w-[180px]">Status</th>
                             <th className="text-right p-3 font-semibold w-[140px]">Actions</th>
                           </tr>
@@ -2027,13 +2030,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               <td className="p-3 text-center w-[100px]">
                                 {material.length || '-'}
                               </td>
-                              <td className="p-3 text-center w-[120px]">
-                                {material.color ? (
-                                  <Badge variant="outline" className="font-medium">
-                                    {material.color}
-                                  </Badge>
-                                ) : ('-')}
-                              </td>
+                              {showColorColumn && (
+                                <td className="p-3 text-center w-[120px]">
+                                  {material.color ? (
+                                    <Badge variant="outline" className="font-medium">
+                                      {material.color}
+                                    </Badge>
+                                  ) : ('-')}
+                                </td>
+                              )}
                               <td className="p-3 w-[180px]">
                                 <div className="flex justify-center">
                                   <Select
