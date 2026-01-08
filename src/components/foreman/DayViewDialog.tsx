@@ -107,6 +107,12 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
     
     setLoading(true);
     try {
+      // Get today's date for comparison
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selectedDate = new Date(date + 'T00:00:00');
+      const isOverdue = selectedDate < today;
+
       // Load system events (materials, tasks, subcontractors)
       const systemEventsData: SystemEvent[] = [];
 
@@ -136,7 +142,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
               title: `Order: ${material.name}`,
               description: 'Must order by this date',
               status: material.status,
-              priority: 'high',
+              priority: isOverdue ? 'high' : 'medium',
               canEdit: true,
             });
           }
@@ -149,7 +155,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
               title: `Delivery: ${material.name}`,
               description: 'Expected delivery to shop',
               status: material.status,
-              priority: 'medium',
+              priority: isOverdue ? 'high' : 'medium',
               canEdit: true,
             });
           }
@@ -162,7 +168,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
               title: `Pull: ${material.name}`,
               description: 'Pull from shop for delivery',
               status: material.status,
-              priority: 'medium',
+              priority: isOverdue ? 'high' : 'medium',
               canEdit: true,
             });
           }
