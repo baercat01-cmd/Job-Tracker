@@ -2201,9 +2201,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <div>
                     <CardTitle className="text-2xl font-bold flex items-center gap-2">
                       📁 {selectedCategory.name}
-                      <Badge variant="outline" className="ml-2 text-xs">
-                        Parent Category
-                      </Badge>
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                       Showing {filteredCategories.length} subcategories
