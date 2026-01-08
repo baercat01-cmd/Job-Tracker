@@ -325,7 +325,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openAddCategory(parentId?: string) {
     setEditingCategory(null);
     setCategoryName('');
-    setCategoryParentId(parentId || '');
+    setCategoryParentId(parentId || '__NONE__');
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
     setShowCategoryModal(true);
@@ -334,7 +334,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openEditCategory(category: Category) {
     setEditingCategory(category);
     setCategoryName(category.name);
-    setCategoryParentId(category.parent_id || '');
+    setCategoryParentId(category.parent_id || '__NONE__');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
     setShowCategoryModal(true);
@@ -397,7 +397,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           updateData.sheet_image_url = sheetImageUrl;
         }
         // Allow changing parent
-        updateData.parent_id = categoryParentId || null;
+        updateData.parent_id = categoryParentId === '__NONE__' ? null : categoryParentId;
 
         const { error } = await supabase
           .from('materials_categories')
@@ -416,7 +416,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             job_id: job.id,
             name: categoryName.trim(),
             order_index: maxOrder + 1,
-            parent_id: categoryParentId || null,
+            parent_id: categoryParentId === '__NONE__' ? null : categoryParentId,
             created_by: userId,
             sheet_image_url: sheetImageUrl,
           });
@@ -1068,7 +1068,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <SelectValue placeholder="None (Main Category)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None (Main Category)</SelectItem>
+                  <SelectItem value="__NONE__">None (Main Category)</SelectItem>
                   {categories.filter(c => c.id !== editingCategory?.id).map(cat => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
