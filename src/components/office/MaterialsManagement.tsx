@@ -74,6 +74,7 @@ interface Category {
   id: string;
   name: string;
   order_index: number;
+  parent_id?: string | null;
   materials: Material[];
   sheet_image_url?: string | null;
 }
@@ -118,6 +119,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryName, setCategoryName] = useState('');
+  const [parentCategoryId, setParentCategoryId] = useState<string>('');
   const [categorySheetImage, setCategorySheetImage] = useState<File | null>(null);
   const [categorySheetPreview, setCategorySheetPreview] = useState<string | null>(null);
   
@@ -255,6 +257,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       const categoriesToInsert = templateCategories.map((cat, index) => ({
         job_id: job.id,
         name: cat.name,
+        parent_id: cat.parent_id,
         order_index: index,
         created_by: userId,
         sheet_image_url: cat.sheet_image_url,
@@ -300,6 +303,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
+        parent_id: (cat as any).parent_id,
         order_index: cat.order_index,
         sheet_image_url: (cat as any).sheet_image_url,
         materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
@@ -317,6 +321,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openAddCategory() {
     setEditingCategory(null);
     setCategoryName('');
+    setParentCategoryId('');
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
     setShowCategoryModal(true);
@@ -325,6 +330,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openEditCategory(category: Category) {
     setEditingCategory(category);
     setCategoryName(category.name);
+    setParentCategoryId(category.parent_id || '');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
     setShowCategoryModal(true);
@@ -382,7 +388,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (editingCategory) {
         // Update existing
-        const updateData: any = { name: categoryName.trim() };
+        const updateData: any = { 
+          name: categoryName.trim(),
+          parent_id: parentCategoryId || null,
+        };
         if (sheetImageUrl) {
           updateData.sheet_image_url = sheetImageUrl;
         }
@@ -403,6 +412,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .insert({
             job_id: job.id,
             name: categoryName.trim(),
+            parent_id: parentCategoryId || null,
             order_index: maxOrder + 1,
             created_by: userId,
             sheet_image_url: sheetImageUrl,
@@ -1588,7 +1598,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       // Load categories from source job
       const { data: sourceCategories, error: sourceCatError } = await supabase
         .from('materials_categories')
-        .select('name, order_index, sheet_image_url')
+        .select('name, parent_id, order_index, sheet_image_url')
         .eq('job_id', sourceJobId)
         .order('order_index');
 
@@ -1607,6 +1617,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       const categoriesToInsert = sourceCategories.map((cat, index) => ({
         job_id: job.id,
         name: cat.name,
+        parent_id: cat.parent_id,
         order_index: currentMaxOrder + 1 + index,
         created_by: userId,
         sheet_image_url: cat.sheet_image_url,
@@ -1701,7 +1712,32 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           >
             All Sections
           </Button>
-          {categories.map((cat) => (
+          {categories
+            .filter(cat => !cat.parent_id)
+            .map((parentCat) => (
+              <div key={parentCat.id} className="flex items-center gap-1">
+                <Button
+                  variant={filterCategory === parentCat.id ? 'default' : 'outline'}
+                  onClick={() => setFilterCategory(parentCat.id)}
+                  className={filterCategory === parentCat.id ? 'gradient-primary' : ''}
+                >
+                  {parentCat.name}
+                </Button>
+                {categories.filter(c => c.parent_id === parentCat.id).map(childCat => (
+                  <Button
+                    key={childCat.id}
+                    variant={filterCategory === childCat.id ? 'default' : 'outline'}
+                    onClick={() => setFilterCategory(childCat.id)}
+                    size="sm"
+                    className={`ml-1 ${filterCategory === childCat.id ? 'gradient-primary' : 'opacity-80'}`}
+                  >
+                    {childCat.name}
+                  </Button>
+                ))}
+              </div>
+            ))}
+          {/* Orphaned categories (no parent but parent_id is set to non-existent) */}
+          {categories.filter(cat => cat.parent_id && !categories.find(c => c.id === cat.parent_id)).map(cat => (
             <Button
               key={cat.id}
               variant={filterCategory === cat.id ? 'default' : 'outline'}
@@ -2326,6 +2362,27 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               />
             </div>
             <div>
+              <Label htmlFor="parent-category">Parent Category (Optional)</Label>
+              <Select value={parentCategoryId} onValueChange={setParentCategoryId}>
+                <SelectTrigger id="parent-category">
+                  <SelectValue placeholder="None - Top Level Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__NONE__">None - Top Level Category</SelectItem>
+                  {categories
+                    .filter(cat => !cat.parent_id && cat.id !== editingCategory?.id)
+                    .map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Select a parent to group this category under another category
+              </p>
+            </div>
+            <div>
               <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
               <div className="space-y-2">
                 {categorySheetPreview ? (
@@ -2365,7 +2422,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </div>
             </div>
             <div className="flex gap-2 pt-4">
-              <Button onClick={saveCategory} className="flex-1">
+              <Button onClick={() => {
+                // Convert __NONE__ to empty string before saving
+                const finalParentId = parentCategoryId === '__NONE__' ? '' : parentCategoryId;
+                const originalParentId = parentCategoryId;
+                setParentCategoryId(finalParentId);
+                saveCategory().finally(() => setParentCategoryId(originalParentId));
+              }} className="flex-1">
                 {editingCategory ? 'Update' : 'Create'}
               </Button>
               <Button variant="outline" onClick={() => setShowCategoryModal(false)}>
