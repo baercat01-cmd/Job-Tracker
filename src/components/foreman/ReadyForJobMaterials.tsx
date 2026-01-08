@@ -158,55 +158,50 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/50 border-b">
-                  <tr>
-                    <th className="text-left p-3 font-semibold">Category</th>
-                    <th className="text-left p-3 font-semibold">Material</th>
-                    <th className="text-left p-3 font-semibold">Use Case</th>
-                    <th className="text-center p-3 font-semibold">Quantity</th>
-                    <th className="text-center p-3 font-semibold">Length</th>
-                    <th className="text-center p-3 font-semibold">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMaterials.map((material) => (
-                    <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-3">
-                        <Badge variant="outline">{material.category_name}</Badge>
-                      </td>
-                      <td className="p-3 font-medium">{material.name}</td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {material.use_case || '-'}
-                      </td>
-                      <td className="p-3 text-center font-semibold">
-                        {material.quantity}
-                      </td>
-                      <td className="p-3 text-center">
-                        {material.length || '-'}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex justify-center">
-                          <Button
-                            size="sm"
-                            onClick={() => markAsAtJob(material.id, material.name)}
-                            className="gradient-primary"
-                          >
-                            <CheckCircle2 className="w-4 h-4 mr-2" />
-                            At Job
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-3">
+          {filteredMaterials.map((material) => (
+            <Card key={material.id} className="overflow-hidden">
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  {/* Header: Material Name & Category */}
+                  <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-base leading-tight flex-1">{material.name}</h3>
+                      <Badge variant="outline" className="shrink-0">{material.category_name}</Badge>
+                    </div>
+                    {material.use_case && (
+                      <p className="text-sm text-muted-foreground">{material.use_case}</p>
+                    )}
+                  </div>
+
+                  {/* Details: Quantity & Length */}
+                  <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Qty:</span>
+                      <span className="font-semibold">{material.quantity}</span>
+                    </div>
+                    {material.length && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Length:</span>
+                        <span className="font-medium">{material.length}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Button */}
+                  <Button
+                    size="lg"
+                    onClick={() => markAsAtJob(material.id, material.name)}
+                    className="w-full gradient-primary"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Mark as At Job
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
