@@ -2066,9 +2066,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
-                      <Badge variant="secondary" className="font-semibold">
-                        {filteredMaterials.length} {filteredMaterials.length === 1 ? 'item' : 'items'}
-                      </Badge>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
