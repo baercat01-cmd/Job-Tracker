@@ -11,8 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2, Users, User } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { getLocalDateString } from '@/lib/utils';
 
@@ -272,41 +271,16 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               return (
                 <div
                   key={day}
-                  className={`h-16 border rounded flex flex-col items-center justify-between text-xs font-medium p-1 ${
+                  className={`h-12 border rounded flex flex-col items-center justify-center text-xs font-medium p-0.5 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
-                  } ${isUnavailable ? 'bg-destructive/10 border-destructive/30' : 'hover:bg-muted/50'}`}
+                  } ${isUnavailable ? 'bg-destructive/20 text-destructive font-bold' : 'hover:bg-muted/50'}`}
                   title={unavailableInfo || undefined}
                 >
-                  <div className={`font-bold ${isUnavailable ? 'text-destructive' : ''}`}>{day}</div>
+                  <div className="font-bold">{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
-                    <div className="flex flex-col gap-0.5 w-full items-center">
-                      {unavailableUsers.slice(0, 2).map((username, idx) => (
-                        <Badge
-                          key={idx}
-                          variant="destructive"
-                          className="text-[8px] h-3 px-1 py-0 leading-none flex items-center gap-0.5"
-                        >
-                          <User className="w-2 h-2" />
-                          <span className="truncate max-w-[40px]">{username}</span>
-                        </Badge>
-                      ))}
-                      {unavailableUsers.length > 2 && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[8px] h-3 px-1 py-0 leading-none"
-                        >
-                          +{unavailableUsers.length - 2}
-                        </Badge>
-                      )}
+                    <div className="text-[9px] leading-tight text-center truncate w-full px-0.5">
+                      {unavailableUsers.join(', ')}
                     </div>
-                  )}
-                  {!showAllStaff && isUnavailable && (
-                    <Badge
-                      variant="destructive"
-                      className="text-[8px] h-3 px-1 py-0 leading-none"
-                    >
-                      Off
-                    </Badge>
                   )}
                 </div>
               );
