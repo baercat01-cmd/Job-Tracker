@@ -633,7 +633,6 @@ export function PayrollDashboard() {
                               <th className="text-left p-2 font-semibold">Start</th>
                               <th className="text-left p-2 font-semibold">End</th>
                               <th className="text-right p-2 font-semibold">Hours</th>
-                              <th className="text-center p-2 font-semibold">Type</th>
                               <th className="text-left p-2 font-semibold">Notes</th>
                               <th className="text-center p-2 font-semibold">Actions</th>
                             </tr>
@@ -672,14 +671,6 @@ export function PayrollDashboard() {
                                   <td className="p-2 text-right font-bold text-primary">
                                     {entry.totalHours.toFixed(2)}
                                   </td>
-                                  <td className="p-2 text-center">
-                                    <Badge 
-                                      variant={entry.isManual ? 'secondary' : 'default'} 
-                                      className="text-xs"
-                                    >
-                                      {entry.isManual ? 'Manual' : 'Timer'}
-                                    </Badge>
-                                  </td>
                                   <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
                                     {entry.notes || '-'}
                                   </td>
@@ -712,7 +703,7 @@ export function PayrollDashboard() {
                               <td className="p-2 text-right text-primary text-lg">
                                 {user.totalHours.toFixed(2)}
                               </td>
-                              <td className="p-2" colSpan={3}></td>
+                              <td className="p-2" colSpan={2}></td>
                             </tr>
                           </tbody>
                         </table>
