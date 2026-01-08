@@ -412,6 +412,8 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           status,
           task_type,
           job_id,
+          assigned_to,
+          assigned_user:assigned_to(id, username, email),
           jobs!inner(id, name, client_name, status)
         `)
         .eq('jobs.status', 'active')
@@ -428,6 +430,9 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         tasks.forEach((task: any) => {
           const job = task.jobs;
           const jobColor = getJobColor(job.name);
+          const assignedUserName = task.assigned_user 
+            ? (task.assigned_user.username || task.assigned_user.email)
+            : undefined;
           
           events.push({
             id: `task-${task.id}`,
@@ -440,6 +445,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             description: task.description || `${task.task_type} task`,
             status: task.status,
             priority: isPastDue(task.due_date) ? 'high' : isUpcoming(task.due_date) ? 'medium' : 'low',
+            assignedUserName,
           });
         });
       }
