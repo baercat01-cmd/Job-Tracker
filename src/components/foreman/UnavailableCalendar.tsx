@@ -40,7 +40,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   const [startDate, setStartDate] = useState(getLocalDateString());
   const [endDate, setEndDate] = useState(getLocalDateString());
   const [reason, setReason] = useState('');
-  const [showAllStaff, setShowAllStaff] = useState(false);
+  const [showAllStaff, setShowAllStaff] = useState(true);
 
   useEffect(() => {
     loadUnavailableDates();
