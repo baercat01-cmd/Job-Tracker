@@ -123,6 +123,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categorySheetImage, setCategorySheetImage] = useState<File | null>(null);
   const [categorySheetPreview, setCategorySheetPreview] = useState<string | null>(null);
   const [selectedChildCategories, setSelectedChildCategories] = useState<string[]>([]);
+  const [isCreatingParent, setIsCreatingParent] = useState(false);
   
   // Material modal
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -326,6 +327,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
     setSelectedChildCategories([]);
+    setIsCreatingParent(false);
     setShowCategoryModal(true);
   }
 
@@ -339,6 +341,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     // Find all child categories of this category
     const childCats = categories.filter(c => c.parent_id === category.id).map(c => c.id);
     setSelectedChildCategories(childCats);
+    
+    // Determine if this is a parent category (has no parent)
+    setIsCreatingParent(!category.parent_id);
     
     setShowCategoryModal(true);
   }
@@ -2389,43 +2394,83 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 id="category-name"
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
-                placeholder="e.g., Lumber, Steel, Roofing"
+                placeholder={isCreatingParent ? "e.g., Main Building, Porch, Interior" : "e.g., Lumber, Metal, Trim"}
               />
             </div>
-            <div>
-              <Label htmlFor="parent-category">Parent Category (Optional)</Label>
-              <Select value={parentCategoryId} onValueChange={setParentCategoryId}>
-                <SelectTrigger id="parent-category">
-                  <SelectValue placeholder="None - Top Level Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__NONE__">None - Top Level Category</SelectItem>
-                  {categories
-                    .filter(cat => !cat.parent_id && cat.id !== editingCategory?.id)
-                    .map(cat => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Select a parent to group this category under another category
-              </p>
-            </div>
             
-            {/* Child Categories Selection (only for editing parent categories) */}
-            {editingCategory && !editingCategory.parent_id && (
+            {/* Category Type Selection (only when creating new) */}
+            {!editingCategory && (
+              <div className="border-2 border-primary/20 rounded-lg p-4 bg-primary/5">
+                <Label className="text-base font-semibold mb-3 block">Category Type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={isCreatingParent ? 'default' : 'outline'}
+                    onClick={() => {
+                      setIsCreatingParent(true);
+                      setParentCategoryId('');
+                      setSelectedChildCategories([]);
+                    }}
+                    className="h-20 flex flex-col items-center justify-center"
+                  >
+                    <div className="text-lg mb-1">📁</div>
+                    <div className="text-sm font-semibold">Parent Category</div>
+                    <div className="text-xs opacity-80">Contains subcategories</div>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!isCreatingParent ? 'default' : 'outline'}
+                    onClick={() => {
+                      setIsCreatingParent(false);
+                      setSelectedChildCategories([]);
+                    }}
+                    className="h-20 flex flex-col items-center justify-center"
+                  >
+                    <div className="text-lg mb-1">📄</div>
+                    <div className="text-sm font-semibold">Regular Category</div>
+                    <div className="text-xs opacity-80">Holds materials</div>
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {/* Parent Selection (for regular categories) */}
+            {!isCreatingParent && (
               <div>
-                <Label>Child Categories</Label>
+                <Label htmlFor="parent-category">Parent Category (Optional)</Label>
+                <Select value={parentCategoryId} onValueChange={setParentCategoryId}>
+                  <SelectTrigger id="parent-category">
+                    <SelectValue placeholder="None - Top Level Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__NONE__">None - Top Level Category</SelectItem>
+                    {categories
+                      .filter(cat => !cat.parent_id && cat.id !== editingCategory?.id)
+                      .map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Select a parent to group this category (e.g., assign "Lumber" to "Main Building")
+                </p>
+              </div>
+            )}
+            
+            {/* Child Categories Selection (for parent categories) */}
+            {isCreatingParent && (
+              <div>
+                <Label>Child Categories (Optional)</Label>
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                  {categories.filter(cat => cat.id !== editingCategory.id && !cat.parent_id).length === 0 ? (
+                  {categories.filter(cat => cat.id !== editingCategory?.id && (!cat.parent_id || cat.parent_id === editingCategory?.id)).length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-2">
-                      No other top-level categories available to add as children
+                      No categories available to add as children
                     </p>
                   ) : (
                     categories
-                      .filter(cat => cat.id !== editingCategory.id && !cat.parent_id)
+                      .filter(cat => cat.id !== editingCategory?.id && (!cat.parent_id || cat.parent_id === editingCategory?.id))
                       .map(cat => (
                         <div key={cat.id} className="flex items-center gap-2">
                           <input
@@ -2443,13 +2488,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           />
                           <Label htmlFor={`child-${cat.id}`} className="cursor-pointer font-normal">
                             {cat.name}
+                            {cat.parent_id && cat.parent_id !== editingCategory?.id && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                (currently under {categories.find(c => c.id === cat.parent_id)?.name})
+                              </span>
+                            )}
                           </Label>
                         </div>
                       ))
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Select categories to organize under this parent category
+                  Select categories to organize under this parent (e.g., "Lumber", "Metal", "Trim" under "Main Building")
                 </p>
               </div>
             )}
