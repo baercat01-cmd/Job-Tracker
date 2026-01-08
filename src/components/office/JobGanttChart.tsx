@@ -17,9 +17,6 @@ import {
   ChevronRight,
   Plus,
   Edit,
-  Maximize2,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -38,13 +35,24 @@ interface JobGanttChartProps {
   onJobSelect?: (jobId: string) => void;
 }
 
+interface Week {
+  startDate: Date;
+  endDate: Date;
+}
+
+interface Month {
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  weeks: Week[];
+}
+
 export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [jobs, setJobs] = useState<GanttJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<GanttJob | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<'week' | 'month'>('week');
   
   // Form state for adding/editing job dates
   const [formData, setFormData] = useState({
@@ -142,96 +150,106 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
     }
   }
 
-  // Generate weeks/months for the year
-  const getTimelineUnits = () => {
-    if (zoomLevel === 'month') {
-      return Array.from({ length: 12 }, (_, i) => {
-        const date = new Date(currentYear, i, 1);
-        return {
-          label: date.toLocaleDateString('en-US', { month: 'short' }),
-          startDate: new Date(currentYear, i, 1),
-          endDate: new Date(currentYear, i + 1, 0),
-        };
-      });
-    } else {
-      const units = [];
-      const startOfYear = new Date(currentYear, 0, 1);
-      const endOfYear = new Date(currentYear, 11, 31);
+  // Generate hierarchical timeline: months with weeks
+  const getTimelineStructure = (): Month[] => {
+    const months: Month[] = [];
+    
+    for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+      const monthStart = new Date(currentYear, monthIndex, 1);
+      const monthEnd = new Date(currentYear, monthIndex + 1, 0);
       
-      let currentDate = new Date(startOfYear);
-      // Move to the first Sunday of the year
-      currentDate.setDate(currentDate.getDate() - currentDate.getDay());
+      // Generate weeks for this month
+      const weeks: Week[] = [];
+      let currentDate = new Date(monthStart);
       
-      let weekNum = 1;
-      while (currentDate <= endOfYear) {
+      // Start from the first day of the month
+      while (currentDate <= monthEnd) {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
-        units.push({
-          label: `W${weekNum}`,
+        // If week extends beyond month, cap it at month end
+        const actualWeekEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+        
+        weeks.push({
           startDate: new Date(currentDate),
-          endDate: weekEnd,
+          endDate: actualWeekEnd,
         });
         
         currentDate.setDate(currentDate.getDate() + 7);
-        weekNum++;
       }
       
-      return units;
+      months.push({
+        name: monthStart.toLocaleDateString('en-US', { month: 'short' }),
+        startDate: monthStart,
+        endDate: monthEnd,
+        weeks: weeks,
+      });
     }
+    
+    return months;
   };
 
-  const timelineUnits = getTimelineUnits();
+  const timelineStructure = getTimelineStructure();
+  const totalWeeks = timelineStructure.reduce((sum, month) => sum + month.weeks.length, 0);
 
-  // Calculate position and width for a job bar
+  // Calculate position and width for a job bar based on week positions
   const getJobBarStyle = (job: GanttJob) => {
     if (!job.projected_start_date || !job.projected_end_date) return null;
 
     const jobStart = new Date(job.projected_start_date);
     const jobEnd = new Date(job.projected_end_date);
-    const yearStart = timelineUnits[0].startDate;
-    const yearEnd = timelineUnits[timelineUnits.length - 1].endDate;
+    const yearStart = new Date(currentYear, 0, 1);
+    const yearEnd = new Date(currentYear, 11, 31);
 
     // Skip if job is completely outside the current year
     if (jobEnd < yearStart || jobStart > yearEnd) return null;
 
-    // Find which unit the job starts in
-    let startUnitIndex = timelineUnits.findIndex(unit => 
-      jobStart >= unit.startDate && jobStart <= unit.endDate
-    );
-    if (startUnitIndex === -1) {
-      // Job starts before the year
-      startUnitIndex = 0;
+    // Find which week the job starts in
+    let startWeekIndex = 0;
+    let endWeekIndex = 0;
+    let currentWeekIndex = 0;
+    
+    for (const month of timelineStructure) {
+      for (const week of month.weeks) {
+        if (jobStart >= week.startDate && jobStart <= week.endDate) {
+          startWeekIndex = currentWeekIndex;
+        }
+        if (jobEnd >= week.startDate && jobEnd <= week.endDate) {
+          endWeekIndex = currentWeekIndex;
+        }
+        currentWeekIndex++;
+      }
     }
 
-    // Find which unit the job ends in
-    let endUnitIndex = timelineUnits.findIndex(unit => 
-      jobEnd >= unit.startDate && jobEnd <= unit.endDate
-    );
-    if (endUnitIndex === -1) {
-      // Job ends after the year
-      endUnitIndex = timelineUnits.length - 1;
+    const weekWidth = 100 / totalWeeks;
+    
+    // Calculate precise positioning
+    let startWeek: Week | null = null;
+    let endWeek: Week | null = null;
+    currentWeekIndex = 0;
+    
+    for (const month of timelineStructure) {
+      for (const week of month.weeks) {
+        if (currentWeekIndex === startWeekIndex) startWeek = week;
+        if (currentWeekIndex === endWeekIndex) endWeek = week;
+        currentWeekIndex++;
+      }
     }
+    
+    if (!startWeek || !endWeek) return null;
+    
+    const startDuration = startWeek.endDate.getTime() - startWeek.startDate.getTime();
+    const startOffset = (Math.max(jobStart.getTime(), startWeek.startDate.getTime()) - startWeek.startDate.getTime()) / startDuration;
+    
+    const endDuration = endWeek.endDate.getTime() - endWeek.startDate.getTime();
+    const endOffset = (Math.min(jobEnd.getTime(), endWeek.endDate.getTime()) - endWeek.startDate.getTime()) / endDuration;
 
-    const totalUnits = timelineUnits.length;
-    const unitWidth = 100 / totalUnits;
-    
-    // Calculate more precise positioning within the units
-    const startUnit = timelineUnits[startUnitIndex];
-    const endUnit = timelineUnits[endUnitIndex];
-    
-    const startUnitDuration = endUnit.endDate.getTime() - startUnit.startDate.getTime();
-    const startOffset = (Math.max(jobStart.getTime(), startUnit.startDate.getTime()) - startUnit.startDate.getTime()) / startUnitDuration;
-    
-    const endUnitDuration = endUnit.endDate.getTime() - endUnit.startDate.getTime();
-    const endOffset = (Math.min(jobEnd.getTime(), endUnit.endDate.getTime()) - endUnit.startDate.getTime()) / endUnitDuration;
-
-    const left = (startUnitIndex + startOffset) * unitWidth;
-    const width = ((endUnitIndex - startUnitIndex) + (endOffset - startOffset)) * unitWidth;
+    const left = (startWeekIndex + startOffset) * weekWidth;
+    const width = ((endWeekIndex - startWeekIndex) + (endOffset - startOffset)) * weekWidth;
 
     return {
       left: `${left}%`,
-      width: `${Math.max(width, 0.5)}%`, // Minimum width for visibility
+      width: `${Math.max(width, 0.5)}%`,
     };
   };
 
@@ -279,12 +297,12 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
           key={job.id}
           className="flex border-b hover:bg-muted/30 transition-colors group"
         >
-          <div className="w-80 border-r p-3 flex items-center justify-between gap-2">
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <div className={`w-3 h-3 rounded flex-shrink-0 ${getStatusColor(job.status).replace('hover:', '')}`} />
+          <div className="w-64 border-r p-2 flex items-center justify-between gap-1.5">
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              <div className={`w-2.5 h-2.5 rounded flex-shrink-0 ${getStatusColor(job.status).replace('hover:', '')}`} />
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{job.name}</p>
-                <p className="text-xs text-muted-foreground truncate">
+                <p className="font-medium truncate text-sm">{job.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">
                   {job.client_name}
                 </p>
               </div>
@@ -293,27 +311,29 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
               variant="ghost"
               size="sm"
               onClick={() => openAddDialog(job)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
             >
               <Edit className="w-3 h-3" />
             </Button>
           </div>
-          <div className="flex-1 relative py-3 px-1">
-            <div className="relative h-8">
-              {/* Grid lines */}
+          <div className="flex-1 relative py-2 px-1">
+            <div className="relative h-7">
+              {/* Grid lines for weeks */}
               <div className="absolute inset-0 flex">
-                {timelineUnits.map((_, index) => (
-                  <div
-                    key={index}
-                    className="flex-1 border-r border-dashed border-muted"
-                    style={{ minWidth: `${100 / timelineUnits.length}%` }}
-                  />
+                {timelineStructure.map((month, monthIndex) => (
+                  month.weeks.map((week, weekIndex) => (
+                    <div
+                      key={`${monthIndex}-${weekIndex}`}
+                      className="border-r border-dashed border-muted/40"
+                      style={{ width: `${(1 / totalWeeks) * 100}%` }}
+                    />
+                  ))
                 ))}
               </div>
               
               {/* Job bar */}
               <div
-                className={`absolute top-0 h-8 rounded cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-xs flex items-center justify-center px-2 shadow-md`}
+                className={`absolute top-0 h-7 rounded cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-[10px] flex items-center justify-center px-1.5 shadow-md`}
                 style={barStyle}
                 onClick={() => onJobSelect?.(job.id)}
                 title={`${job.name}\n${job.client_name}\nStatus: ${job.status === 'on_hold' ? 'On Hold' : job.status.charAt(0).toUpperCase() + job.status.slice(1)}\n${new Date(job.projected_start_date!).toLocaleDateString()} - ${new Date(job.projected_end_date!).toLocaleDateString()}`}
@@ -353,24 +373,6 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
               Job Schedule - {currentYear}
             </CardTitle>
             <div className="flex items-center gap-2">
-              {/* Zoom Controls */}
-              <div className="flex gap-1 border rounded-lg p-1">
-                <Button
-                  variant={zoomLevel === 'month' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setZoomLevel('month')}
-                >
-                  Month
-                </Button>
-                <Button
-                  variant={zoomLevel === 'week' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setZoomLevel('week')}
-                >
-                  Week
-                </Button>
-              </div>
-              
               {/* Year Navigation */}
               <Button variant="outline" size="icon" onClick={previousYear}>
                 <ChevronLeft className="w-4 h-4" />
@@ -401,35 +403,52 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <div className="min-w-[1400px]">
-              {/* Timeline Header */}
-              <div className="border-b bg-muted/30 sticky top-0 z-10">
-                <div className="flex">
-                  <div className="w-80 border-r p-3 font-semibold bg-background text-sm">
-                    <div className="flex items-center justify-between">
-                      <span>Job Name</span>
-                      <span className="text-xs text-muted-foreground font-normal">Status</span>
+          <div className="w-full">
+            {/* Timeline Header - Two Rows */}
+            <div className="border-b bg-muted/30 sticky top-0 z-10">
+              {/* Month Headers */}
+              <div className="flex border-b">
+                <div className="w-64 border-r bg-background" />
+                <div className="flex-1 flex bg-background">
+                  {timelineStructure.map((month, monthIndex) => (
+                    <div
+                      key={monthIndex}
+                      className="border-r text-center py-1.5 text-xs font-bold bg-muted/50"
+                      style={{ width: `${(month.weeks.length / totalWeeks) * 100}%` }}
+                    >
+                      {month.name}
                     </div>
-                  </div>
-                  <div className="flex-1 flex bg-background">
-                    {timelineUnits.map((unit, index) => (
-                      <div
-                        key={index}
-                        className="flex-1 border-r text-center p-2 text-xs font-medium"
-                        style={{ minWidth: `${100 / timelineUnits.length}%` }}
-                      >
-                        {unit.label}
-                      </div>
-                    ))}
-                  </div>
+                  ))}
                 </div>
               </div>
-
-              {/* Job Rows */}
-              <div className="max-h-[600px] overflow-y-auto">
-                {renderJobRows()}
+              
+              {/* Week Headers */}
+              <div className="flex">
+                <div className="w-64 border-r p-2 font-semibold bg-background text-xs">
+                  <div className="flex items-center justify-between">
+                    <span>Job Name</span>
+                    <span className="text-[10px] text-muted-foreground font-normal">Status</span>
+                  </div>
+                </div>
+                <div className="flex-1 flex bg-background">
+                  {timelineStructure.map((month, monthIndex) => (
+                    month.weeks.map((week, weekIndex) => (
+                      <div
+                        key={`${monthIndex}-${weekIndex}`}
+                        className="border-r text-center py-1 text-[10px] font-medium text-muted-foreground"
+                        style={{ width: `${(1 / totalWeeks) * 100}%` }}
+                      >
+                        W{weekIndex + 1}
+                      </div>
+                    ))
+                  ))}
+                </div>
               </div>
+            </div>
+
+            {/* Job Rows */}
+            <div className="max-h-[600px] overflow-y-auto">
+              {renderJobRows()}
             </div>
           </div>
         </CardContent>
