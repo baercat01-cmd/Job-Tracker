@@ -65,37 +65,10 @@ function generatePayrollHTML(data: any): string {
         color: #2d5f3f;
       }
       
-      .job-card {
-        margin-bottom: 20px;
+      .time-table {
         border: 1px solid #e0e0e0;
         border-radius: 6px;
         overflow: hidden;
-      }
-      
-      .job-header {
-        background: #fafafa;
-        padding: 10px 15px;
-        border-bottom: 1px solid #e0e0e0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      
-      .job-name {
-        font-weight: 600;
-        font-size: 16px;
-      }
-      
-      .job-client {
-        font-size: 13px;
-        color: #666;
-        margin-top: 2px;
-      }
-      
-      .job-hours {
-        font-weight: bold;
-        font-size: 18px;
-        color: #2d5f3f;
       }
       
       .entries-table {
@@ -106,7 +79,7 @@ function generatePayrollHTML(data: any): string {
       
       .entries-table th {
         background: #f0f0f0;
-        padding: 6px 8px;
+        padding: 8px;
         text-align: left;
         font-size: 11px;
         font-weight: 600;
@@ -114,29 +87,76 @@ function generatePayrollHTML(data: any): string {
         border-bottom: 2px solid #ddd;
       }
       
-      .entries-table th:nth-child(1) { width: 30%; }
-      .entries-table th:nth-child(2) { width: 25%; }
-      .entries-table th:nth-child(3) { width: 25%; }
-      .entries-table th:nth-child(4) { width: 20%; text-align: right; }
+      .entries-table th:nth-child(1) { width: 18%; } /* Date */
+      .entries-table th:nth-child(2) { width: 35%; } /* Job */
+      .entries-table th:nth-child(3) { width: 15%; } /* Start */
+      .entries-table th:nth-child(4) { width: 15%; } /* End */
+      .entries-table th:nth-child(5) { width: 17%; text-align: right; } /* Hours */
       
       .entries-table td {
         padding: 6px 8px;
         font-size: 12px;
         border-bottom: 1px solid #f0f0f0;
+        vertical-align: top;
       }
       
-      .entries-table td:nth-child(4) { text-align: right; }
+      .entries-table td:nth-child(5) { text-align: right; }
       
-      .entries-table tr:last-child td {
-        border-bottom: none;
+      .date-cell {
+        font-weight: 500;
+        font-size: 12px;
       }
       
-      .entries-table tr:hover {
-        background: #fafafa;
+      .job-cell {
+        font-weight: 500;
+      }
+      
+      .client-name {
+        font-size: 11px;
+        color: #666;
+        margin-top: 2px;
+      }
+      
+      .time-cell {
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
       }
       
       .hours-cell {
         font-weight: bold;
+        color: #2d5f3f;
+      }
+      
+      .daily-total-row {
+        background: rgba(45, 95, 63, 0.05);
+        border-bottom: 2px solid #e0e0e0 !important;
+      }
+      
+      .daily-total-row td {
+        padding: 8px;
+        font-weight: 600;
+        font-size: 12px;
+        border-bottom: 2px solid #e0e0e0 !important;
+      }
+      
+      .period-total {
+        background: rgba(45, 95, 63, 0.1);
+        padding: 12px 16px;
+        border-radius: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 15px;
+      }
+      
+      .period-total-label {
+        font-weight: bold;
+        font-size: 16px;
+      }
+      
+      .period-total-value {
+        font-weight: bold;
+        font-size: 20px;
         color: #2d5f3f;
       }
       
@@ -150,10 +170,6 @@ function generatePayrollHTML(data: any): string {
         }
         
         .user-section {
-          page-break-inside: avoid;
-        }
-        
-        .job-card {
           page-break-inside: avoid;
         }
       }
@@ -171,38 +187,53 @@ function generatePayrollHTML(data: any): string {
           <div class="user-total">${user.totalHours.toFixed(2)}h</div>
         </div>
         
-        ${user.jobs.map((job: any) => `
-          <div class="job-card">
-            <div class="job-header">
-              <div>
-                <div class="job-name">${job.name}</div>
-                ${job.client ? `<div class="job-client">${job.client}</div>` : ''}
-              </div>
-              <div class="job-hours">${job.totalHours.toFixed(2)}h</div>
-            </div>
-            
-            <table class="entries-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Start Time</th>
-                  <th>End Time</th>
-                  <th>Hours</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${job.entries.map((entry: any) => `
-                  <tr>
-                    <td>${entry.date}</td>
-                    <td>${entry.startTime}</td>
-                    <td>${entry.endTime}</td>
-                    <td class="hours-cell">${entry.hours}h</td>
+        <div class="time-table">
+          <table class="entries-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Job</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${user.dateEntries.map((dateEntry: any) => {
+                const entries = dateEntry.entries.map((entry: any, idx: number) => {
+                  const isFirst = idx === 0;
+                  return `
+                    <tr>
+                      ${isFirst ? `<td class="date-cell" rowspan="${dateEntry.entries.length}">${dateEntry.date}</td>` : ''}
+                      <td class="job-cell">
+                        <div>${entry.jobName}</div>
+                        ${entry.clientName ? `<div class="client-name">${entry.clientName}</div>` : ''}
+                      </td>
+                      <td class="time-cell">${entry.startTime}</td>
+                      <td class="time-cell">${entry.endTime}</td>
+                      <td class="hours-cell">${entry.hours}</td>
+                    </tr>
+                  `;
+                }).join('');
+                
+                const dailyTotal = dateEntry.hasMultipleJobs ? `
+                  <tr class="daily-total-row">
+                    <td></td>
+                    <td colspan="3" style="text-align: right;">Daily Total:</td>
+                    <td class="hours-cell">${dateEntry.totalHours.toFixed(2)}</td>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `).join('')}
+                ` : '';
+                
+                return entries + dailyTotal;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="period-total">
+          <span class="period-total-label">Period Total</span>
+          <span class="period-total-value">${user.totalHours.toFixed(2)}h</span>
+        </div>
       </div>
     `).join('')}
   `;

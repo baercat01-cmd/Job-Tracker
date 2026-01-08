@@ -413,43 +413,25 @@ export function PayrollDashboard() {
         periodLabel = periodOptions.find(p => p.value === selectedPeriod)?.label || 'period';
       }
       
-      // Prepare data for PDF - restructure by jobs instead of dates
+      // Prepare data for PDF - keep the same date-based structure as the display
       const pdfData = {
         title: `Payroll Report - ${periodLabel}`,
-        users: usersToExport.map(user => {
-          // Group entries by job (excluding time off)
-          const jobMap = new Map<string, {
-            name: string;
-            client: string;
-            totalHours: number;
-            entries: any[];
-          }>();
-
-          user.dateEntries.forEach(dateEntry => {
-            dateEntry.entries.forEach(entry => {
-              // Skip time off entries in PDF
-              if (entry.entryId.startsWith('timeoff-')) return;
-
-              const jobKey = `${entry.jobName}|${entry.clientName}`;
-              
-              if (!jobMap.has(jobKey)) {
-                jobMap.set(jobKey, {
-                  name: entry.jobName,
-                  client: entry.clientName,
-                  totalHours: 0,
-                  entries: [],
-                });
-              }
-
-              const job = jobMap.get(jobKey)!;
-              job.totalHours += entry.totalHours;
-              job.entries.push({
-                date: new Date(dateEntry.date).toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                }),
+        users: usersToExport.map(user => ({
+          name: user.userName,
+          totalHours: user.totalHours,
+          dateEntries: user.dateEntries.map(dateEntry => ({
+            date: new Date(dateEntry.date).toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            }),
+            totalHours: dateEntry.totalHours,
+            hasMultipleJobs: dateEntry.entries.length > 1,
+            entries: dateEntry.entries
+              .filter(entry => !entry.entryId.startsWith('timeoff-')) // Skip time off entries in PDF
+              .map(entry => ({
+                jobName: entry.jobName,
+                clientName: entry.clientName,
                 startTime: new Date(entry.startTime).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -461,17 +443,9 @@ export function PayrollDashboard() {
                     })
                   : '-',
                 hours: entry.totalHours.toFixed(2),
-                type: entry.isManual ? 'Manual' : 'Timer',
-              });
-            });
-          });
-
-          return {
-            name: user.userName,
-            totalHours: user.totalHours,
-            jobs: Array.from(jobMap.values()),
-          };
-        }),
+              })),
+          })).filter(dateEntry => dateEntry.entries.length > 0), // Only include dates with actual entries
+        })),
       };
 
       // Call the edge function to generate PDF HTML
