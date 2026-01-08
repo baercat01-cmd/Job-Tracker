@@ -411,7 +411,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               variant="ghost" 
               size="sm" 
               onClick={() => {
-                setCalendarJobId(selectedJob.id);
+                setCalendarJobId(undefined); // Show all jobs instead of filtering to current job
                 setShowCalendarPage(true);
               }}
               className="relative"
