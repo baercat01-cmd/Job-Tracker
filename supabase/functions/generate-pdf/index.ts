@@ -68,6 +68,27 @@ function generatePayrollHTML(data: any): string {
         page-break-after: always;
       }
       
+      .user-period-info {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 8px 16px;
+        margin-bottom: 12px;
+        text-align: center;
+        border: 1px solid #e0e0e0;
+      }
+      
+      .user-period-info .period-label {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 2px;
+      }
+      
+      .user-period-info .period-dates {
+        font-size: 13px;
+        font-weight: 600;
+        color: #2d5f3f;
+      }
+      
       .user-header {
         background: #f8f9fa;
         padding: 12px 15px;
@@ -211,6 +232,11 @@ function generatePayrollHTML(data: any): string {
     
     ${users.map((user: any, userIdx: number) => `
       <div class="user-section${userIdx < users.length - 1 ? ' page-break' : ''}">
+        <div class="user-period-info">
+          <div class="period-label">Report Period</div>
+          <div class="period-dates">${startDate} - ${endDate}</div>
+        </div>
+        
         <div class="user-header">
           <div class="user-name">${user.name}</div>
           <div class="user-total">${user.totalHours.toFixed(2)}h</div>
