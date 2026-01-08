@@ -271,14 +271,14 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               return (
                 <div
                   key={day}
-                  className={`h-12 border rounded flex flex-col items-center justify-center text-xs font-medium p-0.5 ${
+                  className={`h-12 border rounded flex flex-col items-start justify-start text-xs font-medium p-1 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
                   } ${isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'}`}
                   title={unavailableInfo || undefined}
                 >
                   <div className="font-bold">{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
-                    <div className="text-[9px] leading-tight text-center truncate w-full px-0.5 text-muted-foreground">
+                    <div className="text-[9px] leading-tight text-left truncate w-full text-muted-foreground mt-auto">
                       {unavailableUsers.join(', ')}
                     </div>
                   )}
