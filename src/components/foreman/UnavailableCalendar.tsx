@@ -158,6 +158,17 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
   }
 
+  function getUnavailableUsers(dateStr: string): string[] {
+    const date = new Date(dateStr);
+    const ranges = unavailableDates.filter(range => {
+      const start = new Date(range.start_date);
+      const end = new Date(range.end_date);
+      return date >= start && date <= end;
+    });
+    
+    return ranges.map(r => r.user_profiles?.username || 'Unknown');
+  }
+
   function previousMonth() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
   }
@@ -248,23 +259,29 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
             {/* Calendar days */}
             {calendarDays.map((day, index) => {
               if (!day) {
-                return <div key={`empty-${index}`} className="h-8 border rounded bg-muted/30" />;
+                return <div key={`empty-${index}`} className="h-12 border rounded bg-muted/30" />;
               }
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const isUnavailable = isDateUnavailable(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               const unavailableInfo = getUnavailableInfo(dateStr);
+              const unavailableUsers = showAllStaff ? getUnavailableUsers(dateStr) : [];
 
               return (
                 <div
                   key={day}
-                  className={`h-8 border rounded flex items-center justify-center text-xs font-medium ${
+                  className={`h-12 border rounded flex flex-col items-center justify-center text-xs font-medium p-0.5 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
                   } ${isUnavailable ? 'bg-destructive/20 text-destructive font-bold' : 'hover:bg-muted/50'}`}
                   title={unavailableInfo || undefined}
                 >
-                  {day}
+                  <div className="font-bold">{day}</div>
+                  {showAllStaff && unavailableUsers.length > 0 && (
+                    <div className="text-[9px] leading-tight text-center truncate w-full px-0.5">
+                      {unavailableUsers.join(', ')}
+                    </div>
+                  )}
                 </div>
               );
             })}
