@@ -79,11 +79,11 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
 
   return (
     <div className="space-y-2">
-      <Label className="text-sm font-medium">{label}</Label>
+      <Label className="text-base font-semibold text-blue-700">{label}</Label>
       <div className="flex items-center gap-1">
         <div className="flex-1">
           <Select value={hour12.toString()} onValueChange={handleHourChange}>
-            <SelectTrigger className="h-12 text-lg font-mono">
+            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -96,11 +96,11 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
           </Select>
         </div>
 
-        <div className="text-2xl font-bold text-muted-foreground pb-1">:</div>
+        <div className="text-2xl font-bold text-blue-600 pb-1">:</div>
 
         <div className="flex-1">
           <Select value={minute} onValueChange={handleMinuteChange}>
-            <SelectTrigger className="h-12 text-lg font-mono">
+            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -115,7 +115,7 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
 
         <div className="w-20 ml-1">
           <Select value={period} onValueChange={handlePeriodChange}>
-            <SelectTrigger className="h-12 text-lg font-mono">
+            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -817,11 +817,14 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                   </div>
                 )}
 
-                {/* Job Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="dialog-job" className="text-base font-semibold">Select Job *</Label>
+                {/* Job Selection - Highlighted */}
+                <div className="space-y-2 p-4 border-2 border-primary/50 rounded-lg bg-primary/5">
+                  <Label htmlFor="dialog-job" className="text-lg font-bold text-primary flex items-center gap-2">
+                    <Briefcase className="w-5 h-5" />
+                    Select Job *
+                  </Label>
                   <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                    <SelectTrigger id="dialog-job" className="h-12">
+                    <SelectTrigger id="dialog-job" className="h-14 text-base font-semibold border-2 border-primary/30 bg-background shadow-sm hover:border-primary transition-colors">
                       <SelectValue placeholder="Choose a job..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -843,17 +846,23 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                 {mode === 'manual' && (
                   <>
 
-                    <TimeDropdownPicker
-                      label="Clock In Time"
-                      value={manualData.startTime}
-                      onChange={(time) => setManualData({ ...manualData, startTime: time })}
-                    />
+                    <div className="p-4 border-2 border-blue-500/50 rounded-lg bg-blue-50/50 space-y-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="w-5 h-5 text-blue-600" />
+                        <span className="text-lg font-bold text-blue-700">Time Entry *</span>
+                      </div>
+                      <TimeDropdownPicker
+                        label="Clock In Time"
+                        value={manualData.startTime}
+                        onChange={(time) => setManualData({ ...manualData, startTime: time })}
+                      />
 
-                    <TimeDropdownPicker
-                      label="Clock Out Time"
-                      value={manualData.endTime}
-                      onChange={(time) => setManualData({ ...manualData, endTime: time })}
-                    />
+                      <TimeDropdownPicker
+                        label="Clock Out Time"
+                        value={manualData.endTime}
+                        onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                      />
+                    </div>
                   </>
                 )}
 
@@ -1071,17 +1080,23 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                   />
                 </div>
 
-                <TimeDropdownPicker
-                  label="Clock In Time"
-                  value={miscJobData.startTime}
-                  onChange={(time) => setMiscJobData({ ...miscJobData, startTime: time })}
-                />
+                <div className="p-4 border-2 border-blue-500/50 rounded-lg bg-blue-50/50 space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Clock className="w-5 h-5 text-blue-600" />
+                    <span className="text-lg font-bold text-blue-700">Time Entry *</span>
+                  </div>
+                  <TimeDropdownPicker
+                    label="Clock In Time"
+                    value={miscJobData.startTime}
+                    onChange={(time) => setMiscJobData({ ...miscJobData, startTime: time })}
+                  />
 
-                <TimeDropdownPicker
-                  label="Clock Out Time"
-                  value={miscJobData.endTime}
-                  onChange={(time) => setMiscJobData({ ...miscJobData, endTime: time })}
-                />
+                  <TimeDropdownPicker
+                    label="Clock Out Time"
+                    value={miscJobData.endTime}
+                    onChange={(time) => setMiscJobData({ ...miscJobData, endTime: time })}
+                  />
+                </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="misc-notes" className="text-base font-semibold">Notes (Optional)</Label>
