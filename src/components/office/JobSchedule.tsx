@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { JobTasksManagement } from './JobTasksManagement';
 import {
   Dialog,
   DialogContent,
@@ -260,7 +262,13 @@ export function JobSchedule({ job }: JobScheduleProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <Tabs defaultValue="schedule" className="w-full">
+      <TabsList className="grid w-full grid-cols-2">
+        <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
+        <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="schedule" className="space-y-6 mt-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -458,7 +466,16 @@ export function JobSchedule({ job }: JobScheduleProps) {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="tasks" className="mt-6">
+        <JobTasksManagement 
+          job={job} 
+          userId={profile?.id || ''}
+          userRole={profile?.role}
+        />
+      </TabsContent>
+    </Tabs>
   );
 }
 

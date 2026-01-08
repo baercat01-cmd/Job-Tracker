@@ -210,3 +210,21 @@ export interface CalendarEvent {
   created_at: string;
   updated_at: string;
 }
+
+export interface JobTask {
+  id: string;
+  job_id: string;
+  title: string;
+  description: string | null;
+  task_type: 'field' | 'office' | 'shop' | 'general';
+  assigned_to: string | null;
+  created_by: string;
+  due_date: string | null;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+  blocked_reason: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
