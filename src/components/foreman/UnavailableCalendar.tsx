@@ -26,9 +26,10 @@ interface UnavailableDate {
 
 interface UnavailableCalendarProps {
   userId: string;
+  onBack?: () => void;
 }
 
-export function UnavailableCalendar({ userId }: UnavailableCalendarProps) {
+export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [unavailableDates, setUnavailableDates] = useState<UnavailableDate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -171,6 +172,11 @@ export function UnavailableCalendar({ userId }: UnavailableCalendarProps) {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
+              {onBack && (
+                <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 mr-2">
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+              )}
               <CalendarIcon className="w-5 h-5 text-primary" />
               My Time Off
             </CardTitle>
