@@ -32,7 +32,7 @@ import { JobSchedule } from '@/components/office/JobSchedule';
 import { JobTasks } from '@/components/foreman/JobTasks';
 
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule' | 'tasks';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -500,18 +500,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             job={selectedJob}
           />
         )}
-
-        {activeTab === 'tasks' && (
-          <JobTasks
-            job={selectedJob}
-            userId={profile?.id || ''}
-          />
-        )}
       </main>
 
-      {/* Bottom Navigation - 7 tabs for job features */}
+      {/* Bottom Navigation - 6 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg">
-        <div className="container mx-auto px-1 py-2 grid grid-cols-7 gap-0.5">
+        <div className="container mx-auto px-1 py-2 grid grid-cols-6 gap-0.5">
           <Button
             variant={activeTab === 'timer' ? 'default' : 'ghost'}
             className="flex-col h-auto py-3 touch-target relative"
@@ -562,14 +555,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           >
             <CalendarIcon className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">Schedule</span>
-          </Button>
-          <Button
-            variant={activeTab === 'tasks' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
-            onClick={() => setActiveTab('tasks')}
-          >
-            <ListTodo className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Tasks</span>
           </Button>
         </div>
       </nav>
