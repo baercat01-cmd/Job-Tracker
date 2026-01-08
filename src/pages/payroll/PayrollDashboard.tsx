@@ -250,41 +250,65 @@ export function PayrollDashboard() {
 
       const weekLabel = weekOptions.find(w => w.value === selectedWeek)?.label || 'week';
       
-      // Prepare data for PDF
+      // Prepare data for PDF - restructure by jobs instead of dates
       const pdfData = {
         title: `Payroll Report - ${weekLabel}`,
-        users: usersToExport.map(user => ({
-          name: user.userName,
-          totalHours: user.totalHours,
-          dates: user.dateEntries.map(dateEntry => ({
-            date: new Date(dateEntry.date).toLocaleDateString('en-US', {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            }),
-            totalHours: dateEntry.totalHours,
-            entries: dateEntry.entries.map(entry => ({
-              job: entry.jobName,
-              client: entry.clientName,
-              startTime: new Date(entry.startTime).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-              endTime: entry.endTime 
-                ? new Date(entry.endTime).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '-',
-              hours: entry.totalHours.toFixed(2),
-              type: entry.isManual ? 'Manual' : 'Timer',
-            })),
-          })),
-        })),
+        users: usersToExport.map(user => {
+          // Group entries by job
+          const jobMap = new Map<string, {
+            name: string;
+            client: string;
+            totalHours: number;
+            entries: any[];
+          }>();
+
+          user.dateEntries.forEach(dateEntry => {
+            dateEntry.entries.forEach(entry => {
+              const jobKey = `${entry.jobName}|${entry.clientName}`;
+              
+              if (!jobMap.has(jobKey)) {
+                jobMap.set(jobKey, {
+                  name: entry.jobName,
+                  client: entry.clientName,
+                  totalHours: 0,
+                  entries: [],
+                });
+              }
+
+              const job = jobMap.get(jobKey)!;
+              job.totalHours += entry.totalHours;
+              job.entries.push({
+                date: new Date(dateEntry.date).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                }),
+                startTime: new Date(entry.startTime).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+                endTime: entry.endTime 
+                  ? new Date(entry.endTime).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '-',
+                hours: entry.totalHours.toFixed(2),
+                type: entry.isManual ? 'Manual' : 'Timer',
+              });
+            });
+          });
+
+          return {
+            name: user.userName,
+            totalHours: user.totalHours,
+            jobs: Array.from(jobMap.values()),
+          };
+        }),
       };
 
-      // Call the edge function to generate PDF
+      // Call the edge function to generate PDF HTML
       const { data, error } = await supabase.functions.invoke('generate-pdf', {
         body: { 
           type: 'payroll',
@@ -307,25 +331,16 @@ export function PayrollDashboard() {
         throw new Error(errorMessage);
       }
 
-      // Download the PDF
-      const pdfBlob = new Blob(
-        [Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0))],
-        { type: 'application/pdf' }
-      );
-      
-      const url = URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const userLabel = selectedUser === 'all' ? 'All' : usersToExport[0]?.userName || 'User';
-      link.download = `Payroll_${userLabel}_${weekLabel.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      toast.success('PDF exported successfully');
+      // Open the print-optimized HTML in a new window
+      // The HTML includes auto-print functionality
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(data);
+        newWindow.document.close();
+        toast.success('Print dialog opening - select "Save as PDF"');
+      } else {
+        toast.error('Please allow pop-ups to export PDF');
+      }
     } catch (error: any) {
       console.error('PDF export error:', error);
       toast.error(error.message || 'Failed to export PDF');
