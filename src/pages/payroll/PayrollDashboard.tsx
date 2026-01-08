@@ -77,11 +77,16 @@ interface WeekData {
   users: UserTimeData[];
 }
 
+type PeriodType = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
+
 export function PayrollDashboard() {
   const { profile, clearUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState<string>('');
-  const [weekOptions, setWeekOptions] = useState<{ value: string; label: string }[]>([]);
+  const [periodType, setPeriodType] = useState<PeriodType>('weekly');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+  const [periodOptions, setPeriodOptions] = useState<{ value: string; label: string }[]>([]);
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [weekData, setWeekData] = useState<WeekData | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<string>('all');
@@ -94,49 +99,145 @@ export function PayrollDashboard() {
   const [activeTab, setActiveTab] = useState<'time-entries' | 'time-off'>('time-entries');
 
   useEffect(() => {
-    generateWeekOptions();
-  }, []);
+    generatePeriodOptions();
+  }, [periodType]);
 
   useEffect(() => {
-    if (selectedWeek) {
-      loadWeekData();
+    if (periodType === 'custom') {
+      if (customStartDate && customEndDate) {
+        loadPeriodData();
+      }
+    } else if (selectedPeriod) {
+      loadPeriodData();
     }
-  }, [selectedWeek]);
+  }, [selectedPeriod, customStartDate, customEndDate]);
 
-  function generateWeekOptions() {
-    const weeks: { value: string; label: string }[] = [];
+  function generatePeriodOptions() {
+    const periods: { value: string; label: string }[] = [];
     const today = new Date();
     
-    // Generate last 12 weeks
-    for (let i = 0; i < 12; i++) {
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - today.getDay() - (i * 7)); // Sunday
-      weekStart.setHours(0, 0, 0, 0);
-      
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6); // Saturday
-      weekEnd.setHours(23, 59, 59, 999);
-      
-      const value = weekStart.toISOString().split('T')[0];
-      const label = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-      
-      weeks.push({ value, label });
+    if (periodType === 'weekly') {
+      // Generate last 12 weeks
+      for (let i = 0; i < 12; i++) {
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay() - (i * 7)); // Sunday
+        weekStart.setHours(0, 0, 0, 0);
+        
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6); // Saturday
+        weekEnd.setHours(23, 59, 59, 999);
+        
+        const value = weekStart.toISOString().split('T')[0];
+        const label = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+        
+        periods.push({ value, label });
+      }
+    } else if (periodType === 'biweekly') {
+      // Generate last 12 biweekly periods
+      for (let i = 0; i < 12; i++) {
+        const periodStart = new Date(today);
+        periodStart.setDate(today.getDate() - today.getDay() - (i * 14)); // Sunday
+        periodStart.setHours(0, 0, 0, 0);
+        
+        const periodEnd = new Date(periodStart);
+        periodEnd.setDate(periodStart.getDate() + 13); // 2 weeks
+        periodEnd.setHours(23, 59, 59, 999);
+        
+        const value = periodStart.toISOString().split('T')[0];
+        const label = `${periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+        
+        periods.push({ value, label });
+      }
+    } else if (periodType === 'monthly') {
+      // Generate last 12 months
+      for (let i = 0; i < 12; i++) {
+        const monthStart = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        monthStart.setHours(0, 0, 0, 0);
+        
+        const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+        monthEnd.setHours(23, 59, 59, 999);
+        
+        const value = monthStart.toISOString().split('T')[0];
+        const label = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        
+        periods.push({ value, label });
+      }
+    } else if (periodType === 'quarterly') {
+      // Generate last 8 quarters
+      for (let i = 0; i < 8; i++) {
+        const currentQuarter = Math.floor(today.getMonth() / 3);
+        const quarterYear = today.getFullYear() - Math.floor(i / 4);
+        const quarter = (currentQuarter - i % 4 + 4) % 4;
+        
+        const quarterStart = new Date(quarterYear, quarter * 3, 1);
+        quarterStart.setHours(0, 0, 0, 0);
+        
+        const quarterEnd = new Date(quarterYear, (quarter + 1) * 3, 0);
+        quarterEnd.setHours(23, 59, 59, 999);
+        
+        const value = quarterStart.toISOString().split('T')[0];
+        const label = `Q${quarter + 1} ${quarterYear} (${quarterStart.toLocaleDateString('en-US', { month: 'short' })} - ${quarterEnd.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
+        
+        periods.push({ value, label });
+      }
+    } else if (periodType === 'yearly') {
+      // Generate last 5 years
+      for (let i = 0; i < 5; i++) {
+        const year = today.getFullYear() - i;
+        const yearStart = new Date(year, 0, 1);
+        yearStart.setHours(0, 0, 0, 0);
+        
+        const yearEnd = new Date(year, 11, 31);
+        yearEnd.setHours(23, 59, 59, 999);
+        
+        const value = yearStart.toISOString().split('T')[0];
+        const label = year.toString();
+        
+        periods.push({ value, label });
+      }
     }
     
-    setWeekOptions(weeks);
-    setSelectedWeek(weeks[0].value); // Default to current week
+    setPeriodOptions(periods);
+    if (periods.length > 0 && periodType !== 'custom') {
+      setSelectedPeriod(periods[0].value);
+    }
   }
 
-  async function loadWeekData() {
-    if (!selectedWeek) return;
+  async function loadPeriodData() {
+    let periodStart: Date;
+    let periodEnd: Date;
+
+    if (periodType === 'custom') {
+      if (!customStartDate || !customEndDate) return;
+      periodStart = new Date(customStartDate);
+      periodEnd = new Date(customEndDate);
+    } else {
+      if (!selectedPeriod) return;
+      periodStart = new Date(selectedPeriod);
+      
+      // Calculate end date based on period type
+      periodEnd = new Date(periodStart);
+      if (periodType === 'weekly') {
+        periodEnd.setDate(periodStart.getDate() + 6);
+      } else if (periodType === 'biweekly') {
+        periodEnd.setDate(periodStart.getDate() + 13);
+      } else if (periodType === 'monthly') {
+        periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 0);
+      } else if (periodType === 'quarterly') {
+        periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 3, 0);
+      } else if (periodType === 'yearly') {
+        periodEnd = new Date(periodStart.getFullYear(), 11, 31);
+      }
+    }
+    
+    periodStart.setHours(0, 0, 0, 0);
+    periodEnd.setHours(23, 59, 59, 999);
     
     setLoading(true);
     
     try {
-      const weekStart = new Date(selectedWeek);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      weekEnd.setHours(23, 59, 59, 999);
+      const weekStart = periodStart;
+      const weekEnd = periodEnd;
       
       // Load ONLY clock-in time entries (component_id IS NULL) for payroll
       const { data: timeEntries, error: timeError } = await supabase
@@ -270,8 +371,8 @@ export function PayrollDashboard() {
         .sort((a, b) => a.userName.localeCompare(b.userName));
 
       setWeekData({
-        weekStart: weekStart.toISOString(),
-        weekEnd: weekEnd.toISOString(),
+        weekStart: periodStart.toISOString(),
+        weekEnd: periodEnd.toISOString(),
         users: usersWithTime,
       });
     } catch (error: any) {
@@ -303,11 +404,18 @@ export function PayrollDashboard() {
         ? weekData.users 
         : weekData.users.filter(u => u.userId === selectedUser);
 
-      const weekLabel = weekOptions.find(w => w.value === selectedWeek)?.label || 'week';
+      let periodLabel = '';
+      if (periodType === 'custom') {
+        const start = new Date(customStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const end = new Date(customEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        periodLabel = `${start} - ${end}`;
+      } else {
+        periodLabel = periodOptions.find(p => p.value === selectedPeriod)?.label || 'period';
+      }
       
       // Prepare data for PDF - restructure by jobs instead of dates
       const pdfData = {
-        title: `Payroll Report - ${weekLabel}`,
+        title: `Payroll Report - ${periodLabel}`,
         users: usersToExport.map(user => {
           // Group entries by job (excluding time off)
           const jobMap = new Map<string, {
@@ -557,21 +665,53 @@ export function PayrollDashboard() {
             <div className="flex items-center justify-between flex-wrap gap-4">
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-primary" />
-                Time Entries by Week
+                Time Entries by Period
               </CardTitle>
-              <div className="flex items-center gap-3">
-                <Select value={selectedWeek} onValueChange={setSelectedWeek}>
-                  <SelectTrigger className="w-[280px]">
-                    <SelectValue placeholder="Select week" />
+              <div className="flex items-center gap-3 flex-wrap">
+                <Select value={periodType} onValueChange={(v) => setPeriodType(v as PeriodType)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {weekOptions.map(week => (
-                      <SelectItem key={week.value} value={week.value}>
-                        {week.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="biweekly">Biweekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
+                
+                {periodType === 'custom' ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="w-[150px]"
+                    />
+                    <span className="text-muted-foreground">to</span>
+                    <Input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="w-[150px]"
+                    />
+                  </div>
+                ) : (
+                  <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                    <SelectTrigger className="w-[280px]">
+                      <SelectValue placeholder="Select period" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {periodOptions.map(period => (
+                        <SelectItem key={period.value} value={period.value}>
+                          {period.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -653,7 +793,7 @@ export function PayrollDashboard() {
             <CardContent className="py-12 text-center">
               <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-muted-foreground">
-                No time entries found for this week
+                No time entries found for this period
               </p>
             </CardContent>
           </Card>
