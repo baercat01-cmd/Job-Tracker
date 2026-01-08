@@ -1255,63 +1255,34 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
             <div className="space-y-4">
               <div className="space-y-3">
                 <Label htmlFor="manual-component" className="text-base font-semibold">Select Component *</Label>
-                <div className="relative">
-                  <div className="relative">
-                    <Input
-                      id="manual-component-search"
-                      value={manualComponentSearch}
-                      onChange={(e) => {
-                        setManualComponentSearch(e.target.value);
-                        setShowManualComponentDropdown(true);
+                <div className="border rounded-lg bg-card shadow-lg max-h-[75vh] overflow-y-auto">
+                  {components.map((component) => (
+                    <button
+                      key={component.id}
+                      type="button"
+                      className={`w-full text-left p-4 hover:bg-muted transition-colors border-b last:border-b-0 ${
+                        manualComponent === component.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''
+                      }`}
+                      onClick={() => {
+                        setManualComponent(component.id);
                       }}
-                      onFocus={() => setShowManualComponentDropdown(true)}
-                      placeholder="Search components..."
-                      className="h-12 text-base pr-10"
-                    />
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  </div>
-                  
-                  {showManualComponentDropdown && (
-                    <div className="absolute z-50 w-full mt-1 border rounded-lg bg-card shadow-lg max-h-[60vh] overflow-y-auto">
-                      {components
-                        .filter(c => 
-                          c.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                          (c.description && c.description.toLowerCase().includes(manualComponentSearch.toLowerCase()))
-                        )
-                        .map((component) => (
-                          <button
-                            key={component.id}
-                            type="button"
-                            className={`w-full text-left p-4 hover:bg-muted transition-colors border-b last:border-b-0 ${
-                              manualComponent === component.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''
-                            }`}
-                            onClick={() => {
-                              setManualComponent(component.id);
-                              setManualComponentSearch(component.name);
-                              setShowManualComponentDropdown(false);
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium">{component.name}</p>
-                                {component.description && (
-                                  <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
-                                )}
-                              </div>
-                              {isComponentTask(component.id) && (
-                                <Badge className="bg-primary">Task</Badge>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      {components.filter(c => 
-                        c.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
-                        (c.description && c.description.toLowerCase().includes(manualComponentSearch.toLowerCase()))
-                      ).length === 0 && (
-                        <div className="p-4 text-center text-muted-foreground">
-                          No components found
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{component.name}</p>
+                          {component.description && (
+                            <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
+                          )}
                         </div>
-                      )}
+                        {isComponentTask(component.id) && (
+                          <Badge className="bg-primary">Task</Badge>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  {components.length === 0 && (
+                    <div className="p-4 text-center text-muted-foreground">
+                      No components found
                     </div>
                   )}
                 </div>
