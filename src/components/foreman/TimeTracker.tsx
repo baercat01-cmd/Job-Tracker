@@ -1242,7 +1242,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Manual Entry Dialog - Multi-Step Wizard */}
       <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
-        <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="w-5 h-5" />
