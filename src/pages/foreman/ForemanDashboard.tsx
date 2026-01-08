@@ -410,7 +410,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={() => setShowCalendarPage(true)}
+              onClick={() => {
+                setCalendarJobId(selectedJob.id);
+                setShowCalendarPage(true);
+              }}
               className="relative"
             >
               <CalendarIcon className="w-4 h-4" />
