@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { getLocalDateString } from '@/lib/utils';
 
@@ -22,6 +22,9 @@ interface UnavailableDate {
   end_date: string;
   reason: string | null;
   created_at: string;
+  user_profiles?: {
+    username: string;
+  };
 }
 
 interface UnavailableCalendarProps {
@@ -37,18 +40,24 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
   const [startDate, setStartDate] = useState(getLocalDateString());
   const [endDate, setEndDate] = useState(getLocalDateString());
   const [reason, setReason] = useState('');
+  const [showAllStaff, setShowAllStaff] = useState(false);
 
   useEffect(() => {
     loadUnavailableDates();
-  }, [userId]);
+  }, [userId, showAllStaff]);
 
   async function loadUnavailableDates() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('user_unavailable_dates')
-        .select('*')
-        .eq('user_id', userId)
-        .order('start_date');
+        .select('*, user_profiles(username)');
+
+      // If not showing all staff, filter by current user
+      if (!showAllStaff) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data, error } = await query.order('start_date');
 
       if (error) throw error;
       setUnavailableDates(data || []);
@@ -131,14 +140,22 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     });
   }
 
-  function getUnavailableReason(dateStr: string): string | null {
+  function getUnavailableInfo(dateStr: string): string | null {
     const date = new Date(dateStr);
-    const range = unavailableDates.find(range => {
+    const ranges = unavailableDates.filter(range => {
       const start = new Date(range.start_date);
       const end = new Date(range.end_date);
       return date >= start && date <= end;
     });
-    return range?.reason || null;
+    
+    if (ranges.length === 0) return null;
+    
+    if (showAllStaff) {
+      const names = ranges.map(r => r.user_profiles?.username || 'Unknown').join(', ');
+      return `Off: ${names}`;
+    } else {
+      return ranges[0]?.reason || 'Time off';
+    }
   }
 
   function previousMonth() {
@@ -178,16 +195,27 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                 </Button>
               )}
               <CalendarIcon className="w-5 h-5 text-primary" />
-              My Time Off
+              {showAllStaff ? 'All Staff Time Off' : 'My Time Off'}
             </CardTitle>
-            <Button
-              size="sm"
-              onClick={() => setShowAddDialog(true)}
-              className="h-9"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showAllStaff ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowAllStaff(!showAllStaff)}
+                className="h-9"
+              >
+                <Users className="w-4 h-4 mr-2" />
+                {showAllStaff ? 'My Time' : 'All Staff'}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowAddDialog(true)}
+                className="h-9"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -226,6 +254,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const isUnavailable = isDateUnavailable(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
+              const unavailableInfo = getUnavailableInfo(dateStr);
 
               return (
                 <div
@@ -233,7 +262,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   className={`h-8 border rounded flex items-center justify-center text-xs font-medium ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
                   } ${isUnavailable ? 'bg-destructive/20 text-destructive font-bold' : 'hover:bg-muted/50'}`}
-                  title={isUnavailable ? getUnavailableReason(dateStr) || 'Time off' : undefined}
+                  title={unavailableInfo || undefined}
                 >
                   {day}
                 </div>
@@ -255,6 +284,11 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
+                          {showAllStaff && (
+                            <p className="font-semibold text-primary mb-1">
+                              {range.user_profiles?.username || 'Unknown User'}
+                            </p>
+                          )}
                           <p className="font-bold text-destructive">
                             {new Date(range.start_date).toLocaleDateString('en-US', {
                               month: 'short',
@@ -271,14 +305,16 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                             <p className="text-muted-foreground mt-1">{range.reason}</p>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteUnavailableDate(range.id)}
-                          className="h-6 w-6 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                        {!showAllStaff && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteUnavailableDate(range.id)}
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
