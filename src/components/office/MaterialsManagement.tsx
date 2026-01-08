@@ -1612,6 +1612,29 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             </div>
 
             {/* Date inputs based on status */}
+            {newStatus === 'not_ordered' && (
+              <div className="space-y-4">
+                {/* Order By Date - Planning */}
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                    <Calendar className="w-4 h-4" />
+                    Order By Date (Planning)
+                  </Label>
+                  <Input
+                    id="order-by-date"
+                    type="date"
+                    value={orderByDate}
+                    onChange={(e) => setOrderByDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Set a target date for when this material should be ordered. Creates a calendar reminder.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {newStatus === 'ordered' && (
               <div className="space-y-4">
                 {/* Order By Date - Optional Reminder */}
