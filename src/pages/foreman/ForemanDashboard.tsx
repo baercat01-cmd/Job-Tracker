@@ -24,7 +24,7 @@ import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
-import { JobsCalendar } from '@/components/office/JobsCalendar';
+import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
 import { JobCalendar } from '@/components/office/JobCalendar';
 import { JobCalendarPage } from '@/components/office/JobCalendarPage';
@@ -193,7 +193,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               Back to Jobs
             </Button>
           </div>
-          <JobsCalendar 
+          <MasterCalendar 
             onJobSelect={(jobId) => {
               // Load and select the job
               supabase
