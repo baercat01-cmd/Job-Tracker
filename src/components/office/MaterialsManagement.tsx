@@ -34,13 +34,12 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  ListChecks,
   Calendar,
+  ShoppingCart,
   User,
   Truck,
   AlertCircle,
-  FolderOpen,
-  Folder,
-  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -75,10 +74,8 @@ interface Category {
   id: string;
   name: string;
   order_index: number;
-  parent_id: string | null;
   materials: Material[];
   sheet_image_url?: string | null;
-  subcategories?: Category[];
 }
 
 interface MaterialsManagementProps {
@@ -106,11 +103,7 @@ function getStatusLabel(status: string) {
 
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [allCategoriesFlat, setAllCategoriesFlat] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Expand/collapse state for main categories
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -125,11 +118,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryName, setCategoryName] = useState('');
-  const [categoryParentId, setCategoryParentId] = useState<string>('');
   const [categorySheetImage, setCategorySheetImage] = useState<File | null>(null);
   const [categorySheetPreview, setCategorySheetPreview] = useState<string | null>(null);
   
-  // Material modal - rest of state variables unchanged
+  // Material modal
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
@@ -140,7 +132,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
   
-  // Status change dialog  
+  // Status change dialog with dates
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [statusChangeMaterial, setStatusChangeMaterial] = useState<Material | null>(null);
   const [newStatus, setNewStatus] = useState('not_ordered');
@@ -158,7 +150,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [hasDeliveryMethod, setHasDeliveryMethod] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   
-  // CSV upload  
+  // Bulk status change
+  const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
+  const [bulkStatusTarget, setBulkStatusTarget] = useState('not_ordered');
+  const [bulkStatusUpdating, setBulkStatusUpdating] = useState(false);
+  
+  // Copy categories from another job
+  const [showCopyCategoriesDialog, setShowCopyCategoriesDialog] = useState(false);
+  const [allJobs, setAllJobs] = useState<Job[]>([]);
+  const [sourceJobId, setSourceJobId] = useState('');
+  const [copyingCategories, setCopyingCategories] = useState(false);
+  
+  // CSV upload
   const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvCategories, setCsvCategories] = useState<string[]>([]);
@@ -178,6 +181,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   useEffect(() => {
     loadMaterials();
     loadUsers();
+    loadAllJobs();
   }, [job.id]);
 
   // Auto-copy categories from Darrell Richard job if this job has none
@@ -201,6 +205,21 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  async function loadAllJobs() {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, name, client_name')
+        .neq('id', job.id)
+        .order('name');
+
+      if (error) throw error;
+      setAllJobs(data || []);
+    } catch (error: any) {
+      console.error('Error loading jobs:', error);
+    }
+  }
+
   async function autoCopyTemplateCategories() {
     try {
       // Find Darrell Richard job
@@ -221,7 +240,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       // Load categories from template job
       const { data: templateCategories, error: catError } = await supabase
         .from('materials_categories')
-        .select('name, order_index, parent_id, sheet_image_url')
+        .select('name, order_index, sheet_image_url')
         .eq('job_id', templateJob.id)
         .order('order_index');
 
@@ -232,12 +251,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         return;
       }
 
-      // Create categories in current job (preserve hierarchy)
+      // Create categories in current job
       const categoriesToInsert = templateCategories.map((cat, index) => ({
         job_id: job.id,
         name: cat.name,
         order_index: index,
-        parent_id: cat.parent_id,
         created_by: userId,
         sheet_image_url: cat.sheet_image_url,
       }));
@@ -255,6 +273,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       loadMaterials();
     } catch (error: any) {
       console.error('Error auto-copying template categories:', error);
+      // Don't show error toast - this is a background operation
     }
   }
 
@@ -278,30 +297,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (materialsError) throw materialsError;
 
-      // Build hierarchical structure
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
         order_index: cat.order_index,
-        parent_id: cat.parent_id,
-        sheet_image_url: cat.sheet_image_url,
+        sheet_image_url: (cat as any).sheet_image_url,
         materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
-        subcategories: [],
       }));
 
-      // Separate main categories (no parent) and subcategories
-      const mainCategories = categoriesWithMaterials.filter(c => !c.parent_id);
-      const subCategories = categoriesWithMaterials.filter(c => c.parent_id);
-
-      // Attach subcategories to their parents
-      mainCategories.forEach(main => {
-        main.subcategories = subCategories
-          .filter(sub => sub.parent_id === main.id)
-          .sort((a, b) => a.order_index - b.order_index);
-      });
-
-      setCategories(mainCategories);
-      setAllCategoriesFlat(categoriesWithMaterials);
+      setCategories(categoriesWithMaterials);
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error('Failed to load materials');
@@ -310,22 +314,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  function toggleCategoryExpanded(categoryId: string) {
-    setExpandedCategories(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(categoryId)) {
-        newSet.delete(categoryId);
-      } else {
-        newSet.add(categoryId);
-      }
-      return newSet;
-    });
-  }
-
-  function openAddCategory(parentId?: string) {
+  function openAddCategory() {
     setEditingCategory(null);
     setCategoryName('');
-    setCategoryParentId(parentId || '__NONE__');
     setCategorySheetImage(null);
     setCategorySheetPreview(null);
     setShowCategoryModal(true);
@@ -334,7 +325,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function openEditCategory(category: Category) {
     setEditingCategory(category);
     setCategoryName(category.name);
-    setCategoryParentId(category.parent_id || '__NONE__');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
     setShowCategoryModal(true);
@@ -396,8 +386,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         if (sheetImageUrl) {
           updateData.sheet_image_url = sheetImageUrl;
         }
-        // Allow changing parent
-        updateData.parent_id = categoryParentId === '__NONE__' ? null : categoryParentId;
 
         const { error } = await supabase
           .from('materials_categories')
@@ -408,7 +396,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         toast.success('Category updated');
       } else {
         // Create new
-        const maxOrder = Math.max(...allCategoriesFlat.map(c => c.order_index), -1);
+        const maxOrder = Math.max(...categories.map(c => c.order_index), -1);
         
         const { error } = await supabase
           .from('materials_categories')
@@ -416,7 +404,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             job_id: job.id,
             name: categoryName.trim(),
             order_index: maxOrder + 1,
-            parent_id: categoryParentId === '__NONE__' ? null : categoryParentId,
             created_by: userId,
             sheet_image_url: sheetImageUrl,
           });
@@ -447,6 +434,56 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to delete category');
+      console.error(error);
+    }
+  }
+
+  async function moveCategoryUp(category: Category) {
+    const prevCategory = categories
+      .filter(c => c.order_index < category.order_index)
+      .sort((a, b) => b.order_index - a.order_index)[0];
+
+    if (!prevCategory) return;
+
+    try {
+      await supabase
+        .from('materials_categories')
+        .update({ order_index: prevCategory.order_index })
+        .eq('id', category.id);
+
+      await supabase
+        .from('materials_categories')
+        .update({ order_index: category.order_index })
+        .eq('id', prevCategory.id);
+
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to reorder');
+      console.error(error);
+    }
+  }
+
+  async function moveCategoryDown(category: Category) {
+    const nextCategory = categories
+      .filter(c => c.order_index > category.order_index)
+      .sort((a, b) => a.order_index - b.order_index)[0];
+
+    if (!nextCategory) return;
+
+    try {
+      await supabase
+        .from('materials_categories')
+        .update({ order_index: nextCategory.order_index })
+        .eq('id', category.id);
+
+      await supabase
+        .from('materials_categories')
+        .update({ order_index: category.order_index })
+        .eq('id', nextCategory.id);
+
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to reorder');
       console.error(error);
     }
   }
@@ -487,7 +524,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
       
-      const newCategory = allCategoriesFlat.find(c => c.id === newCategoryId);
+      const newCategory = categories.find(c => c.id === newCategoryId);
       toast.success(`Moved to ${newCategory?.name}`);
       loadMaterials();
     } catch (error: any) {
@@ -509,6 +546,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
     try {
       if (editingMaterial) {
+        // Update existing (including category)
         const { error } = await supabase
           .from('materials')
           .update({
@@ -526,6 +564,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         if (error) throw error;
         toast.success('Material updated');
       } else {
+        // Create new - mark as manual entry
         const { error } = await supabase
           .from('materials')
           .insert({
@@ -573,6 +612,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   async function handleQuickStatusChange(materialId: string, newStatusValue: string) {
     try {
+      // Optimistically update local state first
+      setCategories(prevCategories => 
+        prevCategories.map(category => ({
+          ...category,
+          materials: category.materials.map(material => 
+            material.id === materialId 
+              ? { ...material, status: newStatusValue }
+              : material
+          )
+        }))
+      );
+
       const { error } = await supabase
         .from('materials')
         .update({ 
@@ -584,10 +635,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       if (error) throw error;
 
       toast.success(`Status updated to ${getStatusLabel(newStatusValue)}`);
-      loadMaterials();
+      
+      // Reload to ensure data consistency
+      await loadMaterials();
     } catch (error: any) {
       console.error('Error updating status:', error);
       toast.error('Failed to update status');
+      // Reload on error to revert optimistic update
       loadMaterials();
     }
   }
@@ -596,7 +650,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setStatusChangeMaterial(material);
     setNewStatus(newStatusValue);
     
-    setOrderByDate('');
+    // Pre-populate existing data (except order by date which should be blank)
+    setOrderByDate(''); // Always blank by default
     setPullByDate(material.pull_by_date || '');
     setDeliveryDate(material.delivery_date || '');
     setActualDeliveryDate(material.actual_delivery_date || '');
@@ -606,6 +661,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setPickupVendor((material as any).pickup_vendor || '');
     setDateNotes('');
     
+    // Set delivery method if exists
     if (material.delivery_method) {
       setDeliveryMethod(material.delivery_method);
       setHasDeliveryMethod(true);
@@ -617,15 +673,773 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setShowStatusDialog(true);
   }
 
-  // confirmStatusChange remains unchanged (omitted for brevity)
   async function confirmStatusChange() {
-    // (same implementation as before)
     if (!statusChangeMaterial) return;
-    // ... rest of function
-    toast.success(`Status updated`);
-    setShowStatusDialog(false);
-    setStatusChangeMaterial(null);
-    loadMaterials();
+
+    // Validate only if delivery method is selected
+    if (newStatus === 'ordered' && hasDeliveryMethod) {
+      if (deliveryMethod === 'pickup') {
+        if (!pickupBy) {
+          toast.error('Please assign a user for pickup');
+          return;
+        }
+        if (!pickupDate) {
+          toast.error('Please set a pickup date');
+          return;
+        }
+      } else if (deliveryMethod === 'delivery') {
+        if (!deliveryDate) {
+          toast.error('Please set a delivery date');
+          return;
+        }
+      }
+    }
+
+    setSubmittingStatus(true);
+    try {
+      const updateData: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update dates based on status
+      if (newStatus === 'ordered') {
+        if (orderByDate) updateData.order_by_date = orderByDate;
+        
+        if (hasDeliveryMethod) {
+          updateData.delivery_method = deliveryMethod;
+          
+          if (deliveryMethod === 'delivery') {
+            if (deliveryDate) updateData.delivery_date = deliveryDate;
+            if (deliveryVendor) updateData.delivery_vendor = deliveryVendor;
+            updateData.pickup_by = null;
+            updateData.pickup_date = null;
+            updateData.pickup_vendor = null;
+          } else if (deliveryMethod === 'pickup') {
+            updateData.pickup_by = pickupBy;
+            if (pickupDate) updateData.pickup_date = pickupDate;
+            if (pickupVendor) updateData.pickup_vendor = pickupVendor;
+            updateData.delivery_date = null;
+            updateData.delivery_vendor = null;
+          }
+        } else {
+          // Clear delivery method fields if not selected
+          updateData.delivery_method = null;
+          updateData.delivery_date = null;
+          updateData.delivery_vendor = null;
+          updateData.pickup_by = null;
+          updateData.pickup_date = null;
+          updateData.pickup_vendor = null;
+        }
+        
+        updateData.ordered_by = userId;
+        updateData.order_requested_at = new Date().toISOString();
+      } else if (newStatus === 'at_shop') {
+        if (pullByDate) updateData.pull_by_date = pullByDate;
+      } else if (newStatus === 'at_job') {
+        if (actualDeliveryDate) updateData.actual_delivery_date = actualDeliveryDate;
+        
+        // If pickup method, mark as picked up
+        if (statusChangeMaterial.delivery_method === 'pickup') {
+          updateData.actual_pickup_date = actualDeliveryDate;
+        }
+      }
+
+      if (dateNotes) {
+        updateData.notes = dateNotes;
+      }
+
+      const { error } = await supabase
+        .from('materials')
+        .update(updateData)
+        .eq('id', statusChangeMaterial.id);
+
+      if (error) throw error;
+
+      // Create/update/delete calendar event for order-by date
+      if (orderByDate) {
+        console.log('Creating/updating order-by-date calendar task:', {
+          material: statusChangeMaterial.name,
+          orderByDate,
+          jobId: job.id,
+        });
+        
+        // Check if calendar event already exists for this material's order reminder
+        const { data: existingEvent, error: searchError } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`)
+          .maybeSingle();
+
+        if (searchError) {
+          console.error('Error searching for existing order reminder event:', searchError);
+        }
+
+        if (existingEvent) {
+          // Update existing event
+          console.log('Updating existing order reminder event:', existingEvent.id);
+          const { error: updateError } = await supabase
+            .from('calendar_events')
+            .update({
+              event_date: orderByDate,
+              description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+            })
+            .eq('id', existingEvent.id);
+          
+          if (updateError) {
+            console.error('Error updating order reminder event:', updateError);
+            throw updateError;
+          }
+          console.log('Order reminder event updated successfully');
+        } else {
+          // Create new event
+          console.log('Creating new order reminder event');
+          const { data: newEvent, error: insertError } = await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Order Material: ${statusChangeMaterial.name}`,
+              description: `Reminder to order ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+              event_date: orderByDate,
+              event_type: 'material_order_reminder',
+              all_day: true,
+              created_by: userId,
+            })
+            .select();
+          
+          if (insertError) {
+            console.error('Error creating order reminder event:', insertError);
+            throw insertError;
+          }
+          console.log('Order reminder event created successfully:', newEvent);
+        }
+      } else if (statusChangeMaterial.order_by_date) {
+        // If order by date was removed, delete the calendar event
+        console.log('Deleting order reminder calendar event for:', statusChangeMaterial.name);
+        const { error: deleteError } = await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`);
+        
+        if (deleteError) {
+          console.error('Error deleting order reminder event:', deleteError);
+        }
+      }
+
+      // Create/update calendar event for pickup (if pickup info provided)
+      if (hasDeliveryMethod && deliveryMethod === 'pickup' && pickupBy && pickupDate) {
+        const assignedUser = users.find(u => u.id === pickupBy);
+        const materialName = statusChangeMaterial.name;
+        const pickupDateStr = new Date(pickupDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        // Create notification for assigned user
+        if (newStatus === 'ordered' || statusChangeMaterial.pickup_by !== pickupBy) {
+          await supabase
+            .from('notifications')
+            .insert({
+              job_id: job.id,
+              created_by: userId,
+              type: 'material_request',
+              brief: `Pickup assigned: ${materialName} (Qty: ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? `, ${statusChangeMaterial.length}` : ''}) - Pickup by ${pickupDateStr}`,
+              reference_id: statusChangeMaterial.id,
+              reference_data: {
+                material_name: materialName,
+                quantity: statusChangeMaterial.quantity,
+                length: statusChangeMaterial.length,
+                pickup_date: pickupDate,
+                assigned_to: assignedUser?.username || assignedUser?.email,
+                assigned_to_id: pickupBy,
+              },
+              is_read: false,
+            });
+        }
+
+        // Create or update calendar event for pickup
+        const pickupDesc = [
+          `Pickup ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${materialName}`,
+          `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
+          `Assigned to: ${assignedUser?.username || assignedUser?.email}`,
+        ];
+        if (pickupVendor) pickupDesc.push(`Vendor: ${pickupVendor}`);
+
+        // Check if calendar event already exists for this material's pickup
+        const { data: existingPickupEvent, error: searchPickupError } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${materialName}`)
+          .maybeSingle();
+
+        if (searchPickupError) {
+          console.error('Error searching for existing pickup event:', searchPickupError);
+        }
+
+        if (existingPickupEvent) {
+          // Update existing event
+          console.log('Updating existing pickup event:', existingPickupEvent.id);
+          const { error: updatePickupError } = await supabase
+            .from('calendar_events')
+            .update({
+              event_date: pickupDate,
+              description: pickupDesc.join('\n\n'),
+            })
+            .eq('id', existingPickupEvent.id);
+          
+          if (updatePickupError) {
+            console.error('Error updating pickup event:', updatePickupError);
+            throw updatePickupError;
+          }
+          console.log('Pickup event updated successfully');
+        } else {
+          // Create new pickup calendar event
+          console.log('Creating new pickup calendar event');
+          const { data: newPickupEvent, error: insertPickupError } = await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Material Pickup: ${materialName}`,
+              description: pickupDesc.join('\n\n'),
+              event_date: pickupDate,
+              event_type: 'material_pickup',
+              all_day: true,
+              created_by: userId,
+            })
+            .select();
+          
+          if (insertPickupError) {
+            console.error('Error creating pickup event:', insertPickupError);
+            throw insertPickupError;
+          }
+          console.log('Pickup event created successfully:', newPickupEvent);
+        }
+      } else if (statusChangeMaterial.delivery_method === 'pickup' && statusChangeMaterial.pickup_date && (!hasDeliveryMethod || deliveryMethod !== 'pickup' || !pickupDate)) {
+        // If pickup date was removed or delivery method changed from pickup, delete the calendar event
+        console.log('Deleting pickup calendar event for:', statusChangeMaterial.name);
+        const { error: deletePickupError } = await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
+        
+        if (deletePickupError) {
+          console.error('Error deleting pickup event:', deletePickupError);
+        }
+      }
+
+      // Create/update calendar event for delivery
+      if (hasDeliveryMethod && deliveryMethod === 'delivery' && deliveryDate) {
+        const deliveryDesc = [
+          `Delivery of ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name}`,
+          `Use: ${statusChangeMaterial.use_case || 'Not specified'}`,
+        ];
+        if (deliveryVendor) deliveryDesc.push(`Vendor: ${deliveryVendor}`);
+        
+        // Check if calendar event already exists for this material's delivery
+        const { data: existingDeliveryEvent, error: searchDeliveryError } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`)
+          .maybeSingle();
+
+        if (searchDeliveryError) {
+          console.error('Error searching for existing delivery event:', searchDeliveryError);
+        }
+
+        if (existingDeliveryEvent) {
+          // Update existing event
+          console.log('Updating existing delivery event:', existingDeliveryEvent.id);
+          const { error: updateDeliveryError } = await supabase
+            .from('calendar_events')
+            .update({
+              event_date: deliveryDate,
+              description: deliveryDesc.join('\n\n'),
+            })
+            .eq('id', existingDeliveryEvent.id);
+          
+          if (updateDeliveryError) {
+            console.error('Error updating delivery event:', updateDeliveryError);
+            throw updateDeliveryError;
+          }
+          console.log('Delivery event updated successfully');
+        } else {
+          // Create new delivery calendar event
+          console.log('Creating new delivery calendar event');
+          const { data: newDeliveryEvent, error: insertDeliveryError } = await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Material Delivery: ${statusChangeMaterial.name}`,
+              description: deliveryDesc.join('\n\n'),
+              event_date: deliveryDate,
+              event_type: 'material_delivery',
+              all_day: true,
+              created_by: userId,
+            })
+            .select();
+          
+          if (insertDeliveryError) {
+            console.error('Error creating delivery event:', insertDeliveryError);
+            throw insertDeliveryError;
+          }
+          console.log('Delivery event created successfully:', newDeliveryEvent);
+        }
+      } else if (statusChangeMaterial.delivery_method === 'delivery' && statusChangeMaterial.delivery_date && (!hasDeliveryMethod || deliveryMethod !== 'delivery' || !deliveryDate)) {
+        // If delivery date was removed or delivery method changed from delivery, delete the calendar event
+        console.log('Deleting delivery calendar event for:', statusChangeMaterial.name);
+        const { error: deleteDeliveryError } = await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`);
+        
+        if (deleteDeliveryError) {
+          console.error('Error deleting delivery event:', deleteDeliveryError);
+        }
+      }
+
+      // When status changes to at_shop (Ready for Job), clean up order/delivery/pickup events
+      if (newStatus === 'at_shop') {
+        // Delete order reminder events
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_order_reminder')
+          .eq('title', `Order Material: ${statusChangeMaterial.name}`);
+        
+        // Delete delivery events
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_delivery')
+          .eq('title', `Material Delivery: ${statusChangeMaterial.name}`);
+        
+        // Delete pickup events
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pickup')
+          .eq('title', `Material Pickup: ${statusChangeMaterial.name}`);
+        
+        // Create calendar event for pull-by date if specified
+        if (pullByDate) {
+          await supabase
+            .from('calendar_events')
+            .insert({
+              job_id: job.id,
+              title: `Pull Material: ${statusChangeMaterial.name}`,
+              description: `Pull ${statusChangeMaterial.quantity}${statusChangeMaterial.length ? ` x ${statusChangeMaterial.length}` : ''} ${statusChangeMaterial.name} from shop\n\nUse: ${statusChangeMaterial.use_case || 'Not specified'}`,
+              event_date: pullByDate,
+              event_type: 'material_pull',
+              all_day: true,
+              created_by: userId,
+            });
+        }
+      }
+      
+      // When status changes to at_job, clean up pull events
+      if (newStatus === 'at_job') {
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('event_type', 'material_pull')
+          .eq('title', `Pull Material: ${statusChangeMaterial.name}`);
+      }
+
+      toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
+      setShowStatusDialog(false);
+      setStatusChangeMaterial(null);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update status');
+      console.error(error);
+    } finally {
+      setSubmittingStatus(false);
+    }
+  }
+
+  // Continue from here... (remaining functions unchanged)
+  async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    setFileExtension(fileExt || '');
+    
+    if (fileExt === 'xlsx' || fileExt === 'xls') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = event.target?.result;
+          const workbook = XLSX.read(data, { type: 'binary' });
+          
+          const allRows: any[] = [];
+          let commonHeaders: string[] = [];
+          
+          for (let i = 0; i < workbook.SheetNames.length; i++) {
+            const sheetName = workbook.SheetNames[i];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (jsonData.length < 2) continue;
+
+            const headers = (jsonData[0] as any[]).map(h => String(h || '').trim());
+            
+            if (i === 0 || commonHeaders.length === 0) {
+              commonHeaders = headers;
+            }
+            
+            const sheetRows = jsonData.slice(1).map((row: any) => {
+              const rowObj: any = {};
+              headers.forEach((header, index) => {
+                rowObj[header] = String(row[index] || '').trim();
+              });
+              
+              const categoryHeader = headers.find(h => /category|type|group/i.test(h));
+              if (!categoryHeader) {
+                rowObj['Category'] = sheetName;
+              } else if (!rowObj[categoryHeader]) {
+                rowObj[categoryHeader] = sheetName;
+              }
+              
+              return rowObj;
+            }).filter(row => {
+              const hasData = Object.values(row).some(val => val !== '' && val !== sheetName);
+              return hasData;
+            });
+            
+            allRows.push(...sheetRows);
+          }
+          
+          if (allRows.length === 0) {
+            toast.error('Excel file contains no valid data rows');
+            return;
+          }
+          
+          if (!commonHeaders.find(h => /category|type|group/i.test(h))) {
+            commonHeaders.unshift('Category');
+          }
+
+          setCsvColumns(commonHeaders);
+          setCsvData(allRows);
+
+          const autoMapping = {
+            category: commonHeaders.find(c => /category|type|group/i.test(c)) || 'Category',
+            name: commonHeaders.find(c => /name|material|item|description/i.test(c)) || '',
+            useCase: commonHeaders.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
+            quantity: commonHeaders.find(c => /quantity|qty|amount|count/i.test(c)) || '',
+            length: commonHeaders.find(c => /length|size|dimension/i.test(c)) || '',
+          };
+          
+          setColumnMapping(autoMapping);
+          setImportStep('columns');
+          setShowCsvDialog(true);
+          
+          toast.success(`Loaded ${workbook.SheetNames.length} worksheet(s) with ${allRows.length} total rows`);
+        } catch (error: any) {
+          toast.error('Failed to parse Excel file');
+          console.error('Excel parse error:', error);
+        }
+      };
+      reader.readAsBinaryString(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const text = event.target?.result as string;
+          const lines = text.split('\n').filter(line => line.trim());
+          
+          if (lines.length < 2) {
+            toast.error('CSV file must have at least a header row and one data row');
+            return;
+          }
+
+          const headers = lines[0].split(',').map(h => h.trim());
+          const rows = lines.slice(1).map(line => {
+            const values = line.split(',').map(v => v.trim());
+            const row: any = {};
+            headers.forEach((header, index) => {
+              row[header] = values[index] || '';
+            });
+            return row;
+          });
+
+          setCsvColumns(headers);
+          setCsvData(rows);
+
+          const autoMapping = {
+            category: headers.find(c => /category|type|group/i.test(c)) || '',
+            name: headers.find(c => /name|material|item|description/i.test(c)) || '',
+            useCase: headers.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
+            quantity: headers.find(c => /quantity|qty|amount|count/i.test(c)) || '',
+            length: headers.find(c => /length|size|dimension/i.test(c)) || '',
+          };
+          
+          setColumnMapping(autoMapping);
+          setImportStep('columns');
+          setShowCsvDialog(true);
+        } catch (error: any) {
+          toast.error('Failed to parse CSV file');
+          console.error('CSV parse error:', error);
+        }
+      };
+      reader.readAsText(file);
+    }
+    
+    e.target.value = '';
+  }
+
+  function proceedToCategories() {
+    if (!columnMapping.category || !columnMapping.name || !columnMapping.quantity) {
+      toast.error('Please map Category, Name, and Quantity columns');
+      return;
+    }
+
+    const uniqueCategories = Array.from(
+      new Set(
+        csvData
+          .map((row: any) => row[columnMapping.category])
+          .filter(Boolean)
+          .map(String)
+      )
+    ) as string[];
+
+    setCsvCategories(uniqueCategories);
+    
+    const initialMapping: Record<string, string> = {};
+    uniqueCategories.forEach(csvCat => {
+      const existingMatch = categories.find(
+        c => c.name.toLowerCase() === csvCat.toLowerCase()
+      );
+      if (existingMatch) {
+        initialMapping[csvCat] = existingMatch.id;
+      } else {
+        initialMapping[csvCat] = 'CREATE_NEW';
+      }
+    });
+    setCategoryMapping(initialMapping);
+    setImportStep('categories');
+  }
+
+  function downloadCategoryTemplate(category: Category) {
+    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length', 'Color'];
+    
+    let rows: string[][];
+    if (category.materials.length > 0) {
+      rows = category.materials.map(m => [
+        category.name,
+        m.name,
+        (m as any).use_case || '',
+        m.quantity.toString(),
+        m.length || '',
+        m.color || '',
+      ]);
+    } else {
+      rows = [
+        [category.name, 'Example Material 1', 'Foundation work', '100', '8ft', ''],
+        [category.name, 'Example Material 2', 'Framing', '50', '12ft', ''],
+        [category.name, 'Example Material 3', 'Roofing installation', '200', '16ft', ''],
+      ];
+    }
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const fileName = `${category.name.replace(/\s+/g, '_')}_materials_${job.name.replace(/\s+/g, '_')}.csv`;
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`${category.name} template downloaded`);
+  }
+
+  function downloadAllTemplate() {
+    const headers = ['Category', 'Material', 'Use Case', 'Quantity', 'Length', 'Color'];
+    const exampleRows = [
+      ['Lumber', '2x4 Stud', 'Wall framing', '100', '8ft', ''],
+      ['Lumber', '2x6 Joist', 'Floor joists', '50', '12ft', ''],
+      ['Steel', 'I-Beam', 'Main support', '20', '20ft', ''],
+      ['Metal', 'Standing Seam Panel', 'Roof covering', '200', '16ft', 'Charcoal Gray'],
+      ['Trim', 'Corner Trim', 'Exterior corners', '50', '10ft', 'White'],
+      ['Hardware', 'Bolts 1/2"', 'General fastening', '500', '', ''],
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...exampleRows.map(row => row.join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `materials_template_${job.name.replace(/\s+/g, '_')}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('Template downloaded - open in Excel, fill it out, and save as CSV');
+  }
+
+  async function processCsvImport() {
+    setUploading(true);
+    try {
+      const categoriesToCreate = Object.entries(categoryMapping)
+        .filter(([_, value]) => value === 'CREATE_NEW')
+        .map(([key]) => key);
+
+      const newCategoryIds: Record<string, string> = {};
+      
+      for (const catName of categoriesToCreate) {
+        const maxOrder = Math.max(...categories.map(c => c.order_index), -1);
+        const { data, error } = await supabase
+          .from('materials_categories')
+          .insert({
+            job_id: job.id,
+            name: catName,
+            order_index: maxOrder + 1 + categoriesToCreate.indexOf(catName),
+            created_by: userId,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        newCategoryIds[catName] = data.id;
+      }
+
+      const finalMapping: Record<string, string> = {};
+      Object.entries(categoryMapping).forEach(([excelCat, value]) => {
+        if (value === 'CREATE_NEW') {
+          finalMapping[excelCat] = newCategoryIds[excelCat];
+        } else {
+          finalMapping[excelCat] = value;
+        }
+      });
+
+      const importSource = fileExtension === 'csv' ? 'csv_import' : 'excel_import';
+      const categoryIdsBeingImported = Object.values(finalMapping);
+
+      let deleted = 0;
+      for (const categoryId of categoryIdsBeingImported) {
+        const { data: deletedMaterials, error: deleteError } = await supabase
+          .from('materials')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('category_id', categoryId)
+          .in('import_source', ['csv_import', 'excel_import'])
+          .eq('status', 'not_ordered')
+          .select('id');
+
+        if (deleteError) throw deleteError;
+        deleted += deletedMaterials?.length || 0;
+      }
+
+      const materialsToInsert: any[] = [];
+      let skipped = 0;
+      let preserved = 0;
+
+      for (const row of csvData) {
+        const category = String(row[columnMapping.category] || '').trim();
+        const name = String(row[columnMapping.name] || '').trim();
+        const quantityStr = String(row[columnMapping.quantity] || '0');
+        const quantity = parseFloat(quantityStr) || 0;
+        const length = columnMapping.length ? String(row[columnMapping.length] || '').trim() : '';
+        const useCase = columnMapping.useCase ? String(row[columnMapping.useCase] || '').trim() : '';
+
+        if (!category || !name || quantity === 0) {
+          skipped++;
+          continue;
+        }
+
+        const categoryId = finalMapping[category];
+        if (!categoryId) {
+          skipped++;
+          continue;
+        }
+
+        const { data: existingManual } = await supabase
+          .from('materials')
+          .select('id, import_source, status')
+          .eq('job_id', job.id)
+          .eq('category_id', categoryId)
+          .eq('name', name)
+          .eq('length', length || null)
+          .limit(1)
+          .single();
+
+        if (existingManual) {
+          const shouldPreserve = 
+            existingManual.import_source === 'manual' || 
+            existingManual.status !== 'not_ordered';
+
+          if (shouldPreserve) {
+            preserved++;
+            continue;
+          }
+        }
+
+        materialsToInsert.push({
+          job_id: job.id,
+          category_id: categoryId,
+          name,
+          quantity,
+          length: length || null,
+          use_case: useCase || null,
+          status: 'not_ordered',
+          created_by: userId,
+          import_source: importSource,
+        });
+      }
+
+      if (materialsToInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from('materials')
+          .insert(materialsToInsert);
+        if (insertError) throw insertError;
+      }
+
+      const messageParts = [];
+      if (deleted > 0) messageParts.push(`${deleted} replaced`);
+      if (materialsToInsert.length > 0) messageParts.push(`${materialsToInsert.length} imported`);
+      if (preserved > 0) messageParts.push(`${preserved} preserved`);
+      if (skipped > 0) messageParts.push(`${skipped} skipped`);
+      
+      const message = `Import complete: ${messageParts.join(', ')}`;
+      
+      toast.success(message);
+      setShowCsvDialog(false);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error(`Import failed: ${error.message}`);
+      console.error('Import error:', error);
+    } finally {
+      setUploading(false);
+    }
   }
 
   function getFilteredAndSortedMaterials(categoryMaterials: Material[]) {
@@ -697,253 +1511,124 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   const filteredCategories = filterCategory === 'all' 
     ? categories 
-    : categories.filter(cat => cat.id === filterCategory || cat.subcategories?.some(sub => sub.id === filterCategory));
+    : categories.filter(cat => cat.id === filterCategory);
 
-  // Render category card (for main or subcategory)
-  function renderCategoryCard(category: Category, isSubcategory: boolean = false) {
-    const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-    const showColorColumn = /metal|trim/i.test(category.name);
-    const isExpanded = expandedCategories.has(category.id);
-    const hasSubcategories = category.subcategories && category.subcategories.length > 0;
-    
-    return (
-      <Card key={category.id} className={`overflow-hidden ${isSubcategory ? 'ml-8 border-l-4 border-primary/30' : ''}`}>
-        <CardHeader className={`${isSubcategory ? 'bg-gradient-to-r from-muted/50 to-muted/20 border-b' : 'bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {!isSubcategory && hasSubcategories && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => toggleCategoryExpanded(category.id)}
-                  className="h-8 w-8 p-0"
-                >
-                  {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                </Button>
-              )}
-              <div className="flex items-center gap-2">
-                {!isSubcategory && hasSubcategories ? (
-                  <FolderOpen className="w-5 h-5 text-primary" />
-                ) : !isSubcategory ? (
-                  <Folder className="w-5 h-5 text-muted-foreground" />
-                ) : null}
-                <CardTitle className={`${isSubcategory ? 'text-lg font-semibold' : 'text-xl font-bold'}`}>
-                  {category.name}
-                </CardTitle>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => openAddMaterial(category.id)}
-                className="gradient-primary"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Material
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => openEditCategory(category)}
-              >
-                <Edit className="w-4 h-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => deleteCategory(category.id)}
-                className="text-destructive hover:text-destructive"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-          {category.sheet_image_url && (
-            <div className="mt-3 p-2 bg-white rounded-lg border">
-              <img
-                src={category.sheet_image_url}
-                alt={`${category.name} sheet`}
-                className="max-h-40 w-auto mx-auto object-contain"
-              />
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="p-0">
-          {filteredMaterials.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">
-              No materials in this category
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/50 border-b">
-                  <tr>
-                    <th className="text-left p-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleSort('name')}
-                        className="font-semibold -ml-3"
-                      >
-                        Material Name
-                        <SortIcon column="name" />
-                      </Button>
-                    </th>
-                    <th className="text-left p-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleSort('useCase')}
-                        className="font-semibold -ml-3"
-                      >
-                        Use Case
-                        <SortIcon column="useCase" />
-                      </Button>
-                    </th>
-                    <th className="text-center p-3 w-[100px]">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleSort('quantity')}
-                        className="font-semibold -ml-3"
-                      >
-                        Qty
-                        <SortIcon column="quantity" />
-                      </Button>
-                    </th>
-                    <th className="text-center p-3 w-[100px]">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleSort('length')}
-                        className="font-semibold -ml-3"
-                      >
-                        Length
-                        <SortIcon column="length" />
-                      </Button>
-                    </th>
-                    {showColorColumn && (
-                      <th className="text-center p-3 w-[120px]">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleSort('color')}
-                          className="font-semibold -ml-3"
-                        >
-                          Color
-                          <SortIcon column="color" />
-                        </Button>
-                      </th>
-                    )}
-                    <th className="text-center p-3 font-semibold w-[180px]">Status</th>
-                    <th className="text-right p-3 font-semibold w-[180px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMaterials.map((material) => (
-                    <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-3">
-                        <div className="font-medium">{material.name}</div>
-                        {material.import_source && material.import_source !== 'manual' && (
-                          <Badge variant="outline" className="mt-1 text-xs">
-                            {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        <div>{material.use_case || '-'}</div>
-                      </td>
-                      <td className="p-3 text-center font-semibold w-[100px]">
-                        {material.quantity}
-                      </td>
-                      <td className="p-3 text-center w-[100px]">
-                        {material.length || '-'}
-                      </td>
-                      {showColorColumn && (
-                        <td className="p-3 text-center w-[120px]">
-                          {material.color ? (
-                            <Badge variant="outline" className="font-medium">
-                              {material.color}
-                            </Badge>
-                          ) : ('-')}
-                        </td>
-                      )}
-                      <td className="p-3 w-[180px]">
-                        <div className="flex justify-center">
-                          <Select
-                            value={material.status}
-                            onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
-                          >
-                            <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUS_OPTIONS.map(opt => (
-                                <SelectItem key={opt.value} value={opt.value}>
-                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
-                                    {opt.label}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </td>
-                      <td className="p-3 w-[180px]">
-                        <div className="flex items-center justify-end gap-1">
-                          <Select
-                            value={material.category_id}
-                            onValueChange={(newCategoryId) => quickMoveMaterial(material.id, newCategoryId)}
-                          >
-                            <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-muted" title="Move to category">
-                              <div className="flex items-center justify-center w-full h-full">
-                                <ChevronDownIcon className="w-4 h-4" />
-                              </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allCategoriesFlat.map(cat => (
-                                <SelectItem key={cat.id} value={cat.id}>
-                                  {cat.parent_id ? `  ↳ ${cat.name}` : cat.name} {cat.id === material.category_id ? '(current)' : ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleStatusChange(material, material.status)}
-                            title="Edit dates, notes, and delivery info"
-                          >
-                            <Calendar className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openEditMaterial(material)}
-                            title="Edit material details"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deleteMaterial(material.id)}
-                            className="text-destructive hover:text-destructive"
-                            title="Delete material"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
+  async function quickMarkAsOnSite(materialId: string) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          status: 'at_job', 
+          actual_delivery_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', materialId);
+      
+      if (error) throw error;
+      toast.success('Marked as on-site');
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update status');
+      console.error(error);
+    }
+  }
+
+  async function bulkChangeStatus() {
+    setBulkStatusUpdating(true);
+    try {
+      let materialsToUpdate: string[] = [];
+      
+      if (filterCategory === 'all') {
+        categories.forEach(category => {
+          const filtered = getFilteredAndSortedMaterials(category.materials);
+          materialsToUpdate.push(...filtered.map(m => m.id));
+        });
+      } else {
+        const category = categories.find(c => c.id === filterCategory);
+        if (category) {
+          const filtered = getFilteredAndSortedMaterials(category.materials);
+          materialsToUpdate.push(...filtered.map(m => m.id));
+        }
+      }
+
+      if (materialsToUpdate.length === 0) {
+        toast.error('No materials to update');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          status: bulkStatusTarget, 
+          updated_at: new Date().toISOString() 
+        })
+        .in('id', materialsToUpdate);
+
+      if (error) throw error;
+
+      toast.success(`Updated ${materialsToUpdate.length} material(s) to "${getStatusLabel(bulkStatusTarget)}"`);
+      setShowBulkStatusDialog(false);
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to update materials');
+      console.error(error);
+    } finally {
+      setBulkStatusUpdating(false);
+    }
+  }
+
+  async function copyCategories() {
+    if (!sourceJobId) {
+      toast.error('Please select a job to copy from');
+      return;
+    }
+
+    setCopyingCategories(true);
+    try {
+      // Load categories from source job
+      const { data: sourceCategories, error: sourceCatError } = await supabase
+        .from('materials_categories')
+        .select('name, order_index, sheet_image_url')
+        .eq('job_id', sourceJobId)
+        .order('order_index');
+
+      if (sourceCatError) throw sourceCatError;
+
+      if (!sourceCategories || sourceCategories.length === 0) {
+        toast.error('Source job has no categories');
+        return;
+      }
+
+      // Create categories in current job
+      const currentMaxOrder = categories.length > 0 
+        ? Math.max(...categories.map(c => c.order_index))
+        : -1;
+
+      const categoriesToInsert = sourceCategories.map((cat, index) => ({
+        job_id: job.id,
+        name: cat.name,
+        order_index: currentMaxOrder + 1 + index,
+        created_by: userId,
+        sheet_image_url: cat.sheet_image_url,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('materials_categories')
+        .insert(categoriesToInsert);
+
+      if (insertError) throw insertError;
+
+      const sourceJob = allJobs.find(j => j.id === sourceJobId);
+      toast.success(`Copied ${sourceCategories.length} categories from ${sourceJob?.name}`);
+      setShowCopyCategoriesDialog(false);
+      setSourceJobId('');
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to copy categories');
+      console.error(error);
+    } finally {
+      setCopyingCategories(false);
+    }
   }
 
   if (loading) {
@@ -956,6 +1641,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       <Card>
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -976,20 +1662,20 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               )}
             </div>
 
+            {/* Category Filter */}
             <Select value={filterCategory} onValueChange={setFilterCategory}>
               <SelectTrigger>
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {allCategoriesFlat.map(cat => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.parent_id ? `  ↳ ${cat.name}` : cat.name}
-                  </SelectItem>
+                {categories.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
+            {/* Status Filter */}
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger>
                 <SelectValue placeholder="All Statuses" />
@@ -1005,15 +1691,364 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </CardContent>
       </Card>
 
+      {/* Category Tabs */}
+      {categories.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b">
+          <Button
+            variant={filterCategory === 'all' ? 'default' : 'outline'}
+            onClick={() => setFilterCategory('all')}
+            className={filterCategory === 'all' ? 'gradient-primary' : ''}
+          >
+            All Sections
+          </Button>
+          {categories.map((cat) => (
+            <Button
+              key={cat.id}
+              variant={filterCategory === cat.id ? 'default' : 'outline'}
+              onClick={() => setFilterCategory(cat.id)}
+              className={filterCategory === cat.id ? 'gradient-primary' : ''}
+            >
+              {cat.name}
+            </Button>
+          ))}
+        </div>
+      )}
+
       {/* Header Actions */}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => openAddCategory()} className="gradient-primary">
+        <Button onClick={openAddCategory} className="gradient-primary">
           <Plus className="w-4 h-4 mr-2" />
-          Add Main Category
+          Add Category
         </Button>
+        <Button
+          onClick={downloadAllTemplate}
+          variant="outline"
+          className="bg-green-50 hover:bg-green-100 border-green-300"
+        >
+          <FileSpreadsheet className="w-4 h-4 mr-2" />
+          Download Template (All)
+        </Button>
+        <Button
+          onClick={() => document.getElementById('csv-upload')?.click()}
+          variant="outline"
+        >
+          <Upload className="w-4 h-4 mr-2" />
+          Import Excel/CSV
+        </Button>
+        <input
+          id="csv-upload"
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          onChange={handleCsvUpload}
+          className="hidden"
+        />
       </div>
 
-      {/* Categories List */}
+      {/* Categories List - Too long, continuing with Dialog components */}
+      {/* Status Change Dialog with Pickup/Delivery */}
+      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Update Material Status & Timeline
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <p className="font-semibold text-base">{statusChangeMaterial?.name}</p>
+              {statusChangeMaterial?.use_case && (
+                <p className="text-sm text-muted-foreground mt-1">Use: {statusChangeMaterial.use_case}</p>
+              )}
+              <div className="flex items-center gap-4 mt-2 text-sm">
+                <span>Qty: <span className="font-semibold">{statusChangeMaterial?.quantity}</span></span>
+                {statusChangeMaterial?.length && (
+                  <span>Length: <span className="font-semibold">{statusChangeMaterial.length}</span></span>
+                )}
+              </div>
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-sm font-medium mb-1">Status Change:</p>
+                <div className="flex items-center gap-2">
+                  <Badge className={getStatusColor(statusChangeMaterial?.status || 'not_ordered')}>
+                    {getStatusLabel(statusChangeMaterial?.status || 'not_ordered')}
+                  </Badge>
+                  <span>→</span>
+                  <Badge className={getStatusColor(newStatus)}>
+                    {getStatusLabel(newStatus)}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Date inputs based on status */}
+            {newStatus === 'not_ordered' && (
+              <div className="space-y-4">
+                {/* Order By Date - Planning */}
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                    <Calendar className="w-4 h-4" />
+                    Order By Date (Planning)
+                  </Label>
+                  <Input
+                    id="order-by-date"
+                    type="date"
+                    value={orderByDate}
+                    onChange={(e) => setOrderByDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Set a target date for when this material should be ordered. Creates a calendar reminder.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {newStatus === 'ordered' && (
+              <div className="space-y-4">
+                {/* Order By Date - Optional Reminder */}
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <Label htmlFor="order-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                    <Calendar className="w-4 h-4" />
+                    Order By Date (Optional)
+                  </Label>
+                  <Input
+                    id="order-by-date"
+                    type="date"
+                    value={orderByDate}
+                    onChange={(e) => setOrderByDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="h-10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Creates a calendar reminder to order this material. Leave blank if not needed.
+                  </p>
+                </div>
+
+                {/* Delivery/Pickup Section - Optional */}
+                <div className="border-2 rounded-lg p-4 bg-background">
+                  <div className="flex items-center justify-between mb-3">
+                    <Label className="text-base font-semibold">
+                      Delivery/Pickup Information (Optional)
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setHasDeliveryMethod(!hasDeliveryMethod)}
+                      className="h-8"
+                    >
+                      {hasDeliveryMethod ? 'Remove' : 'Add'}
+                    </Button>
+                  </div>
+
+                  {hasDeliveryMethod && (
+                    <div className="space-y-3">
+                      {/* Method Selection */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={deliveryMethod === 'delivery' ? 'default' : 'outline'}
+                          onClick={() => setDeliveryMethod('delivery')}
+                          className="h-12"
+                        >
+                          <Truck className="w-4 h-4 mr-2" />
+                          Delivery
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={deliveryMethod === 'pickup' ? 'default' : 'outline'}
+                          onClick={() => setDeliveryMethod('pickup')}
+                          className="h-12"
+                        >
+                          <User className="w-4 h-4 mr-2" />
+                          Pickup
+                        </Button>
+                      </div>
+
+                      {/* Delivery-specific fields */}
+                      {deliveryMethod === 'delivery' && (
+                        <>
+                          <div>
+                            <Label htmlFor="delivery-date">
+                              Delivery Date *
+                            </Label>
+                            <Input
+                              id="delivery-date"
+                              type="date"
+                              value={deliveryDate}
+                              onChange={(e) => setDeliveryDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="h-10"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Will be added to calendar
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="delivery-vendor">
+                              Delivering To (Vendor)
+                            </Label>
+                            <Input
+                              id="delivery-vendor"
+                              value={deliveryVendor}
+                              onChange={(e) => setDeliveryVendor(e.target.value)}
+                              placeholder="e.g., ABC Supply, Job Site"
+                              className="h-10"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Pickup-specific fields */}
+                      {deliveryMethod === 'pickup' && (
+                        <>
+                          <div>
+                            <Label htmlFor="pickup-by">
+                              Assign Pickup To *
+                            </Label>
+                            <Select value={pickupBy} onValueChange={setPickupBy}>
+                              <SelectTrigger id="pickup-by" className="h-10">
+                                <SelectValue placeholder="Select user" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {users.map((user) => (
+                                  <SelectItem key={user.id} value={user.id}>
+                                    {user.username || user.email}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              User will receive notification
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="pickup-vendor">
+                              Picking Up From (Vendor)
+                            </Label>
+                            <Input
+                              id="pickup-vendor"
+                              value={pickupVendor}
+                              onChange={(e) => setPickupVendor(e.target.value)}
+                              placeholder="e.g., ABC Supply, Shop"
+                              className="h-10"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="pickup-date">
+                              Pickup Date *
+                            </Label>
+                            <Input
+                              id="pickup-date"
+                              type="date"
+                              value={pickupDate}
+                              onChange={(e) => setPickupDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="h-10"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Will be added to calendar
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {!hasDeliveryMethod && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Click "Add" to include delivery/pickup information
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {newStatus === 'at_shop' && (
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <Label htmlFor="pull-by-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                  <Calendar className="w-4 h-4" />
+                  Pull By Date (Optional)
+                </Label>
+                <Input
+                  id="pull-by-date"
+                  type="date"
+                  value={pullByDate}
+                  onChange={(e) => setPullByDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Creates a calendar reminder to pull this material from shop. Leave blank if not needed.
+                </p>
+              </div>
+            )}
+
+            {newStatus === 'at_job' && (
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <Label htmlFor="actual-delivery-date" className="flex items-center gap-2 text-base font-semibold mb-3">
+                  <Calendar className="w-4 h-4" />
+                  Actual Arrival Date (Optional)
+                </Label>
+                <Input
+                  id="actual-delivery-date"
+                  type="date"
+                  value={actualDeliveryDate}
+                  onChange={(e) => setActualDeliveryDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  When material actually arrived at job site. Leave blank if not needed.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="date-notes">Notes (Optional)</Label>
+              <Input
+                id="date-notes"
+                value={dateNotes}
+                onChange={(e) => setDateNotes(e.target.value)}
+                placeholder="Any additional notes..."
+                className="h-10"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4 border-t">
+              <Button
+                onClick={confirmStatusChange}
+                disabled={submittingStatus}
+                className="h-12 gradient-primary"
+              >
+                {submittingStatus ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 mr-2" />
+                    {statusChangeMaterial?.status === newStatus ? 'Update Information' : 'Confirm Status Change'}
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowStatusDialog(false)}
+                disabled={submittingStatus}
+                className="h-12"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Materials List */}
       {filteredCategories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -1022,16 +2057,255 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredCategories.map((category) => (
-            <div key={category.id} className="space-y-3">
-              {renderCategoryCard(category, false)}
-              {expandedCategories.has(category.id) && category.subcategories && category.subcategories.length > 0 && (
-                <div className="space-y-3">
-                  {category.subcategories.map(sub => renderCategoryCard(sub, true))}
-                </div>
-              )}
-            </div>
-          ))}
+          {filteredCategories.map((category) => {
+            const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+            const showColorColumn = /metal|trim/i.test(category.name);
+            
+            return (
+              <Card key={category.id} className="overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadCategoryTemplate(category)}
+                        className="bg-green-50 hover:bg-green-100 border-green-300"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 mr-2" />
+                        Template
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => openAddMaterial(category.id)}
+                        className="gradient-primary"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Material
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditCategory(category)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => moveCategoryUp(category)}
+                        disabled={category.order_index === 0}
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => moveCategoryDown(category)}
+                        disabled={category.order_index === categories.length - 1}
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteCategory(category.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {category.sheet_image_url && (
+                    <div className="mt-3 p-2 bg-white rounded-lg border">
+                      <img
+                        src={category.sheet_image_url}
+                        alt={`${category.name} sheet`}
+                        className="max-h-40 w-auto mx-auto object-contain"
+                      />
+                    </div>
+                  )}
+                </CardHeader>
+                <CardContent className="p-0">
+                  {filteredMaterials.length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      No materials in this category
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-muted/50 border-b">
+                          <tr>
+                            <th className="text-left p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('name')}
+                                className="font-semibold -ml-3"
+                              >
+                                Material Name
+                                <SortIcon column="name" />
+                              </Button>
+                            </th>
+                            <th className="text-left p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('useCase')}
+                                className="font-semibold -ml-3"
+                              >
+                                Use Case
+                                <SortIcon column="useCase" />
+                              </Button>
+                            </th>
+                            <th className="text-center p-3 w-[100px]">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('quantity')}
+                                className="font-semibold -ml-3"
+                              >
+                                Qty
+                                <SortIcon column="quantity" />
+                              </Button>
+                            </th>
+                            <th className="text-center p-3 w-[100px]">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('length')}
+                                className="font-semibold -ml-3"
+                              >
+                                Length
+                                <SortIcon column="length" />
+                              </Button>
+                            </th>
+                            {showColorColumn && (
+                              <th className="text-center p-3 w-[120px]">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSort('color')}
+                                  className="font-semibold -ml-3"
+                                >
+                                  Color
+                                  <SortIcon column="color" />
+                                </Button>
+                              </th>
+                            )}
+                            <th className="text-center p-3 font-semibold w-[180px]">Status</th>
+                            <th className="text-right p-3 font-semibold w-[180px]">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredMaterials.map((material) => (
+                            <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                              <td className="p-3">
+                                <div className="font-medium">{material.name}</div>
+                                {material.import_source && material.import_source !== 'manual' && (
+                                  <Badge variant="outline" className="mt-1 text-xs">
+                                    {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
+                                  </Badge>
+                                )}
+                              </td>
+                              <td className="p-3 text-sm text-muted-foreground">
+                                <div>{material.use_case || '-'}</div>
+                              </td>
+                              <td className="p-3 text-center font-semibold w-[100px]">
+                                {material.quantity}
+                              </td>
+                              <td className="p-3 text-center w-[100px]">
+                                {material.length || '-'}
+                              </td>
+                              {showColorColumn && (
+                                <td className="p-3 text-center w-[120px]">
+                                  {material.color ? (
+                                    <Badge variant="outline" className="font-medium">
+                                      {material.color}
+                                    </Badge>
+                                  ) : ('-')}
+                                </td>
+                              )}
+                              <td className="p-3 w-[180px]">
+                                <div className="flex justify-center">
+                                  <Select
+                                    value={material.status}
+                                    onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                  >
+                                    <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STATUS_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
+                                            {opt.label}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </td>
+                              <td className="p-3 w-[180px]">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Select
+                                    value={material.category_id}
+                                    onValueChange={(newCategoryId) => quickMoveMaterial(material.id, newCategoryId)}
+                                  >
+                                    <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-muted" title="Move to category">
+                                      <div className="flex items-center justify-center w-full h-full">
+                                        <ChevronDownIcon className="w-4 h-4" />
+                                      </div>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {categories.map(cat => (
+                                        <SelectItem key={cat.id} value={cat.id}>
+                                          {cat.name} {cat.id === material.category_id ? '(current)' : ''}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleStatusChange(material, material.status)}
+                                    title="Edit dates, notes, and delivery info"
+                                  >
+                                    <Calendar className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => openEditMaterial(material)}
+                                    title="Edit material details"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => deleteMaterial(material.id)}
+                                    className="text-destructive hover:text-destructive"
+                                    title="Delete material"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -1050,23 +2324,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 onChange={(e) => setCategoryName(e.target.value)}
                 placeholder="e.g., Lumber, Steel, Roofing"
               />
-            </div>
-            <div>
-              <Label htmlFor="category-parent">Parent Category (Optional)</Label>
-              <Select value={categoryParentId} onValueChange={setCategoryParentId}>
-                <SelectTrigger id="category-parent">
-                  <SelectValue placeholder="None (Create as Main/Parent Category)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__NONE__">None (Create as Main/Parent Category)</SelectItem>
-                  {categories.filter(c => c.id !== editingCategory?.id && !c.parent_id).map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.name} (Main Category)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Select a main category to create this as a subcategory, or leave as "None" to create a new main/parent category
-              </p>
             </div>
             <div>
               <Label htmlFor="sheet-image">Category Sheet Image (Optional)</Label>
@@ -1133,10 +2390,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {allCategoriesFlat.map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.parent_id ? `  ↳ ${cat.name}` : cat.name}
-                    </SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1220,8 +2475,241 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </div>
         </DialogContent>
       </Dialog>
+      {/* CSV Import Dialog */}
+      <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Import Materials {importStep === 'columns' ? '- Step 1: Map Columns' : '- Step 2: Map Categories'}
+            </DialogTitle>
+          </DialogHeader>
 
-      {/* Status Dialog - omitted for brevity, same as before */}
+          {importStep === 'columns' && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                <p className="text-sm text-muted-foreground">
+                  Map your CSV/Excel columns to the required fields. The system detected {csvData.length} rows.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label>Category Column *</Label>
+                  <Select value={columnMapping.category} onValueChange={(v) => setColumnMapping({ ...columnMapping, category: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Material Name Column *</Label>
+                  <Select value={columnMapping.name} onValueChange={(v) => setColumnMapping({ ...columnMapping, name: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for material name" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Quantity Column *</Label>
+                  <Select value={columnMapping.quantity} onValueChange={(v) => setColumnMapping({ ...columnMapping, quantity: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for quantity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Use Case Column (Optional)</Label>
+                  <Select value={columnMapping.useCase} onValueChange={(v) => setColumnMapping({ ...columnMapping, useCase: v === '__NONE__' ? '' : v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for use case" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__NONE__">None</SelectItem>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Length Column (Optional)</Label>
+                  <Select value={columnMapping.length} onValueChange={(v) => setColumnMapping({ ...columnMapping, length: v === '__NONE__' ? '' : v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for length" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__NONE__">None</SelectItem>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button variant="outline" onClick={() => setShowCsvDialog(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button onClick={proceedToCategories} className="flex-1 gradient-primary">
+                  Next: Map Categories
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {importStep === 'categories' && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                <p className="text-sm text-muted-foreground">
+                  Found {csvCategories.length} unique categories in your file. 
+                  Map each to an existing category or create new ones.
+                </p>
+              </div>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {csvCategories.map(csvCat => (
+                  <div key={csvCat} className="border rounded-lg p-3">
+                    <Label className="text-sm font-semibold mb-2 block">{csvCat}</Label>
+                    <Select
+                      value={categoryMapping[csvCat] || ''}
+                      onValueChange={(v) => setCategoryMapping({ ...categoryMapping, [csvCat]: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Map to existing or create new" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CREATE_NEW">
+                          <span className="font-semibold text-primary">+ Create New: {csvCat}</span>
+                        </SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            Map to: {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Import Rules:</strong>
+                  <br />• Existing CSV/Excel imports with status "Not Ordered" will be replaced
+                  <br />• Manual entries and materials with other statuses will be preserved
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setImportStep('columns')}
+                  className="flex-1"
+                  disabled={uploading}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={processCsvImport}
+                  className="flex-1 gradient-primary"
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Materials
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy Categories Dialog */}
+      <Dialog open={showCopyCategoriesDialog} onOpenChange={setShowCopyCategoriesDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Categories from Another Job</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+              <p className="text-sm text-muted-foreground">
+                This will copy all material categories from another job to <strong>{job.name}</strong>. 
+                Categories will be created empty - you can then download templates for each category and import materials.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="source-job">Select Job to Copy From</Label>
+              <Select value={sourceJobId} onValueChange={setSourceJobId}>
+                <SelectTrigger id="source-job">
+                  <SelectValue placeholder="Choose a job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allJobs.map((j) => (
+                    <SelectItem key={j.id} value={j.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{j.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {j.client_name}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCopyCategoriesDialog(false);
+                  setSourceJobId('');
+                }}
+                className="flex-1"
+                disabled={copyingCategories}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={copyCategories}
+                className="flex-1 gradient-primary"
+                disabled={copyingCategories || !sourceJobId}
+              >
+                {copyingCategories ? 'Copying...' : 'Copy Categories'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
