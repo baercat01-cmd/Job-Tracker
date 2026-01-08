@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +33,9 @@ import {
   Edit,
   Trash2,
   Phone,
-  AlertCircle
+  AlertCircle,
+  ListChecks,
+  CalendarDays
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -61,17 +65,33 @@ interface Schedule {
   subcontractors: Subcontractor;
 }
 
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  event_type: string;
+  all_day: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  created_by: string;
+}
+
 interface JobScheduleProps {
   job: Job;
 }
 
 export function JobSchedule({ job }: JobScheduleProps) {
   const { profile } = useAuth();
+  const [activeTab, setActiveTab] = useState('tasks');
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
+  const [tasks, setTasks] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+  const [editingTask, setEditingTask] = useState<CalendarEvent | null>(null);
   const [formData, setFormData] = useState({
     subcontractor_id: '',
     start_date: '',
@@ -79,6 +99,15 @@ export function JobSchedule({ job }: JobScheduleProps) {
     work_description: '',
     notes: '',
     status: 'scheduled',
+  });
+  const [taskFormData, setTaskFormData] = useState({
+    title: '',
+    description: '',
+    event_date: '',
+    event_type: 'task',
+    all_day: true,
+    start_time: '',
+    end_time: '',
   });
 
   useEffect(() => {
@@ -91,6 +120,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
       await Promise.all([
         loadSchedules(),
         loadSubcontractors(),
+        loadTasks(),
       ]);
     } finally {
       setLoading(false);
@@ -128,6 +158,22 @@ export function JobSchedule({ job }: JobScheduleProps) {
     }
 
     setSubcontractors(data || []);
+  }
+
+  async function loadTasks() {
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('*')
+      .eq('job_id', job.id)
+      .eq('event_type', 'task')
+      .order('event_date', { ascending: true });
+
+    if (error) {
+      console.error('Error loading tasks:', error);
+      return;
+    }
+
+    setTasks(data || []);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -235,6 +281,98 @@ export function JobSchedule({ job }: JobScheduleProps) {
     });
   }
 
+  async function handleTaskSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!taskFormData.title || !taskFormData.event_date) {
+      toast.error('Please enter a task title and date');
+      return;
+    }
+
+    try {
+      const taskData = {
+        job_id: job.id,
+        title: taskFormData.title,
+        description: taskFormData.description || null,
+        event_date: taskFormData.event_date,
+        event_type: 'task',
+        all_day: taskFormData.all_day,
+        start_time: taskFormData.all_day ? null : taskFormData.start_time || null,
+        end_time: taskFormData.all_day ? null : taskFormData.end_time || null,
+        created_by: profile?.id,
+      };
+
+      if (editingTask) {
+        const { error } = await supabase
+          .from('calendar_events')
+          .update(taskData)
+          .eq('id', editingTask.id);
+
+        if (error) throw error;
+        toast.success('Task updated');
+      } else {
+        const { error } = await supabase
+          .from('calendar_events')
+          .insert(taskData);
+
+        if (error) throw error;
+        toast.success('Task created');
+      }
+
+      handleCloseTaskDialog();
+      loadTasks();
+    } catch (error: any) {
+      console.error('Error saving task:', error);
+      toast.error('Failed to save task');
+    }
+  }
+
+  async function handleDeleteTask(id: string) {
+    if (!confirm('Delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      loadTasks();
+    } catch (error: any) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  function handleEditTask(task: CalendarEvent) {
+    setEditingTask(task);
+    setTaskFormData({
+      title: task.title,
+      description: task.description || '',
+      event_date: task.event_date,
+      event_type: task.event_type,
+      all_day: task.all_day,
+      start_time: task.start_time || '',
+      end_time: task.end_time || '',
+    });
+    setShowAddTaskDialog(true);
+  }
+
+  function handleCloseTaskDialog() {
+    setShowAddTaskDialog(false);
+    setEditingTask(null);
+    setTaskFormData({
+      title: '',
+      description: '',
+      event_date: '',
+      event_type: 'task',
+      all_day: true,
+      start_time: '',
+      end_time: '',
+    });
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -267,14 +405,69 @@ export function JobSchedule({ job }: JobScheduleProps) {
           <h2 className="text-2xl font-bold">Job Schedule</h2>
           <p className="text-muted-foreground">{job.name}</p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Schedule Work
-        </Button>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="tasks" className="flex items-center gap-2">
+            <ListChecks className="w-4 h-4" />
+            Tasks ({tasks.length})
+          </TabsTrigger>
+          <TabsTrigger value="subs" className="flex items-center gap-2">
+            <CalendarDays className="w-4 h-4" />
+            Subcontractors ({schedules.length})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Tasks Tab */}
+        <TabsContent value="tasks" className="space-y-4 mt-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Job Tasks</h3>
+            <Button onClick={() => setShowAddTaskDialog(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Task
+            </Button>
+          </div>
+
+          {tasks.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <ListChecks className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="mb-4">No tasks yet</p>
+                <Button onClick={() => setShowAddTaskDialog(true)} variant="outline">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add First Task
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {tasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onEdit={handleEditTask}
+                  onDelete={handleDeleteTask}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Subcontractors Tab */}
+        <TabsContent value="subs" className="space-y-4 mt-6">
+
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Subcontractor Schedule</h3>
+            <Button onClick={() => setShowAddDialog(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Schedule Work
+            </Button>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="py-4">
             <div className="text-center">
@@ -303,59 +496,148 @@ export function JobSchedule({ job }: JobScheduleProps) {
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Upcoming Work */}
-      {upcomingSchedules.length > 0 && (
-        <div>
-          <h3 className="text-xl font-bold mb-4">Upcoming Work</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            {upcomingSchedules.map(schedule => (
-              <ScheduleCard
-                key={schedule.id}
-                schedule={schedule}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onUpdateStatus={updateStatus}
-              />
-            ))}
           </div>
-        </div>
-      )}
 
-      {/* Past Work */}
-      {pastSchedules.length > 0 && (
-        <div>
-          <h3 className="text-xl font-bold mb-4">Past & Completed</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            {pastSchedules.map(schedule => (
-              <ScheduleCard
-                key={schedule.id}
-                schedule={schedule}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onUpdateStatus={updateStatus}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+          {/* Upcoming Work */}
+          {upcomingSchedules.length > 0 && (
+            <div>
+              <h3 className="text-xl font-bold mb-4">Upcoming Work</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {upcomingSchedules.map(schedule => (
+                  <ScheduleCard
+                    key={schedule.id}
+                    schedule={schedule}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onUpdateStatus={updateStatus}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Empty State */}
-      {schedules.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="mb-4">No scheduled work yet</p>
-            <Button onClick={() => setShowAddDialog(true)} variant="outline">
-              <Plus className="w-4 h-4 mr-2" />
-              Schedule First Work
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          {/* Past Work */}
+          {pastSchedules.length > 0 && (
+            <div>
+              <h3 className="text-xl font-bold mb-4">Past & Completed</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {pastSchedules.map(schedule => (
+                  <ScheduleCard
+                    key={schedule.id}
+                    schedule={schedule}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onUpdateStatus={updateStatus}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Add/Edit Dialog */}
+          {/* Empty State */}
+          {schedules.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="mb-4">No scheduled work yet</p>
+                <Button onClick={() => setShowAddDialog(true)} variant="outline">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Schedule First Work
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Add/Edit Task Dialog */}
+      <Dialog open={showAddTaskDialog} onOpenChange={(open) => !open && handleCloseTaskDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingTask ? 'Edit Task' : 'Add Task'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleTaskSubmit} className="space-y-4">
+            <div className="grid gap-4">
+              <div className="space-y-2">
+                <Label>Task Title *</Label>
+                <Input
+                  value={taskFormData.title}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, title: e.target.value })}
+                  placeholder="e.g., Foundation inspection, Material delivery..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input
+                  type="date"
+                  value={taskFormData.event_date}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, event_date: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="all-day"
+                  checked={taskFormData.all_day}
+                  onCheckedChange={(checked) => 
+                    setTaskFormData({ ...taskFormData, all_day: checked as boolean })
+                  }
+                />
+                <Label htmlFor="all-day" className="text-sm font-normal cursor-pointer">
+                  All day task
+                </Label>
+              </div>
+
+              {!taskFormData.all_day && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Time</Label>
+                    <Input
+                      type="time"
+                      value={taskFormData.start_time}
+                      onChange={(e) => setTaskFormData({ ...taskFormData, start_time: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Time</Label>
+                    <Input
+                      type="time"
+                      value={taskFormData.end_time}
+                      onChange={(e) => setTaskFormData({ ...taskFormData, end_time: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  value={taskFormData.description}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, description: e.target.value })}
+                  placeholder="Additional details about this task..."
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCloseTaskDialog}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingTask ? 'Update Task' : 'Add Task'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Subcontractor Dialog */}
       <Dialog open={showAddDialog} onOpenChange={(open) => !open && handleCloseDialog()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -459,6 +741,97 @@ export function JobSchedule({ job }: JobScheduleProps) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function TaskCard({
+  task,
+  onEdit,
+  onDelete,
+}: {
+  task: CalendarEvent;
+  onEdit: (task: CalendarEvent) => void;
+  onDelete: (id: string) => void;
+}) {
+  const taskDate = parseDateLocal(task.event_date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isPast = taskDate < today;
+
+  return (
+    <Card className={isPast ? 'opacity-60' : ''}>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ListChecks className="w-5 h-5 text-primary" />
+              {task.title}
+            </CardTitle>
+          </div>
+          <Badge variant={isPast ? 'secondary' : 'default'}>
+            {isPast ? 'Past' : 'Upcoming'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <span className="font-medium">
+              {taskDate.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </span>
+          </div>
+
+          {!task.all_day && (task.start_time || task.end_time) && (
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              <span>
+                {task.start_time && new Date(`2000-01-01T${task.start_time}`).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                {task.start_time && task.end_time && ' - '}
+                {task.end_time && new Date(`2000-01-01T${task.end_time}`).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+          )}
+
+          {task.description && (
+            <div>
+              <p className="text-xs text-muted-foreground">Description</p>
+              <p className="text-sm">{task.description}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-3 border-t">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onEdit(task)}
+            >
+              <Edit className="w-4 h-4 mr-1" />
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDelete(task.id)}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
