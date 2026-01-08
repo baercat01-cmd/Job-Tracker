@@ -16,6 +16,8 @@ function generatePayrollHTML(data: any): string {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: #1a1a1a;
         line-height: 1.5;
+        max-width: 900px;
+        margin: 0 auto;
       }
       
       .header {
@@ -99,23 +101,33 @@ function generatePayrollHTML(data: any): string {
       .entries-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
       }
       
       .entries-table th {
         background: #f0f0f0;
-        padding: 8px 12px;
+        padding: 6px 8px;
         text-align: left;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: #555;
         border-bottom: 2px solid #ddd;
       }
       
+      .entries-table th:nth-child(1) { width: 25%; }
+      .entries-table th:nth-child(2) { width: 18%; }
+      .entries-table th:nth-child(3) { width: 18%; }
+      .entries-table th:nth-child(4) { width: 15%; text-align: right; }
+      .entries-table th:nth-child(5) { width: 24%; text-align: center; }
+      
       .entries-table td {
-        padding: 8px 12px;
-        font-size: 13px;
+        padding: 6px 8px;
+        font-size: 12px;
         border-bottom: 1px solid #f0f0f0;
       }
+      
+      .entries-table td:nth-child(4) { text-align: right; }
+      .entries-table td:nth-child(5) { text-align: center; }
       
       .entries-table tr:last-child td {
         border-bottom: none;
