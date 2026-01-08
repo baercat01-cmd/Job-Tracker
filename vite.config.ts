@@ -8,16 +8,16 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Support both localhost and OnSpace preview domains
+      // Auto-detect OnSpace domains and configure WebSocket accordingly
       clientPort: typeof process.env.VITE_HMR_CLIENT_PORT !== 'undefined' 
         ? parseInt(process.env.VITE_HMR_CLIENT_PORT) 
-        : undefined,
+        : 443, // Use standard HTTPS port for OnSpace domains
       protocol: typeof process.env.VITE_HMR_PROTOCOL !== 'undefined'
         ? process.env.VITE_HMR_PROTOCOL as 'ws' | 'wss'
-        : undefined,
+        : 'wss', // Use secure WebSocket for OnSpace domains
       host: typeof process.env.VITE_HMR_HOST !== 'undefined'
         ? process.env.VITE_HMR_HOST
-        : undefined,
+        : undefined, // Will auto-detect from window.location
       overlay: true,
     },
   },
