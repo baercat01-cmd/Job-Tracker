@@ -733,16 +733,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!isSubcategory && (
-                <Button
-                  size="sm"
-                  onClick={() => openAddCategory(category.id)}
-                  variant="outline"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Sub
-                </Button>
-              )}
               <Button
                 size="sm"
                 onClick={() => openAddMaterial(category.id)}
