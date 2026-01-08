@@ -154,6 +154,15 @@ export function PayrollDashboard() {
 
       if (timeError) throw timeError;
 
+      // Load time off dates that overlap with this week
+      const { data: timeOffDates, error: timeOffError } = await supabase
+        .from('user_unavailable_dates')
+        .select('user_id, start_date, end_date, reason')
+        .lte('start_date', weekEnd.toISOString().split('T')[0])
+        .gte('end_date', weekStart.toISOString().split('T')[0]);
+
+      if (timeOffError) throw timeOffError;
+
       // Load all users
       const { data: users, error: usersError } = await supabase
         .from('user_profiles')
@@ -174,6 +183,7 @@ export function PayrollDashboard() {
         });
       });
 
+      // Add time entries
       (timeEntries || []).forEach((entry: any) => {
         const userData = userMap.get(entry.user_id);
         if (userData) {
@@ -208,9 +218,51 @@ export function PayrollDashboard() {
         }
       });
 
-      // Convert to array and filter out users with no hours, sort dates within each user
+      // Add time off entries for users who have time off but no time entries
+      (timeOffDates || []).forEach((timeOff: any) => {
+        const userData = userMap.get(timeOff.user_id);
+        if (!userData) return;
+
+        // Get all days in the time off range that fall within the week
+        const start = new Date(Math.max(new Date(timeOff.start_date).getTime(), weekStart.getTime()));
+        const end = new Date(Math.min(new Date(timeOff.end_date).getTime(), weekEnd.getTime()));
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const dateStr = d.toISOString().split('T')[0];
+          
+          // Only add time off entry if there are no time entries for this date
+          const hasTimeEntries = userData.dateEntries.some(de => de.date === dateStr && de.entries.length > 0);
+          
+          if (!hasTimeEntries) {
+            // Find or create date entry
+            let dateData = userData.dateEntries.find(d => d.date === dateStr);
+            if (!dateData) {
+              dateData = {
+                date: dateStr,
+                entries: [],
+                totalHours: 0,
+              };
+              userData.dateEntries.push(dateData);
+            }
+            
+            // Add time off entry (use a special ID pattern to identify it)
+            dateData.entries.push({
+              entryId: `timeoff-${timeOff.user_id}-${dateStr}`,
+              jobName: 'Time Off',
+              clientName: timeOff.reason || 'Scheduled Time Off',
+              startTime: dateStr,
+              endTime: null,
+              totalHours: 0,
+              isManual: false,
+              notes: timeOff.reason,
+            });
+          }
+        }
+      });
+
+      // Convert to array and filter out users with no hours OR time off, sort dates within each user
       const usersWithTime = Array.from(userMap.values())
-        .filter(u => u.totalHours > 0)
+        .filter(u => u.totalHours > 0 || u.dateEntries.length > 0)
         .map(u => ({
           ...u,
           dateEntries: u.dateEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // Most recent first
@@ -257,7 +309,7 @@ export function PayrollDashboard() {
       const pdfData = {
         title: `Payroll Report - ${weekLabel}`,
         users: usersToExport.map(user => {
-          // Group entries by job
+          // Group entries by job (excluding time off)
           const jobMap = new Map<string, {
             name: string;
             client: string;
@@ -267,6 +319,9 @@ export function PayrollDashboard() {
 
           user.dateEntries.forEach(dateEntry => {
             dateEntry.entries.forEach(entry => {
+              // Skip time off entries in PDF
+              if (entry.entryId.startsWith('timeoff-')) return;
+
               const jobKey = `${entry.jobName}|${entry.clientName}`;
               
               if (!jobMap.has(jobKey)) {
@@ -362,6 +417,12 @@ export function PayrollDashboard() {
   );
 
   async function openEditDialog(entryId: string) {
+    // Don't allow editing time off entries
+    if (entryId.startsWith('timeoff-')) {
+      toast.error('Time off entries cannot be edited from payroll');
+      return;
+    }
+
     try {
       // Fetch the full entry details
       const { data, error } = await supabase
@@ -421,6 +482,12 @@ export function PayrollDashboard() {
   }
 
   async function deleteEntry(entryId: string) {
+    // Don't allow deleting time off entries
+    if (entryId.startsWith('timeoff-')) {
+      toast.error('Time off entries cannot be deleted from payroll');
+      return;
+    }
+
     if (!confirm('Are you sure you want to delete this time entry?')) return;
 
     setLoading(true);
@@ -639,63 +706,74 @@ export function PayrollDashboard() {
                           </thead>
                           <tbody>
                             {user.dateEntries.map((dateEntry, dateIdx) => (
-                              dateEntry.entries.map((entry, entryIdx) => (
-                                <tr 
-                                  key={`${dateIdx}-${entryIdx}`}
-                                  className="border-b hover:bg-muted/20 transition-colors"
-                                >
-                                  <td className="p-2 font-medium">
-                                    {new Date(dateEntry.date).toLocaleDateString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: 'numeric',
-                                    })}
-                                  </td>
-                                  <td className="p-2">{entry.jobName}</td>
-                                  <td className="p-2 text-muted-foreground">{entry.clientName || '-'}</td>
-                                  <td className="p-2 font-mono text-xs">
-                                    {new Date(entry.startTime).toLocaleTimeString([], {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })}
-                                  </td>
-                                  <td className="p-2 font-mono text-xs">
-                                    {entry.endTime 
-                                      ? new Date(entry.endTime).toLocaleTimeString([], {
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                        })
-                                      : '-'
-                                    }
-                                  </td>
-                                  <td className="p-2 text-right font-bold text-primary">
-                                    {entry.totalHours.toFixed(2)}
-                                  </td>
-                                  <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
-                                    {entry.notes || '-'}
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => openEditDialog(entry.entryId)}
-                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                      >
-                                        <Edit className="w-3.5 h-3.5" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => deleteEntry(entry.entryId)}
-                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))
+                              dateEntry.entries.map((entry, entryIdx) => {
+                                const isTimeOff = entry.entryId.startsWith('timeoff-');
+                                return (
+                                  <tr 
+                                    key={`${dateIdx}-${entryIdx}`}
+                                    className={`border-b transition-colors ${
+                                      isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
+                                    }`}
+                                  >
+                                    <td className="p-2 font-medium">
+                                      {new Date(dateEntry.date).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })}
+                                    </td>
+                                    <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
+                                      {entry.jobName}
+                                    </td>
+                                    <td className="p-2 text-muted-foreground">{entry.clientName || '-'}</td>
+                                    <td className="p-2 font-mono text-xs">
+                                      {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </td>
+                                    <td className="p-2 font-mono text-xs">
+                                      {isTimeOff ? '-' : (entry.endTime 
+                                        ? new Date(entry.endTime).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })
+                                        : '-')
+                                      }
+                                    </td>
+                                    <td className={`p-2 text-right font-bold ${
+                                      isTimeOff ? 'text-amber-600' : 'text-primary'
+                                    }`}>
+                                      {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
+                                    </td>
+                                    <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
+                                      {entry.notes || '-'}
+                                    </td>
+                                    <td className="p-2">
+                                      {!isTimeOff && (
+                                        <div className="flex items-center justify-center gap-1">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => openEditDialog(entry.entryId)}
+                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                          >
+                                            <Edit className="w-3.5 h-3.5" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => deleteEntry(entry.entryId)}
+                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
                             ))}
                             {/* Total Row */}
                             <tr className="bg-muted/50 font-bold">
