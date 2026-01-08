@@ -467,25 +467,50 @@ export function PayrollDashboard() {
         })),
       });
 
+      // Check if html2pdf is available
+      if (typeof html2pdf === 'undefined') {
+        throw new Error('PDF library not loaded. Please refresh the page and try again.');
+      }
+
       // Create a temporary element for PDF generation
       const element = document.createElement('div');
       element.innerHTML = htmlContent;
-      element.style.position = 'absolute';
-      element.style.left = '-9999px';
+      // Make element visible but overlay it to ensure proper rendering
+      element.style.position = 'fixed';
+      element.style.top = '0';
+      element.style.left = '0';
+      element.style.width = '210mm'; // A4 width
+      element.style.backgroundColor = 'white';
+      element.style.zIndex = '9999';
+      element.style.padding = '20px';
       document.body.appendChild(element);
+
+      console.log('Element added to DOM, content length:', element.innerHTML.length);
+
+      // Wait for element to render
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Configure PDF options
       const opt = {
         margin: [15, 15, 15, 15],
         filename: `Payroll_Report_${periodLabel.replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true,
+          logging: true,
+          backgroundColor: '#ffffff'
+        },
         jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
+      console.log('Starting PDF generation...');
+
       // Generate and download PDF
       await html2pdf().set(opt).from(element).save();
+
+      console.log('PDF generated successfully');
 
       // Clean up
       document.body.removeChild(element);
