@@ -167,14 +167,14 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
-                      {material.use_case && (
-                        <span className="text-xs text-muted-foreground truncate">({material.use_case})</span>
+                      {material.length && (
+                        <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{material.length}</span></span>
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                       <span>Qty: <span className="font-semibold text-foreground">{material.quantity}</span></span>
-                      {material.length && (
-                        <span>Len: <span className="font-medium text-foreground">{material.length}</span></span>
+                      {material.use_case && (
+                        <span className="text-xs text-muted-foreground truncate">({material.use_case})</span>
                       )}
                     </div>
                   </div>
