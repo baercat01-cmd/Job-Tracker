@@ -62,6 +62,7 @@ interface CalendarEvent {
 
 interface MasterCalendarProps {
   onJobSelect: (jobId: string) => void;
+  jobId?: string; // Optional: if provided, filter to show only this job's events
 }
 
 // Generate consistent color for each job
@@ -85,14 +86,14 @@ function getJobColor(jobName: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
+export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
-  const [filterJob, setFilterJob] = useState<string>('all');
+  const [filterJob, setFilterJob] = useState<string>(jobId || 'all'); // Initialize with jobId if provided
   const [filterTrade, setFilterTrade] = useState<string>('all');
   const [jobs, setJobs] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
@@ -102,7 +103,11 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
   useEffect(() => {
     loadJobs();
     loadComponents();
-  }, []);
+    // If jobId prop is provided, set filter to that job
+    if (jobId) {
+      setFilterJob(jobId);
+    }
+  }, [jobId]);
 
   useEffect(() => {
     loadCalendarEvents();
@@ -477,7 +482,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
             <div className="flex items-center justify-between">
               <CardTitle className="text-2xl flex items-center gap-2">
                 <CalendarIcon className="w-6 h-6 text-primary" />
-                Master Calendar - All Jobs
+                {jobId ? `Job Calendar - ${jobs.find(j => j.id === jobId)?.name || 'Loading...'}` : 'Master Calendar - All Jobs'}
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={previousMonth}>
@@ -495,7 +500,8 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
               </div>
             </div>
 
-            {/* Filters */}
+            {/* Filters - Only show if not locked to a specific job */}
+            {!jobId && (
             <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/30 rounded-lg">
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-muted-foreground" />
@@ -579,6 +585,7 @@ export function MasterCalendar({ onJobSelect }: MasterCalendarProps) {
                 </Popover>
               )}
             </div>
+            )}
           </div>
         </CardHeader>
 
