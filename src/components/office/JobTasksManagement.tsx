@@ -134,6 +134,11 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       return;
     }
 
+    if (!formData.due_date) {
+      toast.error('Please select a due date to add task to calendar');
+      return;
+    }
+
     try {
       const taskData = {
         job_id: job.id,
@@ -154,14 +159,26 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
           .eq('id', editingTask.id);
 
         if (error) throw error;
-        toast.success('Task updated');
+
+        // Update corresponding calendar event
+        await syncTaskToCalendar(editingTask.id, taskData);
+        
+        toast.success('Task and calendar updated');
       } else {
-        const { error } = await supabase
+        const { data: newTask, error } = await supabase
           .from('job_tasks')
-          .insert(taskData);
+          .insert(taskData)
+          .select()
+          .single();
 
         if (error) throw error;
-        toast.success('Task created');
+
+        // Create calendar event for new task
+        if (newTask) {
+          await syncTaskToCalendar(newTask.id, taskData);
+        }
+        
+        toast.success('Task created and added to calendar');
       }
 
       setShowCreateDialog(false);
@@ -169,6 +186,51 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
     } catch (error: any) {
       console.error('Error saving task:', error);
       toast.error('Failed to save task');
+    }
+  }
+
+  async function syncTaskToCalendar(taskId: string, taskData: any) {
+    try {
+      // Check if calendar event already exists for this task
+      const { data: existingEvent } = await supabase
+        .from('calendar_events')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('title', taskData.title)
+        .eq('event_type', 'task')
+        .maybeSingle();
+
+      const calendarEventData = {
+        job_id: job.id,
+        title: taskData.title,
+        description: taskData.description,
+        event_date: taskData.due_date,
+        event_type: 'task',
+        all_day: true,
+        created_by: taskData.created_by || userId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existingEvent) {
+        // Update existing calendar event
+        const { error } = await supabase
+          .from('calendar_events')
+          .update(calendarEventData)
+          .eq('id', existingEvent.id);
+
+        if (error) throw error;
+      } else {
+        // Create new calendar event
+        const { error } = await supabase
+          .from('calendar_events')
+          .insert(calendarEventData);
+
+        if (error) throw error;
+      }
+    } catch (error: any) {
+      console.error('Error syncing task to calendar:', error);
+      // Don't throw - task is already saved, just log the calendar sync error
     }
   }
 
@@ -206,6 +268,13 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
     if (!confirm('Are you sure you want to delete this task?')) return;
 
     try {
+      // Get task details before deleting
+      const { data: task } = await supabase
+        .from('job_tasks')
+        .select('title')
+        .eq('id', taskId)
+        .single();
+
       const { error } = await supabase
         .from('job_tasks')
         .delete()
@@ -213,7 +282,17 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
 
       if (error) throw error;
 
-      toast.success('Task deleted');
+      // Delete corresponding calendar event
+      if (task) {
+        await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('title', task.title)
+          .eq('event_type', 'task');
+      }
+
+      toast.success('Task and calendar event deleted');
       loadTasks();
     } catch (error: any) {
       console.error('Error deleting task:', error);
@@ -545,13 +624,18 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="due_date">Due Date</Label>
+                <Label htmlFor="due_date" className="flex items-center gap-1">
+                  Due Date *
+                  <Calendar className="w-3 h-3 text-muted-foreground" />
+                </Label>
                 <Input
                   id="due_date"
                   type="date"
                   value={formData.due_date}
                   onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                  required
                 />
+                <p className="text-xs text-muted-foreground">Task will be added to calendar</p>
               </div>
             </div>
 
