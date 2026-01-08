@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment as React_Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -580,7 +580,7 @@ export function PayrollDashboard() {
 
       toast.success('Time entry updated');
       setEditingEntry(null);
-      loadWeekData(); // Reload data
+      loadPeriodData(); // Reload data
     } catch (error: any) {
       console.error('Error updating time entry:', error);
       toast.error('Failed to update time entry');
@@ -608,7 +608,7 @@ export function PayrollDashboard() {
       if (error) throw error;
 
       toast.success('Time entry deleted');
-      loadWeekData(); // Reload data
+      loadPeriodData(); // Reload data
     } catch (error: any) {
       console.error('Error deleting time entry:', error);
       toast.error('Failed to delete time entry');
@@ -846,7 +846,7 @@ export function PayrollDashboard() {
                             {user.dateEntries.map((dateEntry, dateIdx) => {
                               const hasMultipleJobs = dateEntry.entries.length > 1;
                               return (
-                                <>
+                                <React.Fragment key={`date-${dateIdx}`}>
                                   {dateEntry.entries.map((entry, entryIdx) => {
                                     const isTimeOff = entry.entryId.startsWith('timeoff-');
                                     const isFirstEntryOfDay = entryIdx === 0;
@@ -937,7 +937,7 @@ export function PayrollDashboard() {
                                       <td className="p-2"></td>
                                     </tr>
                                   )}
-                                </>
+                                </React.Fragment>
                               );
                             })}
                           </tbody>
