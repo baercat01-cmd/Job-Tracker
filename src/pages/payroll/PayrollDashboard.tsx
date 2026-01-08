@@ -828,106 +828,106 @@ export function PayrollDashboard() {
                 
                 {expandedUsers.has(user.userId) && (
                   <CardContent className="pt-0">
-                    <div className="border-t pt-4 space-y-6">
-                      {user.dateEntries.map((dateEntry, dateIdx) => (
-                        <div key={dateIdx} className="space-y-2">
-                          {/* Date Header */}
-                          <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-md">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-primary" />
-                              <h3 className="font-bold text-lg">
-                                {new Date(dateEntry.date).toLocaleDateString('en-US', {
-                                  weekday: 'long',
-                                  month: 'long',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                })}
-                              </h3>
-                            </div>
-                            <Badge variant="secondary" className="text-sm font-bold">
-                              {dateEntry.totalHours.toFixed(2)}h
-                            </Badge>
-                          </div>
-
-                          {/* Jobs for this date */}
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b bg-muted/20">
-                                  <th className="text-left p-2 font-semibold">Job</th>
-                                  <th className="text-left p-2 font-semibold">Start</th>
-                                  <th className="text-left p-2 font-semibold">End</th>
-                                  <th className="text-right p-2 font-semibold">Hours</th>
-                                  <th className="text-center p-2 font-semibold">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {dateEntry.entries.map((entry, entryIdx) => {
-                                  const isTimeOff = entry.entryId.startsWith('timeoff-');
-                                  return (
-                                    <tr 
-                                      key={entryIdx}
-                                      className={`border-b transition-colors ${
-                                        isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
-                                      }`}
-                                    >
-                                      <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
-                                        <div>
-                                          <div className="font-medium">{entry.jobName}</div>
-                                          {entry.clientName && !isTimeOff && (
-                                            <div className="text-xs text-muted-foreground">{entry.clientName}</div>
-                                          )}
+                    <div className="border-t pt-4">
+                      {/* Table with date on left side */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/20">
+                              <th className="text-left p-2 font-semibold w-32">Date</th>
+                              <th className="text-left p-2 font-semibold">Job</th>
+                              <th className="text-left p-2 font-semibold w-20">Start</th>
+                              <th className="text-left p-2 font-semibold w-20">End</th>
+                              <th className="text-right p-2 font-semibold w-20">Hours</th>
+                              <th className="text-center p-2 font-semibold w-20">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {user.dateEntries.map((dateEntry, dateIdx) => (
+                              dateEntry.entries.map((entry, entryIdx) => {
+                                const isTimeOff = entry.entryId.startsWith('timeoff-');
+                                const isFirstEntryOfDay = entryIdx === 0;
+                                const rowsForThisDay = dateEntry.entries.length;
+                                
+                                return (
+                                  <tr 
+                                    key={`${dateIdx}-${entryIdx}`}
+                                    className={`border-b transition-colors ${
+                                      isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
+                                    }`}
+                                  >
+                                    {/* Date column - show only for first entry of the day */}
+                                    {isFirstEntryOfDay ? (
+                                      <td className="p-2 align-top font-medium" rowSpan={rowsForThisDay}>
+                                        <div className="text-sm">
+                                          {new Date(dateEntry.date).toLocaleDateString('en-US', {
+                                            weekday: 'short',
+                                            month: 'short',
+                                            day: 'numeric',
+                                          })}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          {dateEntry.totalHours.toFixed(2)}h
                                         </div>
                                       </td>
-                                      <td className="p-2 font-mono text-xs">
-                                        {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                        })}
-                                      </td>
-                                      <td className="p-2 font-mono text-xs">
-                                        {isTimeOff ? '-' : (entry.endTime 
-                                          ? new Date(entry.endTime).toLocaleTimeString([], {
-                                              hour: '2-digit',
-                                              minute: '2-digit',
-                                            })
-                                          : '-')}
-                                      </td>
-                                      <td className={`p-2 text-right font-bold ${
-                                        isTimeOff ? 'text-amber-600' : 'text-primary'
-                                      }`}>
-                                        {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
-                                      </td>
-                                      <td className="p-2">
-                                        {!isTimeOff && (
-                                          <div className="flex items-center justify-center gap-1">
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => openEditDialog(entry.entryId)}
-                                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                            >
-                                              <Edit className="w-3.5 h-3.5" />
-                                            </Button>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => deleteEntry(entry.entryId)}
-                                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </Button>
-                                          </div>
+                                    ) : null}
+                                    
+                                    <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
+                                      <div>
+                                        <div className="font-medium">{entry.jobName}</div>
+                                        {entry.clientName && !isTimeOff && (
+                                          <div className="text-xs text-muted-foreground">{entry.clientName}</div>
                                         )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ))}
+                                      </div>
+                                    </td>
+                                    <td className="p-2 font-mono text-xs">
+                                      {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </td>
+                                    <td className="p-2 font-mono text-xs">
+                                      {isTimeOff ? '-' : (entry.endTime 
+                                        ? new Date(entry.endTime).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })
+                                        : '-')}
+                                    </td>
+                                    <td className={`p-2 text-right font-bold ${
+                                      isTimeOff ? 'text-amber-600' : 'text-primary'
+                                    }`}>
+                                      {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
+                                    </td>
+                                    <td className="p-2">
+                                      {!isTimeOff && (
+                                        <div className="flex items-center justify-center gap-1">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => openEditDialog(entry.entryId)}
+                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                          >
+                                            <Edit className="w-3.5 h-3.5" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => deleteEntry(entry.entryId)}
+                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
                       {/* Overall Total */}
                       <div className="flex items-center justify-between bg-primary/10 px-4 py-3 rounded-md mt-4">
