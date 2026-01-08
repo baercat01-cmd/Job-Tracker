@@ -10,6 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -21,7 +26,9 @@ import {
   Filter,
   X,
   Palette,
-  Users
+  Users,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
@@ -95,6 +102,8 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
+  const [showDayDialog, setShowDayDialog] = useState(false);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [filterJob, setFilterJob] = useState<string>(jobId || 'all'); // Initialize with jobId if provided
   const [filterTrade, setFilterTrade] = useState<string>('all');
   const [jobs, setJobs] = useState<any[]>([]);
@@ -569,7 +578,12 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded cursor-pointer transition-all ${
                     isToday ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
                   } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''}`}
-                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                  onClick={() => {
+                    if (dayEvents.length > 0) {
+                      setSelectedDate(dateStr);
+                      setShowDayDialog(true);
+                    }
+                  }}
                 >
                   <div className={`text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${isToday ? 'text-primary' : ''}`}>
                     {day}
@@ -614,13 +628,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                       );
                     })}
                     {dayEvents.length > 2 && (
-                      <div 
-                        className="text-[10px] sm:text-xs text-muted-foreground font-semibold cursor-pointer hover:text-primary px-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedDate(dateStr);
-                        }}
-                      >
+                      <div className="text-[10px] sm:text-xs text-muted-foreground font-semibold px-1">
                         +{dayEvents.length - 2}
                       </div>
                     )}
@@ -630,95 +638,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             })}
           </div>
 
-          {/* Selected Date Details */}
-          {selectedDate && (
-            <div className="mt-6 p-4 border-t">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">
-                  {new Date(selectedDate).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </h3>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedDate(null)}>
-                  <X className="w-4 h-4 mr-1" />
-                  Close
-                </Button>
-              </div>
-              <div className="grid gap-3">
-                {getEventsForDate(selectedDate).map(event => {
-                  const config = EVENT_TYPE_CONFIG[event.type];
-                  const Icon = config.icon;
-                  const isMaterialEvent = event.type.startsWith('material_');
-                  return (
-                    <Card
-                      key={event.id}
-                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
-                        event.priority === 'high' ? 'border-destructive' : ''
-                      }`}
-                      style={{ borderLeftColor: event.jobColor }}
-                      onClick={() => {
-                        if (isMaterialEvent && event.materialId) { // Check for materialId to confirm it's an editable material event
-                          setSelectedEvent(event);
-                          setShowEventDialog(true);
-                        } else {
-                          onJobSelect(event.jobId);
-                        }
-                      }}
-                    >
-                      <CardContent className="py-4">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg ${config.color} text-white`}>
-                            <Icon className="w-5 h-5" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <p className="font-bold text-lg">{event.title}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge 
-                                    variant="outline"
-                                    style={{ 
-                                      borderColor: event.jobColor,
-                                      color: event.jobColor 
-                                    }}
-                                  >
-                                    {event.jobName}
-                                  </Badge>
-                                  <Badge variant="secondary">{config.label}</Badge>
-                                </div>
-                              </div>
-                              {event.priority === 'high' && (
-                                <Badge variant="destructive" className="ml-2">Overdue</Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground">{event.description}</p>
-                            {event.subcontractorPhone && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                📞 {event.subcontractorPhone}
-                              </p>
-                            )}
-                            {isMaterialEvent && event.materialId && ( // Check for materialId
-                              <Badge variant="outline" className="mt-2 text-xs">
-                                Click to edit material details
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-                {getEventsForDate(selectedDate).length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No events scheduled for this date
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+
 
           {/* Quick Access Buttons */}
           <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t">
@@ -1035,6 +955,185 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 })()
               )}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Day Events Dialog */}
+      <Dialog open={showDayDialog} onOpenChange={setShowDayDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5" />
+              {selectedDate && new Date(selectedDate).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            {selectedDate && getEventsForDate(selectedDate).length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <CalendarIcon className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                  <p className="text-muted-foreground">No events scheduled for this date</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {selectedDate && getEventsForDate(selectedDate).map(event => {
+                  const config = EVENT_TYPE_CONFIG[event.type];
+                  const Icon = config.icon;
+                  const isMaterialEvent = event.type.startsWith('material_');
+                  const isExpanded = expandedEventId === event.id;
+
+                  return (
+                    <Collapsible
+                      key={event.id}
+                      open={isExpanded}
+                      onOpenChange={(open) => setExpandedEventId(open ? event.id : null)}
+                    >
+                      <Card
+                        className={`border-l-4 ${
+                          event.priority === 'high' ? 'border-destructive bg-destructive/5' : ''
+                        }`}
+                        style={{ borderLeftColor: event.jobColor }}
+                      >
+                        <CollapsibleTrigger asChild>
+                          <div className="cursor-pointer hover:bg-muted/50 transition-colors">
+                            <CardContent className="py-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg ${config.color} text-white`}>
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold">{event.title}</p>
+                                    {event.priority === 'high' && (
+                                      <Badge variant="destructive" className="text-xs">Overdue</Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge 
+                                      variant="outline"
+                                      className="text-xs"
+                                      style={{ 
+                                        borderColor: event.jobColor,
+                                        color: event.jobColor 
+                                      }}
+                                    >
+                                      {event.jobName}
+                                    </Badge>
+                                    <Badge variant="secondary" className="text-xs">{config.label}</Badge>
+                                  </div>
+                                </div>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                                )}
+                              </div>
+                            </CardContent>
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <CardContent className="pt-0 pb-4 space-y-3">
+                            <div className="pl-11 space-y-3">
+                              {/* Description */}
+                              <div>
+                                <p className="text-sm font-semibold text-muted-foreground mb-1">Description</p>
+                                <p className="text-sm">{event.description}</p>
+                              </div>
+
+                              {/* Event Date */}
+                              <div>
+                                <p className="text-sm font-semibold text-muted-foreground mb-1">Date</p>
+                                <p className="text-sm">
+                                  {new Date(event.date).toLocaleDateString('en-US', {
+                                    weekday: 'long',
+                                    month: 'long',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
+                                </p>
+                              </div>
+
+                              {/* Status */}
+                              {event.status && (
+                                <div>
+                                  <p className="text-sm font-semibold text-muted-foreground mb-1">Status</p>
+                                  <Badge variant="outline" className="capitalize">{event.status.replace('_', ' ')}</Badge>
+                                </div>
+                              )}
+
+                              {/* Priority */}
+                              {event.priority && (
+                                <div>
+                                  <p className="text-sm font-semibold text-muted-foreground mb-1">Priority</p>
+                                  <Badge 
+                                    variant={event.priority === 'high' ? 'destructive' : event.priority === 'medium' ? 'default' : 'secondary'}
+                                    className="capitalize"
+                                  >
+                                    {event.priority}
+                                  </Badge>
+                                </div>
+                              )}
+
+                              {/* Subcontractor Info */}
+                              {event.subcontractorName && (
+                                <div>
+                                  <p className="text-sm font-semibold text-muted-foreground mb-1">Subcontractor</p>
+                                  <p className="text-sm">{event.subcontractorName}</p>
+                                  {event.subcontractorPhone && (
+                                    <p className="text-xs text-muted-foreground mt-1">📞 {event.subcontractorPhone}</p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Assigned User */}
+                              {event.assignedUserName && (
+                                <div>
+                                  <p className="text-sm font-semibold text-muted-foreground mb-1">Assigned To</p>
+                                  <p className="text-sm">{event.assignedUserName}</p>
+                                </div>
+                              )}
+
+                              {/* Action Buttons */}
+                              <div className="flex gap-2 pt-2">
+                                {isMaterialEvent && event.materialId ? (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedEvent(event);
+                                      setShowEventDialog(true);
+                                      setShowDayDialog(false);
+                                    }}
+                                  >
+                                    Edit Material Details
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      onJobSelect(event.jobId);
+                                      setShowDayDialog(false);
+                                    }}
+                                  >
+                                    View Job
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </CollapsibleContent>
+                      </Card>
+                    </Collapsible>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
