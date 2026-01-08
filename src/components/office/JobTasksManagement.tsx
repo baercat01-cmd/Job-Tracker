@@ -427,50 +427,15 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
 
                       {/* Quick Actions */}
                       {task.status !== 'completed' && (
-                        <div className="flex gap-2">
-                          {task.status === 'pending' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateTaskStatus(task.id, 'in_progress')}
-                            >
-                              <PlayCircle className="w-3 h-3 mr-1" />
-                              Start
-                            </Button>
-                          )}
-                          {task.status === 'in_progress' && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateTaskStatus(task.id, 'completed')}
-                                className="text-green-600 hover:text-green-700"
-                              >
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Complete
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateTaskStatus(task.id, 'blocked')}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <XCircle className="w-3 h-3 mr-1" />
-                                Block
-                              </Button>
-                            </>
-                          )}
-                          {task.status === 'blocked' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateTaskStatus(task.id, 'in_progress')}
-                            >
-                              <PlayCircle className="w-3 h-3 mr-1" />
-                              Resume
-                            </Button>
-                          )}
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateTaskStatus(task.id, 'completed')}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          Mark Complete
+                        </Button>
                       )}
 
                       {task.status === 'completed' && task.completed_at && (

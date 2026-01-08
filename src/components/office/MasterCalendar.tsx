@@ -335,46 +335,8 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         }
       }
 
-      // Get completed tasks
-      let tasksQuery = supabase
-        .from('completed_tasks')
-        .select(`
-          id,
-          completed_date,
-          notes,
-          component_id,
-          job_id,
-          components!inner(id, name),
-          jobs!inner(id, name, client_name, status)
-        `)
-        .eq('jobs.status', 'active');
-
-      if (filterJob !== 'all') {
-        tasksQuery = tasksQuery.eq('job_id', filterJob);
-      }
-
-      if (filterTrade !== 'all') {
-        tasksQuery = tasksQuery.eq('component_id', filterTrade);
-      }
-
-      const { data: completedTasks, error: tasksError } = await tasksQuery;
-
-      if (!tasksError && completedTasks) {
-        completedTasks.forEach((task: any) => {
-          const jobColor = getJobColor(task.jobs.name);
-          events.push({
-            id: `task-${task.id}`,
-            type: 'task_completed',
-            date: task.completed_date,
-            jobId: task.jobs.id,
-            jobName: task.jobs.name,
-            jobColor,
-            title: `Completed: ${task.components.name}`,
-            description: task.notes || 'Task completed',
-            priority: 'low',
-          });
-        });
-      }
+      // Completed tasks are no longer shown on the calendar
+      // They are removed after being marked as complete
 
       setEvents(events);
     } catch (error: any) {
