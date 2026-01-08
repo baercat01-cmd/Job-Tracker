@@ -25,11 +25,13 @@ import {
   ChevronRight,
   DollarSign,
   Edit,
-  Trash2
+  Trash2,
+  CalendarDays
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { FunctionsHttpError } from '@supabase/supabase-js';
+import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 
 interface TimeEntryData {
   id: string;
@@ -89,6 +91,7 @@ export function PayrollDashboard() {
     minutes: '0',
     notes: '',
   });
+  const [activeTab, setActiveTab] = useState<'time-entries' | 'time-off'>('time-entries');
 
   useEffect(() => {
     generateWeekOptions();
@@ -467,6 +470,20 @@ export function PayrollDashboard() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
+        {/* Tab Navigation */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'time-entries' | 'time-off')} className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="time-entries" className="flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Time Entries
+            </TabsTrigger>
+            <TabsTrigger value="time-off" className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4" />
+              Time Off Calendar
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="time-entries" className="space-y-6 mt-6">
         {/* Week Selector & Summary */}
         <Card>
           <CardHeader>
@@ -707,6 +724,14 @@ export function PayrollDashboard() {
             ))}
           </div>
         )}
+          </TabsContent>
+
+          <TabsContent value="time-off" className="mt-6">
+            <div className="max-w-4xl mx-auto">
+              <UnavailableCalendar userId={profile?.id || ''} />
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Edit Dialog */}
