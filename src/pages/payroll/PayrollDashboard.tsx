@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment as React_Fragment } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -846,7 +846,7 @@ export function PayrollDashboard() {
                             {user.dateEntries.map((dateEntry, dateIdx) => {
                               const hasMultipleJobs = dateEntry.entries.length > 1;
                               return (
-                                <React_Fragment key={`date-${dateIdx}`}>
+                                <Fragment key={`date-${dateIdx}`}>
                                   {dateEntry.entries.map((entry, entryIdx) => {
                                     const isTimeOff = entry.entryId.startsWith('timeoff-');
                                     const isFirstEntryOfDay = entryIdx === 0;
@@ -937,7 +937,7 @@ export function PayrollDashboard() {
                                       <td className="p-2"></td>
                                     </tr>
                                   )}
-                                </React_Fragment>
+                                </Fragment>
                               );
                             })}
                           </tbody>
