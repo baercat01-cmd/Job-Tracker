@@ -39,6 +39,7 @@ import {
   ShoppingCart,
   User,
   Truck,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -2474,11 +2475,180 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </div>
         </DialogContent>
       </Dialog>
+      {/* CSV Import Dialog */}
       <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import</DialogTitle>
+            <DialogTitle>
+              Import Materials {importStep === 'columns' ? '- Step 1: Map Columns' : '- Step 2: Map Categories'}
+            </DialogTitle>
           </DialogHeader>
+
+          {importStep === 'columns' && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                <p className="text-sm text-muted-foreground">
+                  Map your CSV/Excel columns to the required fields. The system detected {csvData.length} rows.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label>Category Column *</Label>
+                  <Select value={columnMapping.category} onValueChange={(v) => setColumnMapping({ ...columnMapping, category: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Material Name Column *</Label>
+                  <Select value={columnMapping.name} onValueChange={(v) => setColumnMapping({ ...columnMapping, name: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for material name" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Quantity Column *</Label>
+                  <Select value={columnMapping.quantity} onValueChange={(v) => setColumnMapping({ ...columnMapping, quantity: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for quantity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Use Case Column (Optional)</Label>
+                  <Select value={columnMapping.useCase} onValueChange={(v) => setColumnMapping({ ...columnMapping, useCase: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for use case" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Length Column (Optional)</Label>
+                  <Select value={columnMapping.length} onValueChange={(v) => setColumnMapping({ ...columnMapping, length: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for length" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button variant="outline" onClick={() => setShowCsvDialog(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button onClick={proceedToCategories} className="flex-1 gradient-primary">
+                  Next: Map Categories
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {importStep === 'categories' && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                <p className="text-sm text-muted-foreground">
+                  Found {csvCategories.length} unique categories in your file. 
+                  Map each to an existing category or create new ones.
+                </p>
+              </div>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {csvCategories.map(csvCat => (
+                  <div key={csvCat} className="border rounded-lg p-3">
+                    <Label className="text-sm font-semibold mb-2 block">{csvCat}</Label>
+                    <Select
+                      value={categoryMapping[csvCat] || ''}
+                      onValueChange={(v) => setCategoryMapping({ ...categoryMapping, [csvCat]: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Map to existing or create new" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CREATE_NEW">
+                          <span className="font-semibold text-primary">+ Create New: {csvCat}</span>
+                        </SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            Map to: {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Import Rules:</strong>
+                  <br />• Existing CSV/Excel imports with status "Not Ordered" will be replaced
+                  <br />• Manual entries and materials with other statuses will be preserved
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setImportStep('columns')}
+                  className="flex-1"
+                  disabled={uploading}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={processCsvImport}
+                  className="flex-1 gradient-primary"
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Materials
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
