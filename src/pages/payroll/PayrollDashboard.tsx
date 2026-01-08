@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
+import html2pdf from 'html2pdf.js';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -425,12 +426,15 @@ export function PayrollDashboard() {
         endDate = new Date(weekData.weekEnd);
       }
 
-      // Prepare data for PDF - keep the same date-based structure as the display
-      const pdfData = {
-        title: `Payroll Report`,
-        periodLabel: periodLabel,
-        startDate: startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-        endDate: endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      const startDateStr = startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      const endDateStr = endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      // Generate HTML for PDF
+      const htmlContent = generatePayrollHTML({
+        title: 'Payroll Report',
+        periodLabel,
+        startDate: startDateStr,
+        endDate: endDateStr,
         users: usersToExport.map(user => ({
           name: user.userName,
           totalHours: user.totalHours,
@@ -443,7 +447,7 @@ export function PayrollDashboard() {
             totalHours: dateEntry.totalHours,
             hasMultipleJobs: dateEntry.entries.length > 1,
             entries: dateEntry.entries
-              .filter(entry => !entry.entryId.startsWith('timeoff-')) // Skip time off entries in PDF
+              .filter(entry => !entry.entryId.startsWith('timeoff-'))
               .map(entry => ({
                 jobName: entry.jobName,
                 clientName: entry.clientName,
@@ -459,49 +463,317 @@ export function PayrollDashboard() {
                   : '-',
                 hours: entry.totalHours.toFixed(2),
               })),
-          })).filter(dateEntry => dateEntry.entries.length > 0), // Only include dates with actual entries
+          })).filter(dateEntry => dateEntry.entries.length > 0),
         })),
-      };
-
-      // Call the edge function to generate PDF HTML
-      const { data, error } = await supabase.functions.invoke('generate-pdf', {
-        body: { 
-          type: 'payroll',
-          data: pdfData,
-        },
       });
 
-      if (error) {
-        // Extract actual error message from FunctionsHttpError
-        let errorMessage = error.message;
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const statusCode = error.context?.status ?? 500;
-            const textContent = await error.context?.text();
-            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-          } catch {
-            errorMessage = `${error.message || 'Failed to read response'}`;
-          }
-        }
-        throw new Error(errorMessage);
-      }
+      // Create a temporary element for PDF generation
+      const element = document.createElement('div');
+      element.innerHTML = htmlContent;
+      element.style.position = 'absolute';
+      element.style.left = '-9999px';
+      document.body.appendChild(element);
 
-      // Open the print-optimized HTML in a new window
-      // The HTML includes auto-print functionality
-      const newWindow = window.open('', '_blank');
-      if (newWindow) {
-        newWindow.document.write(data);
-        newWindow.document.close();
-        toast.success('Print dialog opening - select "Save as PDF"');
-      } else {
-        toast.error('Please allow pop-ups to export PDF');
-      }
+      // Configure PDF options
+      const opt = {
+        margin: [15, 15, 15, 15],
+        filename: `Payroll_Report_${periodLabel.replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      // Generate and download PDF
+      await html2pdf().set(opt).from(element).save();
+
+      // Clean up
+      document.body.removeChild(element);
+      
+      toast.success('PDF downloaded successfully');
     } catch (error: any) {
       console.error('PDF export error:', error);
       toast.error(error.message || 'Failed to export PDF');
     } finally {
       setLoading(false);
     }
+  }
+
+  function generatePayrollHTML(data: any): string {
+    const { title, startDate, endDate, users } = data;
+    
+    return `
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          color: #1a1a1a;
+          line-height: 1.5;
+          padding: 20px;
+        }
+        
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+          padding-bottom: 15px;
+          border-bottom: 3px solid #2d5f3f;
+        }
+        
+        .header h1 {
+          color: #2d5f3f;
+          font-size: 28px;
+          margin-bottom: 8px;
+        }
+        
+        .header .subtitle {
+          color: #666;
+          font-size: 14px;
+          margin-bottom: 8px;
+        }
+        
+        .period-info {
+          background: #f8f9fa;
+          border-radius: 6px;
+          padding: 10px 20px;
+          margin: 12px auto 0;
+          display: inline-block;
+        }
+        
+        .period-info .period-label {
+          font-size: 13px;
+          color: #666;
+          margin-bottom: 4px;
+        }
+        
+        .period-info .period-dates {
+          font-size: 15px;
+          font-weight: 600;
+          color: #2d5f3f;
+        }
+        
+        .user-section {
+          margin-bottom: 40px;
+          page-break-inside: avoid;
+        }
+        
+        .user-section.page-break {
+          page-break-after: always;
+        }
+        
+        .user-period-info {
+          background: #f8f9fa;
+          border-radius: 6px;
+          padding: 8px 16px;
+          margin-bottom: 12px;
+          text-align: center;
+          border: 1px solid #e0e0e0;
+        }
+        
+        .user-period-info .period-label {
+          font-size: 11px;
+          color: #666;
+          margin-bottom: 2px;
+        }
+        
+        .user-period-info .period-dates {
+          font-size: 13px;
+          font-weight: 600;
+          color: #2d5f3f;
+        }
+        
+        .user-header {
+          background: #f8f9fa;
+          padding: 12px 15px;
+          border-left: 4px solid #2d5f3f;
+          margin-bottom: 15px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        
+        .user-name {
+          font-size: 20px;
+          font-weight: bold;
+          color: #1a1a1a;
+        }
+        
+        .user-total {
+          font-size: 24px;
+          font-weight: bold;
+          color: #2d5f3f;
+        }
+        
+        .time-table {
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        
+        .entries-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        
+        .entries-table th {
+          background: #f0f0f0;
+          padding: 8px;
+          text-align: left;
+          font-size: 11px;
+          font-weight: 600;
+          color: #555;
+          border-bottom: 2px solid #ddd;
+        }
+        
+        .entries-table th:nth-child(1) { width: 18%; }
+        .entries-table th:nth-child(2) { width: 35%; }
+        .entries-table th:nth-child(3) { width: 15%; }
+        .entries-table th:nth-child(4) { width: 15%; }
+        .entries-table th:nth-child(5) { width: 17%; text-align: right; }
+        
+        .entries-table td {
+          padding: 6px 8px;
+          font-size: 12px;
+          border-bottom: 1px solid #f0f0f0;
+          vertical-align: top;
+        }
+        
+        .entries-table td:nth-child(5) { text-align: right; }
+        
+        .date-cell {
+          font-weight: 500;
+          font-size: 12px;
+        }
+        
+        .job-cell {
+          font-weight: 500;
+        }
+        
+        .client-name {
+          font-size: 11px;
+          color: #666;
+          margin-top: 2px;
+        }
+        
+        .time-cell {
+          font-family: 'Courier New', monospace;
+          font-size: 11px;
+        }
+        
+        .hours-cell {
+          font-weight: bold;
+          color: #2d5f3f;
+        }
+        
+        .daily-total-row {
+          background: rgba(45, 95, 63, 0.05);
+          border-bottom: 2px solid #e0e0e0 !important;
+        }
+        
+        .daily-total-row td {
+          padding: 8px;
+          font-weight: 600;
+          font-size: 12px;
+          border-bottom: 2px solid #e0e0e0 !important;
+        }
+        
+        .period-total {
+          background: rgba(45, 95, 63, 0.1);
+          padding: 12px 16px;
+          border-radius: 6px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 15px;
+        }
+        
+        .period-total-label {
+          font-weight: bold;
+          font-size: 16px;
+        }
+        
+        .period-total-value {
+          font-weight: bold;
+          font-size: 20px;
+          color: #2d5f3f;
+        }
+      </style>
+      
+      <div class="header">
+        <h1>${title}</h1>
+        <p class="subtitle">Time & Payroll Report</p>
+        <div class="period-info">
+          <div class="period-label">Report Period</div>
+          <div class="period-dates">${startDate} - ${endDate}</div>
+        </div>
+      </div>
+      
+      ${users.map((user: any, userIdx: number) => `
+        <div class="user-section${userIdx < users.length - 1 ? ' page-break' : ''}">
+          <div class="user-period-info">
+            <div class="period-label">Report Period</div>
+            <div class="period-dates">${startDate} - ${endDate}</div>
+          </div>
+          
+          <div class="user-header">
+            <div class="user-name">${user.name}</div>
+            <div class="user-total">${user.totalHours.toFixed(2)}h</div>
+          </div>
+          
+          <div class="time-table">
+            <table class="entries-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Job</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Hours</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${user.dateEntries.map((dateEntry: any) => {
+                  const entries = dateEntry.entries.map((entry: any, idx: number) => {
+                    const isFirst = idx === 0;
+                    return `
+                      <tr>
+                        ${isFirst ? `<td class="date-cell" rowspan="${dateEntry.entries.length}">${dateEntry.date}</td>` : ''}
+                        <td class="job-cell">
+                          <div>${entry.jobName}</div>
+                          ${entry.clientName ? `<div class="client-name">${entry.clientName}</div>` : ''}
+                        </td>
+                        <td class="time-cell">${entry.startTime}</td>
+                        <td class="time-cell">${entry.endTime}</td>
+                        <td class="hours-cell">${entry.hours}</td>
+                      </tr>
+                    `;
+                  }).join('');
+                  
+                  const dailyTotal = dateEntry.hasMultipleJobs ? `
+                    <tr class="daily-total-row">
+                      <td></td>
+                      <td colspan="3" style="text-align: right;">Daily Total:</td>
+                      <td class="hours-cell">${dateEntry.totalHours.toFixed(2)}</td>
+                    </tr>
+                  ` : '';
+                  
+                  return entries + dailyTotal;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="period-total">
+            <span class="period-total-label">Period Total</span>
+            <span class="period-total-value">${user.totalHours.toFixed(2)}h</span>
+          </div>
+        </div>
+      `).join('')}
+    `;
   }
 
   const filteredUsers = selectedUser === 'all' 
