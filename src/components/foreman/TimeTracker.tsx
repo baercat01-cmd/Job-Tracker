@@ -1272,7 +1272,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   </div>
                   
                   {showManualComponentDropdown && (
-                    <div className="absolute z-50 w-full mt-1 border rounded-lg bg-card shadow-lg max-h-[500px] overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 border rounded-lg bg-card shadow-lg max-h-[60vh] overflow-y-auto">
                       {components
                         .filter(c => 
                           c.name.toLowerCase().includes(manualComponentSearch.toLowerCase()) ||
