@@ -8,8 +8,16 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // Let Vite auto-detect the correct HMR configuration
-      // This works for both localhost and OnSpace preview domains
+      // Support both localhost and OnSpace preview domains
+      clientPort: typeof process.env.VITE_HMR_CLIENT_PORT !== 'undefined' 
+        ? parseInt(process.env.VITE_HMR_CLIENT_PORT) 
+        : undefined,
+      protocol: typeof process.env.VITE_HMR_PROTOCOL !== 'undefined'
+        ? process.env.VITE_HMR_PROTOCOL as 'ws' | 'wss'
+        : undefined,
+      host: typeof process.env.VITE_HMR_HOST !== 'undefined'
+        ? process.env.VITE_HMR_HOST
+        : undefined,
       overlay: true,
     },
   },
