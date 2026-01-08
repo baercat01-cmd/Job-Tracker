@@ -158,44 +158,34 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filteredMaterials.map((material) => (
             <Card key={material.id} className="overflow-hidden">
-              <CardContent className="p-4">
-                <div className="space-y-3">
-                  {/* Header: Material Name & Category */}
-                  <div className="space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-semibold text-base leading-tight flex-1">{material.name}</h3>
-                      <Badge variant="outline" className="shrink-0">{material.category_name}</Badge>
+              <CardContent className="p-2">
+                <div className="flex items-center gap-2">
+                  {/* Material Info - Compact Single Row */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
+                      {material.use_case && (
+                        <span className="text-xs text-muted-foreground truncate">({material.use_case})</span>
+                      )}
                     </div>
-                    {material.use_case && (
-                      <p className="text-sm text-muted-foreground">{material.use_case}</p>
-                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                      <span>Qty: <span className="font-semibold text-foreground">{material.quantity}</span></span>
+                      {material.length && (
+                        <span>Len: <span className="font-medium text-foreground">{material.length}</span></span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Details: Quantity & Length */}
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Qty:</span>
-                      <span className="font-semibold">{material.quantity}</span>
-                    </div>
-                    {material.length && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Length:</span>
-                        <span className="font-medium">{material.length}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action Button */}
+                  {/* Action Button - Compact */}
                   <Button
-                    size="lg"
+                    size="sm"
                     onClick={() => markAsAtJob(material.id, material.name)}
-                    className="w-full gradient-primary"
+                    className="shrink-0 gradient-primary h-12"
                   >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Mark as At Job
+                    <CheckCircle2 className="w-4 h-4" />
                   </Button>
                 </div>
               </CardContent>
