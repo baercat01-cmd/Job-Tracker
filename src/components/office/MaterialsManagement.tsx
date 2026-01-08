@@ -1600,9 +1600,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       : <ArrowDown className="w-4 h-4 text-primary" />;
   }
 
-  const filteredCategories = filterCategory === 'all' 
-    ? categories 
-    : categories.filter(cat => cat.id === filterCategory);
+  // Handle parent category grouping
+  const getDisplayCategories = () => {
+    if (filterCategory === 'all') {
+      return categories;
+    }
+    
+    const selectedCategory = categories.find(cat => cat.id === filterCategory);
+    if (!selectedCategory) return [];
+    
+    // If selected category is a parent, return all its children
+    const isParent = categories.some(cat => cat.parent_id === selectedCategory.id);
+    if (isParent) {
+      return categories.filter(cat => cat.parent_id === selectedCategory.id);
+    }
+    
+    // Otherwise return just the selected category
+    return [selectedCategory];
+  };
+  
+  const filteredCategories = getDisplayCategories();
+  const selectedCategory = categories.find(cat => cat.id === filterCategory);
+  const isViewingParent = selectedCategory && categories.some(cat => cat.parent_id === selectedCategory.id);
 
   async function quickMarkAsOnSite(materialId: string) {
     try {
@@ -2174,16 +2193,51 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* Parent Category Header (when viewing a parent) */}
+          {isViewingParent && selectedCategory && (
+            <Card className="border-2 border-primary">
+              <CardHeader className="bg-gradient-to-r from-primary/20 to-primary/10 border-b-2 border-primary/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                      📁 {selectedCategory.name}
+                      <Badge variant="outline" className="ml-2 text-xs">
+                        Parent Category
+                      </Badge>
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Showing {filteredCategories.length} subcategories
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openEditCategory(selectedCategory)}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+            </Card>
+          )}
+          
           {filteredCategories.map((category) => {
             const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
             const showColorColumn = /metal|trim/i.test(category.name);
             
             return (
-              <Card key={category.id} className="overflow-hidden">
-                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+              <Card key={category.id} className={`overflow-hidden ${isViewingParent ? 'ml-6 border-l-4 border-l-primary' : ''}`}>
+                <CardHeader className={`bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20 ${isViewingParent ? 'bg-muted/30' : ''}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                      <CardTitle className={`${isViewingParent ? 'text-lg' : 'text-xl'} font-bold`}>
+                        {isViewingParent && '↳ '}{category.name}
+                      </CardTitle>
+                      {isViewingParent && (
+                        <Badge variant="outline" className="text-xs">
+                          Subcategory
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
