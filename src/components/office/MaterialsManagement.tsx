@@ -51,6 +51,7 @@ interface Material {
   name: string;
   quantity: number;
   length: string | null;
+  color: string | null;
   status: string;
   notes: string | null;
   use_case: string | null;
@@ -109,7 +110,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [filterCategory, setFilterCategory] = useState('all');
   
   // Sorting
-  const [sortBy, setSortBy] = useState<'name' | 'useCase' | 'quantity' | 'length'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'useCase' | 'quantity' | 'length' | 'color'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   // Category modal
@@ -126,6 +127,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialName, setMaterialName] = useState('');
   const [materialQuantity, setMaterialQuantity] = useState('');
   const [materialLength, setMaterialLength] = useState('');
+  const [materialColor, setMaterialColor] = useState('');
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
   
@@ -405,6 +407,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialName('');
     setMaterialQuantity('');
     setMaterialLength('');
+    setMaterialColor('');
     setMaterialUseCase('');
     setMaterialStatus('not_ordered');
     setShowMaterialModal(true);
@@ -416,6 +419,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialName(material.name);
     setMaterialQuantity(material.quantity.toString());
     setMaterialLength(material.length || '');
+    setMaterialColor(material.color || '');
     setMaterialUseCase((material as any).use_case || '');
     setMaterialStatus(material.status);
     setShowMaterialModal(true);
@@ -436,6 +440,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             name: materialName.trim(),
             quantity: parseFloat(materialQuantity),
             length: materialLength.trim() || null,
+            color: materialColor.trim() || null,
             use_case: materialUseCase.trim() || null,
             status: materialStatus,
             updated_at: new Date().toISOString(),
@@ -454,6 +459,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             name: materialName.trim(),
             quantity: parseFloat(materialQuantity),
             length: materialLength.trim() || null,
+            color: materialColor.trim() || null,
             use_case: materialUseCase.trim() || null,
             status: materialStatus,
             created_by: userId,
@@ -1353,6 +1359,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           compareA = (a.length || '').toLowerCase();
           compareB = (b.length || '').toLowerCase();
           break;
+        case 'color':
+          compareA = (a.color || '').toLowerCase();
+          compareB = (b.color || '').toLowerCase();
+          break;
         default:
           return 0;
       }
@@ -1365,7 +1375,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     return filtered;
   }
 
-  function handleSort(column: 'name' | 'useCase' | 'quantity' | 'length') {
+  function handleSort(column: 'name' | 'useCase' | 'quantity' | 'length' | 'color') {
     if (sortBy === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -1374,7 +1384,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  function SortIcon({ column }: { column: 'name' | 'useCase' | 'quantity' | 'length' }) {
+  function SortIcon({ column }: { column: 'name' | 'useCase' | 'quantity' | 'length' | 'color' }) {
     if (sortBy !== column) {
       return <ArrowUpDown className="w-4 h-4 opacity-40" />;
     }
@@ -1982,6 +1992,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <SortIcon column="length" />
                               </Button>
                             </th>
+                            <th className="text-center p-3 w-[120px]">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSort('color')}
+                                className="font-semibold -ml-3"
+                              >
+                                Color
+                                <SortIcon column="color" />
+                              </Button>
+                            </th>
                             <th className="text-center p-3 font-semibold w-[180px]">Status</th>
                             <th className="text-right p-3 font-semibold w-[140px]">Actions</th>
                           </tr>
@@ -2005,6 +2026,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               </td>
                               <td className="p-3 text-center w-[100px]">
                                 {material.length || '-'}
+                              </td>
+                              <td className="p-3 text-center w-[120px]">
+                                {material.color ? (
+                                  <Badge variant="outline" className="font-medium">
+                                    {material.color}
+                                  </Badge>
+                                ) : ('-')}
                               </td>
                               <td className="p-3 w-[180px]">
                                 <div className="flex justify-center">
@@ -2182,6 +2210,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   placeholder="e.g., 8ft, 12ft"
                 />
               </div>
+            </div>
+            <div>
+              <Label htmlFor="material-color">Color</Label>
+              <Input
+                id="material-color"
+                value={materialColor}
+                onChange={(e) => setMaterialColor(e.target.value)}
+                placeholder="e.g., White, Black, Almond"
+              />
             </div>
             <div>
               <Label htmlFor="material-status">Status</Label>
