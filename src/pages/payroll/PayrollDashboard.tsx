@@ -846,7 +846,7 @@ export function PayrollDashboard() {
                             {user.dateEntries.map((dateEntry, dateIdx) => {
                               const hasMultipleJobs = dateEntry.entries.length > 1;
                               return (
-                                <React.Fragment key={`date-${dateIdx}`}>
+                                <React_Fragment key={`date-${dateIdx}`}>
                                   {dateEntry.entries.map((entry, entryIdx) => {
                                     const isTimeOff = entry.entryId.startsWith('timeoff-');
                                     const isFirstEntryOfDay = entryIdx === 0;
@@ -937,7 +937,7 @@ export function PayrollDashboard() {
                                       <td className="p-2"></td>
                                     </tr>
                                   )}
-                                </React.Fragment>
+                                </React_Fragment>
                               );
                             })}
                           </tbody>
