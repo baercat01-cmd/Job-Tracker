@@ -174,7 +174,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                       <span>Qty: <span className="font-semibold text-foreground">{material.quantity}</span></span>
                       {material.use_case && (
-                        <span className="text-xs text-muted-foreground truncate">({material.use_case})</span>
+                        <span className="text-xs text-muted-foreground truncate ml-auto">({material.use_case})</span>
                       )}
                     </div>
                   </div>
