@@ -154,6 +154,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [bulkStatusTarget, setBulkStatusTarget] = useState('not_ordered');
   const [bulkStatusUpdating, setBulkStatusUpdating] = useState(false);
   
+  // Copy categories from another job
+  const [showCopyCategoriesDialog, setShowCopyCategoriesDialog] = useState(false);
+  const [allJobs, setAllJobs] = useState<Job[]>([]);
+  const [sourceJobId, setSourceJobId] = useState('');
+  const [copyingCategories, setCopyingCategories] = useState(false);
+  
   // CSV upload
   const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [csvData, setCsvData] = useState<any[]>([]);
@@ -174,6 +180,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   useEffect(() => {
     loadMaterials();
     loadUsers();
+    loadAllJobs();
   }, [job.id]);
 
   async function loadUsers() {
@@ -187,6 +194,21 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       setUsers(data || []);
     } catch (error: any) {
       console.error('Error loading users:', error);
+    }
+  }
+
+  async function loadAllJobs() {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, name, client_name')
+        .neq('id', job.id)
+        .order('name');
+
+      if (error) throw error;
+      setAllJobs(data || []);
+    } catch (error: any) {
+      console.error('Error loading jobs:', error);
     }
   }
 
@@ -1490,6 +1512,60 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  async function copyCategories() {
+    if (!sourceJobId) {
+      toast.error('Please select a job to copy from');
+      return;
+    }
+
+    setCopyingCategories(true);
+    try {
+      // Load categories from source job
+      const { data: sourceCategories, error: sourceCatError } = await supabase
+        .from('materials_categories')
+        .select('name, order_index, sheet_image_url')
+        .eq('job_id', sourceJobId)
+        .order('order_index');
+
+      if (sourceCatError) throw sourceCatError;
+
+      if (!sourceCategories || sourceCategories.length === 0) {
+        toast.error('Source job has no categories');
+        return;
+      }
+
+      // Create categories in current job
+      const currentMaxOrder = categories.length > 0 
+        ? Math.max(...categories.map(c => c.order_index))
+        : -1;
+
+      const categoriesToInsert = sourceCategories.map((cat, index) => ({
+        job_id: job.id,
+        name: cat.name,
+        order_index: currentMaxOrder + 1 + index,
+        created_by: userId,
+        sheet_image_url: cat.sheet_image_url,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('materials_categories')
+        .insert(categoriesToInsert);
+
+      if (insertError) throw insertError;
+
+      const sourceJob = allJobs.find(j => j.id === sourceJobId);
+      toast.success(`Copied ${sourceCategories.length} categories from ${sourceJob?.name}`);
+      setShowCopyCategoriesDialog(false);
+      setSourceJobId('');
+      loadMaterials();
+    } catch (error: any) {
+      toast.error('Failed to copy categories');
+      console.error(error);
+    } finally {
+      setCopyingCategories(false);
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-8">Loading materials...</div>;
   }
@@ -1579,6 +1655,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           <Plus className="w-4 h-4 mr-2" />
           Add Category
         </Button>
+        {categories.length === 0 && (
+          <Button
+            onClick={() => setShowCopyCategoriesDialog(true)}
+            variant="outline"
+            className="bg-blue-50 hover:bg-blue-100 border-blue-300"
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Copy from Another Job
+          </Button>
+        )}
         <Button
           onClick={downloadAllTemplate}
           variant="outline"
@@ -2342,6 +2428,65 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           <DialogHeader>
             <DialogTitle>Import</DialogTitle>
           </DialogHeader>
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy Categories Dialog */}
+      <Dialog open={showCopyCategoriesDialog} onOpenChange={setShowCopyCategoriesDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Categories from Another Job</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+              <p className="text-sm text-muted-foreground">
+                This will copy all material categories from another job to <strong>{job.name}</strong>. 
+                Categories will be created empty - you can then download templates for each category and import materials.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="source-job">Select Job to Copy From</Label>
+              <Select value={sourceJobId} onValueChange={setSourceJobId}>
+                <SelectTrigger id="source-job">
+                  <SelectValue placeholder="Choose a job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allJobs.map((j) => (
+                    <SelectItem key={j.id} value={j.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{j.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {j.client_name}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCopyCategoriesDialog(false);
+                  setSourceJobId('');
+                }}
+                className="flex-1"
+                disabled={copyingCategories}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={copyCategories}
+                className="flex-1 gradient-primary"
+                disabled={copyingCategories || !sourceJobId}
+              >
+                {copyingCategories ? 'Copying...' : 'Copy Categories'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
