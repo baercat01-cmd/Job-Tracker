@@ -273,12 +273,12 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   key={day}
                   className={`h-12 border rounded flex flex-col items-center justify-center text-xs font-medium p-0.5 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
-                  } ${isUnavailable ? 'bg-destructive/20 text-destructive font-bold' : 'hover:bg-muted/50'}`}
+                  } ${isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'}`}
                   title={unavailableInfo || undefined}
                 >
                   <div className="font-bold">{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
-                    <div className="text-[9px] leading-tight text-center truncate w-full px-0.5">
+                    <div className="text-[9px] leading-tight text-center truncate w-full px-0.5 text-muted-foreground">
                       {unavailableUsers.join(', ')}
                     </div>
                   )}
@@ -297,7 +297,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   .map(range => (
                     <div
                       key={range.id}
-                      className="bg-destructive/10 border border-destructive/30 rounded p-2 text-xs"
+                      className="bg-muted/50 border border-muted rounded p-2 text-xs"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
@@ -306,7 +306,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                               {range.user_profiles?.username || 'Unknown User'}
                             </p>
                           )}
-                          <p className="font-bold text-destructive">
+                          <p className="font-bold text-foreground">
                             {new Date(range.start_date).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',
