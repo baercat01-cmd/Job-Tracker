@@ -28,7 +28,8 @@ import {
   ListChecks,
   AlertCircle,
   Briefcase,
-  X
+  X,
+  CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job, CalendarEvent } from '@/types';
@@ -111,6 +112,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const selectedDate = new Date(date + 'T00:00:00');
+      // Only mark as overdue if BEFORE today, not ON today
       const isOverdue = selectedDate < today;
 
       // Load system events (materials, tasks, subcontractors)
@@ -235,7 +237,10 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
       // Load user-created calendar events
       const { data: userEventsData, error: userEventsError } = await supabase
         .from('calendar_events')
-        .select('*')
+        .select(`
+          *,
+          completed_user:completed_by(username, email)
+        `)
         .eq('event_date', date)
         .order('start_time', { ascending: true, nullsFirst: false });
 
@@ -347,6 +352,32 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
     } catch (error: any) {
       console.error('Error deleting event:', error);
       toast.error('Failed to delete event');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleEventCompletion(eventId: string, isCompleted: boolean) {
+    if (!profile?.id) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .update({
+          completed_at: isCompleted ? null : new Date().toISOString(),
+          completed_by: isCompleted ? null : profile.id,
+        })
+        .eq('id', eventId);
+
+      if (error) throw error;
+
+      toast.success(isCompleted ? 'Event marked as incomplete' : 'Event marked as complete');
+      loadDayEvents();
+      onUpdate();
+    } catch (error: any) {
+      console.error('Error toggling event completion:', error);
+      toast.error('Failed to update event');
     } finally {
       setLoading(false);
     }
@@ -587,18 +618,33 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
               {userEvents.map(event => {
                 const Icon = EVENT_TYPE_ICONS[event.event_type];
                 const linkedJob = event.job_id ? jobs.find(j => j.id === event.job_id) : null;
+                const isCompleted = !!(event as any).completed_at;
+                const completedUser = (event as any).completed_user;
                 
                 return (
-                  <Card key={event.id} className="border-l-4 border-l-primary">
+                  <Card key={event.id} className={`border-l-4 border-l-primary ${
+                    isCompleted ? 'opacity-60 bg-muted/30' : ''
+                  }`}>
                     <CardContent className="py-4">
                       <div className="flex items-start gap-3">
+                        {/* Completion Checkbox */}
+                        <div className="pt-1">
+                          <input
+                            type="checkbox"
+                            checked={isCompleted}
+                            onChange={() => toggleEventCompletion(event.id, isCompleted)}
+                            className="w-5 h-5 rounded border-2 border-primary cursor-pointer"
+                          />
+                        </div>
                         <div className="p-2 rounded-lg bg-primary/10 text-primary">
                           <Icon className="w-5 h-5" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
-                              <p className="font-bold text-lg">{event.title}</p>
+                              <p className={`font-bold text-lg ${
+                                isCompleted ? 'line-through text-muted-foreground' : ''
+                              }`}>{event.title}</p>
                               {!event.all_day && event.start_time && (
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                                   <Clock className="w-4 h-4" />
@@ -608,13 +654,30 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
                                   </span>
                                 </div>
                               )}
+                              {isCompleted && completedUser && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>
+                                    Completed by {completedUser.username || completedUser.email}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                            <Badge variant="secondary" className="ml-2">
-                              {EVENT_TYPE_OPTIONS.find(o => o.value === event.event_type)?.label}
-                            </Badge>
+                            <div className="flex flex-col gap-1 ml-2">
+                              <Badge variant="secondary">
+                                {EVENT_TYPE_OPTIONS.find(o => o.value === event.event_type)?.label}
+                              </Badge>
+                              {isCompleted && (
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                  ✓ Done
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                           {event.description && (
-                            <p className="text-sm text-muted-foreground mb-2">
+                            <p className={`text-sm text-muted-foreground mb-2 ${
+                              isCompleted ? 'line-through' : ''
+                            }`}>
                               {event.description}
                             </p>
                           )}

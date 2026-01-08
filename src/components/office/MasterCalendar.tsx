@@ -460,10 +460,11 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   }
 
   function isPastDue(dateStr: string): boolean {
-    const date = new Date(dateStr);
+    const eventDate = new Date(dateStr + 'T00:00:00');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return date < today;
+    // Only mark as overdue if BEFORE today, not ON today
+    return eventDate < today;
   }
 
   function isUpcoming(dateStr: string, days: number = 7): boolean {
