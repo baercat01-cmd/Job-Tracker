@@ -208,8 +208,9 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               });
             }
 
-            // Pull by date
-            if (material.pull_by_date && material.status === 'at_shop') {
+            // Pull by date - only show when material is NOT yet at shop (still ordered)
+            // Once at shop, the pull event is no longer needed on calendar
+            if (material.pull_by_date && material.status === 'ordered') {
               events.push({
                 id: `pull-${material.id}`,
                 type: 'material_pull',
