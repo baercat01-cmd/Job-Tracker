@@ -183,6 +183,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     loadAllJobs();
   }, [job.id]);
 
+  // Auto-copy categories from Darrell Richard job if this job has none
+  useEffect(() => {
+    if (!loading && categories.length === 0) {
+      autoCopyTemplateCategories();
+    }
+  }, [loading, categories.length]);
+
   async function loadUsers() {
     try {
       const { data, error } = await supabase
@@ -209,6 +216,63 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       setAllJobs(data || []);
     } catch (error: any) {
       console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function autoCopyTemplateCategories() {
+    try {
+      // Find Darrell Richard job
+      const { data: templateJob, error: jobError } = await supabase
+        .from('jobs')
+        .select('id, name')
+        .ilike('name', '%darrell%richard%')
+        .limit(1)
+        .single();
+
+      if (jobError || !templateJob) {
+        console.log('Template job (Darrell Richard) not found');
+        return;
+      }
+
+      console.log('Found template job:', templateJob.name);
+
+      // Load categories from template job
+      const { data: templateCategories, error: catError } = await supabase
+        .from('materials_categories')
+        .select('name, order_index, sheet_image_url')
+        .eq('job_id', templateJob.id)
+        .order('order_index');
+
+      if (catError) throw catError;
+
+      if (!templateCategories || templateCategories.length === 0) {
+        console.log('Template job has no categories');
+        return;
+      }
+
+      // Create categories in current job
+      const categoriesToInsert = templateCategories.map((cat, index) => ({
+        job_id: job.id,
+        name: cat.name,
+        order_index: index,
+        created_by: userId,
+        sheet_image_url: cat.sheet_image_url,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('materials_categories')
+        .insert(categoriesToInsert);
+
+      if (insertError) throw insertError;
+
+      console.log(`Auto-copied ${templateCategories.length} categories from ${templateJob.name}`);
+      toast.success(`Categories set up from ${templateJob.name}`);
+      
+      // Reload materials to show new categories
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error auto-copying template categories:', error);
+      // Don't show error toast - this is a background operation
     }
   }
 
@@ -1655,16 +1719,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           <Plus className="w-4 h-4 mr-2" />
           Add Category
         </Button>
-        {categories.length === 0 && (
-          <Button
-            onClick={() => setShowCopyCategoriesDialog(true)}
-            variant="outline"
-            className="bg-blue-50 hover:bg-blue-100 border-blue-300"
-          >
-            <FileSpreadsheet className="w-4 h-4 mr-2" />
-            Copy from Another Job
-          </Button>
-        )}
         <Button
           onClick={downloadAllTemplate}
           variant="outline"
