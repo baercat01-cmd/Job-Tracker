@@ -696,11 +696,9 @@ export function PayrollDashboard() {
                             <tr className="border-b bg-muted/30">
                               <th className="text-left p-2 font-semibold">Date</th>
                               <th className="text-left p-2 font-semibold">Job</th>
-                              <th className="text-left p-2 font-semibold">Client</th>
                               <th className="text-left p-2 font-semibold">Start</th>
                               <th className="text-left p-2 font-semibold">End</th>
                               <th className="text-right p-2 font-semibold">Hours</th>
-                              <th className="text-left p-2 font-semibold">Notes</th>
                               <th className="text-center p-2 font-semibold">Actions</th>
                             </tr>
                           </thead>
@@ -725,7 +723,6 @@ export function PayrollDashboard() {
                                     <td className={`p-2 ${isTimeOff ? 'font-semibold text-amber-700' : ''}`}>
                                       {entry.jobName}
                                     </td>
-                                    <td className="p-2 text-muted-foreground">{entry.clientName || '-'}</td>
                                     <td className="p-2 font-mono text-xs">
                                       {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
                                         hour: '2-digit',
@@ -745,9 +742,6 @@ export function PayrollDashboard() {
                                       isTimeOff ? 'text-amber-600' : 'text-primary'
                                     }`}>
                                       {isTimeOff ? '-' : entry.totalHours.toFixed(2)}
-                                    </td>
-                                    <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate">
-                                      {entry.notes || '-'}
                                     </td>
                                     <td className="p-2">
                                       {!isTimeOff && (
@@ -777,11 +771,11 @@ export function PayrollDashboard() {
                             ))}
                             {/* Total Row */}
                             <tr className="bg-muted/50 font-bold">
-                              <td className="p-2" colSpan={5}>Total</td>
+                              <td className="p-2" colSpan={4}>Total</td>
                               <td className="p-2 text-right text-primary text-lg">
                                 {user.totalHours.toFixed(2)}
                               </td>
-                              <td className="p-2" colSpan={2}></td>
+                              <td className="p-2"></td>
                             </tr>
                           </tbody>
                         </table>
