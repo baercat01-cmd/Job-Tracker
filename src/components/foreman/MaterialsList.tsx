@@ -1433,13 +1433,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                               </>
                             )}
                             {isInBundle && (
-                              <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 ml-auto">
+                              <Badge variant="outline" className="text-xs bg-muted/30 text-muted-foreground border-muted-foreground/20 ml-auto">
                                 <Layers className="w-3 h-3 mr-1" />
                                 {bundleInfo.bundleName}
                               </Badge>
                             )}
                             {firstMaterial.date_needed_by && (
-                              <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300">
+                              <Badge variant="outline" className="text-xs bg-muted/30 text-muted-foreground border-muted-foreground/20">
                                 <Calendar className="w-3 h-3 mr-1" />
                                 Need by {new Date(firstMaterial.date_needed_by).toLocaleDateString()}
                               </Badge>
@@ -1547,8 +1547,8 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                       </div>
                       
                       {isInBundle && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1.5 border-t">
-                          <Layers className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60 pt-1.5 border-t border-muted-foreground/10">
+                          <Layers className="w-3.5 h-3.5 opacity-50" />
                           <span>Part of "{bundleInfo.bundleName}" bundle</span>
                         </div>
                       )}
