@@ -475,6 +475,14 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
     return eventDate < today;
   }
 
+  function isToday(dateStr: string): boolean {
+    const eventDate = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    eventDate.setHours(0, 0, 0, 0);
+    return eventDate.getTime() === today.getTime();
+  }
+
   function isUpcoming(dateStr: string, days: number = 7): boolean {
     const date = new Date(dateStr);
     const today = new Date();
@@ -656,6 +664,43 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                       const config = EVENT_TYPE_CONFIG[event.type];
                       const Icon = config.icon;
                       const isMaterialEvent = event.type.startsWith('material_');
+                      const eventIsPast = isPastDue(event.date);
+                      const eventIsToday = isToday(event.date);
+                      
+                      let bgClass = '';
+                      let textClass = '';
+                      let fontWeight = '';
+                      
+                      if (eventIsPast) {
+                        bgClass = 'bg-muted/40';
+                        textClass = 'text-muted-foreground/60';
+                        fontWeight = '';
+                      } else if (eventIsToday) {
+                        if (event.priority === 'medium') {
+                          bgClass = 'bg-yellow-500/20';
+                          textClass = 'text-yellow-800';
+                          fontWeight = '';
+                        } else {
+                          bgClass = 'bg-muted';
+                          textClass = 'text-muted-foreground';
+                          fontWeight = '';
+                        }
+                      } else {
+                        if (event.priority === 'high') {
+                          bgClass = 'bg-destructive/20';
+                          textClass = 'text-destructive';
+                          fontWeight = 'font-semibold';
+                        } else if (event.priority === 'medium') {
+                          bgClass = 'bg-yellow-500/20';
+                          textClass = 'text-yellow-800';
+                          fontWeight = '';
+                        } else {
+                          bgClass = 'bg-muted';
+                          textClass = 'text-muted-foreground';
+                          fontWeight = '';
+                        }
+                      }
+                      
                       return (
                         <div
                           key={event.id}
@@ -668,11 +713,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                               onJobSelect(event.jobId);
                             }
                           }}
-                          className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${
-                            event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
-                            event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-800' :
-                            'bg-muted text-muted-foreground'
-                          }`}
+                          className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${bgClass} ${textClass} ${fontWeight}`}
                           style={{ borderLeftColor: event.jobColor }}
                           title={`${event.jobName}: ${event.title}\n${isMaterialEvent && event.materialId ? 'Click to edit' : 'Click to view job'}`}
                         >
