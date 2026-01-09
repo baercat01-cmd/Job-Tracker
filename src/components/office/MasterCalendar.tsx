@@ -630,7 +630,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayEvents = getEventsForDate(dateStr);
-              const isToday = dateStr === new Date().toISOString().split('T')[0];
+              const isTodayDate = dateStr === new Date().toISOString().split('T')[0];
               const isSelected = dateStr === selectedDate;
               const unavailableUsers = getUnavailableUsers(dateStr);
 
@@ -638,7 +638,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 <div
                   key={day}
                   className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded cursor-pointer transition-all ${
-                    isToday ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
+                    isTodayDate ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
                   } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''} ${
                     unavailableUsers.length > 0 ? 'bg-orange-50 border-orange-300' : ''
                   }`}
@@ -651,7 +651,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   title={unavailableUsers.length > 0 ? `Off: ${unavailableUsers.join(', ')}` : undefined}
                 >
                   <div className={`text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${
-                    isToday ? 'text-primary' : unavailableUsers.length > 0 ? 'text-orange-600' : ''
+                    isTodayDate ? 'text-primary' : unavailableUsers.length > 0 ? 'text-orange-600' : ''
                   }`}>
                     {day}
                     {unavailableUsers.length > 0 && (
