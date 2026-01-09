@@ -44,6 +44,8 @@ import {
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { Job } from '@/types';
+import { MaterialsList } from '@/components/foreman/MaterialsList';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 
 interface Material {
@@ -105,6 +107,7 @@ function getStatusLabel(status: string) {
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
   
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -1747,7 +1750,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
+      <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsTrigger value="manage" className="flex items-center gap-2">
+          <ListChecks className="w-4 h-4" />
+          Manage Materials
+        </TabsTrigger>
+        <TabsTrigger value="bundles" className="flex items-center gap-2">
+          <ShoppingCart className="w-4 h-4" />
+          Material Bundles
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="manage" className="space-y-4">
       {/* Search & Filter Bar */}
       <Card>
         <CardContent className="pt-6">
@@ -3012,6 +3027,30 @@ Hardware"
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="bundles" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Material Bundles
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Create and manage material bundles by grouping related materials together. 
+              Bundles help organize materials for ordering and delivery tracking.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <MaterialsList 
+              job={job} 
+              userId={userId} 
+              allowBundleCreation={true}
+              defaultTab="all"
+            />
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
   );
 }
