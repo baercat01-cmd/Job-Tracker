@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Collapsible,
@@ -29,7 +31,9 @@ import {
   Palette,
   Users,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CheckCircle2,
+  Edit2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
@@ -113,6 +117,10 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [openDialog, setOpenDialog] = useState<'to_order' | 'deliveries' | 'subcontractors' | null>(null);
   const [displayUnavailableDates, setDisplayUnavailableDates] = useState(false);
   const [unavailableDates, setUnavailableDates] = useState<any[]>([]);
+  const [editingEventDate, setEditingEventDate] = useState<CalendarEvent | null>(null);
+  const [newEventDate, setNewEventDate] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
+  const [completingEvent, setCompletingEvent] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -1189,7 +1197,78 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                               )}
 
                               {/* Action Buttons */}
-                              <div className="flex gap-2 pt-2">
+                              <div className="flex gap-2 pt-2 flex-wrap">
+                                {/* Check Off / Mark Complete Button */}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    setCompletingEvent(true);
+                                    try {
+                                      // Handle completion based on event type
+                                      if (event.id.startsWith('calendar-')) {
+                                        // Calendar events - mark as completed
+                                        const calendarEventId = event.id.replace('calendar-', '');
+                                        const { error } = await supabase
+                                          .from('calendar_events')
+                                          .update({ 
+                                            completed_at: new Date().toISOString(),
+                                          })
+                                          .eq('id', calendarEventId);
+                                        
+                                        if (error) throw error;
+                                        toast.success('Event marked as complete');
+                                      } else if (event.id.startsWith('task-')) {
+                                        // Tasks - mark as completed
+                                        const taskId = event.id.replace('task-', '');
+                                        const { error } = await supabase
+                                          .from('job_tasks')
+                                          .update({ 
+                                            status: 'completed',
+                                            completed_at: new Date().toISOString()
+                                          })
+                                          .eq('id', taskId);
+                                        
+                                        if (error) throw error;
+                                        toast.success('Task marked as complete');
+                                      } else {
+                                        toast.info('This event type cannot be checked off from the calendar');
+                                      }
+                                      
+                                      await loadCalendarEvents();
+                                      setShowDayDialog(false);
+                                    } catch (error: any) {
+                                      console.error('Error completing event:', error);
+                                      toast.error('Failed to mark event as complete');
+                                    } finally {
+                                      setCompletingEvent(false);
+                                    }
+                                  }}
+                                  disabled={completingEvent}
+                                  className="flex items-center gap-2"
+                                >
+                                  {completingEvent ? (
+                                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-4 h-4" />
+                                  )}
+                                  {completingEvent ? 'Marking...' : 'Check Off'}
+                                </Button>
+
+                                {/* Change Date Button */}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setEditingEventDate(event);
+                                    setNewEventDate(event.date);
+                                  }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                  Change Date
+                                </Button>
+
                                 {isMaterialEvent && event.materialId ? (
                                   <Button
                                     size="sm"
@@ -1238,6 +1317,152 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           loadCalendarEvents();
         }}
       />
+
+      {/* Change Event Date Dialog */}
+      <Dialog open={!!editingEventDate} onOpenChange={(open) => !open && setEditingEventDate(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5" />
+              Change Event Date
+            </DialogTitle>
+          </DialogHeader>
+
+          {editingEventDate && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+                <p className="font-semibold text-base">{editingEventDate.title}</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge 
+                    variant="outline"
+                    style={{ 
+                      borderColor: editingEventDate.jobColor,
+                      color: editingEventDate.jobColor 
+                    }}
+                  >
+                    {editingEventDate.jobName}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Current Date: {new Date(editingEventDate.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="new-event-date">New Date</Label>
+                <Input
+                  id="new-event-date"
+                  type="date"
+                  value={newEventDate}
+                  onChange={(e) => setNewEventDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditingEventDate(null)}
+              disabled={savingDate}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!editingEventDate || !newEventDate) return;
+                
+                setSavingDate(true);
+                try {
+                  // Handle different event types
+                  if (editingEventDate.id.startsWith('calendar-')) {
+                    // Calendar events (pickups, deliveries, order reminders)
+                    const calendarEventId = editingEventDate.id.replace('calendar-', '');
+                    const { error } = await supabase
+                      .from('calendar_events')
+                      .update({ event_date: newEventDate })
+                      .eq('id', calendarEventId);
+                    
+                    if (error) throw error;
+                  } else if (editingEventDate.id.startsWith('order-')) {
+                    // Material order dates
+                    const materialId = editingEventDate.id.replace('order-', '');
+                    const { error } = await supabase
+                      .from('materials')
+                      .update({ order_by_date: newEventDate })
+                      .eq('id', materialId);
+                    
+                    if (error) throw error;
+                  } else if (editingEventDate.id.startsWith('delivery-')) {
+                    // Material delivery dates
+                    const materialId = editingEventDate.id.replace('delivery-', '');
+                    const { error } = await supabase
+                      .from('materials')
+                      .update({ delivery_date: newEventDate })
+                      .eq('id', materialId);
+                    
+                    if (error) throw error;
+                  } else if (editingEventDate.id.startsWith('pull-')) {
+                    // Material pull dates
+                    const materialId = editingEventDate.id.replace('pull-', '');
+                    const { error } = await supabase
+                      .from('materials')
+                      .update({ pull_by_date: newEventDate })
+                      .eq('id', materialId);
+                    
+                    if (error) throw error;
+                  } else if (editingEventDate.id.startsWith('task-')) {
+                    // Task due dates
+                    const taskId = editingEventDate.id.replace('task-', '');
+                    const { error } = await supabase
+                      .from('job_tasks')
+                      .update({ due_date: newEventDate })
+                      .eq('id', taskId);
+                    
+                    if (error) throw error;
+                  } else if (editingEventDate.id.startsWith('sub-')) {
+                    // Subcontractor schedules
+                    const scheduleId = editingEventDate.id.split('-')[1];
+                    const { error } = await supabase
+                      .from('subcontractor_schedules')
+                      .update({ start_date: newEventDate })
+                      .eq('id', scheduleId);
+                    
+                    if (error) throw error;
+                  }
+
+                  toast.success('Event date updated');
+                  setEditingEventDate(null);
+                  await loadCalendarEvents();
+                  setShowDayDialog(false);
+                } catch (error: any) {
+                  console.error('Error updating event date:', error);
+                  toast.error('Failed to update event date');
+                } finally {
+                  setSavingDate(false);
+                }
+              }}
+              disabled={savingDate || !newEventDate}
+              className="gradient-primary"
+            >
+              {savingDate ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Update Date'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
