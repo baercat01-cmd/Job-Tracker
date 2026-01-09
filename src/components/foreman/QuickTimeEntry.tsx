@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -970,57 +971,37 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                                 </div>
                               </div>
                             )}
-
-                            {/* Add Another Component Button - Shows after component is selected */}
-                            {comp.componentId && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const defaultTime = calculateDefaultComponentTime();
-                                  setJobComponents([...jobComponents, {
-                                    componentId: '',
-                                    hours: defaultTime.hours,
-                                    minutes: defaultTime.minutes,
-                                  }]);
-                                }}
-                                className="w-full"
-                              >
-                                <Package className="w-3 h-3 mr-1" />
-                                Add Another Component
-                              </Button>
-                            )}
                           </div>
                         ))}
                       </div>
 
-                    {/* Initial Add Component Button - Only show when no components */}
-                    {jobComponents.length === 0 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const defaultTime = calculateDefaultComponentTime();
-                          const newComponent = {
-                            componentId: '',
-                            hours: defaultTime.hours,
-                            minutes: defaultTime.minutes,
-                          };
-                          setJobComponents([newComponent]);
-                          // Auto-open the component dropdown after a short delay
-                          setTimeout(() => {
-                            const componentSelect = document.querySelector('[id^="radix-"][role="combobox"]') as HTMLElement;
-                            componentSelect?.click();
-                          }, 100);
-                        }}
-                        className="w-full"
-                      >
-                        <Package className="w-3 h-3 mr-1" />
-                        Add Component
-                      </Button>
-                    )}
+                    {/* Add Another Component Button */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const defaultTime = calculateDefaultComponentTime();
+                        setJobComponents([...jobComponents, {
+                          componentId: '',
+                          hours: defaultTime.hours,
+                          minutes: defaultTime.minutes,
+                        }]);
+                        // Auto-open the newly added component's dropdown
+                        requestAnimationFrame(() => {
+                          // Find all comboboxes and click the last one (newly added)
+                          const allSelects = document.querySelectorAll('[role="combobox"]');
+                          const lastSelect = allSelects[allSelects.length - 1] as HTMLElement;
+                          if (lastSelect) {
+                            lastSelect.click();
+                          }
+                        });
+                      }}
+                      className="w-full"
+                    >
+                      <Package className="w-3 h-3 mr-1" />
+                      Add Another Component
+                    </Button>
                   </div>
                 )}
 
@@ -1030,14 +1011,15 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                     variant="outline"
                     onClick={() => {
                       setSelectedJobId('');
-      setManualData({
-        date: new Date().toISOString().split('T')[0],
-        startTime: '06:00',
-        endTime: '17:00',
-      });
-      setJobComponents([]);
-      onBack?.();
-    }}                    className="flex-1 h-12"
+                      setManualData({
+                        date: new Date().toISOString().split('T')[0],
+                        startTime: '06:00',
+                        endTime: '17:00',
+                      });
+                      setJobComponents([]);
+                      onBack?.();
+                    }}                    
+                    className="flex-1 h-12"
                     disabled={loading}
                   >
                     <X className="w-4 h-4 mr-2" />
