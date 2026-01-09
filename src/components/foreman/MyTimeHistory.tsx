@@ -69,8 +69,8 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
   const [monthGroups, setMonthGroups] = useState<MonthGroup[]>([]);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [editForm, setEditForm] = useState({
-    hours: '0',
-    minutes: '0',
+    startTime: '',
+    endTime: '',
     notes: '',
   });
 
@@ -177,13 +177,14 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
   }
 
   function openEditDialog(entry: TimeEntry) {
-    const hours = Math.floor(entry.total_hours || 0);
-    const minutes = Math.round(((entry.total_hours || 0) - hours) * 60);
+    // Format times to HH:MM for input
+    const startTime = entry.start_time ? format(parseISO(entry.start_time), 'HH:mm') : '';
+    const endTime = entry.end_time ? format(parseISO(entry.end_time), 'HH:mm') : '';
 
     setEditForm({
-      hours: hours.toString(),
-      minutes: minutes.toString(),
-      notes: entry.notes || '',
+      startTime,
+      endTime,
+      notes: '',
     });
     setEditingEntry(entry);
   }
@@ -191,18 +192,38 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
   async function saveEdit() {
     if (!editingEntry) return;
 
-    const totalHours = parseInt(editForm.hours) + parseInt(editForm.minutes) / 60;
-
-    if (totalHours <= 0) {
-      toast.error('Total hours must be greater than 0');
+    if (!editForm.startTime || !editForm.endTime) {
+      toast.error('Please enter both start and end times');
       return;
     }
+
+    // Parse the date from the original entry
+    const entryDate = parseISO(editingEntry.start_time);
+    const dateStr = format(entryDate, 'yyyy-MM-dd');
+
+    // Create new timestamps
+    const newStartTime = `${dateStr}T${editForm.startTime}:00`;
+    const newEndTime = `${dateStr}T${editForm.endTime}:00`;
+
+    // Calculate total hours
+    const start = new Date(newStartTime);
+    const end = new Date(newEndTime);
+    const diffMs = end.getTime() - start.getTime();
+
+    if (diffMs <= 0) {
+      toast.error('End time must be after start time');
+      return;
+    }
+
+    const totalHours = diffMs / (1000 * 60 * 60);
 
     setLoading(true);
     try {
       const { error } = await supabase
         .from('time_entries')
         .update({
+          start_time: newStartTime,
+          end_time: newEndTime,
           total_hours: Math.round(totalHours * 4) / 4, // Round to nearest 0.25
           notes: editForm.notes || null,
         })
@@ -382,11 +403,6 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
                                       <span className="font-medium text-sm">
                                         {entry.jobs?.name || 'Unknown Job'}
                                       </span>
-                                      {entry.is_manual && (
-                                        <Badge variant="secondary" className="text-xs">
-                                          Manual
-                                        </Badge>
-                                      )}
                                     </div>
                                     {entry.components && (
                                       <p className="text-xs text-muted-foreground pl-6">
@@ -468,55 +484,47 @@ export function MyTimeHistory({ userId, onBack }: MyTimeHistoryProps) {
                   <Label>Time Worked</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label htmlFor="edit-hours" className="text-xs">
-                        Hours
+                      <Label htmlFor="edit-start-time" className="text-xs">
+                        Start Time
                       </Label>
-                      <Select
-                        value={editForm.hours}
-                        onValueChange={(value) =>
-                          setEditForm({ ...editForm, hours: value })
+                      <Input
+                        id="edit-start-time"
+                        type="time"
+                        value={editForm.startTime}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, startTime: e.target.value })
                         }
-                      >
-                        <SelectTrigger id="edit-hours">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {[...Array(25)].map((_, i) => (
-                            <SelectItem key={i} value={i.toString()}>
-                              {i}h
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="edit-minutes" className="text-xs">
-                        Minutes
+                      <Label htmlFor="edit-end-time" className="text-xs">
+                        End Time
                       </Label>
-                      <Select
-                        value={editForm.minutes}
-                        onValueChange={(value) =>
-                          setEditForm({ ...editForm, minutes: value })
+                      <Input
+                        id="edit-end-time"
+                        type="time"
+                        value={editForm.endTime}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, endTime: e.target.value })
                         }
-                      >
-                        <SelectTrigger id="edit-minutes">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {[0, 15, 30, 45].map((min) => (
-                            <SelectItem key={min} value={min.toString()}>
-                              {min}m
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
                   </div>
-                  <div className="bg-primary/10 rounded p-2 text-center">
-                    <p className="text-sm font-bold text-primary">
-                      Total: {(parseInt(editForm.hours) + parseInt(editForm.minutes) / 60).toFixed(2)} hours
-                    </p>
-                  </div>
+                  {editForm.startTime && editForm.endTime && (() => {
+                    const entryDate = editingEntry ? parseISO(editingEntry.start_time) : new Date();
+                    const dateStr = format(entryDate, 'yyyy-MM-dd');
+                    const start = new Date(`${dateStr}T${editForm.startTime}:00`);
+                    const end = new Date(`${dateStr}T${editForm.endTime}:00`);
+                    const diffMs = end.getTime() - start.getTime();
+                    const hours = diffMs > 0 ? (diffMs / (1000 * 60 * 60)).toFixed(2) : '0.00';
+                    return (
+                      <div className="bg-primary/10 rounded p-2 text-center">
+                        <p className="text-sm font-bold text-primary">
+                          Total: {hours} hours
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="space-y-2">
