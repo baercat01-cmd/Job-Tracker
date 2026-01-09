@@ -100,6 +100,11 @@ const STATUS_CONFIG = {
   missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-100 text-red-700 border-red-300' },
 };
 
+// Helper function to get status config with fallback
+function getStatusConfig(status: string) {
+  return STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.not_ordered;
+}
+
 export function MaterialsList({ job, userId, allowBundleCreation = false, defaultTab = 'all' }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
@@ -426,7 +431,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         .in('id', materialIds);
       
       if (error) throw error;
-      toast.success(`All ${materialIds.length} variants updated to ${STATUS_CONFIG[status].label}`);
+      toast.success(`All ${materialIds.length} variants updated to ${getStatusConfig(status).label}`);
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to update status');
@@ -496,7 +501,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         });
       }
 
-      toast.success(`Status updated to ${STATUS_CONFIG[newStatus].label}`);
+      toast.success(`Status updated to ${getStatusConfig(newStatus).label}`);
       setStatusChangeMaterial(null);
       setStatusChangeMaterialGroup(null);
       loadMaterials();
@@ -678,7 +683,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         if (materialsError) throw materialsError;
       }
 
-      toast.success(`Bundle "${bundles.find(b => b.id === bundleId)?.name}" and all materials updated to ${STATUS_CONFIG[status].label}`);
+      toast.success(`Bundle "${bundles.find(b => b.id === bundleId)?.name}" and all materials updated to ${getStatusConfig(status).label}`);
       await Promise.all([loadMaterials(), loadBundles()]);
     } catch (error: any) {
       console.error('Error updating bundle status:', error);
@@ -720,7 +725,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
 
       if (error) throw error;
 
-      toast.success(`Status updated to ${STATUS_CONFIG[status].label}`);
+      toast.success(`Status updated to ${getStatusConfig(status).label}`);
       setSelectedMaterial({ ...selectedMaterial, status });
       loadMaterials();
       
@@ -1148,11 +1153,11 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                       onValueChange={(value) => updateBundleStatus(bundle.id, value as Material['status'])}
                     >
                       <SelectTrigger 
-                        className={`h-auto min-h-12 text-base font-semibold border-2 rounded-md ${STATUS_CONFIG[bundle.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                        className={`h-auto min-h-12 text-base font-semibold border-2 rounded-md ${getStatusConfig(bundle.status).bgClass} hover:shadow-md cursor-pointer transition-all`}
                       >
                         <div className="w-full py-2">
                           <div className="flex items-center justify-between mb-1">
-                            <span>{STATUS_CONFIG[bundle.status].label}</span>
+                            <span>{getStatusConfig(bundle.status).label}</span>
                             <ChevronDownIcon className="w-5 h-5 opacity-70" />
                           </div>
                           {bundle.materials.some(m => m.date_needed_by) && (
@@ -1245,13 +1250,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                             }}
                           >
                             <SelectTrigger 
-                              className={`h-auto min-h-11 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[material.status].bgClass} hover:shadow-md cursor-pointer transition-all`}
+                              className={`h-auto min-h-11 text-sm font-semibold border-2 rounded-md ${getStatusConfig(material.status).bgClass} hover:shadow-md cursor-pointer transition-all`}
                             >
                               <div className="w-full py-2 text-left space-y-1">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[material.status].color}`} />
-                                    <span className="font-bold">{STATUS_CONFIG[material.status].label}</span>
+                                    <div className={`w-2.5 h-2.5 rounded-full ${getStatusConfig(material.status).color}`} />
+                                    <span className="font-bold">{getStatusConfig(material.status).label}</span>
                                   </div>
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
@@ -1499,13 +1504,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                             onValueChange={(value) => handleGroupStatusChange(group, value as Material['status'])}
                           >
                             <SelectTrigger 
-                              className={`h-auto min-h-10 text-sm font-semibold border-2 rounded-md ${STATUS_CONFIG[group.primaryStatus].bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
+                              className={`h-auto min-h-10 text-sm font-semibold border-2 rounded-md ${getStatusConfig(group.primaryStatus).bgClass} hover:shadow-md active:shadow-lg cursor-pointer transition-all`}
                             >
                               <div className="w-full py-2 text-left space-y-1">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${STATUS_CONFIG[group.primaryStatus].color}`} />
-                                    <span className="font-bold">{STATUS_CONFIG[group.primaryStatus].label}</span>
+                                    <div className={`w-2.5 h-2.5 rounded-full ${getStatusConfig(group.primaryStatus).color}`} />
+                                    <span className="font-bold">{getStatusConfig(group.primaryStatus).label}</span>
                                   </div>
                                   <ChevronDownIcon className="w-4 h-4 opacity-70" />
                                 </div>
@@ -1817,8 +1822,8 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                     )}
                   </div>
                   <div className="mt-2">
-                    <Badge className={STATUS_CONFIG[editDatesMaterial.status].bgClass}>
-                      {STATUS_CONFIG[editDatesMaterial.status].label}
+                    <Badge className={getStatusConfig(editDatesMaterial.status).bgClass}>
+                      {getStatusConfig(editDatesMaterial.status).label}
                     </Badge>
                   </div>
                 </>
@@ -1974,8 +1979,8 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
               )}
               <div className="mt-3 pt-3 border-t">
                 <p className="text-sm font-medium mb-1">Changing to:</p>
-                <Badge className={STATUS_CONFIG[newStatus].bgClass}>
-                  {STATUS_CONFIG[newStatus].label}
+                <Badge className={getStatusConfig(newStatus).bgClass}>
+                  {getStatusConfig(newStatus).label}
                 </Badge>
               </div>
             </div>
