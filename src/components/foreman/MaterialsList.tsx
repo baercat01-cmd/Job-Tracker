@@ -92,12 +92,12 @@ interface MaterialsListProps {
 }
 
 const STATUS_CONFIG = {
-  not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-100 text-gray-700 border-gray-300' },
-  ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
-  at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-100 text-blue-700 border-blue-300' },
-  at_job: { label: 'At Job', color: 'bg-green-500', bgClass: 'bg-green-100 text-green-700 border-green-300' },
-  installed: { label: 'Installed', color: 'bg-black', bgClass: 'bg-slate-800 text-white border-slate-800' },
-  missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-100 text-red-700 border-red-300' },
+  not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
+  ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
+  at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
+  at_job: { label: 'At Job', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-200' },
+  installed: { label: 'Installed', color: 'bg-black', bgClass: 'bg-slate-100 text-slate-800 border-slate-200' },
+  missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-50 text-red-800 border-red-200' },
 };
 
 // Helper function to get status config with fallback
@@ -1165,11 +1165,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                               {bundle.materials.filter(m => m.date_needed_by).length} item(s) with delivery dates
                             </div>
                           )}
-                          {bundle.updated_at && (
-                            <div className="text-xs opacity-80 font-normal text-left">
-                              Updated: {new Date(bundle.updated_at).toLocaleDateString()}
-                            </div>
-                          )}
+
                         </div>
                       </SelectTrigger>
                       <SelectContent className="min-w-[180px]">
@@ -1264,13 +1260,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                                 {/* Status-specific Date Display - Clickable */}
                                 {material.status === 'not_ordered' && material.order_by_date && (
                                   <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    className="bg-black/5 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/10 transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       openEditDates(material);
                                     }}
                                   >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                    <div className="flex items-center gap-1.5 text-xs">
                                       <span>📋</span>
                                       <span>Order by: {new Date(material.order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                     </div>
@@ -1279,30 +1275,15 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                                 
                                 {material.status === 'ordered' && material.delivery_date && (
                                   <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    className="bg-black/5 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/10 transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       openEditDates(material);
                                     }}
                                   >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                    <div className="flex items-center gap-1.5 text-xs">
                                       <span>🚚</span>
                                       <span>Delivery: {new Date(material.delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {['at_shop', 'at_job', 'installed', 'missing'].includes(material.status) && material.updated_at && (
-                                  <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openEditDates(material);
-                                    }}
-                                  >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
-                                      <span>📅</span>
-                                      <span>Updated: {new Date(material.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                     </div>
                                   </div>
                                 )}
@@ -1425,7 +1406,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                           onClick={() => hasMultipleUseCases ? toggleGroup(group.groupKey) : !selectionMode && openMaterialDetail(firstMaterial)}
                         >
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-bold text-lg text-foreground">{group.name}</p>
+                            <p className="font-bold text-xl text-foreground">{group.name}</p>
                             {group.length && (
                               <>
                                 <span className="text-base text-muted-foreground">•</span>
@@ -1518,13 +1499,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                                 {/* Status-specific Date Display - Clickable */}
                                 {group.primaryStatus === 'not_ordered' && group.materials[0].order_by_date && (
                                   <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    className="bg-black/5 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/10 transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       openEditDatesGroup(group);
                                     }}
                                   >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                    <div className="flex items-center gap-1.5 text-xs">
                                       <span>📋</span>
                                       <span>Order by: {new Date(group.materials[0].order_by_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                     </div>
@@ -1533,30 +1514,15 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                                 
                                 {group.primaryStatus === 'ordered' && group.materials[0].delivery_date && (
                                   <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
+                                    className="bg-black/5 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/10 transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       openEditDatesGroup(group);
                                     }}
                                   >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                    <div className="flex items-center gap-1.5 text-xs">
                                       <span>🚚</span>
                                       <span>Delivery: {new Date(group.materials[0].delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {['at_shop', 'at_job', 'installed', 'missing'].includes(group.primaryStatus) && group.materials[0].updated_at && (
-                                  <div 
-                                    className="bg-black/10 rounded px-2 py-1 mt-1 cursor-pointer hover:bg-black/20 transition-colors"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openEditDatesGroup(group);
-                                    }}
-                                  >
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
-                                      <span>📅</span>
-                                      <span>Updated: {new Date(group.materials[0].updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                     </div>
                                   </div>
                                 )}
