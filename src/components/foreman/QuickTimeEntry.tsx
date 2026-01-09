@@ -878,24 +878,6 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                 {/* Component Time (Optional) - Only show in manual mode */}
                 {mode === 'manual' && selectedJobId && components.length > 0 && (
                   <div className="space-y-3 pt-4 border-t">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const defaultTime = calculateDefaultComponentTime();
-                        setJobComponents([...jobComponents, {
-                          componentId: '',
-                          hours: defaultTime.hours,
-                          minutes: defaultTime.minutes,
-                        }]);
-                      }}
-                      className="w-full"
-                    >
-                      <Package className="w-3 h-3 mr-1" />
-                      Add Component
-                    </Button>
-
                     <div className="space-y-3">
                         {jobComponents.map((comp, index) => (
                           <div key={index} className="space-y-2 p-3 border rounded-lg bg-card">
@@ -988,9 +970,57 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                                 </div>
                               </div>
                             )}
+
+                            {/* Add Another Component Button - Shows after component is selected */}
+                            {comp.componentId && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const defaultTime = calculateDefaultComponentTime();
+                                  setJobComponents([...jobComponents, {
+                                    componentId: '',
+                                    hours: defaultTime.hours,
+                                    minutes: defaultTime.minutes,
+                                  }]);
+                                }}
+                                className="w-full"
+                              >
+                                <Package className="w-3 h-3 mr-1" />
+                                Add Another Component
+                              </Button>
+                            )}
                           </div>
                         ))}
                       </div>
+
+                    {/* Initial Add Component Button - Only show when no components */}
+                    {jobComponents.length === 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const defaultTime = calculateDefaultComponentTime();
+                          const newComponent = {
+                            componentId: '',
+                            hours: defaultTime.hours,
+                            minutes: defaultTime.minutes,
+                          };
+                          setJobComponents([newComponent]);
+                          // Auto-open the component dropdown after a short delay
+                          setTimeout(() => {
+                            const componentSelect = document.querySelector('[id^="radix-"][role="combobox"]') as HTMLElement;
+                            componentSelect?.click();
+                          }, 100);
+                        }}
+                        className="w-full"
+                      >
+                        <Package className="w-3 h-3 mr-1" />
+                        Add Component
+                      </Button>
+                    )}
                   </div>
                 )}
 
