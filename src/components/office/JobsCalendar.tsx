@@ -43,6 +43,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [showDayView, setShowDayView] = useState(false);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   useEffect(() => {
     loadCalendarEvents();
@@ -416,6 +417,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                     } ${isSelected ? 'ring-2 ring-primary' : ''}`}
                     onClick={() => {
                       setSelectedDate(dateStr);
+                      setExpandedEventId(null); // Don't auto-expand
                       setShowDayView(true);
                     }}
                   >
@@ -429,7 +431,14 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                         return (
                           <div
                             key={event.id}
-                            className={`text-xs px-1.5 py-0.5 rounded truncate ${
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Open day dialog with this event auto-expanded
+                              setSelectedDate(dateStr);
+                              setExpandedEventId(event.id);
+                              setShowDayView(true);
+                            }}
+                            className={`text-xs px-1.5 py-0.5 rounded truncate cursor-pointer hover:shadow-sm transition-shadow ${
                               event.priority === 'high' ? 'bg-destructive/20 text-destructive font-semibold' :
                               event.priority === 'medium' ? 'bg-warning/20 text-warning-foreground' :
                               'bg-muted text-muted-foreground'

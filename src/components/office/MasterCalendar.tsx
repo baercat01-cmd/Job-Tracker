@@ -645,6 +645,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   onClick={() => {
                     if (dayEvents.length > 0 || unavailableUsers.length > 0) {
                       setSelectedDate(dateStr);
+                      setExpandedEventId(null); // Don't auto-expand any event
                       setShowDayDialog(true);
                     }
                   }}
@@ -706,16 +707,14 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                           key={event.id}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (isMaterialEvent && event.materialId) {
-                              setSelectedEvent(event);
-                              setShowEventDialog(true);
-                            } else {
-                              onJobSelect(event.jobId);
-                            }
+                            // Open day dialog with this event auto-expanded
+                            setSelectedDate(dateStr);
+                            setExpandedEventId(event.id);
+                            setShowDayDialog(true);
                           }}
                           className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${bgClass} ${textClass} ${fontWeight}`}
                           style={{ borderLeftColor: event.jobColor }}
-                          title={`${event.jobName}: ${event.title}\n${isMaterialEvent && event.materialId ? 'Click to edit' : 'Click to view job'}`}
+                          title={`${event.jobName}: ${event.title}\nClick to view event details`}
                         >
                           {/* Desktop: Show icon and text */}
                           <div className="hidden sm:flex items-center gap-1">
