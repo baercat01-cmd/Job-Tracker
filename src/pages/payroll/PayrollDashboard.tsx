@@ -294,8 +294,9 @@ export function PayrollDashboard() {
       (timeEntries || []).forEach((entry: any) => {
         const userData = userMap.get(entry.user_id);
         if (userData) {
-          // Get date string (YYYY-MM-DD)
-          const dateStr = new Date(entry.start_time).toISOString().split('T')[0];
+          // Get date string (YYYY-MM-DD) in LOCAL timezone
+          const date = new Date(entry.start_time);
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           
           // Find or create date entry
           let dateData = userData.dateEntries.find(d => d.date === dateStr);
@@ -335,7 +336,8 @@ export function PayrollDashboard() {
         const end = new Date(Math.min(new Date(timeOff.end_date).getTime(), weekEnd.getTime()));
 
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const dateStr = d.toISOString().split('T')[0];
+          // Format date in local timezone
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           
           // Only add time off entry if there are no time entries for this date
           const hasTimeEntries = userData.dateEntries.some(de => de.date === dateStr && de.entries.length > 0);
