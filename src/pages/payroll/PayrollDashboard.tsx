@@ -456,25 +456,27 @@ export function PayrollDashboard() {
               day: 'numeric',
             }),
             totalHours: dateEntry.totalHours,
-            hasMultipleJobs: dateEntry.entries.length > 1,
-            entries: dateEntry.entries
-              .filter(entry => !entry.entryId.startsWith('timeoff-'))
-              .map(entry => ({
+            hasMultipleJobs: dateEntry.entries.filter(e => !e.entryId.startsWith('timeoff-')).length > 1,
+            entries: dateEntry.entries.map(entry => {
+              const isTimeOff = entry.entryId.startsWith('timeoff-');
+              return {
                 jobName: entry.jobName,
                 clientName: entry.clientName,
-                startTime: new Date(entry.startTime).toLocaleTimeString([], {
+                startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
                 }),
-                endTime: entry.endTime 
+                endTime: isTimeOff ? '-' : (entry.endTime 
                   ? new Date(entry.endTime).toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
                     })
-                  : '-',
-                hours: entry.totalHours.toFixed(2),
-              })),
-          })).filter(dateEntry => dateEntry.entries.length > 0),
+                  : '-'),
+                hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
+                isTimeOff: isTimeOff,
+              };
+            }),
+          })),
         })),
       };
 

@@ -146,6 +146,15 @@ function generatePayrollHTML(data: any): string {
         vertical-align: top;
       }
       
+      .time-off-row {
+        background: rgba(251, 191, 36, 0.1);
+      }
+      
+      .time-off-row .job-cell {
+        font-weight: 600;
+        color: #b45309;
+      }
+      
       .entries-table td:nth-child(5) { text-align: right; }
       
       .date-cell {
@@ -257,12 +266,13 @@ function generatePayrollHTML(data: any): string {
               ${user.dateEntries.map((dateEntry: any) => {
                 const entries = dateEntry.entries.map((entry: any, idx: number) => {
                   const isFirst = idx === 0;
+                  const isTimeOff = entry.isTimeOff || false;
                   return `
-                    <tr>
+                    <tr${isTimeOff ? ' class="time-off-row"' : ''}>
                       ${isFirst ? `<td class="date-cell" rowspan="${dateEntry.entries.length}">${dateEntry.date}</td>` : ''}
                       <td class="job-cell">
                         <div>${entry.jobName}</div>
-                        ${entry.clientName ? `<div class="client-name">${entry.clientName}</div>` : ''}
+                        ${entry.clientName && !isTimeOff ? `<div class="client-name">${entry.clientName}</div>` : ''}
                       </td>
                       <td class="time-cell">${entry.startTime}</td>
                       <td class="time-cell">${entry.endTime}</td>
