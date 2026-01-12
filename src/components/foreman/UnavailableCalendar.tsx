@@ -66,6 +66,22 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
     }
   }
 
+  function countWeekdays(start: string, end: string): number {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    let count = 0;
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dayOfWeek = d.getDay();
+      // Only count weekdays (Monday-Friday: 1-5)
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        count++;
+      }
+    }
+    
+    return count;
+  }
+
   async function addUnavailableDate() {
     if (!startDate || !endDate) {
       toast.error('Please select start and end dates');
@@ -74,6 +90,13 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
 
     if (new Date(endDate) < new Date(startDate)) {
       toast.error('End date must be after start date');
+      return;
+    }
+
+    // Check if the selected range includes any weekdays
+    const weekdayCount = countWeekdays(startDate, endDate);
+    if (weekdayCount === 0) {
+      toast.error('Time off must include at least one weekday (Monday-Friday)');
       return;
     }
 
@@ -90,7 +113,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
 
       if (error) throw error;
 
-      toast.success('Time off added');
+      toast.success(`Time off added (${weekdayCount} weekday${weekdayCount !== 1 ? 's' : ''})`);
       setShowAddDialog(false);
       setStartDate(getLocalDateString());
       setEndDate(getLocalDateString());
@@ -133,6 +156,13 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
 
   function isDateUnavailable(dateStr: string): boolean {
     const date = new Date(dateStr);
+    const dayOfWeek = date.getDay();
+    
+    // Weekends are never marked as unavailable in the calendar
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return false;
+    }
+    
     return unavailableDates.some(range => {
       const start = new Date(range.start_date);
       const end = new Date(range.end_date);
@@ -142,6 +172,13 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
 
   function getUnavailableInfo(dateStr: string): string | null {
     const date = new Date(dateStr);
+    const dayOfWeek = date.getDay();
+    
+    // Weekends don't show unavailable info
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return null;
+    }
+    
     const ranges = unavailableDates.filter(range => {
       const start = new Date(range.start_date);
       const end = new Date(range.end_date);
@@ -160,6 +197,13 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
 
   function getUnavailableUsers(dateStr: string): string[] {
     const date = new Date(dateStr);
+    const dayOfWeek = date.getDay();
+    
+    // Weekends don't show unavailable users
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return [];
+    }
+    
     const ranges = unavailableDates.filter(range => {
       const start = new Date(range.start_date);
       const end = new Date(range.end_date);
@@ -263,6 +307,9 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               }
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const date = new Date(dateStr);
+              const dayOfWeek = date.getDay();
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               const isUnavailable = isDateUnavailable(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               const unavailableInfo = getUnavailableInfo(dateStr);
@@ -273,10 +320,12 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   key={day}
                   className={`h-12 border rounded flex flex-col items-start justify-start text-xs font-medium p-1 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
-                  } ${isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'}`}
-                  title={unavailableInfo || undefined}
+                  } ${
+                    isWeekend ? 'bg-muted/50 opacity-60' : isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'
+                  }`}
+                  title={isWeekend ? 'Weekend (non-working day)' : (unavailableInfo || undefined)}
                 >
-                  <div className="font-bold">{day}</div>
+                  <div className={`font-bold ${isWeekend ? 'text-muted-foreground' : ''}`}>{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
                     <div className="text-[9px] leading-tight text-left truncate w-full text-muted-foreground mt-auto">
                       {unavailableUsers.join(', ')}
@@ -284,7 +333,7 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   )}
                 </div>
               );
-            })}
+            })})
           </div>
 
           {/* Upcoming Time Off List */}
