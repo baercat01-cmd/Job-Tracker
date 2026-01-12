@@ -80,7 +80,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
         `)
         .eq('status', 'at_shop')
         .eq('job_id', currentJobId)
-        .order('name');
+        .order('updated_at', { ascending: false });
 
       if (materialsError) throw materialsError;
 
@@ -158,39 +158,70 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filteredMaterials.map((material) => (
-            <Card key={material.id} className="overflow-hidden">
-              <CardContent className="p-2">
-                <div className="flex items-center gap-2">
-                  {/* Material Info - Compact Single Row */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
-                      {material.length && (
-                        <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{material.length}</span></span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                      <span>Qty: <span className="font-semibold text-foreground">{material.quantity}</span></span>
-                      {material.use_case && (
-                        <span className="text-xs text-muted-foreground truncate ml-auto">({material.use_case})</span>
-                      )}
-                    </div>
+        <div className="space-y-4">
+          {/* Group materials by category */}
+          {(() => {
+            // Group materials by category
+            const grouped = filteredMaterials.reduce((acc, material) => {
+              const categoryName = material.category_name || 'Uncategorized';
+              if (!acc[categoryName]) {
+                acc[categoryName] = [];
+              }
+              acc[categoryName].push(material);
+              return acc;
+            }, {} as Record<string, MaterialWithJob[]>);
+
+            // Sort categories alphabetically and render each group
+            return Object.keys(grouped)
+              .sort((a, b) => a.localeCompare(b))
+              .map((categoryName) => (
+                <div key={categoryName} className="space-y-2">
+                  {/* Category Header */}
+                  <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 px-3 border-b">
+                    <h3 className="font-bold text-base text-primary">{categoryName}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {grouped[categoryName].length} item{grouped[categoryName].length !== 1 ? 's' : ''}
+                    </p>
                   </div>
 
-                  {/* Action Button - Compact */}
-                  <Button
-                    size="sm"
-                    onClick={() => markAsAtJob(material.id, material.name)}
-                    className="shrink-0 gradient-primary h-12"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                  </Button>
+                  {/* Materials in this category */}
+                  <div className="space-y-2">
+                    {grouped[categoryName].map((material) => (
+                      <Card key={material.id} className="overflow-hidden">
+                        <CardContent className="p-2">
+                          <div className="flex items-center gap-2">
+                            {/* Material Info - Compact Single Row */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
+                                {material.length && (
+                                  <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{material.length}</span></span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                                <span>Qty: <span className="font-semibold text-foreground">{material.quantity}</span></span>
+                                {material.use_case && (
+                                  <span className="text-xs text-muted-foreground truncate ml-auto">({material.use_case})</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Button - Compact */}
+                            <Button
+                              size="sm"
+                              onClick={() => markAsAtJob(material.id, material.name)}
+                              className="shrink-0 gradient-primary h-12"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+              ));
+          })()}
         </div>
       )}
     </div>
