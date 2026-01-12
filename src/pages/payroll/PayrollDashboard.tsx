@@ -862,11 +862,15 @@ export function PayrollDashboard() {
                                         {isFirstEntryOfDay ? (
                                           <td className="p-2 align-top font-medium" rowSpan={rowsForThisDay}>
                                             <div className="text-sm">
-                                              {new Date(dateEntry.date).toLocaleDateString('en-US', {
-                                                weekday: 'short',
-                                                month: 'short',
-                                                day: 'numeric',
-                                              })}
+                                              {(() => {
+                                                const [year, month, day] = dateEntry.date.split('-').map(Number);
+                                                const date = new Date(year, month - 1, day);
+                                                return date.toLocaleDateString('en-US', {
+                                                  weekday: 'short',
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                                });
+                                              })()}
                                             </div>
                                           </td>
                                         ) : null}
