@@ -288,7 +288,8 @@ function generatePayrollHTML(data: any): string {
                   <tr class="daily-total-row">
                     <td></td>
                     <td></td>
-                    <td colspan="2" style="text-align: right;">Daily Total:</td>
+                    <td></td>
+                    <td style="text-align: right; padding-right: 8px;">Daily Total:</td>
                     <td class="hours-cell">${dateEntry.totalHours.toFixed(2)}</td>
                   </tr>
                 ` : '';
