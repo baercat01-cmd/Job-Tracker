@@ -944,13 +944,14 @@ export function PayrollDashboard() {
                                   {hasMultipleJobs && (
                                     <tr className="bg-primary/5 border-b-4 border-l-4 border-r-4 border-primary/30">
                                       <td className="p-2"></td>
-                                      <td className="p-2 text-right font-semibold text-sm" colSpan={3}>
+                                      <td className="p-2"></td>
+                                      <td className="p-2 text-right font-semibold text-sm" colSpan={2}>
                                         Daily Total:
                                       </td>
-                                      <td className="p-2 text-right font-bold text-primary">
-                                        {dateEntry.totalHours.toFixed(2)}
-                                      </td>
                                       <td className="p-2"></td>
+                                      <td className="p-2 text-right font-bold text-primary">
+                                        {dateEntry.totalHours.toFixed(2)}h
+                                      </td>
                                     </tr>
                                   )}
                                 </Fragment>
