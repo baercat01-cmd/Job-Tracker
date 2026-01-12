@@ -136,13 +136,13 @@ export function PayrollDashboard() {
         periods.push({ value, label });
       }
     } else if (periodType === 'biweekly') {
-      // Generate last 12 biweekly periods (Monday to Sunday)
+      // Generate last 12 biweekly periods (Monday to Sunday) - offset by 1 week
       for (let i = 0; i < 12; i++) {
         const periodStart = new Date(today);
         // Calculate days to subtract to get to Monday
         const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
         const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday, go back 6 days; otherwise go back to Monday
-        periodStart.setDate(today.getDate() - daysToMonday - (i * 14)); // Monday
+        periodStart.setDate(today.getDate() - daysToMonday - (i * 14) - 7); // Monday (offset by 1 week)
         periodStart.setHours(0, 0, 0, 0);
         
         const periodEnd = new Date(periodStart);
