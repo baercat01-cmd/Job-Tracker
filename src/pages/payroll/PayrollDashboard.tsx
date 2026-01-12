@@ -291,12 +291,19 @@ export function PayrollDashboard() {
         });
       });
 
-      // Add time entries
+      // Add time entries (excluding weekends)
       (timeEntries || []).forEach((entry: any) => {
         const userData = userMap.get(entry.user_id);
         if (userData) {
           // Get date string (YYYY-MM-DD) in LOCAL timezone
           const date = new Date(entry.start_time);
+          const dayOfWeek = date.getDay();
+          
+          // Skip Saturday (6) and Sunday (0)
+          if (dayOfWeek === 0 || dayOfWeek === 6) {
+            return;
+          }
+          
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           
           // Find or create date entry
@@ -327,7 +334,7 @@ export function PayrollDashboard() {
         }
       });
 
-      // Add time off entries for users who have time off but no time entries
+      // Add time off entries for users who have time off but no time entries (weekdays only)
       (timeOffDates || []).forEach((timeOff: any) => {
         const userData = userMap.get(timeOff.user_id);
         if (!userData) return;
@@ -337,6 +344,13 @@ export function PayrollDashboard() {
         const end = new Date(Math.min(new Date(timeOff.end_date).getTime(), weekEnd.getTime()));
 
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const dayOfWeek = d.getDay();
+          
+          // Skip Saturday (6) and Sunday (0)
+          if (dayOfWeek === 0 || dayOfWeek === 6) {
+            continue;
+          }
+          
           // Format date in local timezone
           const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           

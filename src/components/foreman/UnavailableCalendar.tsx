@@ -291,18 +291,21 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
             </Button>
           </div>
 
-          {/* Calendar Grid - Compact */}
-          <div className="grid grid-cols-7 gap-1">
-            {/* Day headers */}
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+          {/* Calendar Grid - Weekdays Only */}
+          <div className="grid grid-cols-5 gap-1">
+            {/* Day headers - Monday to Friday */}
+            {['M', 'T', 'W', 'T', 'F'].map((day, index) => (
               <div key={`header-${index}`} className="text-center font-semibold text-xs text-muted-foreground py-1">
                 {day}
               </div>
             ))}
 
-            {/* Calendar days */}
+            {/* Calendar days - Weekdays only */}
             {calendarDays.map((day, index) => {
               if (!day) {
+                // Empty cell - but only render if it's a weekday position
+                const cellDayOfWeek = index % 7;
+                if (cellDayOfWeek === 0 || cellDayOfWeek === 6) return null; // Skip Sunday and Saturday
                 return <div key={`empty-${index}`} className="h-12 border rounded bg-muted/30" />;
               }
 
@@ -310,6 +313,10 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
               const date = new Date(dateStr);
               const dayOfWeek = date.getDay();
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              
+              // Skip rendering weekend days
+              if (isWeekend) return null;
+              
               const isUnavailable = isDateUnavailable(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               const unavailableInfo = getUnavailableInfo(dateStr);
@@ -321,11 +328,11 @@ export function UnavailableCalendar({ userId, onBack }: UnavailableCalendarProps
                   className={`h-12 border rounded flex flex-col items-start justify-start text-xs font-medium p-1 ${
                     isToday ? 'border-primary ring-1 ring-primary/20' : ''
                   } ${
-                    isWeekend ? 'bg-muted/50 opacity-60' : isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'
+                    isUnavailable ? 'bg-muted/30' : 'hover:bg-muted/50'
                   }`}
-                  title={isWeekend ? 'Weekend (non-working day)' : (unavailableInfo || undefined)}
+                  title={unavailableInfo || undefined}
                 >
-                  <div className={`font-bold ${isWeekend ? 'text-muted-foreground' : ''}`}>{day}</div>
+                  <div className="font-bold">{day}</div>
                   {showAllStaff && unavailableUsers.length > 0 && (
                     <div className="text-[9px] leading-tight text-left truncate w-full text-muted-foreground mt-auto">
                       {unavailableUsers.join(', ')}
