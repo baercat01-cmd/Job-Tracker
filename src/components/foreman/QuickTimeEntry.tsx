@@ -409,6 +409,20 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     }
   }
 
+  // Helper function to create UTC timestamp from local date and time
+  function createUTCTimestamp(dateStr: string, timeStr: string): string {
+    // Parse date components
+    const [year, month, day] = dateStr.split('-').map(Number);
+    // Parse time components
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    // Create date in LOCAL timezone
+    const localDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
+    
+    // Convert to ISO string (UTC)
+    return localDate.toISOString();
+  }
+
   async function handleManualEntry() {
     if (!selectedJobId) {
       toast.error('Please select a job');
@@ -420,16 +434,18 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
 
-    // Calculate total hours
-    const start = new Date(`${manualData.date}T${manualData.startTime}`);
-    const end = new Date(`${manualData.date}T${manualData.endTime}`);
+    // Calculate total hours using local time
+    const [startHours, startMinutes] = manualData.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = manualData.endTime.split(':').map(Number);
+    const startTotalMinutes = startHours * 60 + startMinutes;
+    const endTotalMinutes = endHours * 60 + endMinutes;
     
-    if (end <= start) {
+    if (endTotalMinutes <= startTotalMinutes) {
       toast.error('Clock out time must be after clock in time');
       return;
     }
     
-    const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    const totalHours = (endTotalMinutes - startTotalMinutes) / 60;
 
     // Validate component times if any components are selected
     if (jobComponents.length > 0) {
@@ -449,8 +465,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     setLoading(true);
 
     try {
-      const startDateTime = new Date(`${manualData.date}T${manualData.startTime}`).toISOString();
-      const endDateTime = new Date(`${manualData.date}T${manualData.endTime}`).toISOString();
+      const startDateTime = createUTCTimestamp(manualData.date, manualData.startTime);
+      const endDateTime = createUTCTimestamp(manualData.date, manualData.endTime);
 
       // Save job-level time entry
       const { error } = await supabase
@@ -545,22 +561,24 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
 
-    // Calculate total hours
-    const start = new Date(`${miscJobData.date}T${miscJobData.startTime}`);
-    const end = new Date(`${miscJobData.date}T${miscJobData.endTime}`);
+    // Calculate total hours using local time
+    const [startHours, startMinutes] = miscJobData.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = miscJobData.endTime.split(':').map(Number);
+    const startTotalMinutes = startHours * 60 + startMinutes;
+    const endTotalMinutes = endHours * 60 + endMinutes;
     
-    if (end <= start) {
+    if (endTotalMinutes <= startTotalMinutes) {
       toast.error('Clock out time must be after clock in time');
       return;
     }
     
-    const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    const totalHours = (endTotalMinutes - startTotalMinutes) / 60;
 
     setLoading(true);
 
     try {
-      const startDateTime = new Date(`${miscJobData.date}T${miscJobData.startTime}`).toISOString();
-      const endDateTime = new Date(`${miscJobData.date}T${miscJobData.endTime}`).toISOString();
+      const startDateTime = createUTCTimestamp(miscJobData.date, miscJobData.startTime);
+      const endDateTime = createUTCTimestamp(miscJobData.date, miscJobData.endTime);
 
       // Create structured notes with job details
       const notesData = {
