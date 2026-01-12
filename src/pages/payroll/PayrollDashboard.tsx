@@ -854,8 +854,12 @@ export function PayrollDashboard() {
                                     return (
                                       <tr 
                                         key={`${dateIdx}-${entryIdx}`}
-                                        className={`border-b transition-colors ${
+                                        className={`transition-colors ${
                                           isTimeOff ? 'bg-amber-50/50' : 'hover:bg-muted/20'
+                                        } ${
+                                          hasMultipleJobs ? 'border-l-4 border-r-4 border-l-primary/30 border-r-primary/30' : 'border-b'
+                                        } ${
+                                          hasMultipleJobs && isFirstEntryOfDay ? 'border-t-4 border-t-primary/30' : 'border-b'
                                         }`}
                                       >
                                         {/* Date column - show only for first entry of the day */}
@@ -929,7 +933,7 @@ export function PayrollDashboard() {
                                   })}
                                   {/* Daily Total Row - only show if multiple jobs worked that day */}
                                   {hasMultipleJobs && (
-                                    <tr className="bg-primary/5 border-b-2">
+                                    <tr className="bg-primary/5 border-b-4 border-l-4 border-r-4 border-primary/30">
                                       <td className="p-2"></td>
                                       <td className="p-2 text-right font-semibold text-sm" colSpan={3}>
                                         Daily Total:
