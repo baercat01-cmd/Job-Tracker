@@ -117,14 +117,17 @@ export function PayrollDashboard() {
     const today = new Date();
     
     if (periodType === 'weekly') {
-      // Generate last 12 weeks
+      // Generate last 12 weeks (Monday to Sunday)
       for (let i = 0; i < 12; i++) {
         const weekStart = new Date(today);
-        weekStart.setDate(today.getDate() - today.getDay() - (i * 7)); // Sunday
+        // Calculate days to subtract to get to Monday
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday, go back 6 days; otherwise go back to Monday
+        weekStart.setDate(today.getDate() - daysToMonday - (i * 7)); // Monday
         weekStart.setHours(0, 0, 0, 0);
         
         const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6); // Saturday
+        weekEnd.setDate(weekStart.getDate() + 6); // Sunday (end of week)
         weekEnd.setHours(23, 59, 59, 999);
         
         const value = weekStart.toISOString().split('T')[0];
@@ -133,14 +136,17 @@ export function PayrollDashboard() {
         periods.push({ value, label });
       }
     } else if (periodType === 'biweekly') {
-      // Generate last 12 biweekly periods
+      // Generate last 12 biweekly periods (Monday to Sunday)
       for (let i = 0; i < 12; i++) {
         const periodStart = new Date(today);
-        periodStart.setDate(today.getDate() - today.getDay() - (i * 14)); // Sunday
+        // Calculate days to subtract to get to Monday
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday, go back 6 days; otherwise go back to Monday
+        periodStart.setDate(today.getDate() - daysToMonday - (i * 14)); // Monday
         periodStart.setHours(0, 0, 0, 0);
         
         const periodEnd = new Date(periodStart);
-        periodEnd.setDate(periodStart.getDate() + 13); // 2 weeks
+        periodEnd.setDate(periodStart.getDate() + 13); // 2 weeks (ending on Sunday)
         periodEnd.setHours(23, 59, 59, 999);
         
         const value = periodStart.toISOString().split('T')[0];
