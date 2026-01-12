@@ -146,6 +146,10 @@ function generatePayrollHTML(data: any): string {
         vertical-align: top;
       }
       
+      .entries-table tbody tr:last-child td {
+        border-bottom: none;
+      }
+      
       .time-off-row {
         background: rgba(251, 191, 36, 0.1);
       }
@@ -191,7 +195,6 @@ function generatePayrollHTML(data: any): string {
         padding: 8px;
         font-weight: 600;
         font-size: 12px;
-        border-bottom: 2px solid #e0e0e0 !important;
       }
       
       .period-total {
@@ -284,7 +287,8 @@ function generatePayrollHTML(data: any): string {
                 const dailyTotal = dateEntry.hasMultipleJobs ? `
                   <tr class="daily-total-row">
                     <td></td>
-                    <td colspan="3" style="text-align: right;">Daily Total:</td>
+                    <td></td>
+                    <td colspan="2" style="text-align: right;">Daily Total:</td>
                     <td class="hours-cell">${dateEntry.totalHours.toFixed(2)}</td>
                   </tr>
                 ` : '';
