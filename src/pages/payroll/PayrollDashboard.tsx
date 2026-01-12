@@ -1,3 +1,4 @@
+
 import { useState, useEffect, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -449,34 +450,40 @@ export function PayrollDashboard() {
         users: usersToExport.map(user => ({
           name: user.userName,
           totalHours: user.totalHours,
-          dateEntries: user.dateEntries.map(dateEntry => ({
-            date: new Date(dateEntry.date).toLocaleDateString('en-US', {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-            }),
-            totalHours: dateEntry.totalHours,
-            hasMultipleJobs: dateEntry.entries.filter(e => !e.entryId.startsWith('timeoff-')).length > 1,
-            entries: dateEntry.entries.map(entry => {
-              const isTimeOff = entry.entryId.startsWith('timeoff-');
-              return {
-                jobName: entry.jobName,
-                clientName: entry.clientName,
-                startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
-                endTime: isTimeOff ? '-' : (entry.endTime 
-                  ? new Date(entry.endTime).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : '-'),
-                hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
-                isTimeOff: isTimeOff,
-              };
-            }),
-          })),
+          dateEntries: user.dateEntries.map(dateEntry => {
+            // Parse date in local timezone to avoid UTC offset issues
+            const [year, month, day] = dateEntry.date.split('-').map(Number);
+            const localDate = new Date(year, month - 1, day);
+            
+            return {
+              date: localDate.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              }),
+              totalHours: dateEntry.totalHours,
+              hasMultipleJobs: dateEntry.entries.filter(e => !e.entryId.startsWith('timeoff-')).length > 1,
+              entries: dateEntry.entries.map(entry => {
+                const isTimeOff = entry.entryId.startsWith('timeoff-');
+                return {
+                  jobName: entry.jobName,
+                  clientName: entry.clientName,
+                  startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+                  endTime: isTimeOff ? '-' : (entry.endTime 
+                    ? new Date(entry.endTime).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '-'),
+                  hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
+                  isTimeOff: isTimeOff,
+                };
+              }),
+            };
+          }),
         })),
       };
 
