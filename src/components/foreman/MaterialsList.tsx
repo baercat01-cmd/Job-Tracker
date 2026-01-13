@@ -416,7 +416,12 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
       
       if (error) throw error;
       toast.success('Status updated');
+      
+      // Check and sync bundle status
+      await checkAndSyncBundleStatus(materialId, status);
+      
       loadMaterials();
+      loadBundles();
     } catch (error: any) {
       toast.error('Failed to update status');
       console.error(error);
@@ -501,10 +506,16 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         });
       }
 
+      // Check and sync bundle status for all updated materials
+      if (statusChangeMaterial) {
+        await checkAndSyncBundleStatus(statusChangeMaterial.id, newStatus);
+      }
+
       toast.success(`Status updated to ${getStatusConfig(newStatus).label}`);
       setStatusChangeMaterial(null);
       setStatusChangeMaterialGroup(null);
       loadMaterials();
+      loadBundles();
     } catch (error: any) {
       console.error('Error updating status:', error);
       toast.error('Failed to update status');
@@ -691,6 +702,50 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
     }
   }
 
+  // Check and auto-update bundle status when individual materials change
+  async function checkAndSyncBundleStatus(materialId: string, newStatus: Material['status']) {
+    try {
+      // Find which bundle this material belongs to
+      const { data: bundleItem } = await supabase
+        .from('material_bundle_items')
+        .select('bundle_id')
+        .eq('material_id', materialId)
+        .single();
+
+      if (!bundleItem) return; // Not in a bundle
+
+      // Get all materials in this bundle
+      const { data: allBundleItems } = await supabase
+        .from('material_bundle_items')
+        .select('material_id, materials(status)')
+        .eq('bundle_id', bundleItem.bundle_id);
+
+      if (!allBundleItems) return;
+
+      // Check if all materials have the same status
+      const allStatuses = allBundleItems.map((item: any) => item.materials?.status);
+      const allSameStatus = allStatuses.every(status => status === newStatus);
+
+      if (allSameStatus) {
+        // Update bundle status to match
+        const { error } = await supabase
+          .from('material_bundles')
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', bundleItem.bundle_id);
+
+        if (!error) {
+          const bundle = bundles.find(b => b.id === bundleItem.bundle_id);
+          toast.success(`Bundle "${bundle?.name}" auto-synced to ${getStatusConfig(newStatus).label}`, {
+            description: 'All materials in bundle are now at the same status',
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error syncing bundle status:', error);
+      // Don't show error toast - this is a background operation
+    }
+  }
+
   async function deleteBundle(bundleId: string) {
     try {
       const { error } = await supabase
@@ -727,7 +782,12 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
 
       toast.success(`Status updated to ${getStatusConfig(status).label}`);
       setSelectedMaterial({ ...selectedMaterial, status });
+      
+      // Check and sync bundle status
+      await checkAndSyncBundleStatus(selectedMaterial.id, status);
+      
       loadMaterials();
+      loadBundles();
       
       // Create notification for office
       await createNotification({
@@ -1237,6 +1297,9 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                                     bundleName: bundle.name,
                                   },
                                 });
+                                
+                                // Check and sync bundle status
+                                await checkAndSyncBundleStatus(material.id, value as Material['status']);
                                 
                                 await Promise.all([loadMaterials(), loadBundles()]);
                               } catch (error: any) {
