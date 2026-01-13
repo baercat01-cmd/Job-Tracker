@@ -82,6 +82,14 @@ export function JobSchedule({ job }: JobScheduleProps) {
     notes: '',
     status: 'scheduled',
   });
+  const [showAddSubDialog, setShowAddSubDialog] = useState(false);
+  const [newSubData, setNewSubData] = useState({
+    name: '',
+    company_name: '',
+    phone: '',
+    email: '',
+    trades: '',
+  });
 
   useEffect(() => {
     loadData();
@@ -130,6 +138,55 @@ export function JobSchedule({ job }: JobScheduleProps) {
     }
 
     setSubcontractors(data || []);
+  }
+
+  async function handleAddSubcontractor(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!newSubData.name) {
+      toast.error('Please enter a name');
+      return;
+    }
+
+    try {
+      const tradesArray = newSubData.trades
+        ? newSubData.trades.split(',').map(t => t.trim()).filter(t => t)
+        : [];
+
+      const { data, error } = await supabase
+        .from('subcontractors')
+        .insert({
+          name: newSubData.name,
+          company_name: newSubData.company_name || null,
+          phone: newSubData.phone || null,
+          email: newSubData.email || null,
+          trades: tradesArray.length > 0 ? tradesArray : null,
+          active: true,
+          created_by: profile?.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      toast.success('Subcontractor added');
+      
+      // Reload subcontractors and auto-select the new one
+      await loadSubcontractors();
+      setFormData({ ...formData, subcontractor_id: data.id });
+      
+      // Reset form and close dialog
+      setNewSubData({
+        name: '',
+        company_name: '',
+        phone: '',
+        email: '',
+        trades: '',
+      });
+      setShowAddSubDialog(false);
+    } catch (error: any) {
+      console.error('Error adding subcontractor:', error);
+      toast.error('Failed to add subcontractor');
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -373,27 +430,37 @@ export function JobSchedule({ job }: JobScheduleProps) {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Subcontractor *</Label>
-                <Select
-                  value={formData.subcontractor_id}
-                  onValueChange={(value) => setFormData({ ...formData, subcontractor_id: value })}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select subcontractor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subcontractors.map(sub => (
-                      <SelectItem key={sub.id} value={sub.id}>
-                        {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select
+                    value={formData.subcontractor_id}
+                    onValueChange={(value) => setFormData({ ...formData, subcontractor_id: value })}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subcontractor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subcontractors.map(sub => (
+                        <SelectItem key={sub.id} value={sub.id}>
+                          {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowAddSubDialog(true)}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Sub
+                  </Button>
+                </div>
                 {subcontractors.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    No active subcontractors. Add them in Settings → Subs
+                    No active subcontractors. Click "New Sub" to add one.
                   </p>
                 )}
               </div>
@@ -461,6 +528,91 @@ export function JobSchedule({ job }: JobScheduleProps) {
               </Button>
               <Button type="submit">
                 {editingSchedule ? 'Update' : 'Schedule'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Subcontractor Dialog */}
+      <Dialog open={showAddSubDialog} onOpenChange={setShowAddSubDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Subcontractor</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddSubcontractor} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name *</Label>
+              <Input
+                value={newSubData.name}
+                onChange={(e) => setNewSubData({ ...newSubData, name: e.target.value })}
+                placeholder="John Smith"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Company Name</Label>
+              <Input
+                value={newSubData.company_name}
+                onChange={(e) => setNewSubData({ ...newSubData, company_name: e.target.value })}
+                placeholder="ABC Construction"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input
+                  type="tel"
+                  value={newSubData.phone}
+                  onChange={(e) => setNewSubData({ ...newSubData, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={newSubData.email}
+                  onChange={(e) => setNewSubData({ ...newSubData, email: e.target.value })}
+                  placeholder="email@example.com"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Trades</Label>
+              <Input
+                value={newSubData.trades}
+                onChange={(e) => setNewSubData({ ...newSubData, trades: e.target.value })}
+                placeholder="Plumbing, HVAC, Electrical (comma separated)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter multiple trades separated by commas
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAddSubDialog(false);
+                  setNewSubData({
+                    name: '',
+                    company_name: '',
+                    phone: '',
+                    email: '',
+                    trades: '',
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Add Subcontractor
               </Button>
             </DialogFooter>
           </form>
