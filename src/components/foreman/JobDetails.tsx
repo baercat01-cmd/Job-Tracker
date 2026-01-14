@@ -99,7 +99,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="relative h-9 w-9 p-0"
+                className="relative h-9 w-9 p-0 rounded-none border-slate-300 bg-white hover:bg-slate-100"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
@@ -109,7 +109,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
+            <PopoverContent className="w-80 p-0 rounded-none border-slate-300" align="end">
               <div className="p-3 border-b bg-muted/30">
                 <h4 className="font-semibold text-sm flex items-center gap-2">
                   <Bell className="w-4 h-4" />
@@ -130,7 +130,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
                         handleNotificationClick(notification);
                         setShowNotifications(false);
                       }}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      className={`w-full text-left p-3 rounded-none border transition-colors ${
                         notification.is_read 
                           ? 'bg-card hover:bg-muted/50 border-border' 
                           : 'bg-primary/5 hover:bg-primary/10 border-primary/20'

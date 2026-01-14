@@ -333,7 +333,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+        <div className="w-8 h-8 border-4 border-green-900 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
         <p className="text-sm text-muted-foreground">Loading work history...</p>
       </div>
     );
@@ -341,7 +341,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
   if (timeEntries.length === 0) {
     return (
-      <Card>
+      <Card className="rounded-none border-slate-300 bg-white">
         <CardContent className="py-12 text-center text-muted-foreground">
           <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p className="text-lg">No work history yet</p>
@@ -358,13 +358,13 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
         const componentStats = getComponentDateStats(date);
 
         return (
-          <Card key={date} className="border-2 shadow-md" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-            <CardHeader className="pb-4 bg-gradient-to-r from-primary/10 to-primary/5 border-b-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+          <Card key={date} className="border-2 shadow-md rounded-none border-slate-300 bg-white">
+            <CardHeader className="pb-4 bg-slate-50 border-b-2 border-slate-300">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <Clock className="w-5 h-5 text-primary" />
-                    <CardTitle className="text-2xl font-bold text-primary">
+                    <Clock className="w-5 h-5 text-green-900" />
+                    <CardTitle className="text-2xl font-bold text-green-900">
                       {formatDate(date)}
                     </CardTitle>
                   </div>
@@ -372,23 +372,23 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                     <span>{componentStats.totalEntries} component {componentStats.totalEntries === 1 ? 'entry' : 'entries'}</span>
                   </div>
                 </div>
-                <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
-                  <p className="text-3xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+                <div className="text-right bg-white rounded-none px-4 py-3 border-2 border-slate-300">
+                  <p className="text-3xl font-bold text-green-900">
                     {componentStats.totalManHours.toFixed(2)}
                   </p>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Man-Hours</p>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6 pt-4 bg-gradient-to-b from-muted/10 to-muted/5">
+            <CardContent className="space-y-6 pt-4 bg-white">
               {/* Component Time Section */}
               <div className="space-y-4">
                 {Object.entries(componentsForDate).map(([componentName, entries], compIndex) => (
-                    <div key={componentName} className="space-y-3 border-l-4 pl-4 py-2" style={{ borderLeftColor: compIndex % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+                    <div key={componentName} className="space-y-3 border-l-4 border-l-green-900 pl-4 py-2">
                       {/* Component Name Header */}
                       <div className="flex items-center justify-between pb-3 border-b-2">
                         <h4 className="font-bold text-base text-foreground">{componentName}</h4>
-                        <Badge variant="secondary" className="text-sm font-semibold">
+                        <Badge variant="secondary" className="text-sm font-semibold rounded-none">
                           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
                         </Badge>
                       </div>
@@ -398,14 +398,14 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                         {entries.map((entry) => (
                           <div
                             key={entry.id}
-                            className="border rounded-lg p-4 space-y-3 bg-card hover:bg-muted/30 transition-colors"
+                            className="border rounded-none border-slate-300 p-4 space-y-3 bg-white hover:bg-slate-50 transition-colors"
                           >
                             {/* Entry Header */}
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {entry.is_manual && (
-                                    <Badge variant="outline" className="text-xs">
+                                    <Badge variant="outline" className="text-xs rounded-none border-slate-300">
                                       Manual
                                     </Badge>
                                   )}
@@ -422,6 +422,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => openEditDialog(entry)}
+                                    className="rounded-none hover:bg-slate-100"
                                   >
                                     <Edit className="w-4 h-4" />
                                   </Button>
@@ -429,7 +430,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => startDeleteEntry(entry.id)}
-                                    className="text-destructive hover:text-destructive"
+                                    className="text-destructive hover:text-destructive rounded-none hover:bg-red-50"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
@@ -457,11 +458,11 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                             {/* Worker Names */}
                             {entry.worker_names && entry.worker_names.length > 0 && (
-                              <div className="bg-muted/50 rounded-md p-3">
+                              <div className="bg-slate-50 rounded-none border border-slate-300 p-3">
                                 <p className="text-sm text-muted-foreground mb-1 font-medium">Workers:</p>
                                 <div className="flex flex-wrap gap-2">
                                   {entry.worker_names.map((name, idx) => (
-                                    <Badge key={idx} variant="secondary" className="text-xs">
+                                    <Badge key={idx} variant="secondary" className="text-xs rounded-none">
                                       {name}
                                     </Badge>
                                   ))}
@@ -471,7 +472,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                             {/* Photos */}
                             {entry.photos && entry.photos.length > 0 && (
-                              <div className="bg-muted/50 rounded-md p-3">
+                              <div className="bg-slate-50 rounded-none border border-slate-300 p-3">
                                 <p className="text-sm text-muted-foreground mb-2 font-medium">Photos ({entry.photos.length}):</p>
                                 <div className="grid grid-cols-3 gap-2">
                                   {entry.photos.map((photo) => (
@@ -480,7 +481,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                                       href={photo.photo_url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="aspect-square rounded-lg overflow-hidden border hover:opacity-80 transition-opacity"
+                                      className="aspect-square rounded-none overflow-hidden border border-slate-300 hover:opacity-80 transition-opacity"
                                     >
                                       <img
                                         src={photo.photo_url}
@@ -495,7 +496,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                             {/* Notes */}
                             {entry.notes && (
-                              <div className="bg-muted/50 rounded-md p-3">
+                              <div className="bg-slate-50 rounded-none border border-slate-300 p-3">
                                 <p className="text-sm text-muted-foreground mb-1 font-medium">Notes:</p>
                                 <p className="text-sm whitespace-pre-wrap">{entry.notes}</p>
                               </div>
@@ -503,7 +504,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                             {!entry.notes && entry.user_id === userId && (
                               <button
                                 onClick={() => openEditDialog(entry)}
-                                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                                className="text-sm text-muted-foreground hover:text-green-900 transition-colors"
                               >
                                 + Add notes
                               </button>
@@ -521,13 +522,13 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
       {/* Edit Time Entry Dialog */}
       <Dialog open={!!editEntry} onOpenChange={closeEditDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle>Edit Time Entry</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Component Info */}
-            <div className="bg-muted/50 rounded-lg p-3">
+            <div className="bg-slate-50 rounded-none border border-slate-300 p-3">
               <p className="text-sm text-muted-foreground mb-1">Component</p>
               <p className="font-medium">
                 {editEntry?.components?.name || (editEntry?.component_id === null ? 'Clock-In Time' : 'Unknown')}
@@ -535,10 +536,10 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
             </div>
 
             {/* Time Summary - Auto-calculated */}
-            <div className="grid grid-cols-2 gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-none border-2 border-green-900">
               <div className="text-center">
                 <p className="text-xs text-muted-foreground mb-1">Duration</p>
-                <p className="text-2xl font-bold text-primary">
+                <p className="text-2xl font-bold text-green-900">
                   {editDate && editStartTime && editEndTime ? 
                     (() => {
                       const start = new Date(`${editDate}T${editStartTime}`);
@@ -551,7 +552,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 </p>
                 <p className="text-xs text-muted-foreground">hours</p>
               </div>
-              <div className="text-center border-l">
+              <div className="text-center border-l border-slate-300">
                 <p className="text-xs text-muted-foreground mb-1">Original</p>
                 <p className="text-2xl font-bold text-muted-foreground">
                   {editEntry?.total_hours?.toFixed(2) || '0.00'}
@@ -568,7 +569,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 type="date"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
-                className="h-11"
+                className="h-11 rounded-none border-slate-300"
               />
             </div>
 
@@ -581,7 +582,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                   type="time"
                   value={editStartTime}
                   onChange={(e) => setEditStartTime(e.target.value)}
-                  className="h-14 text-xl font-mono"
+                  className="h-14 text-xl font-mono rounded-none border-slate-300"
                 />
               </div>
               <div className="space-y-2">
@@ -591,13 +592,13 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                   type="time"
                   value={editEndTime}
                   onChange={(e) => setEditEndTime(e.target.value)}
-                  className="h-14 text-xl font-mono"
+                  className="h-14 text-xl font-mono rounded-none border-slate-300"
                 />
               </div>
             </div>
 
             {/* Crew Mode Toggle */}
-            <div className="space-y-3 pt-2 border-t">
+            <div className="space-y-3 pt-2 border-t border-slate-300">
               <Label>Crew Tracking</Label>
               <RadioGroup value={editMode} onValueChange={(v) => setEditMode(v as 'count' | 'workers')}>
                 <div className="flex items-center space-x-2">
@@ -622,7 +623,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                   max="20"
                   value={editCrewCount}
                   onChange={(e) => setEditCrewCount(e.target.value)}
-                  className="h-11"
+                  className="h-11 rounded-none border-slate-300"
                 />
                 <p className="text-xs text-muted-foreground">Total number of crew members</p>
               </div>
@@ -630,7 +631,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
               <div className="space-y-2">
                 <Label>Select Workers</Label>
                 {workers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-3 text-center border rounded-lg bg-muted/30">
+                  <p className="text-sm text-muted-foreground py-3 text-center border rounded-none border-slate-300 bg-slate-50">
                     No workers available
                   </p>
                 ) : (
@@ -640,7 +641,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                       type="button"
                       variant="outline"
                       onClick={() => setShowEditWorkers(!showEditWorkers)}
-                      className="w-full h-11 justify-between"
+                      className="w-full h-11 justify-between rounded-none border-slate-300 bg-white hover:bg-slate-100"
                     >
                       <span>
                         {editSelectedWorkers.length > 0 
@@ -656,10 +657,10 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
                     {/* Dropdown List */}
                     {showEditWorkers && (
-                      <div className="border rounded-lg max-h-[200px] overflow-y-auto">
+                      <div className="border rounded-none border-slate-300 max-h-[200px] overflow-y-auto">
                         <div className="p-3 space-y-2">
                           {workers.map((worker) => (
-                            <div key={worker.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded transition-colors">
+                            <div key={worker.id} className="flex items-center space-x-3 p-2 hover:bg-slate-50 rounded-none transition-colors">
                               <Checkbox
                                 id={`edit-worker-${worker.id}`}
                                 checked={editSelectedWorkers.includes(worker.id)}
@@ -681,15 +682,15 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                       </div>
                     )}
 
-                    <div className="bg-muted/30 rounded-lg p-3 text-center">
+                    <div className="bg-slate-50 rounded-none border border-slate-300 p-3 text-center">
                       <p className="text-sm font-medium">
                         {editSelectedWorkers.length > 0 ? (
                           <>
-                            <span className="text-primary text-lg font-bold">{editSelectedWorkers.length}</span> crew member{editSelectedWorkers.length !== 1 ? 's' : ''}
+                            <span className="text-green-900 text-lg font-bold">{editSelectedWorkers.length}</span> crew member{editSelectedWorkers.length !== 1 ? 's' : ''}
                           </>
                         ) : (
                           <>
-                            <span className="text-primary text-lg font-bold">0</span> crew members
+                            <span className="text-green-900 text-lg font-bold">0</span> crew members
                           </>
                         )}
                       </p>
@@ -700,7 +701,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
             )}
 
             {/* Notes */}
-            <div className="space-y-2 pt-2 border-t">
+            <div className="space-y-2 pt-2 border-t border-slate-300">
               <Label htmlFor="edit-notes">Notes (Optional)</Label>
               <Textarea
                 id="edit-notes"
@@ -708,16 +709,17 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 onChange={(e) => setEditNotes(e.target.value)}
                 placeholder="Add notes about this work..."
                 rows={3}
-                className="resize-none"
+                className="resize-none rounded-none border-slate-300"
               />
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-2 justify-end pt-4 border-t">
+            <div className="flex gap-2 justify-end pt-4 border-t border-slate-300">
               <Button
                 variant="outline"
                 onClick={closeEditDialog}
                 disabled={saving}
+                className="rounded-none border-slate-300 bg-white hover:bg-slate-100"
               >
                 <X className="w-4 h-4 mr-2" />
                 Cancel
@@ -725,7 +727,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
               <Button
                 onClick={saveTimeEntry}
                 disabled={saving}
-                className="gradient-primary"
+                className="bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
               >
                 <Save className="w-4 h-4 mr-2" />
                 {saving ? 'Saving...' : 'Save Changes'}
@@ -737,7 +739,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteConfirm} onOpenChange={cancelDelete}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-destructive" />
@@ -749,11 +751,12 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
               Are you sure you want to delete this time entry? This action cannot be undone.
             </p>
             
-            <div className="flex gap-2 justify-end pt-4 border-t">
+            <div className="flex gap-2 justify-end pt-4 border-t border-slate-300">
               <Button
                 variant="outline"
                 onClick={cancelDelete}
                 disabled={deleting}
+                className="rounded-none border-slate-300 bg-white hover:bg-slate-100"
               >
                 Cancel
               </Button>
@@ -761,6 +764,7 @@ export function ComponentHistory({ job, userId }: ComponentHistoryProps) {
                 variant="destructive"
                 onClick={confirmDeleteEntry}
                 disabled={deleting}
+                className="rounded-none"
               >
                 {deleting ? (
                   <>

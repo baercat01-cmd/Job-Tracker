@@ -761,10 +761,10 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   return (
     <div className="space-y-4">
       {/* Time Tracking Summary */}
-      <Card className="border-2 border-primary/20">
+      <Card className="border-2 border-green-900 rounded-none bg-white">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Target className="w-4 h-4 text-primary" />
+            <Target className="w-4 h-4 text-green-900" />
             Project Progress (Clock-In Hours)
           </CardTitle>
         </CardHeader>
@@ -775,22 +775,22 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Budget Progress</span>
                 <span className={`font-bold text-lg ${
-                  isOverBudget ? 'text-destructive' : 'text-primary'
+                  isOverBudget ? 'text-orange-500' : 'text-green-900'
                 }`}>
                   {progressPercent.toFixed(0)}%
                 </span>
               </div>
-              <Progress value={progressPercent} className="h-3" />
+              <Progress value={progressPercent} className="h-3 rounded-none" />
               {isOverBudget ? (
-                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-center">
-                  <p className="text-sm text-destructive font-medium flex items-center justify-center gap-1">
+                <div className="bg-orange-50 border-2 border-orange-500 rounded-none p-3 text-center">
+                  <p className="text-sm text-orange-600 font-bold flex items-center justify-center gap-1">
                     <TrendingUp className="w-4 h-4" />
                     Over budget by {(totalClockInHours - estimatedHours).toFixed(2)}h
                   </p>
                 </div>
               ) : (
-                <div className="bg-success/10 border border-success/30 rounded-lg p-3 text-center">
-                  <p className="text-sm text-success font-medium">
+                <div className="bg-green-50 border-2 border-green-900 rounded-none p-3 text-center">
+                  <p className="text-sm text-green-900 font-bold">
                     {remainingHours.toFixed(2)}h remaining
                   </p>
                 </div>
@@ -802,7 +802,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Add Component Button - Show at top when no mode selected */}
       {entryMode === 'none' && (
-        <Card className="border-2 border-primary/30 shadow-md">
+        <Card className="border-2 border-green-900 shadow-md rounded-none bg-white">
           <CardContent className="py-6">
             <Button
               onClick={() => {
@@ -810,7 +810,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                 setManualStep(1);
               }}
               size="lg"
-              className="w-full h-16 text-lg gradient-primary"
+              className="w-full h-16 text-lg bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
             >
               <Plus className="w-6 h-6 mr-2" />
               Add Component
@@ -826,13 +826,13 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       {entryMode === 'none' && components.some(c => isComponentTask(c.id)) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <ListChecks className="w-5 h-5 text-primary" />
+            <ListChecks className="w-5 h-5 text-green-900" />
             <h3 className="font-bold text-lg">Active Tasks</h3>
           </div>
           {components
             .filter(c => isComponentTask(c.id))
             .map((component) => (
-              <Card key={component.id} className="border-2 border-primary shadow-md bg-gradient-to-r from-primary/5 to-primary/10">
+              <Card key={component.id} className="border-2 border-green-900 shadow-md rounded-none bg-slate-50">
                 <CardContent className="py-4">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -849,7 +849,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                           </div>
                         )}
                       </div>
-                      <Badge className="bg-primary text-white">Task</Badge>
+                      <Badge className="bg-green-900 text-white rounded-none">Task</Badge>
                     </div>
                     <div className="space-y-2">
                       {!isComponentCompleted(component.id) ? (
@@ -860,7 +860,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                               setShowManualEntry(true);
                               setManualStep(1);
                             }}
-                            className="w-full h-12 gradient-primary"
+                            className="w-full h-12 bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
                           >
                             <Plus className="w-5 h-5 mr-2" />
                             Log Time
@@ -868,7 +868,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                           <Button
                             onClick={() => openCompleteTaskDialog(component)}
                             variant="outline"
-                            className="w-full h-12 border-2 border-success text-success hover:bg-success hover:text-white"
+                            className="w-full h-12 border-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white rounded-none font-bold"
                           >
                             <CheckCircle2 className="w-5 h-5 mr-2" />
                             Mark Complete
@@ -876,9 +876,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                         </>
                       ) : (
                         <>
-                          <div className="bg-success/10 border-2 border-success rounded-lg p-4 text-center">
-                            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-success" />
-                            <p className="font-bold text-success">Task Completed</p>
+                          <div className="bg-green-50 border-2 border-green-600 rounded-none p-4 text-center">
+                            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-600" />
+                            <p className="font-bold text-green-600">Task Completed</p>
                             <p className="text-sm text-muted-foreground mt-1">
                               {new Date(getComponentCompletionDate(component.id)!).toLocaleDateString('en-US', { 
                                 weekday: 'short', 
@@ -910,15 +910,15 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       {localTimers.map((timer) => (
         <Card 
           key={timer.id} 
-          className={timer.state === 'running' ? 'border-l-4 border-l-orange shadow-lg' : 'border-warning'}
+          className={timer.state === 'running' ? 'border-l-4 border-l-orange-500 shadow-lg rounded-none border-slate-300 bg-white' : 'border-2 border-yellow-500 rounded-none bg-white'}
         >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'text-success' : 'text-warning'}`} />
+                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'text-green-600' : 'text-yellow-600'}`} />
                 {timer.componentName}
               </CardTitle>
-              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'}>
+              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'} className="rounded-none">
                 {timer.state === 'running' ? 'Running' : 'Paused'}
               </Badge>
             </div>
@@ -956,7 +956,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="outline"
                     onClick={() => pauseTimer(timer.id)}
-                    className="touch-target"
+                    className="touch-target rounded-none"
                   >
                     <Pause className="w-4 h-4 mr-2" />
                     Pause
@@ -964,7 +964,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target"
+                    className="touch-target rounded-none"
                   >
                     <StopCircle className="w-4 h-4 mr-2" />
                     Stop
@@ -975,7 +975,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="default"
                     onClick={() => resumeTimer(timer.id)}
-                    className="touch-target gradient-primary"
+                    className="touch-target bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
                   >
                     <Play className="w-4 h-4 mr-2" />
                     Resume
@@ -983,7 +983,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target"
+                    className="touch-target rounded-none"
                   >
                     <StopCircle className="w-4 h-4 mr-2" />
                     Stop
@@ -997,7 +997,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Review & Save Modal */}
       <Dialog open={!!reviewTimer} onOpenChange={() => setReviewTimer(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle>Review Time Entry</DialogTitle>
           </DialogHeader>
@@ -1151,7 +1151,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Mark Task Complete Dialog */}
       <Dialog open={!!completingTask} onOpenChange={() => setCompletingTask(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-success" />
@@ -1161,7 +1161,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
           
           {completingTask && (
             <div className="space-y-4">
-              <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <div className="bg-slate-50 rounded-none p-4 border-2 border-green-900">
                 <p className="font-bold text-lg">{completingTask.name}</p>
                 {completingTask.description && (
                   <p className="text-sm text-muted-foreground mt-1">{completingTask.description}</p>
@@ -1242,7 +1242,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       {/* Manual Entry Dialog - Multi-Step Wizard */}
       <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
-        <DialogContent className="max-w-4xl max-h-[98vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[98vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="w-5 h-5" />

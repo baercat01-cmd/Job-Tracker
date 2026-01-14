@@ -578,7 +578,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
   return (
     <>
-      <Card className="w-full">
+      <Card className="w-full rounded-none border-slate-300 bg-white">
         <CardHeader className="p-3 sm:p-6">
           <div className="flex flex-col gap-3 sm:gap-4">
             {/* Mobile-optimized header */}
@@ -592,16 +592,16 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               
               {/* Mobile-optimized navigation */}
               <div className="flex items-center justify-between sm:justify-end gap-2">
-                <Button variant="outline" size="icon" onClick={previousMonth} className="h-9 w-9">
+                <Button variant="outline" size="icon" onClick={previousMonth} className="h-9 w-9 rounded-none border-slate-300 bg-white hover:bg-slate-100">
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <div className="min-w-[140px] sm:min-w-[200px] text-center">
                   <p className="text-base sm:text-xl font-bold">{monthYear}</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={goToToday} className="h-9 px-3">
+                <Button variant="outline" size="sm" onClick={goToToday} className="h-9 px-3 rounded-none border-slate-300 bg-white hover:bg-slate-100">
                   Today
                 </Button>
-                <Button variant="outline" size="icon" onClick={nextMonth} className="h-9 w-9">
+                <Button variant="outline" size="icon" onClick={nextMonth} className="h-9 w-9 rounded-none border-slate-300 bg-white hover:bg-slate-100">
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
@@ -625,7 +625,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             {/* Calendar days */}
             {calendarDays.map((day, index) => {
               if (!day) {
-                return <div key={`empty-${index}`} className="min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded bg-muted/30" />;
+                return <div key={`empty-${index}`} className="min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded-none border-slate-300 bg-slate-50" />;
               }
 
               const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -637,7 +637,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               return (
                 <div
                   key={day}
-                  className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded cursor-pointer transition-all ${
+                  className={`min-h-14 sm:min-h-28 p-1 sm:p-2 border rounded-none border-slate-300 cursor-pointer transition-all ${
                     isTodayDate ? 'bg-primary/10 border-primary ring-1 sm:ring-2 ring-primary/20' : 'hover:bg-muted/50 active:bg-muted'
                   } ${isSelected ? 'ring-1 sm:ring-2 ring-blue-500' : ''} ${
                     unavailableUsers.length > 0 ? 'bg-orange-50 border-orange-300' : ''
@@ -712,7 +712,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                             setExpandedEventId(event.id);
                             setShowDayDialog(true);
                           }}
-                          className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${bgClass} ${textClass} ${fontWeight}`}
+                          className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded-none cursor-pointer hover:shadow-md transition-all border-l-2 sm:border-l-4 ${bgClass} ${textClass} ${fontWeight}`}
                           style={{ borderLeftColor: event.jobColor }}
                           title={`${event.jobName}: ${event.title}\nClick to view event details`}
                         >
@@ -761,7 +761,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px] rounded-none border-slate-300 bg-white hover:bg-slate-100"
                 onClick={() => setOpenDialog('to_order')}
               >
                 <Package className="w-5 h-5" />
@@ -775,7 +775,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px] rounded-none border-slate-300 bg-white hover:bg-slate-100"
                 onClick={() => setOpenDialog('deliveries')}
               >
                 <Truck className="w-5 h-5" />
@@ -789,7 +789,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
               <Button
                 variant="outline"
                 size="lg"
-                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px]"
+                className="h-auto py-3 sm:py-4 flex-col gap-1 sm:gap-2 min-h-[60px] sm:min-h-[80px] rounded-none border-slate-300 bg-white hover:bg-slate-100"
                 onClick={() => setOpenDialog('subcontractors')}
               >
                 <Users className="w-5 h-5" />
@@ -807,7 +807,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
       {/* To Order Dialog */}
       <Dialog open={openDialog === 'to_order'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
@@ -817,7 +817,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           <div className="mt-4">
             <div className="space-y-3">
               {events.filter(e => e.type === 'material_order').length === 0 ? (
-                <Card>
+                <Card className="rounded-none border-slate-300 bg-white">
                   <CardContent className="py-12 text-center">
                     <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                     <p className="text-muted-foreground">No materials to order</p>
@@ -830,7 +830,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   .map(event => (
                     <Card
                       key={event.id}
-                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 rounded-none border-slate-300 bg-white ${
                         event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-yellow-500'
                       }`}
                       style={{ borderLeftColor: event.jobColor }}
@@ -889,7 +889,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
       {/* Deliveries Dialog */}
       <Dialog open={openDialog === 'deliveries'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Truck className="w-5 h-5" />
@@ -912,7 +912,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   .map(event => (
                     <Card
                       key={event.id}
-                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                      className={`cursor-pointer hover:shadow-lg transition-all border-l-4 rounded-none border-slate-300 bg-white ${
                         event.priority === 'high' ? 'border-destructive bg-destructive/5' : 'border-blue-500'
                       }`}
                       style={{ borderLeftColor: event.jobColor }}
@@ -971,7 +971,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
       {/* Subcontractors Dialog */}
       <Dialog open={openDialog === 'subcontractors'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
@@ -1076,7 +1076,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
       {/* Day Events Dialog */}
       <Dialog open={showDayDialog} onOpenChange={setShowDayDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
