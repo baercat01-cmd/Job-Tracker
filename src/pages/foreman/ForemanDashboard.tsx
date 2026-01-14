@@ -424,10 +424,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
   // Job selected - show tabbed interface
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
       {!hideHeader && (
-      <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+      <header className="bg-green-900 border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
@@ -435,14 +435,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               alt="Martin Builder" 
               className="h-8 w-auto"
             />
-            <div className="border-l pl-3">
-              <p className="text-xs text-muted-foreground">
+            <div className="border-l border-slate-300 pl-3">
+              <p className="text-xs text-white">
                 {profile?.username} • Crew
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
@@ -452,7 +452,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
       {/* Active Timers Alert */}
       {activeTimers.length > 0 && (
-        <div className="bg-success text-success-foreground p-3 text-center text-sm font-medium">
+        <div className="bg-orange-500 text-white p-3 text-center text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
           {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
         </div>
       )}
@@ -534,10 +534,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
       {/* Bottom Navigation - 6 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg">
-        <div className="container mx-auto px-1 py-2 grid grid-cols-6 gap-0.5">
+        <div className="container mx-auto px-0 py-0 grid grid-cols-6">
           <Button
-            variant={activeTab === 'timer' ? 'default' : 'ghost'}
-            className={`flex-col h-auto py-3 touch-target relative rounded-none ${
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target relative border-r border-slate-300 rounded-none ${
               activeTab === 'timer' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('timer')}
@@ -549,8 +549,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <span className="text-xs font-bold">Timer</span>
           </Button>
           <Button
-            variant={activeTab === 'photos' ? 'default' : 'ghost'}
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
               activeTab === 'photos' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('photos')}
@@ -559,8 +559,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <span className="text-xs font-bold">Photos</span>
           </Button>
           <Button
-            variant={activeTab === 'documents' ? 'default' : 'ghost'}
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
               activeTab === 'documents' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('documents')}
@@ -569,8 +569,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <span className="text-xs font-bold">Documents</span>
           </Button>
           <Button
-            variant={activeTab === 'materials' ? 'default' : 'ghost'}
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
               activeTab === 'materials' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('materials')}
@@ -579,8 +579,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <span className="text-xs font-bold">Materials</span>
           </Button>
           <Button
-            variant={activeTab === 'history' ? 'default' : 'ghost'}
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
               activeTab === 'history' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('history')}
@@ -589,7 +589,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <span className="text-xs font-bold">History</span>
           </Button>
           <Button
-            variant={activeTab === 'schedule' ? 'default' : 'ghost'}
+            variant="ghost"
             className={`flex-col h-auto py-3 touch-target rounded-none ${
               activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
