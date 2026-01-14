@@ -14,7 +14,7 @@ interface Material {
   quantity: number;
   length: string | null;
   use_case: string | null;
-  status: string;
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   job_id: string;
   category_id: string;
 }
@@ -63,7 +63,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
     try {
       setLoading(true);
       
-      // Get materials with status "at_shop" (Ready for Job) for current job only
+      // Get materials with status "at_shop" or "ready_to_pull" (Ready for Job) for current job only
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
         .select(`
@@ -78,7 +78,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
             name
           )
         `)
-        .eq('status', 'at_shop')
+        .in('status', ['at_shop', 'ready_to_pull'])
         .eq('job_id', currentJobId)
         .order('updated_at', { ascending: false });
 
@@ -153,7 +153,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
               No materials ready for this job
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Materials with "Ready for Job" status will appear here
+              Materials with "At Shop" or "Pull from Shop" status will appear here
             </p>
           </CardContent>
         </Card>
