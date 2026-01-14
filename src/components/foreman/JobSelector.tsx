@@ -167,7 +167,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                                 onSelectJobForMaterials?.(job);
                               }}
                             >
-                              <Badge className="bg-green-900 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
+                              <Badge className="bg-blue-700 text-white hover:bg-blue-800 cursor-pointer rounded-none border border-slate-300">
                                 <Package className="w-3 h-3 mr-1" />
                                 {job.ready_materials_count} ready for job
                               </Badge>
@@ -183,7 +183,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                                 onSelectJobForPullMaterials?.(job);
                               }}
                             >
-                              <Badge className="bg-green-900 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
+                              <Badge className="bg-purple-700 text-white hover:bg-purple-800 cursor-pointer rounded-none border border-slate-300">
                                 <Package className="w-3 h-3 mr-1" />
                                 {job.pull_from_shop_count} pull from shop
                               </Badge>
