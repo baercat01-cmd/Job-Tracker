@@ -8,13 +8,13 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: {
-      // For OnSpace preview - use the current domain instead of localhost
+      // For OnSpace preview - detect and use the preview domain
       protocol: 'wss',
-      host: typeof process.env.VITE_HMR_HOST !== 'undefined' && process.env.VITE_HMR_HOST !== ''
-        ? process.env.VITE_HMR_HOST
-        : undefined, // undefined = auto-detect from window.location.host
+      // OnSpace preview domains follow pattern: *.onspace.meme or *.preview.onspace.ai
+      // Let the client determine the host automatically
       clientPort: 443,
       overlay: true,
+      // Don't specify host - let browser use current domain
     },
   },
   plugins: [
