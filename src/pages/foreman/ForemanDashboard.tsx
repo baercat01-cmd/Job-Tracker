@@ -507,7 +507,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             job={selectedJob}
             userId={profile?.id || ''}
             allowBundleCreation={false}
-            defaultTab='ready'
+            defaultTab='all'
           />
         )}
 
