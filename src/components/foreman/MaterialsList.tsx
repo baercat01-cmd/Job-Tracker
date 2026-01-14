@@ -34,7 +34,7 @@ interface Material {
   name: string;
   quantity: number;
   length: string | null;
-  status: 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | 'installed' | 'missing';
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   notes: string | null;
   updated_at: string;
   use_case?: string;
@@ -61,7 +61,7 @@ interface MaterialBundle {
   job_id: string;
   name: string;
   description: string | null;
-  status: 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | 'installed' | 'missing';
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -82,7 +82,7 @@ interface MaterialPhoto {
   timestamp: string;
 }
 
-type StatusFilter = 'all' | 'not_ordered' | 'ordered' | 'at_shop' | 'at_job' | 'installed' | 'missing';
+type StatusFilter = 'all' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
 
 interface MaterialsListProps {
   job: Job;
@@ -95,6 +95,7 @@ const STATUS_CONFIG = {
   not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
   ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
   at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
+  ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-200' },
   at_job: { label: 'At Job', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-200' },
   installed: { label: 'Installed', color: 'bg-black', bgClass: 'bg-slate-100 text-slate-800 border-slate-200' },
   missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-50 text-red-800 border-red-200' },
@@ -1008,7 +1009,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         if (sortBy === 'name') {
           return a.name.localeCompare(b.name);
         } else if (sortBy === 'status') {
-          const statusOrder = ['not_ordered', 'ordered', 'at_shop', 'at_job', 'installed', 'missing'];
+          const statusOrder = ['not_ordered', 'ordered', 'at_shop', 'ready_to_pull', 'at_job', 'installed', 'missing'];
           return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
         } else if (sortBy === 'date') {
           const aDate = a.delivery_date || a.order_by_date || a.updated_at;
