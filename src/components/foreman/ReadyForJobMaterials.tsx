@@ -29,9 +29,10 @@ interface MaterialWithJob extends Material {
 interface ReadyForJobMaterialsProps {
   userId: string;
   currentJobId?: string;
+  statusFilter?: 'at_shop' | 'ready_to_pull';
 }
 
-export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMaterialsProps) {
+export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'at_shop' }: ReadyForJobMaterialsProps) {
   const [materials, setMaterials] = useState<MaterialWithJob[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,7 +65,9 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
     try {
       setLoading(true);
       
-      // Get materials with status "at_shop" or "ready_to_pull" (Ready for Job) for current job only
+      // Get materials with specified status for current job only
+      const statuses = statusFilter === 'at_shop' ? ['at_shop'] : ['ready_to_pull'];
+      
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
         .select(`
@@ -79,7 +82,7 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
             name
           )
         `)
-        .in('status', ['at_shop', 'ready_to_pull'])
+        .in('status', statuses)
         .eq('job_id', currentJobId)
         .order('updated_at', { ascending: false });
 
@@ -151,10 +154,13 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
           <CardContent className="py-12 text-center">
             <Package className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-lg font-medium text-muted-foreground">
-              No materials ready for this job
+              {statusFilter === 'at_shop' ? 'No materials ready for this job' : 'No materials to pull from shop'}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Materials with "At Shop" or "Pull from Shop" status will appear here
+              {statusFilter === 'at_shop' 
+                ? 'Materials with "At Shop" status will appear here' 
+                : 'Materials with "Pull from Shop" status will appear here'
+              }
             </p>
           </CardContent>
         </Card>

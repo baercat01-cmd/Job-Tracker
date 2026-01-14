@@ -88,7 +88,7 @@ interface MaterialsListProps {
   job: Job;
   userId: string;
   allowBundleCreation?: boolean;
-  defaultTab?: 'all' | 'ready';
+  defaultTab?: 'all' | 'ready' | 'pull';
 }
 
 const STATUS_CONFIG = {
@@ -111,8 +111,9 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'ready'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull'>(defaultTab);
   const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
+  const [pullFromShopCount, setPullFromShopCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -196,16 +197,27 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
 
   async function checkReadyMaterials() {
     try {
-      const { data, error } = await supabase
+      const { data: atShopData, error: atShopError } = await supabase
         .from('materials')
         .select('id', { count: 'exact', head: true })
         .eq('job_id', job.id)
         .eq('status', 'at_shop');
 
-      if (error) throw error;
+      if (atShopError) throw atShopError;
       
-      const count = data?.length || 0;
-      setReadyMaterialsCount(count);
+      const atShopCount = atShopData?.length || 0;
+      setReadyMaterialsCount(atShopCount);
+
+      const { data: pullData, error: pullError } = await supabase
+        .from('materials')
+        .select('id', { count: 'exact', head: true })
+        .eq('job_id', job.id)
+        .eq('status', 'ready_to_pull');
+
+      if (pullError) throw pullError;
+      
+      const pullCount = pullData?.length || 0;
+      setPullFromShopCount(pullCount);
     } catch (error: any) {
       console.error('Error checking ready materials:', error);
     }
@@ -1092,8 +1104,8 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
   return (
     <div className="space-y-3 w-full lg:max-w-3xl lg:mx-auto">
       {/* Tab Switcher */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready')} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull')} className="w-full">
+        <TabsList className={`grid w-full mb-4 ${pullFromShopCount > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <TabsTrigger value="all" className="flex items-center gap-2">
             <Layers className="w-4 h-4" />
             All Materials
@@ -1102,6 +1114,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
             <CheckCircle className="w-4 h-4" />
             Ready for Job
           </TabsTrigger>
+          {pullFromShopCount > 0 && (
+            <TabsTrigger value="pull" className="flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Pull from Shop
+              <Badge variant="secondary" className="ml-1">{pullFromShopCount}</Badge>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="all" className="space-y-3">
@@ -2224,7 +2243,11 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         </TabsContent>
 
         <TabsContent value="ready">
-          <ReadyForJobMaterials userId={userId} currentJobId={job.id} />
+          <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="at_shop" />
+        </TabsContent>
+
+        <TabsContent value="pull">
+          <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="ready_to_pull" />
         </TabsContent>
       </Tabs>
     </div>
