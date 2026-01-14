@@ -123,10 +123,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   // If showing unavailable calendar, render that view
   if (showUnavailableCalendar) {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
         {!hideHeader && (
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+        <header className="bg-green-900 border-b border-slate-300 sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img 
@@ -134,14 +134,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 alt="Martin Builder" 
                 className="h-8 w-auto"
               />
-              <div className="border-l pl-3">
-                <p className="text-xs text-muted-foreground">
+              <div className="border-l border-slate-300 pl-3">
+                <p className="text-xs text-white">
                   {profile?.username} • Crew
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
@@ -162,10 +162,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   // If showing calendar page, render that view
   if (showCalendarPage) {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
         {!hideHeader && (
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+        <header className="bg-green-900 border-b border-slate-300 sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm" onClick={() => setShowCalendarPage(false)}>
@@ -180,7 +180,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
@@ -229,10 +229,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   // If showing time history, render that view
   if (showTimeHistory) {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
         {!hideHeader && (
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+        <header className="bg-green-900 border-b border-slate-300 sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img 
@@ -240,8 +240,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 alt="Martin Builder" 
                 className="h-8 w-auto"
               />
-              <div className="border-l pl-3">
-                <p className="text-xs text-muted-foreground">
+              <div className="border-l border-slate-300 pl-3">
+                <p className="text-xs text-white">
                   {profile?.username} • Crew
                 </p>
               </div>
@@ -255,7 +255,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               >
                 <CalendarIcon className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
@@ -276,10 +276,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   // If no job selected, show job selector
   if (!selectedJob) {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
         {!hideHeader && (
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
+        <header className="bg-green-900 border-b border-slate-300 sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img 
@@ -287,8 +287,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 alt="Martin Builder" 
                 className="h-8 w-auto"
               />
-              <div className="border-l pl-3">
-                <p className="text-xs text-muted-foreground">
+              <div className="border-l border-slate-300 pl-3">
+                <p className="text-xs text-white">
                   {profile?.username} • Crew
                 </p>
               </div>
@@ -334,7 +334,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                   toast.info('View all notifications');
                 }}
               />
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
@@ -344,23 +344,23 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
         {/* Active Timers Alert */}
         {activeTimers.length > 0 && (
-          <div className="bg-success text-success-foreground p-3 text-center text-sm font-medium">
+          <div className="bg-orange-500 text-white p-3 text-center text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
             {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
           </div>
         )}
 
         {/* Main Content - Job Selection */}
-        <main className="container mx-auto px-4 py-6 pb-32">
+        <main className="container mx-auto px-4 py-8 pb-32">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Select a Job</h2>
+              <h2 className="text-2xl font-bold text-green-900 tracking-tight">Select a Job</h2>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowCalendarPage(true)}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black"
               >
-                <CalendarIcon className="w-4 h-4" />
+                <CalendarIcon className="w-4 h-4 text-green-900" />
                 All Events
               </Button>
             </div>
@@ -379,7 +379,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         </main>
 
         {/* Fixed Bottom Action Bar */}
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg z-10">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg z-10">
           <div className="container mx-auto px-4 py-3 space-y-2">
             {/* Time Clock Button - Full width */}
             <QuickTimeEntry 
@@ -399,7 +399,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 onClick={() => setShowUnavailableCalendar(true)}
                 variant="ghost"
                 size="sm"
-                className="w-full text-xs text-muted-foreground hover:text-primary px-2 py-2 h-auto"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-2 py-2 h-auto rounded-none font-semibold"
               >
                 <CalendarIcon className="w-3 h-3 mr-1" />
                 Time Off
@@ -410,7 +410,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 onClick={() => setShowTimeHistory(true)}
                 variant="ghost"
                 size="sm"
-                className="w-full text-xs text-muted-foreground hover:text-primary px-2 py-2 h-auto"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-2 py-2 h-auto rounded-none font-semibold"
               >
                 <History className="w-3 h-3 mr-1" />
                 My Time
@@ -458,14 +458,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       )}
 
       {/* Job Header */}
-      <div className="bg-card border-b">
+      <div className="bg-white border-b-2 border-slate-300">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={handleBackToJobs}>
-              <ArrowLeft className="w-4 h-4" />
+            <Button variant="ghost" size="sm" onClick={handleBackToJobs} className="rounded-none hover:bg-slate-100">
+              <ArrowLeft className="w-4 h-4 text-black" />
             </Button>
             <div className="flex-1">
-              <h1 className="text-xl font-bold">{selectedJob.name}</h1>
+              <h1 className="text-xl font-bold text-green-900 tracking-tight">{selectedJob.name}</h1>
             </div>
             <Button 
               variant="ghost" 
@@ -474,16 +474,16 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 setCalendarJobId(selectedJob.id); // Filter calendar to current job only
                 setShowCalendarPage(true);
               }}
-              className="relative"
+              className="relative rounded-none hover:bg-slate-100"
             >
-              <CalendarIcon className="w-4 h-4" />
+              <CalendarIcon className="w-4 h-4 text-green-900" />
             </Button>
           </div>
         </div>
       </div>
 
       {/* Main Content - Tabbed Interface */}
-      <main className="container mx-auto px-4 py-6 pb-24">
+      <main className="container mx-auto px-4 py-8 pb-24">
         {activeTab === 'timer' && (
           <TimeTracker
             job={selectedJob}
@@ -533,58 +533,70 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       </main>
 
       {/* Bottom Navigation - 6 tabs for job features */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg">
         <div className="container mx-auto px-1 py-2 grid grid-cols-6 gap-0.5">
           <Button
             variant={activeTab === 'timer' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target relative"
+            className={`flex-col h-auto py-3 touch-target relative rounded-none ${
+              activeTab === 'timer' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('timer')}
           >
             {activeTimers.length > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-success rounded-full animate-pulse" />
+              <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
             )}
             <Clock className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Timer</span>
+            <span className="text-xs font-bold">Timer</span>
           </Button>
           <Button
             variant={activeTab === 'photos' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'photos' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('photos')}
           >
             <Camera className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Photos</span>
+            <span className="text-xs font-bold">Photos</span>
           </Button>
           <Button
             variant={activeTab === 'documents' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'documents' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('documents')}
           >
             <Briefcase className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Documents</span>
+            <span className="text-xs font-bold">Documents</span>
           </Button>
           <Button
             variant={activeTab === 'materials' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'materials' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('materials')}
           >
             <Package className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Materials</span>
+            <span className="text-xs font-bold">Materials</span>
           </Button>
           <Button
             variant={activeTab === 'history' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'history' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('history')}
           >
             <History className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">History</span>
+            <span className="text-xs font-bold">History</span>
           </Button>
           <Button
             variant={activeTab === 'schedule' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('schedule')}
           >
             <CalendarIcon className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Schedule</span>
+            <span className="text-xs font-bold">Schedule</span>
           </Button>
         </div>
       </nav>

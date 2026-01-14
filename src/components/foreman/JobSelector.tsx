@@ -134,25 +134,25 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
           </CardContent>
         </Card>
       ) : filteredJobs.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
+        <Card className="rounded-none border-slate-300">
+          <CardContent className="py-8 text-center text-black">
             No active jobs found
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {filteredJobs.map((job) => (
             <Card
               key={job.id}
-              className="cursor-pointer hover:shadow-md hover:border-primary transition-all"
+              className="cursor-pointer hover:shadow-lg hover:border-green-900 transition-all rounded-none border-slate-300 bg-white"
             >
               {/* Main clickable area for opening the job */}
               <div onClick={() => onSelectJob(job)}>
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-3 bg-slate-50">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-xl mb-2 text-orange-700">{job.name}</CardTitle>
-                      <p className="text-base font-medium text-muted-foreground">
+                      <CardTitle className="text-xl mb-2 text-green-900 font-bold tracking-tight">{job.name}</CardTitle>
+                      <p className="text-base font-medium text-black">
                         {job.client_name}
                       </p>
                       {((job.ready_materials_count || 0) > 0 || (job.pull_from_shop_count || 0) > 0) && (
@@ -167,7 +167,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                                 onSelectJobForMaterials?.(job);
                               }}
                             >
-                              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
+                              <Badge className="bg-green-900 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
                                 <Package className="w-3 h-3 mr-1" />
                                 {job.ready_materials_count} ready for job
                               </Badge>
@@ -183,7 +183,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                                 onSelectJobForPullMaterials?.(job);
                               }}
                             >
-                              <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer">
+                              <Badge className="bg-green-900 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
                                 <Package className="w-3 h-3 mr-1" />
                                 {job.pull_from_shop_count} pull from shop
                               </Badge>
@@ -196,19 +196,19 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 shrink-0"
+                      className="h-8 w-8 shrink-0 rounded-none hover:bg-slate-100"
                       onClick={(e) => {
                         e.stopPropagation();
                         onShowJobCalendar?.(job);
                       }}
                     >
-                      <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                      <CalendarIcon className="w-4 h-4 text-black" />
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-0 pb-4 space-y-3">
+                <CardContent className="pt-0 pb-4 space-y-3 bg-white">
                   {job.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">
+                    <p className="text-sm text-black line-clamp-2">
                       {job.description}
                     </p>
                   )}
@@ -218,21 +218,21 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                     <div className="space-y-2 pt-2">
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
-                          <Target className="w-4 h-4 text-primary" />
-                          <span className="text-muted-foreground">Progress</span>
+                          <Target className="w-4 h-4 text-green-900" />
+                          <span className="text-black font-semibold">Progress</span>
                         </div>
                         <span className={`font-bold ${
-                          job.isOverBudget ? 'text-red-900 dark:text-red-400' : 'text-primary'
+                          job.isOverBudget ? 'text-orange-500' : 'text-green-900'
                         }`}>
                           {job.actualProgressPercent.toFixed(0)}%
                         </span>
                       </div>
                       
                       {/* First Progress Bar - Always shows up to 100% */}
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-2 bg-slate-200 rounded-none overflow-hidden border border-slate-300">
                         <div 
                           className={`h-full transition-all ${
-                            job.isOverBudget ? 'bg-red-900 dark:bg-red-700' : 'bg-primary'
+                            job.isOverBudget ? 'bg-orange-500' : 'bg-green-900'
                           }`}
                           style={{ width: `${job.progressPercent}%` }}
                         />
@@ -241,14 +241,14 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                       {/* Second Progress Bar - Shows overflow when over 100% */}
                       {job.isOverBudget && job.actualProgressPercent > 100 && (
                         <div className="space-y-1">
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-2 bg-slate-200 rounded-none overflow-hidden border border-slate-300">
                             <div 
-                              className="h-full transition-all bg-red-900 dark:bg-red-700"
+                              className="h-full transition-all bg-orange-500"
                               style={{ width: `${Math.min(job.actualProgressPercent - 100, 100)}%` }}
                             />
                           </div>
                           <div className="text-center">
-                            <span className="text-xs font-bold text-red-900 dark:text-red-400">
+                            <span className="text-xs font-bold text-orange-500">
                               {(job.actualProgressPercent - 100).toFixed(0)}% over budget
                             </span>
                           </div>
@@ -262,11 +262,11 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
               </div>
               
               {/* Separate button for address link - requires deliberate action */}
-              <CardContent className="pt-0 pb-3 border-t">
+              <CardContent className="pt-0 pb-3 border-t border-slate-300 bg-slate-50">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start text-xs h-auto py-2"
+                  className="w-full justify-start text-xs h-auto py-2 rounded-none hover:bg-slate-100"
                   asChild
                   onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 >
@@ -274,11 +274,11 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 text-black"
                   >
-                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                    <MapPin className="w-3 h-3 flex-shrink-0 text-green-900" />
                     <span className="flex-1 text-left line-clamp-2">{job.address}</span>
-                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    <ExternalLink className="w-3 h-3 flex-shrink-0 text-green-900" />
                   </a>
                 </Button>
               </CardContent>
