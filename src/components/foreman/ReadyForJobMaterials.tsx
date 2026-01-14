@@ -14,6 +14,7 @@ interface Material {
   quantity: number;
   length: string | null;
   use_case: string | null;
+  color: string | null;
   status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   job_id: string;
   category_id: string;
@@ -174,7 +175,9 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
             // Sort categories alphabetically and render each group
             return Object.keys(grouped)
               .sort((a, b) => a.localeCompare(b))
-              .map((categoryName) => (
+              .map((categoryName) => {
+                const showColorInCategory = /metal|trim/i.test(categoryName);
+                return (
                 <div key={categoryName} className="space-y-2">
                   {/* Category Header */}
                   <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 px-3 border-b">
@@ -196,6 +199,11 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
                                 <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
                                 {material.length && (
                                   <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{material.length}</span></span>
+                                )}
+                                {showColorInCategory && material.color && (
+                                  <Badge variant="outline" className="text-xs font-medium">
+                                    {material.color}
+                                  </Badge>
                                 )}
                               </div>
                               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
@@ -220,7 +228,8 @@ export function ReadyForJobMaterials({ userId, currentJobId }: ReadyForJobMateri
                     ))}
                   </div>
                 </div>
-              ));
+              );
+            });
           })()}
         </div>
       )}
