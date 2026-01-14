@@ -155,9 +155,9 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                       <p className="text-base font-medium text-muted-foreground">
                         {job.client_name}
                       </p>
-                      {((job.ready_materials_count && job.ready_materials_count > 0) || (job.pull_from_shop_count && job.pull_from_shop_count > 0)) && (
+                      {((job.ready_materials_count || 0) > 0 || (job.pull_from_shop_count || 0) > 0) && (
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {job.ready_materials_count && job.ready_materials_count > 0 && (
+                          {(job.ready_materials_count || 0) > 0 && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -173,7 +173,7 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                               </Badge>
                             </Button>
                           )}
-                          {job.pull_from_shop_count && job.pull_from_shop_count > 0 && (
+                          {(job.pull_from_shop_count || 0) > 0 && (
                             <Button
                               variant="ghost"
                               size="sm"
