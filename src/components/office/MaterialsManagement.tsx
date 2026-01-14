@@ -190,6 +190,22 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     loadMaterials();
     loadUsers();
     loadAllJobs();
+
+    // Subscribe to real-time material changes
+    const materialsChannel = supabase
+      .channel('office_materials_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'materials', filter: `job_id=eq.${job.id}` },
+        () => {
+          console.log('Material change detected in office - reloading materials');
+          loadMaterials();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(materialsChannel);
+    };
   }, [job.id]);
 
   // Auto-copy categories from Darrell Richard job if this job has none

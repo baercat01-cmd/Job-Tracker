@@ -162,6 +162,36 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
     loadMaterials();
     loadBundles();
     checkReadyMaterials();
+
+    // Subscribe to real-time material changes
+    const materialsChannel = supabase
+      .channel('materials_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'materials', filter: `job_id=eq.${job.id}` },
+        () => {
+          console.log('Material change detected - reloading materials');
+          loadMaterials();
+          checkReadyMaterials();
+        }
+      )
+      .subscribe();
+
+    // Subscribe to real-time bundle changes
+    const bundlesChannel = supabase
+      .channel('bundles_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'material_bundles', filter: `job_id=eq.${job.id}` },
+        () => {
+          console.log('Bundle change detected - reloading bundles');
+          loadBundles();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(materialsChannel);
+      supabase.removeChannel(bundlesChannel);
+    };
   }, [job.id]);
 
   async function checkReadyMaterials() {
