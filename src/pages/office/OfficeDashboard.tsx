@@ -100,7 +100,7 @@ export function OfficeDashboard() {
     return (
       <div className="min-h-screen bg-slate-50">
         {/* Header with view switcher */}
-        <header className="bg-green-900 border-b-2 border-slate-300 shadow-sm">
+        <header className="bg-white border-b-2 border-slate-300 shadow-sm">
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img 
@@ -109,8 +109,8 @@ export function OfficeDashboard() {
                 className="h-10 w-auto"
               />
               <div className="border-l border-slate-300 pl-4">
-                <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
-                <p className="text-xs text-white">Field View Preview</p>
+                <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
+                <p className="text-xs text-black">Field View Preview</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -128,10 +128,10 @@ export function OfficeDashboard() {
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="text-right">
-                <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
-                <p className="text-xs text-white capitalize">{profile?.role}</p>
+                <p className="text-sm font-bold text-black">{profile?.username || profile?.email}</p>
+                <p className="text-xs text-black capitalize">{profile?.role}</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-green-800">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-black hover:bg-slate-100">
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
               </Button>
@@ -147,7 +147,7 @@ export function OfficeDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-green-900 border-b-2 border-slate-300 shadow-sm">
+      <header className="bg-white border-b-2 border-slate-300 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <img 
@@ -156,8 +156,8 @@ export function OfficeDashboard() {
               className="h-10 w-auto"
             />
             <div className="border-l border-slate-300 pl-4">
-              <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
-              <p className="text-xs text-white">Office Dashboard</p>
+              <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
+              <p className="text-xs text-black">Office Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -209,10 +209,10 @@ export function OfficeDashboard() {
               onViewAll={() => setActiveTab('notifications')}
             />
             <div className="text-right">
-              <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
-              <p className="text-xs text-white capitalize">{profile?.role}</p>
+              <p className="text-sm font-bold text-black">{profile?.username || profile?.email}</p>
+              <p className="text-xs text-black capitalize">{profile?.role}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-green-800">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-black hover:bg-slate-100">
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </Button>
