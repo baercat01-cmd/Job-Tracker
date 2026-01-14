@@ -98,9 +98,9 @@ export function OfficeDashboard() {
   // If in field view mode, render the foreman dashboard
   if (viewMode === 'field') {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header with view switcher */}
-        <header className="bg-card border-b shadow-sm">
+        <header className="bg-green-900 border-b-2 border-slate-300 shadow-sm">
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img 
@@ -108,30 +108,30 @@ export function OfficeDashboard() {
                 alt="Martin Builder" 
                 className="h-10 w-auto"
               />
-              <div className="border-l pl-4">
-                <h1 className="text-lg font-bold text-foreground">FieldTrack Pro</h1>
-                <p className="text-xs text-muted-foreground">Field View Preview</p>
+              <div className="border-l border-slate-300 pl-4">
+                <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
+                <p className="text-xs text-white">Field View Preview</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="rounded-none border-slate-300 bg-white text-black hover:bg-slate-100">
                     <Eye className="w-4 h-4 mr-2" />
                     Field View
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setViewMode('office')}>
+                <DropdownMenuContent align="end" className="rounded-none border-slate-300">
+                  <DropdownMenuItem onClick={() => setViewMode('office')} className="rounded-none">
                     Switch to Office View
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="text-right">
-                <p className="text-sm font-medium">{profile?.username || profile?.email}</p>
-                <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
+                <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
+                <p className="text-xs text-white capitalize">{profile?.role}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-green-800">
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
               </Button>
@@ -145,9 +145,9 @@ export function OfficeDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-card border-b shadow-sm">
+      <header className="bg-green-900 border-b-2 border-slate-300 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <img 
@@ -155,21 +155,21 @@ export function OfficeDashboard() {
               alt="Martin Builder" 
               className="h-10 w-auto"
             />
-            <div className="border-l pl-4">
-              <h1 className="text-lg font-bold text-foreground">FieldTrack Pro</h1>
-              <p className="text-xs text-muted-foreground">Office Dashboard</p>
+            <div className="border-l border-slate-300 pl-4">
+              <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
+              <p className="text-xs text-white">Office Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="rounded-none border-slate-300 bg-white text-black hover:bg-slate-100">
                   <Eye className="w-4 h-4 mr-2" />
                   Office View
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setViewMode('field')}>
+              <DropdownMenuContent align="end" className="rounded-none border-slate-300">
+                <DropdownMenuItem onClick={() => setViewMode('field')} className="rounded-none">
                   Switch to Field View
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -209,10 +209,10 @@ export function OfficeDashboard() {
               onViewAll={() => setActiveTab('notifications')}
             />
             <div className="text-right">
-              <p className="text-sm font-medium">{profile?.username || profile?.email}</p>
-              <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
+              <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
+              <p className="text-xs text-white capitalize">{profile?.role}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-green-800">
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </Button>
@@ -223,24 +223,24 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-6">
-            <TabsTrigger value="jobs" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-white border-2 border-slate-300 rounded-none">
+            <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
             </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2">
+            <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Calendar</span>
             </TabsTrigger>
-            <TabsTrigger value="time" className="flex items-center gap-2">
+            <TabsTrigger value="time" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Clock className="w-4 h-4" />
               <span className="hidden sm:inline">Time</span>
             </TabsTrigger>
-            <TabsTrigger value="photos" className="flex items-center gap-2">
+            <TabsTrigger value="photos" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Camera className="w-4 h-4" />
               <span className="hidden sm:inline">Photos</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
+            <TabsTrigger value="settings" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">Settings</span>
             </TabsTrigger>
@@ -263,12 +263,12 @@ export function OfficeDashboard() {
 
           <TabsContent value="calendar">
             <Tabs value={calendarView} onValueChange={setCalendarView} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="calendar">
+              <TabsList className="grid w-full grid-cols-2 mb-6 bg-white border-2 border-slate-300 rounded-none">
+                <TabsTrigger value="calendar" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                   <Calendar className="w-4 h-4 mr-2" />
                   Calendar View
                 </TabsTrigger>
-                <TabsTrigger value="gantt">
+                <TabsTrigger value="gantt" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                   <Briefcase className="w-4 h-4 mr-2" />
                   Gantt Chart
                 </TabsTrigger>
@@ -301,45 +301,45 @@ export function OfficeDashboard() {
           <TabsContent value="settings">
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-bold mb-2">Settings</h2>
-                <p className="text-muted-foreground">Manage system configuration, users, and data export</p>
+                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Settings</h2>
+                <p className="text-black">Manage system configuration, users, and data export</p>
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-9">
-                  <TabsTrigger value="export">
+                <TabsList className="grid w-full grid-cols-9 bg-white border-2 border-slate-300 rounded-none">
+                  <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Download className="w-4 h-4 mr-2" />
                     Export
                   </TabsTrigger>
-                  <TabsTrigger value="components">
+                  <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Settings className="w-4 h-4 mr-2" />
                     Components
                   </TabsTrigger>
-                  <TabsTrigger value="workers">
+                  <TabsTrigger value="workers" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Users className="w-4 h-4 mr-2" />
                     Workers
                   </TabsTrigger>
-                  <TabsTrigger value="subcontractors">
+                  <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Users className="w-4 h-4 mr-2" />
                     Subs
                   </TabsTrigger>
-                  <TabsTrigger value="schedule">
+                  <TabsTrigger value="schedule" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Calendar className="w-4 h-4 mr-2" />
                     Schedule
                   </TabsTrigger>
-                  <TabsTrigger value="internal">
+                  <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Briefcase className="w-4 h-4 mr-2" />
                     Internal
                   </TabsTrigger>
-                  <TabsTrigger value="users">
+                  <TabsTrigger value="users" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Users className="w-4 h-4 mr-2" />
                     Users
                   </TabsTrigger>
-                  <TabsTrigger value="archived">
+                  <TabsTrigger value="archived" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Archive className="w-4 h-4 mr-2" />
                     Archived
                   </TabsTrigger>
-                  <TabsTrigger value="shop-tasks">
+                  <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <ListTodo className="w-4 h-4 mr-2" />
                     Shop Tasks
                   </TabsTrigger>
