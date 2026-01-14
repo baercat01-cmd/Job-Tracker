@@ -155,40 +155,42 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                       <p className="text-base font-medium text-muted-foreground">
                         {job.client_name}
                       </p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {job.ready_materials_count && job.ready_materials_count > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto p-0 hover:bg-transparent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectJobForMaterials?.(job);
-                            }}
-                          >
-                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
-                              <Package className="w-3 h-3 mr-1" />
-                              {job.ready_materials_count} ready for job
-                            </Badge>
-                          </Button>
-                        )}
-                        {job.pull_from_shop_count && job.pull_from_shop_count > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto p-0 hover:bg-transparent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectJobForPullMaterials?.(job);
-                            }}
-                          >
-                            <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer">
-                              <Package className="w-3 h-3 mr-1" />
-                              {job.pull_from_shop_count} pull from shop
-                            </Badge>
-                          </Button>
-                        )}
-                      </div>
+                      {((job.ready_materials_count && job.ready_materials_count > 0) || (job.pull_from_shop_count && job.pull_from_shop_count > 0)) && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {job.ready_materials_count && job.ready_materials_count > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-0 hover:bg-transparent"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectJobForMaterials?.(job);
+                              }}
+                            >
+                              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
+                                <Package className="w-3 h-3 mr-1" />
+                                {job.ready_materials_count} ready for job
+                              </Badge>
+                            </Button>
+                          )}
+                          {job.pull_from_shop_count && job.pull_from_shop_count > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-0 hover:bg-transparent"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectJobForPullMaterials?.(job);
+                              }}
+                            >
+                              <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer">
+                                <Package className="w-3 h-3 mr-1" />
+                                {job.pull_from_shop_count} pull from shop
+                              </Badge>
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {/* Calendar icon - prevent propagation to not trigger job selection */}
                     <Button
