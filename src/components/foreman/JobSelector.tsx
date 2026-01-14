@@ -14,6 +14,7 @@ interface JobSelectorProps {
   userId: string;
   onShowJobCalendar?: (job: Job) => void;
   onSelectJobForMaterials?: (job: Job) => void;
+  onSelectJobForPullMaterials?: (job: Job) => void;
 }
 
 interface JobWithProgress extends Job {
@@ -22,12 +23,14 @@ interface JobWithProgress extends Job {
   actualProgressPercent: number;
   isOverBudget: boolean;
   ready_materials_count?: number;
+  pull_from_shop_count?: number;
 }
 
-export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJobForMaterials }: JobSelectorProps) {
+export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJobForMaterials, onSelectJobForPullMaterials }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
+  const [totalPullMaterials, setTotalPullMaterials] = useState(0);
 
   useEffect(() => {
     loadJobs();
@@ -72,14 +75,20 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
       const filteredJobs = (jobsData || [])
         .filter(job => job.name !== 'Misc Jobs');
 
-      // Load ready materials count for each job
+      // Load ready materials count and pull from shop count for each job
       const jobsWithMaterials = await Promise.all(
         filteredJobs.map(async (job) => {
-          const { count } = await supabase
+          const { count: readyCount } = await supabase
             .from('materials')
             .select('id', { count: 'exact', head: true })
             .eq('job_id', job.id)
             .eq('status', 'at_shop');
+          
+          const { count: pullCount } = await supabase
+            .from('materials')
+            .select('id', { count: 'exact', head: true })
+            .eq('job_id', job.id)
+            .eq('status', 'ready_to_pull');
           
           const totalManHours = jobManHours.get(job.id) || 0;
           const estimatedHours = job.estimated_hours || 0;
@@ -95,13 +104,16 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
             progressPercent,
             actualProgressPercent,
             isOverBudget,
-            ready_materials_count: count || 0,
+            ready_materials_count: readyCount || 0,
+            pull_from_shop_count: pullCount || 0,
           };
         })
       );
       
-      const total = jobsWithMaterials.reduce((sum, job) => sum + (job.ready_materials_count || 0), 0);
-      setTotalReadyMaterials(total);
+      const totalReady = jobsWithMaterials.reduce((sum, job) => sum + (job.ready_materials_count || 0), 0);
+      const totalPull = jobsWithMaterials.reduce((sum, job) => sum + (job.pull_from_shop_count || 0), 0);
+      setTotalReadyMaterials(totalReady);
+      setTotalPullMaterials(totalPull);
       setJobs(jobsWithMaterials);
     } catch (error) {
       console.error('Error loading jobs:', error);
@@ -143,22 +155,40 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
                       <p className="text-base font-medium text-muted-foreground">
                         {job.client_name}
                       </p>
-                      {job.ready_materials_count && job.ready_materials_count > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2 h-auto p-0 hover:bg-transparent"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectJobForMaterials?.(job);
-                          }}
-                        >
-                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
-                            <Package className="w-3 h-3 mr-1" />
-                            {job.ready_materials_count} ready for job
-                          </Badge>
-                        </Button>
-                      )}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {job.ready_materials_count && job.ready_materials_count > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 hover:bg-transparent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectJobForMaterials?.(job);
+                            }}
+                          >
+                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer">
+                              <Package className="w-3 h-3 mr-1" />
+                              {job.ready_materials_count} ready for job
+                            </Badge>
+                          </Button>
+                        )}
+                        {job.pull_from_shop_count && job.pull_from_shop_count > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 hover:bg-transparent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectJobForPullMaterials?.(job);
+                            }}
+                          >
+                            <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer">
+                              <Package className="w-3 h-3 mr-1" />
+                              {job.pull_from_shop_count} pull from shop
+                            </Badge>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     {/* Calendar icon - prevent propagation to not trigger job selection */}
                     <Button

@@ -47,6 +47,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [showCalendarPage, setShowCalendarPage] = useState(false);
   const [calendarJobId, setCalendarJobId] = useState<string | undefined>(undefined);
   const [showUnavailableCalendar, setShowUnavailableCalendar] = useState(false);
+  const [materialsDefaultTab, setMaterialsDefaultTab] = useState<'all' | 'ready' | 'pull'>('all');
 
   useEffect(() => {
     if (profile?.id) {
@@ -99,9 +100,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     setActiveTab('timer'); // Default to timer tab when selecting a job
   };
 
-  const handleJobSelectForMaterials = (job: Job) => {
+  const handleJobSelectForMaterials = (job: Job, defaultTab: 'all' | 'ready' | 'pull' = 'ready') => {
     setSelectedJob(job);
     setActiveTab('materials'); // Open directly to materials tab
+    setMaterialsDefaultTab(defaultTab);
+  };
+
+  const handleJobSelectForPullMaterials = (job: Job) => {
+    handleJobSelectForMaterials(job, 'pull');
   };
 
   const handleBackToJobs = () => {
@@ -367,6 +373,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 setShowCalendarPage(true);
               }}
               onSelectJobForMaterials={handleJobSelectForMaterials}
+              onSelectJobForPullMaterials={handleJobSelectForPullMaterials}
             />
           </div>
         </main>
@@ -507,7 +514,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             job={selectedJob}
             userId={profile?.id || ''}
             allowBundleCreation={false}
-            defaultTab='all'
+            defaultTab={materialsDefaultTab}
           />
         )}
 
