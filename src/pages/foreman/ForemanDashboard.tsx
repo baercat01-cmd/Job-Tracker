@@ -20,7 +20,7 @@ import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
 import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
-import { ComponentsManagement } from '@/components/office/ComponentsManagement';
+import { JobComponents } from '@/components/office/JobComponents';
 
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
@@ -33,7 +33,7 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule' | 'components';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -50,9 +50,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [calendarJobId, setCalendarJobId] = useState<string | undefined>(undefined);
   const [showUnavailableCalendar, setShowUnavailableCalendar] = useState(false);
   const [materialsDefaultTab, setMaterialsDefaultTab] = useState<'all' | 'ready' | 'pull'>('all');
-  const [showComponentsManagement, setShowComponentsManagement] = useState(false);
   const [showGanttChart, setShowGanttChart] = useState(false);
+  const [jobData, setJobData] = useState<Job | null>(selectedJob);
   const isForeman = profile?.role === 'foreman';
+
+  // Update jobData when selectedJob changes
+  useEffect(() => {
+    setJobData(selectedJob);
+  }, [selectedJob]);
 
   // Debug logging
   useEffect(() => {
@@ -430,21 +435,6 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <div className="space-y-4">
               {isForeman && (
                 <Button
-                  onClick={() => {
-                    console.log('✅ Manage Components clicked');
-                    setShowComponentsManagement(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="w-full flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black font-semibold"
-                >
-                  <Package className="w-4 h-4 text-green-900" />
-                  Manage Components
-                </Button>
-              )}
-              
-              {isForeman && (
-                <Button
                   onClick={() => setShowGanttChart(true)}
                   variant="outline"
                   size="sm"
@@ -514,41 +504,21 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     );
   }
 
-  // If showing components management (foreman only)
-  if (showComponentsManagement && isForeman) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        {!hideHeader && (
-        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
-          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={() => setShowComponentsManagement(false)} className="rounded-none border-slate-300">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <div className="border-l border-slate-300 pl-3">
-                <p className="font-bold text-green-900">Components Management</p>
-                <p className="text-xs text-black">
-                  {profile?.username} • Foreman
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
-                <LogOut className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </header>
-        )}
-
-        <main className="container mx-auto px-4 py-6">
-          <ComponentsManagement />
-        </main>
-      </div>
-    );
-  }
+  // Reload job data function
+  const reloadJobData = async () => {
+    if (!selectedJob) return;
+    
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', selectedJob.id)
+      .single();
+    
+    if (!error && data) {
+      setJobData(data);
+      setSelectedJob(data);
+    }
+  };
 
   // Job selected - show tabbed interface
   return (
@@ -658,11 +628,18 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             job={selectedJob}
           />
         )}
+
+        {activeTab === 'components' && jobData && (
+          <JobComponents
+            job={jobData}
+            onUpdate={reloadJobData}
+          />
+        )}
       </main>
 
-      {/* Bottom Navigation - 6 tabs for job features */}
+      {/* Bottom Navigation - 7 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg">
-        <div className="container mx-auto px-0 py-0 grid grid-cols-6">
+        <div className="container mx-auto px-0 py-0 grid grid-cols-7">
           <Button
             variant="ghost"
             className={`flex-col h-auto py-3 touch-target relative border-r border-slate-300 rounded-none ${
@@ -718,13 +695,23 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
               activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('schedule')}
           >
             <CalendarIcon className="w-6 h-6 mb-1" />
             <span className="text-xs font-bold">Schedule</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`flex-col h-auto py-3 touch-target rounded-none ${
+              activeTab === 'components' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
+            onClick={() => setActiveTab('components')}
+          >
+            <Package className="w-6 h-6 mb-1" />
+            <span className="text-xs font-bold">Components</span>
           </Button>
         </div>
       </nav>
