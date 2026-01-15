@@ -20,6 +20,7 @@ import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
 import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
+import { ComponentsManagement } from '@/components/office/ComponentsManagement';
 
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { NotificationBell } from '@/components/office/NotificationBell';
@@ -48,6 +49,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [calendarJobId, setCalendarJobId] = useState<string | undefined>(undefined);
   const [showUnavailableCalendar, setShowUnavailableCalendar] = useState(false);
   const [materialsDefaultTab, setMaterialsDefaultTab] = useState<'all' | 'ready' | 'pull'>('all');
+  const [showComponentsManagement, setShowComponentsManagement] = useState(false);
+  const isForeman = profile?.role === 'foreman';
 
   useEffect(() => {
     if (profile?.id) {
@@ -365,16 +368,31 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               </Button>
             </div>
             
-            <JobSelector 
-              onSelectJob={handleJobSelect} 
-              userId={profile?.id || ''}
-              onShowJobCalendar={(job) => {
-                setCalendarJobId(job.id);
-                setShowCalendarPage(true);
-              }}
-              onSelectJobForMaterials={handleJobSelectForMaterials}
-              onSelectJobForPullMaterials={handleJobSelectForPullMaterials}
-            />
+            <div className="space-y-4">
+              {isForeman && (
+                <Button
+                  onClick={() => setShowComponentsManagement(true)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black font-semibold"
+                >
+                  <Package className="w-4 h-4 text-green-900" />
+                  Manage Components
+                </Button>
+              )}
+              
+              <JobSelector 
+                onSelectJob={handleJobSelect} 
+                userId={profile?.id || ''}
+                userRole={profile?.role}
+                onShowJobCalendar={(job) => {
+                  setCalendarJobId(job.id);
+                  setShowCalendarPage(true);
+                }}
+                onSelectJobForMaterials={handleJobSelectForMaterials}
+                onSelectJobForPullMaterials={handleJobSelectForPullMaterials}
+              />
+            </div>
           </div>
         </main>
 
@@ -418,6 +436,42 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // If showing components management (foreman only)
+  if (showComponentsManagement && isForeman) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setShowComponentsManagement(false)} className="rounded-none border-slate-300">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+              <div className="border-l border-slate-300 pl-3">
+                <p className="font-bold text-green-900">Components Management</p>
+                <p className="text-xs text-black">
+                  {profile?.username} • Foreman
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-4 py-6">
+          <ComponentsManagement />
+        </main>
       </div>
     );
   }

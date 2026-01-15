@@ -12,6 +12,7 @@ import type { Job } from '@/types';
 interface JobSelectorProps {
   onSelectJob: (job: Job) => void;
   userId: string;
+  userRole?: string;
   onShowJobCalendar?: (job: Job) => void;
   onSelectJobForMaterials?: (job: Job) => void;
   onSelectJobForPullMaterials?: (job: Job) => void;
@@ -26,7 +27,7 @@ interface JobWithProgress extends Job {
   pull_from_shop_count?: number;
 }
 
-export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJobForMaterials, onSelectJobForPullMaterials }: JobSelectorProps) {
+export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, onSelectJobForMaterials, onSelectJobForPullMaterials }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
@@ -42,15 +43,21 @@ export function JobSelector({ onSelectJob, userId, onShowJobCalendar, onSelectJo
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-      // Only show active, non-internal jobs to crew members
-      // If projected_start_date is set, only show jobs on or after that date
-      const { data: jobsData, error: jobsError } = await supabase
+      // For foremen: show all active jobs (including those with future start dates)
+      // For crew: only show active, non-internal jobs on or after projected_start_date
+      let jobsQuery = supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active') // Only active jobs - no quoting or on_hold
         .eq('is_internal', false)
-        .or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`)
         .order('created_at', { ascending: false });
+
+      // If not a foreman, filter by projected start date
+      if (userRole !== 'foreman') {
+        jobsQuery = jobsQuery.or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`);
+      }
+
+      const { data: jobsData, error: jobsError } = await jobsQuery;
 
       if (jobsError) throw jobsError;
 
