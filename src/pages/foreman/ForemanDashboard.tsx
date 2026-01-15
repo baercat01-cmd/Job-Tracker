@@ -29,6 +29,7 @@ import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
 import { JobCalendar } from '@/components/office/JobCalendar';
 import { JobSchedule } from '@/components/office/JobSchedule';
+import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 
 
@@ -50,6 +51,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [showUnavailableCalendar, setShowUnavailableCalendar] = useState(false);
   const [materialsDefaultTab, setMaterialsDefaultTab] = useState<'all' | 'ready' | 'pull'>('all');
   const [showComponentsManagement, setShowComponentsManagement] = useState(false);
+  const [showGanttChart, setShowGanttChart] = useState(false);
   const isForeman = profile?.role === 'foreman';
 
   useEffect(() => {
@@ -122,6 +124,57 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     clearUser();
     toast.success('Signed out successfully');
   };
+
+  // If showing Gantt chart, render that view
+  if (showGanttChart) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setShowGanttChart(false)} className="rounded-none border-slate-300">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+              <div className="border-l border-slate-300 pl-3">
+                <p className="font-bold text-green-900">All Jobs Schedule</p>
+                <p className="text-xs text-black">
+                  {profile?.username} • Foreman
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-4 py-6">
+          <JobGanttChart
+            onJobSelect={(jobId) => {
+              // Load and select the job
+              supabase
+                .from('jobs')
+                .select('*')
+                .eq('id', jobId)
+                .single()
+                .then(({ data, error }) => {
+                  if (!error && data) {
+                    setSelectedJob(data);
+                    setShowGanttChart(false);
+                  }
+                });
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
 
   // If showing unavailable calendar, render that view
   if (showUnavailableCalendar) {
@@ -378,6 +431,18 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 >
                   <Package className="w-4 h-4 text-green-900" />
                   Manage Components
+                </Button>
+              )}
+              
+              {isForeman && (
+                <Button
+                  onClick={() => setShowGanttChart(true)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black font-semibold mb-4"
+                >
+                  <BarChart3 className="w-4 h-4 text-green-900" />
+                  View All Jobs Schedule
                 </Button>
               )}
               
