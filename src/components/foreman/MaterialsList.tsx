@@ -244,7 +244,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
     try {
       const { data: atShopData, error: atShopError } = await supabase
         .from('materials')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('job_id', job.id)
         .eq('status', 'at_shop');
 
@@ -255,7 +255,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
 
       const { data: pullData, error: pullError } = await supabase
         .from('materials')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('job_id', job.id)
         .eq('status', 'ready_to_pull');
 
