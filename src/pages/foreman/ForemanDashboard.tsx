@@ -346,7 +346,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       <div className="min-h-screen bg-slate-50">
         {/* Header */}
         {!hideHeader && (
-        <header className="bg-green-900 border-b border-slate-300 sticky top-0 z-10 shadow-sm">
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img 
@@ -355,7 +355,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 className="h-8 w-auto"
               />
               <div className="border-l border-slate-300 pl-3">
-                <p className="text-xs text-white">
+                <p className="text-xs text-black font-semibold">
                   {profile?.username} • Crew
                 </p>
               </div>
@@ -365,7 +365,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 variant="ghost" 
                 size="icon" 
                 onClick={() => setShowCalendarPage(true)}
-                className="relative h-9 w-9"
+                className="relative h-9 w-9 text-black hover:bg-slate-100 rounded-none"
               >
                 <CalendarIcon className="w-5 h-5" />
               </Button>
@@ -401,7 +401,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                   toast.info('View all notifications');
                 }}
               />
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-green-800 rounded-none">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
                 <LogOut className="w-4 h-4" />
               </Button>
             </div>
