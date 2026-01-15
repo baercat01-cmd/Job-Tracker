@@ -910,26 +910,26 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       {localTimers.map((timer) => (
         <Card 
           key={timer.id} 
-          className={timer.state === 'running' ? 'border-l-4 border-l-orange-500 shadow-lg rounded-none border-slate-300 bg-white' : 'border-2 border-yellow-500 rounded-none bg-white'}
+          className={timer.state === 'running' ? 'border-2 border-orange-500 shadow-lg rounded-none bg-orange-50' : 'border-2 border-slate-300 rounded-none bg-white'}
         >
-          <CardHeader className="pb-3">
+          <CardHeader className={timer.state === 'running' ? 'pb-3 bg-orange-500 border-b-2 border-orange-600' : 'pb-3 bg-slate-50 border-b-2 border-slate-300'}>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'text-green-600' : 'text-yellow-600'}`} />
+              <CardTitle className={`text-lg flex items-center gap-2 font-bold ${timer.state === 'running' ? 'text-white' : 'text-green-900'}`}>
+                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'animate-pulse' : ''}`} />
                 {timer.componentName}
               </CardTitle>
-              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'} className="rounded-none">
-                {timer.state === 'running' ? 'Running' : 'Paused'}
+              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'} className={`rounded-none font-bold ${timer.state === 'running' ? 'bg-white text-orange-500' : 'bg-slate-200 text-black'}`}>
+                {timer.state === 'running' ? 'ACTIVE' : 'Paused'}
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-center py-4">
-              <div className="text-5xl font-mono font-bold tabular-nums">
+          <CardContent className="space-y-3 pt-4">
+            <div className={`text-center py-6 rounded-none border-2 ${timer.state === 'running' ? 'bg-white border-orange-500' : 'bg-slate-50 border-slate-300'}`}>
+              <div className={`text-6xl font-mono font-bold tabular-nums tracking-tight ${timer.state === 'running' ? 'text-orange-500' : 'text-green-900'}`}>
                 {formatElapsedTime(timer)}
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                {formatHoursDecimal(timer.totalElapsedMs + (timer.state === 'running' ? Date.now() - new Date(timer.startTime).getTime() : 0))} hours
+              <p className="text-sm text-black font-bold mt-3">
+                {formatHoursDecimal(timer.totalElapsedMs + (timer.state === 'running' ? Date.now() - new Date(timer.startTime).getTime() : 0))} hours total
               </p>
             </div>
             
@@ -956,17 +956,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="outline"
                     onClick={() => pauseTimer(timer.id)}
-                    className="touch-target rounded-none"
+                    className="touch-target rounded-none border-2 border-slate-300 bg-white hover:bg-slate-100 font-bold h-12"
                   >
-                    <Pause className="w-4 h-4 mr-2" />
+                    <Pause className="w-5 h-5 mr-2" />
                     Pause
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target rounded-none"
+                    className="touch-target rounded-none font-bold h-12"
                   >
-                    <StopCircle className="w-4 h-4 mr-2" />
+                    <StopCircle className="w-5 h-5 mr-2" />
                     Stop
                   </Button>
                 </>
@@ -975,17 +975,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="default"
                     onClick={() => resumeTimer(timer.id)}
-                    className="touch-target bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
+                    className="touch-target bg-orange-500 text-white hover:bg-orange-600 rounded-none font-bold h-12"
                   >
-                    <Play className="w-4 h-4 mr-2" />
+                    <Play className="w-5 h-5 mr-2" />
                     Resume
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target rounded-none"
+                    className="touch-target rounded-none font-bold h-12"
                   >
-                    <StopCircle className="w-4 h-4 mr-2" />
+                    <StopCircle className="w-5 h-5 mr-2" />
                     Stop
                   </Button>
                 </>

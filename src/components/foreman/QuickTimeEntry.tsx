@@ -674,34 +674,34 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
   // If clocked in, show clocked in status
   if (clockedInEntry) {
     return (
-      <Card className="border-2 border-success bg-success/10">
-        <CardHeader className="pb-3">
+      <Card className="border-2 border-orange-500 shadow-lg rounded-none bg-orange-50">
+        <CardHeader className="pb-3 bg-orange-500 border-b-2 border-orange-600">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <div className="w-3 h-3 bg-success rounded-full animate-pulse" />
-              Clocked In
+            <CardTitle className="flex items-center gap-2 text-base font-bold text-white">
+              <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              CLOCKED IN
             </CardTitle>
-            <Badge variant="default" className="bg-success">
-              Active
+            <Badge variant="default" className="bg-white text-orange-500 rounded-none font-bold">
+              ACTIVE
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-center py-4 bg-card rounded-lg">
-            <p className="text-sm text-muted-foreground mb-2">Time on job</p>
-            <p className="text-4xl font-mono font-bold text-success">
+        <CardContent className="space-y-4 pt-4">
+          <div className="text-center py-6 bg-white rounded-none border-2 border-orange-500">
+            <p className="text-sm text-black font-bold mb-2 uppercase tracking-wide">Time on Job</p>
+            <p className="text-5xl font-mono font-bold text-orange-500 tabular-nums tracking-tight">
               {formatTimerDisplay(elapsedSeconds)}
             </p>
           </div>
 
-          <div className="space-y-2 p-3 bg-card rounded-lg">
+          <div className="space-y-2 p-4 bg-white rounded-none border-2 border-slate-300">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Job:</span>
-              <span className="font-medium">{clockedInEntry.job_name}</span>
+              <span className="text-black font-bold">Job:</span>
+              <span className="font-bold text-green-900">{clockedInEntry.job_name}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Started:</span>
-              <span className="font-medium">
+              <span className="text-black font-bold">Started:</span>
+              <span className="font-bold text-green-900">
                 {new Date(clockedInEntry.start_time).toLocaleTimeString([], { 
                   hour: '2-digit', 
                   minute: '2-digit' 
@@ -714,7 +714,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
             onClick={handleClockOut}
             disabled={loading}
             size="lg"
-            className="w-full h-14 text-lg"
+            className="w-full h-14 text-lg rounded-none font-bold"
             variant="destructive"
           >
             <LogOut className="w-6 h-6 mr-3" />
