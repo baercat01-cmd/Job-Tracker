@@ -54,6 +54,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [showGanttChart, setShowGanttChart] = useState(false);
   const isForeman = profile?.role === 'foreman';
 
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 ForemanDashboard - Role:', profile?.role, 'isForeman:', isForeman);
+  }, [profile?.role, isForeman]);
+
   useEffect(() => {
     if (profile?.id) {
       loadActiveTimers();
@@ -425,7 +430,10 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <div className="space-y-4">
               {isForeman && (
                 <Button
-                  onClick={() => setShowComponentsManagement(true)}
+                  onClick={() => {
+                    console.log('✅ Manage Components clicked');
+                    setShowComponentsManagement(true);
+                  }}
                   variant="outline"
                   size="sm"
                   className="w-full flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black font-semibold"
@@ -507,7 +515,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   }
 
   // If showing components management (foreman only)
+  useEffect(() => {
+    if (showComponentsManagement) {
+      console.log('📦 showComponentsManagement is TRUE, isForeman:', isForeman);
+    }
+  }, [showComponentsManagement, isForeman]);
+
   if (showComponentsManagement && isForeman) {
+    console.log('🎯 Rendering Components Management');
     return (
       <div className="min-h-screen bg-slate-50">
         {/* Header */}
