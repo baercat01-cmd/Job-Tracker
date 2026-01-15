@@ -192,6 +192,39 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
   const timelineStructure = getTimelineStructure();
   const totalWeeks = timelineStructure.reduce((sum, month) => sum + month.weeks.length, 0);
 
+  // Calculate current date position
+  const getCurrentDatePosition = (): number | null => {
+    const today = new Date();
+    const todayYear = today.getFullYear();
+    
+    // Only show if viewing current year
+    if (todayYear !== currentYear) return null;
+    
+    let currentWeekIndex = 0;
+    let foundWeek: Week | null = null;
+    
+    for (const month of timelineStructure) {
+      for (const week of month.weeks) {
+        if (today >= week.startDate && today <= week.endDate) {
+          foundWeek = week;
+          break;
+        }
+        currentWeekIndex++;
+      }
+      if (foundWeek) break;
+    }
+    
+    if (!foundWeek) return null;
+    
+    const weekWidth = 100 / totalWeeks;
+    const weekDuration = foundWeek.endDate.getTime() - foundWeek.startDate.getTime();
+    const offset = (today.getTime() - foundWeek.startDate.getTime()) / weekDuration;
+    
+    return (currentWeekIndex + offset) * weekWidth;
+  };
+
+  const currentDatePosition = getCurrentDatePosition();
+
   // Calculate position and width for a job bar based on week positions
   const getJobBarStyle = (job: GanttJob) => {
     if (!job.projected_start_date || !job.projected_end_date) return null;
@@ -297,12 +330,12 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
           key={job.id}
           className="flex border-b hover:bg-muted/30 transition-colors group"
         >
-          <div className="w-64 border-r p-2 flex items-center justify-between gap-1.5">
-            <div className="flex-1 min-w-0 flex items-center gap-1.5">
-              <div className={`w-2.5 h-2.5 rounded flex-shrink-0 ${getStatusColor(job.status).replace('hover:', '')}`} />
+          <div className="w-32 sm:w-48 md:w-64 border-r p-1.5 sm:p-2 flex items-center justify-between gap-1">
+            <div className="flex-1 min-w-0 flex items-center gap-1">
+              <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded flex-shrink-0 ${getStatusColor(job.status).replace('hover:', '')}`} />
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate text-sm">{job.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate">
+                <p className="font-medium truncate text-[11px] sm:text-xs md:text-sm">{job.name}</p>
+                <p className="text-[9px] sm:text-[10px] text-muted-foreground truncate">
                   {job.client_name}
                 </p>
               </div>
@@ -311,9 +344,9 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
               variant="ghost"
               size="sm"
               onClick={() => openAddDialog(job)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+              className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 sm:h-6 sm:w-6 p-0"
             >
-              <Edit className="w-3 h-3" />
+              <Edit className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
             </Button>
           </div>
           <div className="flex-1 relative py-2 px-1">
@@ -331,14 +364,22 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
                 ))}
               </div>
               
+              {/* Current date indicator line */}
+              {currentDatePosition !== null && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-10 pointer-events-none"
+                  style={{ left: `${currentDatePosition}%` }}
+                />
+              )}
+              
               {/* Job bar */}
               <div
-                className={`absolute top-0 h-7 rounded cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-[10px] flex items-center justify-center px-1.5 shadow-md`}
+                className={`absolute top-0 h-6 sm:h-7 rounded-none cursor-pointer transition-all ${getStatusColor(job.status)} text-white text-[9px] sm:text-[10px] flex items-center justify-center px-1 sm:px-1.5 shadow-md border border-slate-300`}
                 style={barStyle}
                 onClick={() => onJobSelect?.(job.id)}
                 title={`${job.name}\n${job.client_name}\nStatus: ${job.status === 'on_hold' ? 'On Hold' : job.status.charAt(0).toUpperCase() + job.status.slice(1)}\n${new Date(job.projected_start_date!).toLocaleDateString()} - ${new Date(job.projected_end_date!).toLocaleDateString()}`}
               >
-                <span className="truncate font-medium">
+                <span className="truncate font-bold">
                   {job.name}
                 </span>
               </div>
@@ -365,90 +406,113 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
   return (
     <div className="space-y-4">
       {/* Header Controls */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5" />
+      <Card className="rounded-none border-slate-300">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               Job Schedule - {currentYear}
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Year Navigation */}
-              <Button variant="outline" size="icon" onClick={previousYear}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={goToCurrentYear}>
-                Current Year
-              </Button>
-              <Button variant="outline" size="icon" onClick={nextYear}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-              
-              <Button onClick={loadJobs} variant="outline" size="sm">
-                Refresh
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" onClick={previousYear} className="h-8 w-8 p-0 rounded-none border-slate-300">
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={goToCurrentYear} className="h-8 text-xs rounded-none border-slate-300">
+                  Today
+                </Button>
+                <Button variant="outline" size="sm" onClick={nextYear} className="h-8 w-8 p-0 rounded-none border-slate-300">
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
       </Card>
 
       {/* Unified Gantt Chart */}
-      <Card>
+      <Card className="rounded-none border-slate-300">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
               All Jobs Schedule
-              <Badge variant="secondary">{jobsWithDates.length}</Badge>
+              <Badge variant="secondary" className="rounded-none">{jobsWithDates.length}</Badge>
             </CardTitle>
+            {currentDatePosition !== null && (
+              <div className="flex items-center gap-2 text-xs text-orange-500">
+                <div className="w-3 h-3 bg-orange-500 rounded-full" />
+                <span className="font-medium">Today</span>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="w-full">
-            {/* Timeline Header - Two Rows */}
-            <div className="border-b bg-muted/30 sticky top-0 z-10">
-              {/* Month Headers */}
-              <div className="flex border-b">
-                <div className="w-64 border-r bg-background" />
-                <div className="flex-1 flex bg-background">
-                  {timelineStructure.map((month, monthIndex) => (
-                    <div
-                      key={monthIndex}
-                      className="border-r text-center py-1.5 text-xs font-bold bg-muted/50"
-                      style={{ width: `${(month.weeks.length / totalWeeks) * 100}%` }}
-                    >
-                      {month.name}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Week Headers */}
-              <div className="flex">
-                <div className="w-64 border-r p-2 font-semibold bg-background text-xs">
-                  <div className="flex items-center justify-between">
-                    <span>Job Name</span>
-                    <span className="text-[10px] text-muted-foreground font-normal">Status</span>
+          {/* Mobile: Horizontal scrollable container */}
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[800px]">
+              {/* Timeline Header - Two Rows */}
+              <div className="border-b bg-muted/30 sticky top-0 z-10">
+                {/* Month Headers */}
+                <div className="flex border-b">
+                  <div className="w-32 sm:w-48 md:w-64 border-r bg-background" />
+                  <div className="flex-1 flex bg-background relative">
+                    {timelineStructure.map((month, monthIndex) => (
+                      <div
+                        key={monthIndex}
+                        className="border-r text-center py-1.5 text-xs font-bold bg-muted/50"
+                        style={{ width: `${(month.weeks.length / totalWeeks) * 100}%` }}
+                      >
+                        {month.name}
+                      </div>
+                    ))}
+                    {/* Today marker in header */}
+                    {currentDatePosition !== null && (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-20"
+                        style={{ left: `${currentDatePosition}%` }}
+                      >
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-orange-500" />
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex-1 flex bg-background">
-                  {timelineStructure.map((month, monthIndex) => (
-                    month.weeks.map((week, weekIndex) => (
+                
+                {/* Week Headers */}
+                <div className="flex">
+                  <div className="w-32 sm:w-48 md:w-64 border-r p-2 font-semibold bg-background text-[10px] sm:text-xs">
+                    <div className="flex items-center justify-between">
+                      <span>Job Name</span>
+                      <span className="hidden sm:inline text-[10px] text-muted-foreground font-normal">Status</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 flex bg-background relative">
+                    {timelineStructure.map((month, monthIndex) => (
+                      month.weeks.map((week, weekIndex) => (
+                        <div
+                          key={`${monthIndex}-${weekIndex}`}
+                          className="border-r text-center py-1 text-[9px] sm:text-[10px] font-medium text-muted-foreground"
+                          style={{ width: `${(1 / totalWeeks) * 100}%` }}
+                        >
+                          W{weekIndex + 1}
+                        </div>
+                      ))
+                    ))}
+                    {/* Today marker line */}
+                    {currentDatePosition !== null && (
                       <div
-                        key={`${monthIndex}-${weekIndex}`}
-                        className="border-r text-center py-1 text-[10px] font-medium text-muted-foreground"
-                        style={{ width: `${(1 / totalWeeks) * 100}%` }}
-                      >
-                        W{weekIndex + 1}
-                      </div>
-                    ))
-                  ))}
+                        className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-20"
+                        style={{ left: `${currentDatePosition}%` }}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Job Rows */}
-            <div className="max-h-[600px] overflow-y-auto">
-              {renderJobRows()}
+              {/* Job Rows */}
+              <div className="max-h-[400px] sm:max-h-[500px] md:max-h-[600px] overflow-y-auto">
+                {renderJobRows()}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -459,30 +523,33 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
         <div className="space-y-4">
           {/* Unscheduled Active */}
           {unscheduledActive.length > 0 && (
-            <Card>
+            <Card className="rounded-none border-slate-300">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-green-500" />
-                  Unscheduled Active Jobs ({unscheduledActive.length})
+                <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-none bg-green-500 border border-slate-300" />
+                  <span className="hidden sm:inline">Unscheduled Active Jobs ({unscheduledActive.length})</span>
+                  <span className="sm:hidden">Active ({unscheduledActive.length})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {unscheduledActive.map((job) => (
                   <div
                     key={job.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:justify-between p-3 border rounded-none border-slate-300 hover:bg-muted/30 transition-colors"
                   >
-                    <div>
-                      <p className="font-medium">{job.name}</p>
-                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{job.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{job.client_name}</p>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openAddDialog(job)}
+                      className="w-full sm:w-auto rounded-none border-slate-300 shrink-0"
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add to Schedule
+                      <span className="hidden sm:inline">Add to Schedule</span>
+                      <span className="sm:hidden">Add</span>
                     </Button>
                   </div>
                 ))}
@@ -492,30 +559,33 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
 
           {/* Unscheduled Quoting */}
           {unscheduledQuoting.length > 0 && (
-            <Card>
+            <Card className="rounded-none border-slate-300">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-blue-500" />
-                  Unscheduled Quoting Jobs ({unscheduledQuoting.length})
+                <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-none bg-blue-500 border border-slate-300" />
+                  <span className="hidden sm:inline">Unscheduled Quoting Jobs ({unscheduledQuoting.length})</span>
+                  <span className="sm:hidden">Quoting ({unscheduledQuoting.length})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {unscheduledQuoting.map((job) => (
                   <div
                     key={job.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:justify-between p-3 border rounded-none border-slate-300 hover:bg-muted/30 transition-colors"
                   >
-                    <div>
-                      <p className="font-medium">{job.name}</p>
-                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{job.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{job.client_name}</p>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openAddDialog(job)}
+                      className="w-full sm:w-auto rounded-none border-slate-300 shrink-0"
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add to Schedule
+                      <span className="hidden sm:inline">Add to Schedule</span>
+                      <span className="sm:hidden">Add</span>
                     </Button>
                   </div>
                 ))}
@@ -525,30 +595,33 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
 
           {/* Unscheduled On Hold */}
           {unscheduledOnHold.length > 0 && (
-            <Card>
+            <Card className="rounded-none border-slate-300">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-yellow-500" />
-                  Unscheduled On Hold Jobs ({unscheduledOnHold.length})
+                <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-none bg-yellow-500 border border-slate-300" />
+                  <span className="hidden sm:inline">Unscheduled On Hold Jobs ({unscheduledOnHold.length})</span>
+                  <span className="sm:hidden">On Hold ({unscheduledOnHold.length})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {unscheduledOnHold.map((job) => (
                   <div
                     key={job.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:justify-between p-3 border rounded-none border-slate-300 hover:bg-muted/30 transition-colors"
                   >
-                    <div>
-                      <p className="font-medium">{job.name}</p>
-                      <p className="text-sm text-muted-foreground">{job.client_name}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{job.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{job.client_name}</p>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openAddDialog(job)}
+                      className="w-full sm:w-auto rounded-none border-slate-300 shrink-0"
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add to Schedule
+                      <span className="hidden sm:inline">Add to Schedule</span>
+                      <span className="sm:hidden">Add</span>
                     </Button>
                   </div>
                 ))}
@@ -559,25 +632,31 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
       )}
 
       {/* Legend */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 rounded bg-green-500" />
-              <span className="text-sm">Active</span>
+      <Card className="rounded-none border-slate-300">
+        <CardContent className="py-3">
+          <div className="flex flex-wrap gap-3 sm:gap-4">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-6 h-3 sm:w-8 sm:h-4 rounded-none bg-green-500 border border-slate-300" />
+              <span className="text-xs sm:text-sm">Active</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 rounded bg-blue-500" />
-              <span className="text-sm">Quoting</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-6 h-3 sm:w-8 sm:h-4 rounded-none bg-blue-500 border border-slate-300" />
+              <span className="text-xs sm:text-sm">Quoting</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 rounded bg-yellow-500" />
-              <span className="text-sm">On Hold</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-6 h-3 sm:w-8 sm:h-4 rounded-none bg-yellow-500 border border-slate-300" />
+              <span className="text-xs sm:text-sm">On Hold</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 rounded bg-slate-500" />
-              <span className="text-sm">Completed</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-6 h-3 sm:w-8 sm:h-4 rounded-none bg-slate-500 border border-slate-300" />
+              <span className="text-xs sm:text-sm">Completed</span>
             </div>
+            {currentDatePosition !== null && (
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="w-0.5 h-4 bg-orange-500" />
+                <span className="text-xs sm:text-sm text-orange-500 font-medium">Today</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
