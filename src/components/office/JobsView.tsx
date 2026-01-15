@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, ListTodo, Users, Wrench } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -25,8 +25,6 @@ import { JobSchedule } from './JobSchedule';
 import { useAuth } from '@/hooks/useAuth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Package, Calendar as CalendarIcon } from 'lucide-react';
-import { ShopTasksManagement } from './ShopTasksManagement';
-import { SubcontractorScheduling } from './SubcontractorScheduling';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -43,13 +41,9 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
   const [selectedTab, setSelectedTab] = useState('overview');
   const [stats, setStats] = useState<Record<string, any>>({});
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
-  const [shopTasks, setShopTasks] = useState<any[]>([]);
-  const [subcontractorSchedules, setSubcontractorSchedules] = useState<any[]>([]);
 
   useEffect(() => {
     loadJobs();
-    loadShopTasks();
-    loadSubcontractorSchedules();
   }, []);
 
   // Auto-scroll to selected job when selectedJobId changes
@@ -218,209 +212,22 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
     }
   }
 
-  async function loadShopTasks() {
-    try {
-      const { data, error } = await supabase
-        .from('shop_tasks')
-        .select(`
-          *,
-          jobs!inner(id, name, status),
-          assigned_user:assigned_to(id, username),
-          created_user:created_by(id, username)
-        `)
-        .eq('jobs.status', 'active')
-        .in('status', ['pending', 'in_progress'])
-        .order('priority', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-      setShopTasks(data || []);
-    } catch (error) {
-      console.error('Error loading shop tasks:', error);
-    }
-  }
-
-  async function loadSubcontractorSchedules() {
-    try {
-      // Get upcoming schedules (next 14 days)
-      const today = new Date();
-      const twoWeeksFromNow = new Date();
-      twoWeeksFromNow.setDate(today.getDate() + 14);
-
-      const { data, error } = await supabase
-        .from('subcontractor_schedules')
-        .select(`
-          *,
-          jobs!inner(id, name, status),
-          subcontractors!inner(id, name, phone, trades)
-        `)
-        .eq('jobs.status', 'active')
-        .in('status', ['scheduled', 'in_progress'])
-        .gte('start_date', today.toISOString().split('T')[0])
-        .lte('start_date', twoWeeksFromNow.toISOString().split('T')[0])
-        .order('start_date', { ascending: true })
-        .limit(10);
-
-      if (error) throw error;
-      setSubcontractorSchedules(data || []);
-    } catch (error) {
-      console.error('Error loading subcontractor schedules:', error);
-    }
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-green-900">{showArchived ? 'Archived Jobs' : 'Jobs Dashboard'}</h2>
-          <p className="text-sm text-black">
-            {showArchived ? 'View and restore archived jobs' : 'Manage jobs, shop tasks, and schedules'}
+          <h2 className="text-2xl font-bold">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
+          <p className="text-sm text-muted-foreground">
+            {showArchived ? 'View and restore archived jobs' : 'Manage job sites, documents, and assignments'}
           </p>
         </div>
         {!showArchived && (
-          <Button onClick={() => setShowCreateDialog(true)} className="bg-green-900 text-white hover:bg-green-800 rounded-none font-bold">
+          <Button onClick={() => setShowCreateDialog(true)} className="gradient-primary">
             <Plus className="w-4 h-4 mr-2" />
             New Job
           </Button>
         )}
       </div>
-
-      {/* Management Dashboard - Only show for non-archived view */}
-      {!showArchived && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Shop Tasks Widget */}
-          <Card className="rounded-none border-2 border-slate-300 bg-white">
-            <CardHeader className="pb-3 bg-slate-50 border-b-2 border-slate-300">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2 text-green-900">
-                  <Wrench className="w-5 h-5" />
-                  Shop Tasks
-                </CardTitle>
-                <Badge variant="secondary" className="bg-green-900 text-white rounded-none">
-                  {shopTasks.length} active
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {shopTasks.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Wrench className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No active shop tasks</p>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                  {shopTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="p-3 border-l-4 rounded-none border-slate-300 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
-                      style={{ borderLeftColor: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#f97316' : '#64748b' }}
-                      onClick={() => {
-                        const job = jobs.find(j => j.id === task.job_id);
-                        if (job) {
-                          setSelectedJob(job);
-                          setSelectedTab('overview');
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate">{task.title}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {task.jobs?.name}
-                          </p>
-                          {task.description && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                              {task.description}
-                            </p>
-                          )}
-                        </div>
-                        <Badge
-                          variant={task.priority === 'high' ? 'destructive' : task.priority === 'medium' ? 'default' : 'secondary'}
-                          className="rounded-none text-xs"
-                        >
-                          {task.priority}
-                        </Badge>
-                      </div>
-                      {task.due_date && (
-                        <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          Due: {new Date(task.due_date).toLocaleDateString()}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Subcontractor Schedule Widget */}
-          <Card className="rounded-none border-2 border-slate-300 bg-white">
-            <CardHeader className="pb-3 bg-slate-50 border-b-2 border-slate-300">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2 text-green-900">
-                  <Users className="w-5 h-5" />
-                  Subcontractor Schedule
-                </CardTitle>
-                <Badge variant="secondary" className="bg-green-900 text-white rounded-none">
-                  Next 14 days
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {subcontractorSchedules.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No upcoming subcontractor work</p>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                  {subcontractorSchedules.map((schedule) => (
-                    <div
-                      key={schedule.id}
-                      className="p-3 border-l-4 border-indigo-500 rounded-none bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
-                      onClick={() => {
-                        const job = jobs.find(j => j.id === schedule.job_id);
-                        if (job) {
-                          setSelectedJob(job);
-                          setSelectedTab('overview');
-                        }
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm">{schedule.subcontractors?.name}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {schedule.jobs?.name}
-                          </p>
-                          {schedule.work_description && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                              {schedule.work_description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 mt-2 text-xs">
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(schedule.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          {schedule.end_date && ` - ${new Date(schedule.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                        </div>
-                        {schedule.subcontractors?.trades && schedule.subcontractors.trades.length > 0 && (
-                          <Badge variant="outline" className="rounded-none text-xs">
-                            {schedule.subcontractors.trades[0]}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
 
 
