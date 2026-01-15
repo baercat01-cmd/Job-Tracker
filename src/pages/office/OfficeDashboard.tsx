@@ -248,16 +248,8 @@ export function OfficeDashboard() {
 
           <TabsContent value="jobs">
             <div className="space-y-6">
-              {/* Active Jobs Cards */}
+              {/* Jobs Dashboard - includes jobs cards, shop tasks, and subcontractor schedules */}
               <JobsView selectedJobId={selectedJobId} />
-              
-              {/* Master Calendar - Full Width Below Jobs */}
-              <MasterCalendar 
-                onJobSelect={(jobId) => {
-                  setSelectedJobId(jobId);
-                  // JobsView will auto-scroll to the selected job
-                }} 
-              />
             </div>
           </TabsContent>
 
