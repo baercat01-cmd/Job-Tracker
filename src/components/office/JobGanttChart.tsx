@@ -33,6 +33,7 @@ interface GanttJob {
 
 interface JobGanttChartProps {
   onJobSelect?: (jobId: string) => void;
+  showWeeks?: boolean;
 }
 
 interface Week {
@@ -47,7 +48,7 @@ interface Month {
   weeks: Week[];
 }
 
-export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
+export function JobGanttChart({ onJobSelect, showWeeks = true }: JobGanttChartProps) {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [jobs, setJobs] = useState<GanttJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -478,35 +479,58 @@ export function JobGanttChart({ onJobSelect }: JobGanttChartProps) {
                   </div>
                 </div>
                 
-                {/* Week Headers */}
-                <div className="flex">
-                  <div className="w-32 sm:w-48 md:w-64 border-r p-2 font-semibold bg-background text-[10px] sm:text-xs">
-                    <div className="flex items-center justify-between">
-                      <span>Job Name</span>
-                      <span className="hidden sm:inline text-[10px] text-muted-foreground font-normal">Status</span>
+                {/* Week Headers - Only show if showWeeks is true */}
+                {showWeeks && (
+                  <div className="flex">
+                    <div className="w-32 sm:w-48 md:w-64 border-r p-2 font-semibold bg-background text-[10px] sm:text-xs">
+                      <div className="flex items-center justify-between">
+                        <span>Job Name</span>
+                        <span className="hidden sm:inline text-[10px] text-muted-foreground font-normal">Status</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex bg-background relative">
+                      {timelineStructure.map((month, monthIndex) => (
+                        month.weeks.map((week, weekIndex) => (
+                          <div
+                            key={`${monthIndex}-${weekIndex}`}
+                            className="border-r text-center py-1 text-[9px] sm:text-[10px] font-medium text-muted-foreground"
+                            style={{ width: `${(1 / totalWeeks) * 100}%` }}
+                          >
+                            W{weekIndex + 1}
+                          </div>
+                        ))
+                      ))}
+                      {/* Today marker line */}
+                      {currentDatePosition !== null && (
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-20"
+                          style={{ left: `${currentDatePosition}%` }}
+                        />
+                      )}
                     </div>
                   </div>
-                  <div className="flex-1 flex bg-background relative">
-                    {timelineStructure.map((month, monthIndex) => (
-                      month.weeks.map((week, weekIndex) => (
+                )}
+                
+                {/* Job Name Header - Show when weeks are hidden */}
+                {!showWeeks && (
+                  <div className="flex border-t">
+                    <div className="w-32 sm:w-48 md:w-64 border-r p-2 font-semibold bg-background text-[10px] sm:text-xs">
+                      <div className="flex items-center justify-between">
+                        <span>Job Name</span>
+                        <span className="hidden sm:inline text-[10px] text-muted-foreground font-normal">Status</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-background relative">
+                      {/* Today marker line */}
+                      {currentDatePosition !== null && (
                         <div
-                          key={`${monthIndex}-${weekIndex}`}
-                          className="border-r text-center py-1 text-[9px] sm:text-[10px] font-medium text-muted-foreground"
-                          style={{ width: `${(1 / totalWeeks) * 100}%` }}
-                        >
-                          W{weekIndex + 1}
-                        </div>
-                      ))
-                    ))}
-                    {/* Today marker line */}
-                    {currentDatePosition !== null && (
-                      <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-20"
-                        style={{ left: `${currentDatePosition}%` }}
-                      />
-                    )}
+                          className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-20"
+                          style={{ left: `${currentDatePosition}%` }}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Job Rows */}

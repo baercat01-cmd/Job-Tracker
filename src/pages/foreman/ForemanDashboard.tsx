@@ -156,6 +156,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
         <main className="container mx-auto px-4 py-6">
           <JobGanttChart
+            showWeeks={false}
             onJobSelect={(jobId) => {
               // Load and select the job
               supabase
