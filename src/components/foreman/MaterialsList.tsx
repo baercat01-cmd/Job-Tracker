@@ -1155,34 +1155,34 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
     >
       {/* Status Color Bar - Shows at top when on ready or pull tabs */}
       {activeTab === 'ready' && (
-        <div className="rounded-none border-2 border-blue-900 bg-blue-500 text-white p-2 mb-4 shadow-md">
+        <div className="rounded-none border-2 border-blue-900 bg-blue-500 text-white p-1.5 mb-4 shadow-md">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-base font-bold flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" />
+              <h3 className="text-sm font-bold flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5" />
                 Ready for Job
               </h3>
               <p className="text-xs mt-0.5 opacity-90">Items ready at shop</p>
             </div>
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-              <span className="text-base font-bold">{readyMaterialsCount}</span>
+            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+              <span className="text-sm font-bold">{readyMaterialsCount}</span>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'pull' && (
-        <div className="rounded-none border-2 border-purple-900 bg-purple-500 text-white p-2 mb-4 shadow-md">
+        <div className="rounded-none border-2 border-purple-900 bg-purple-500 text-white p-1.5 mb-4 shadow-md">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-base font-bold flex items-center gap-2">
-                <Package className="w-4 h-4" />
+              <h3 className="text-sm font-bold flex items-center gap-1.5">
+                <Package className="w-3.5 h-3.5" />
                 Pull from Shop
               </h3>
               <p className="text-xs mt-0.5 opacity-90">Items to pull</p>
             </div>
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-              <span className="text-base font-bold">{pullFromShopCount}</span>
+            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+              <span className="text-sm font-bold">{pullFromShopCount}</span>
             </div>
           </div>
         </div>
