@@ -515,14 +515,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   }
 
   // If showing components management (foreman only)
-  useEffect(() => {
-    if (showComponentsManagement) {
-      console.log('📦 showComponentsManagement is TRUE, isForeman:', isForeman);
-    }
-  }, [showComponentsManagement, isForeman]);
-
   if (showComponentsManagement && isForeman) {
-    console.log('🎯 Rendering Components Management');
     return (
       <div className="min-h-screen bg-slate-50">
         {/* Header */}
