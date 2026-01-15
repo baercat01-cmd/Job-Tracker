@@ -113,6 +113,11 @@ function AppContent() {
     return <ForemanDashboard />;
   }
 
+  // Foreman users: full field interface with all jobs and component management
+  if (profile.role === 'foreman') {
+    return <ForemanDashboard />;
+  }
+
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {
     return <OfficeDashboard />;

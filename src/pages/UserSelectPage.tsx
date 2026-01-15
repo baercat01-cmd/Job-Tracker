@@ -28,8 +28,8 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
 
       if (error) throw error;
       
-      // Sort by role priority (crew -> office -> payroll) then by username
-      const rolePriority = { crew: 1, office: 2, payroll: 3 };
+      // Sort by role priority (crew -> foreman -> office -> payroll -> shop) then by username
+      const rolePriority = { crew: 1, foreman: 2, office: 3, payroll: 4, shop: 5 };
       const sorted = (data || []).sort((a, b) => {
         const roleA = rolePriority[a.role as keyof typeof rolePriority] || 999;
         const roleB = rolePriority[b.role as keyof typeof rolePriority] || 999;
@@ -132,11 +132,11 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-lg">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : 'Crew'} Member
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'} Member
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : 'Crew'}
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                   </div>
                 </Button>
