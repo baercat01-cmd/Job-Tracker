@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home } from 'lucide-react';
+import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface FloorPlanBuilderProps {
@@ -78,6 +78,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
   const [draggingOpening, setDraggingOpening] = useState<Opening | null>(null);
+  const [selectedWall, setSelectedWall] = useState<Wall | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall'; id: string } | null>(null);
   const [pendingRoomPlacement, setPendingRoomPlacement] = useState<{
     type: 'room' | 'porch' | 'loft';
     width: number;
@@ -89,6 +91,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [showAddDrain, setShowAddDrain] = useState(false);
   const [showAddCupola, setShowAddCupola] = useState(false);
   const [showEditOpening, setShowEditOpening] = useState(false);
+  const [showEditDrain, setShowEditDrain] = useState(false);
+  const [showEditCupola, setShowEditCupola] = useState(false);
   const [showAddRoom, setShowAddRoom] = useState(false);
   
   // Forms
@@ -102,6 +106,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   });
 
   const [editingOpening, setEditingOpening] = useState<Opening | null>(null);
+  const [editingDrain, setEditingDrain] = useState<FloorDrain | null>(null);
+  const [editingCupola, setEditingCupola] = useState<Cupola | null>(null);
 
   const [newDrain, setNewDrain] = useState({
     length_ft: 10,
@@ -140,7 +146,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, floorDrains, selectedOpening, draggingOpening]);
+  }, [width, length, walls, openings, floorDrains, selectedOpening, selectedWall, draggingOpening, hoveredItem]);
 
   async function loadFloorPlanData() {
     if (!quoteId) return;
@@ -209,13 +215,30 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     ctx.fillText(`Scale: 1:${SCALE}'`, 10, canvasHeight - 10);
 
     // Draw interior walls
-    ctx.strokeStyle = '#1e40af';
-    ctx.lineWidth = 2;
     walls.forEach(wall => {
+      const isSelected = selectedWall?.id === wall.id;
+      const isHovered = hoveredItem?.type === 'wall' && hoveredItem?.id === wall.id;
+
+      // Highlight if selected or hovered
+      if (isSelected || isHovered) {
+        ctx.strokeStyle = isSelected ? '#ef4444' : '#f59e0b';
+        ctx.lineWidth = isSelected ? 4 : 3;
+      } else {
+        ctx.strokeStyle = '#1e40af';
+        ctx.lineWidth = 2;
+      }
+
       ctx.beginPath();
       ctx.moveTo(50 + wall.start_x * SCALE, 50 + wall.start_y * SCALE);
       ctx.lineTo(50 + wall.end_x * SCALE, 50 + wall.end_y * SCALE);
       ctx.stroke();
+
+      // Draw endpoint handles if selected
+      if (isSelected) {
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(50 + wall.start_x * SCALE - 4, 50 + wall.start_y * SCALE - 4, 8, 8);
+        ctx.fillRect(50 + wall.end_x * SCALE - 4, 50 + wall.end_y * SCALE - 4, 8, 8);
+      }
     });
 
     // Draw openings (doors and windows)
@@ -225,6 +248,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       
       const isSelected = selectedOpening?.id === opening.id;
       const isDraggingThis = draggingOpening?.id === opening.id;
+      const isHovered = hoveredItem?.type === 'opening' && hoveredItem?.id === opening.id;
 
       // Color based on type
       let color = '#10b981'; // Green for walkdoor
@@ -232,10 +256,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       if (opening.opening_type === 'overhead_door') color = '#f59e0b'; // Orange
       if (opening.opening_type === 'other') color = '#a855f7'; // Purple
 
-      // Highlight if selected or dragging
-      if (isSelected || isDraggingThis) {
-        ctx.fillStyle = color + '40';
-        ctx.fillRect(x - OPENING_SIZE - 2, y - OPENING_SIZE - 2, OPENING_SIZE * 2 + 4, OPENING_SIZE * 2 + 4);
+      // Highlight if selected, dragging, or hovered
+      if (isSelected || isDraggingThis || isHovered) {
+        ctx.fillStyle = isSelected ? color + '60' : color + '40';
+        const highlightSize = isSelected ? 4 : 2;
+        ctx.fillRect(x - OPENING_SIZE - highlightSize, y - OPENING_SIZE - highlightSize, OPENING_SIZE * 2 + highlightSize * 2, OPENING_SIZE * 2 + highlightSize * 2);
       }
 
       // Draw opening marker
@@ -334,18 +359,69 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     return null;
   }
 
+  function findWallAtPosition(x: number, y: number): Wall | null {
+    for (const wall of walls) {
+      // Calculate distance from point to line segment
+      const A = x - wall.start_x;
+      const B = y - wall.start_y;
+      const C = wall.end_x - wall.start_x;
+      const D = wall.end_y - wall.start_y;
+
+      const dot = A * C + B * D;
+      const lenSq = C * C + D * D;
+      let param = -1;
+      
+      if (lenSq !== 0) param = dot / lenSq;
+
+      let xx, yy;
+
+      if (param < 0) {
+        xx = wall.start_x;
+        yy = wall.start_y;
+      } else if (param > 1) {
+        xx = wall.end_x;
+        yy = wall.end_y;
+      } else {
+        xx = wall.start_x + param * C;
+        yy = wall.start_y + param * D;
+      }
+
+      const dx = x - xx;
+      const dy = y - yy;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < 0.5) { // Within 0.5 feet of the wall
+        return wall;
+      }
+    }
+    return null;
+  }
+
   function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
     if (mode === 'select') {
+      // Check for opening click first
       const clickedOpening = findOpeningAtPosition(coords.x, coords.y);
       if (clickedOpening) {
         setSelectedOpening(clickedOpening);
+        setSelectedWall(null);
         setDraggingOpening(clickedOpening);
-      } else {
-        setSelectedOpening(null);
+        return;
       }
+
+      // Then check for wall click
+      const clickedWall = findWallAtPosition(coords.x, coords.y);
+      if (clickedWall) {
+        setSelectedWall(clickedWall);
+        setSelectedOpening(null);
+        return;
+      }
+
+      // Clear selections if clicking empty space
+      setSelectedOpening(null);
+      setSelectedWall(null);
     } else if (mode === 'wall') {
       setIsDragging(true);
       setDragStart(coords);
@@ -361,6 +437,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const coords = getCanvasCoords(e);
     if (!coords) return;
+
+    // Update hover state in select mode
+    if (mode === 'select' && !draggingOpening) {
+      const hoveredOpening = findOpeningAtPosition(coords.x, coords.y);
+      if (hoveredOpening) {
+        setHoveredItem({ type: 'opening', id: hoveredOpening.id });
+      } else {
+        const hoveredWall = findWallAtPosition(coords.x, coords.y);
+        if (hoveredWall) {
+          setHoveredItem({ type: 'wall', id: hoveredWall.id });
+        } else {
+          setHoveredItem(null);
+        }
+      }
+    }
 
     if (draggingOpening) {
       setDraggingOpening({
@@ -458,6 +549,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
       setIsDragging(false);
       setDragStart(null);
+    }
+  }
+
+  // Double-click to edit
+  function handleCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+
+    const clickedOpening = findOpeningAtPosition(coords.x, coords.y);
+    if (clickedOpening) {
+      setEditingOpening(clickedOpening);
+      setShowEditOpening(true);
     }
   }
 
@@ -616,6 +719,16 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     setShowEditOpening(true);
   }
 
+  function openEditDrainDialog(drain: FloorDrain) {
+    setEditingDrain(drain);
+    setShowEditDrain(true);
+  }
+
+  function openEditCupolaDialog(cupola: Cupola) {
+    setEditingCupola(cupola);
+    setShowEditCupola(true);
+  }
+
   async function deleteOpening(openingId: string) {
     // If this is a saved opening, delete from database
     if (quoteId && !openingId.startsWith('temp_')) {
@@ -658,6 +771,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     // Remove from local state
     setWalls(walls.filter(w => w.id !== wallId));
+    setSelectedWall(null);
     toast.success('Wall deleted');
   }
 
@@ -690,6 +804,31 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     } catch (error: any) {
       console.error('Error adding floor drain:', error);
       toast.error('Failed to add floor drain');
+    }
+  }
+
+  async function updateFloorDrain() {
+    if (!editingDrain || !quoteId) return;
+
+    try {
+      const { error } = await supabase
+        .from('quote_floor_drains')
+        .update({
+          length_ft: editingDrain.length_ft,
+          orientation: editingDrain.orientation,
+          location: editingDrain.location,
+        })
+        .eq('id', editingDrain.id);
+
+      if (error) throw error;
+
+      setFloorDrains(floorDrains.map(d => d.id === editingDrain.id ? editingDrain : d));
+      toast.success('Floor drain updated');
+      setShowEditDrain(false);
+      setEditingDrain(null);
+    } catch (error: any) {
+      console.error('Error updating floor drain:', error);
+      toast.error('Failed to update floor drain');
     }
   }
 
@@ -740,6 +879,32 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     } catch (error: any) {
       console.error('Error adding cupola:', error);
       toast.error('Failed to add cupola');
+    }
+  }
+
+  async function updateCupola() {
+    if (!editingCupola || !quoteId) return;
+
+    try {
+      const { error } = await supabase
+        .from('quote_cupolas')
+        .update({
+          size: editingCupola.size,
+          cupola_type: editingCupola.cupola_type,
+          weather_vane: editingCupola.weather_vane,
+          location: editingCupola.location,
+        })
+        .eq('id', editingCupola.id);
+
+      if (error) throw error;
+
+      setCupolas(cupolas.map(c => c.id === editingCupola.id ? editingCupola : c));
+      toast.success('Cupola updated');
+      setShowEditCupola(false);
+      setEditingCupola(null);
+    } catch (error: any) {
+      console.error('Error updating cupola:', error);
+      toast.error('Failed to update cupola');
     }
   }
 
@@ -816,7 +981,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && 'Click and drag openings to reposition them'}
+            {mode === 'select' && 'Click to select items, drag to reposition, double-click to edit'}
             {mode === 'wall' && 'Click and drag to draw interior walls'}
             {mode === 'door' && 'Click to place a door on the floor plan'}
             {mode === 'window' && 'Click to place a window on the floor plan'}
@@ -841,10 +1006,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
+              onDoubleClick={handleCanvasDoubleClick}
             />
           </div>
 
-          {/* Selection Actions */}
+          {/* Selection Actions for Openings */}
           {selectedOpening && mode === 'select' && (
             <div className="flex gap-2 p-2 bg-slate-100 rounded">
               <div className="flex-1">
@@ -856,9 +1022,25 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={openEditDialog}>
+                <Edit2 className="w-4 h-4 mr-1" />
                 Edit
               </Button>
               <Button size="sm" variant="destructive" onClick={() => deleteOpening(selectedOpening.id)}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Selection Actions for Walls */}
+          {selectedWall && mode === 'select' && (
+            <div className="flex gap-2 p-2 bg-red-50 rounded border border-red-200">
+              <div className="flex-1">
+                <p className="text-sm font-medium">Interior Wall</p>
+                <p className="text-xs text-muted-foreground">
+                  From ({selectedWall.start_x.toFixed(1)}', {selectedWall.start_y.toFixed(1)}') to ({selectedWall.end_x.toFixed(1)}', {selectedWall.end_y.toFixed(1)}')
+                </p>
+              </div>
+              <Button size="sm" variant="destructive" onClick={() => deleteWall(selectedWall.id)}>
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
@@ -921,7 +1103,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ) : (
                 <div className="space-y-2">
                   {openings.map(opening => (
-                    <div key={opening.id} className="flex items-center justify-between p-2 border rounded">
+                    <div key={opening.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 transition-colors">
                       <div className="flex-1">
                         <div className="font-medium">
                           {opening.opening_type === 'walkdoor' && 'Door'}
@@ -936,13 +1118,25 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                           {opening.swing_direction && opening.opening_type !== 'window' && ` • Swing: ${opening.swing_direction}`}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteOpening(opening.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingOpening(opening);
+                            setShowEditOpening(true);
+                          }}
+                        >
+                          <Edit2 className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteOpening(opening.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -964,7 +1158,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ) : (
                 <div className="space-y-2">
                   {walls.map((wall, index) => (
-                    <div key={wall.id} className="flex items-center justify-between p-2 border rounded">
+                    <div key={wall.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 transition-colors">
                       <div className="flex-1">
                         <div className="font-medium">
                           Wall {index + 1}
@@ -1008,20 +1202,29 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ) : (
                 <div className="space-y-2">
                   {floorDrains.map(drain => (
-                    <div key={drain.id} className="flex items-center justify-between p-2 border rounded">
+                    <div key={drain.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 transition-colors">
                       <div className="flex-1">
                         <div className="font-medium">{drain.length_ft}' {drain.orientation}</div>
                         {drain.location && (
                           <div className="text-sm text-muted-foreground">{drain.location}</div>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteFloorDrain(drain.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDrainDialog(drain)}
+                        >
+                          <Edit2 className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteFloorDrain(drain.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1049,7 +1252,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ) : (
                 <div className="space-y-2">
                   {cupolas.map(cupola => (
-                    <div key={cupola.id} className="flex items-center justify-between p-2 border rounded">
+                    <div key={cupola.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 transition-colors">
                       <div className="flex-1">
                         <div className="font-medium">
                           {cupola.size} {cupola.cupola_type}
@@ -1059,13 +1262,22 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                           <div className="text-sm text-muted-foreground">{cupola.location}</div>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteCupola(cupola.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditCupolaDialog(cupola)}
+                        >
+                          <Edit2 className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteCupola(cupola.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1315,6 +1527,57 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         </DialogContent>
       </Dialog>
 
+      {/* Edit Floor Drain Dialog */}
+      <Dialog open={showEditDrain} onOpenChange={setShowEditDrain}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Floor Drain</DialogTitle>
+          </DialogHeader>
+          {editingDrain && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Length (ft)</Label>
+                <Input
+                  type="number"
+                  value={editingDrain.length_ft}
+                  onChange={(e) => setEditingDrain({ ...editingDrain, length_ft: Number(e.target.value) })}
+                  min={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Orientation</Label>
+                <Select
+                  value={editingDrain.orientation}
+                  onValueChange={(value: string) => setEditingDrain({ ...editingDrain, orientation: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="horizontal">Horizontal</SelectItem>
+                    <SelectItem value="vertical">Vertical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input
+                  value={editingDrain.location}
+                  onChange={(e) => setEditingDrain({ ...editingDrain, location: e.target.value })}
+                  placeholder="e.g., Center, North side"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setShowEditDrain(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={updateFloorDrain}>Save Changes</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Add Cupola Dialog */}
       <Dialog open={showAddCupola} onOpenChange={setShowAddCupola}>
         <DialogContent>
@@ -1365,6 +1628,61 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button onClick={addCupola}>Add Cupola</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Cupola Dialog */}
+      <Dialog open={showEditCupola} onOpenChange={setShowEditCupola}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Cupola</DialogTitle>
+          </DialogHeader>
+          {editingCupola && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Size</Label>
+                <Input
+                  value={editingCupola.size}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, size: e.target.value })}
+                  placeholder="e.g., 24&quot;x24&quot;, 30&quot;x30&quot;"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Input
+                  value={editingCupola.cupola_type}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, cupola_type: e.target.value })}
+                  placeholder="e.g., Standard, Deluxe"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="edit_weather_vane"
+                  checked={editingCupola.weather_vane}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, weather_vane: e.target.checked })}
+                  className="rounded"
+                />
+                <Label htmlFor="edit_weather_vane" className="cursor-pointer">
+                  Include Weather Vane
+                </Label>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input
+                  value={editingCupola.location}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, location: e.target.value })}
+                  placeholder="e.g., Center of roof, Front peak"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setShowEditCupola(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={updateCupola}>Save Changes</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
