@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -16,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Send, Briefcase, User, Home, Droplet, Wrench, Palette } from 'lucide-react';
+import { ArrowLeft, Save, Send, Briefcase, User, Home } from 'lucide-react';
 import { FloorPlanBuilder } from '@/components/office/FloorPlanBuilder';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -351,26 +352,14 @@ export function QuoteIntakePage() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 bg-white border-2 border-slate-300 rounded-none">
+          <TabsList className="grid w-full grid-cols-3 bg-white border-2 border-slate-300 rounded-none">
             <TabsTrigger value="customer" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
               <User className="w-4 h-4 mr-2" />
-              Customer
+              Customer Info
             </TabsTrigger>
             <TabsTrigger value="building" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
               <Home className="w-4 h-4 mr-2" />
-              Building
-            </TabsTrigger>
-            <TabsTrigger value="foundation" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
-              <Droplet className="w-4 h-4 mr-2" />
-              Foundation
-            </TabsTrigger>
-            <TabsTrigger value="structure" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
-              <Wrench className="w-4 h-4 mr-2" />
-              Structure
-            </TabsTrigger>
-            <TabsTrigger value="finishes" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
-              <Palette className="w-4 h-4 mr-2" />
-              Finishes
+              Building Details
             </TabsTrigger>
             <TabsTrigger value="floorplan" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
               <Home className="w-4 h-4 mr-2" />
@@ -438,450 +427,449 @@ export function QuoteIntakePage() {
             </Card>
           </TabsContent>
 
-          {/* Building Dimensions Tab */}
+          {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Building Dimensions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Width (ft)</Label>
-                    <Input
-                      type="number"
-                      value={formData.width}
-                      onChange={(e) => setFormData({ ...formData, width: Number(e.target.value) })}
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Length (ft)</Label>
-                    <Input
-                      type="number"
-                      value={formData.length}
-                      onChange={(e) => setFormData({ ...formData, length: Number(e.target.value) })}
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Eave (ft)</Label>
-                    <Input
-                      type="number"
-                      value={formData.eave}
-                      onChange={(e) => setFormData({ ...formData, eave: Number(e.target.value) })}
-                      className="rounded-none"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Pitch</Label>
-                    <Select value={formData.pitch} onValueChange={(value) => setFormData({ ...formData, pitch: value })}>
-                      <SelectTrigger className="rounded-none">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3/12">3/12</SelectItem>
-                        <SelectItem value="4/12">4/12</SelectItem>
-                        <SelectItem value="5/12">5/12</SelectItem>
-                        <SelectItem value="6/12">6/12</SelectItem>
-                        <SelectItem value="7/12">7/12</SelectItem>
-                        <SelectItem value="8/12">8/12</SelectItem>
-                        <SelectItem value="10/12">10/12</SelectItem>
-                        <SelectItem value="12/12">12/12</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Truss</Label>
-                    <Input
-                      value={formData.truss}
-                      onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
-                      placeholder="Truss type"
-                      className="rounded-none"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Foundation Tab */}
-          <TabsContent value="foundation">
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Foundation & Floor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Foundation Type</Label>
-                    <Select 
-                      value={formData.foundation_type} 
-                      onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
-                    >
-                      <SelectTrigger className="rounded-none">
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="concrete">Concrete</SelectItem>
-                        <SelectItem value="gravel">Gravel</SelectItem>
-                        <SelectItem value="pier">Pier</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Floor</Label>
-                    <Select 
-                      value={formData.floor_type} 
-                      onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
-                    >
-                      <SelectTrigger className="rounded-none">
-                        <SelectValue placeholder="Select floor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="concrete">Concrete</SelectItem>
-                        <SelectItem value="wood">Wood</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Soffit</Label>
-                    <Select 
-                      value={formData.soffit_type} 
-                      onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
-                    >
-                      <SelectTrigger className="rounded-none">
-                        <SelectValue placeholder="Select soffit" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="steel">Steel</SelectItem>
-                        <SelectItem value="vinyl">Vinyl</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Structure Tab */}
-          <TabsContent value="structure" className="space-y-4">
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Structure & Design</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Snow Load (psf)</Label>
-                    <Input
-                      type="number"
-                      value={formData.snow_load}
-                      onChange={(e) => setFormData({ ...formData, snow_load: Number(e.target.value) })}
-                      placeholder="20"
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Wind Load (mph)</Label>
-                    <Input
-                      type="number"
-                      value={formData.wind_load}
-                      onChange={(e) => setFormData({ ...formData, wind_load: Number(e.target.value) })}
-                      placeholder="90"
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Building Use</Label>
-                    <Input
-                      value={formData.building_use}
-                      onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
-                      placeholder="Storage, Garage, etc."
-                      className="rounded-none"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Special Features & Utilities</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Special Features</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="loft"
-                          checked={formData.has_loft}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_loft: checked as boolean })}
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+              {/* Left Column - Forms (3/5 width) */}
+              <div className="xl:col-span-3 space-y-6">
+                {/* Building Dimensions */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Building Dimensions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Width (ft)</Label>
+                        <Input
+                          type="number"
+                          value={formData.width}
+                          onChange={(e) => setFormData({ ...formData, width: Number(e.target.value) })}
+                          className="rounded-none"
                         />
-                        <Label htmlFor="loft" className="cursor-pointer">Loft</Label>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="porch"
-                          checked={formData.has_porch}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_porch: checked as boolean })}
+                      <div className="space-y-2">
+                        <Label>Length (ft)</Label>
+                        <Input
+                          type="number"
+                          value={formData.length}
+                          onChange={(e) => setFormData({ ...formData, length: Number(e.target.value) })}
+                          className="rounded-none"
                         />
-                        <Label htmlFor="porch" className="cursor-pointer">Porch</Label>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Eave (ft)</Label>
+                        <Input
+                          type="number"
+                          value={formData.eave}
+                          onChange={(e) => setFormData({ ...formData, eave: Number(e.target.value) })}
+                          className="rounded-none"
+                        />
                       </div>
                     </div>
-                  </div>
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Utilities</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="plumbing"
-                          checked={formData.has_plumbing}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
-                        />
-                        <Label htmlFor="plumbing" className="cursor-pointer">Plumbing</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Pitch</Label>
+                        <Select value={formData.pitch} onValueChange={(value) => setFormData({ ...formData, pitch: value })}>
+                          <SelectTrigger className="rounded-none">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="3/12">3/12</SelectItem>
+                            <SelectItem value="4/12">4/12</SelectItem>
+                            <SelectItem value="5/12">5/12</SelectItem>
+                            <SelectItem value="6/12">6/12</SelectItem>
+                            <SelectItem value="7/12">7/12</SelectItem>
+                            <SelectItem value="8/12">8/12</SelectItem>
+                            <SelectItem value="10/12">10/12</SelectItem>
+                            <SelectItem value="12/12">12/12</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="electrical"
-                          checked={formData.has_electrical}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
+                      <div className="space-y-2">
+                        <Label>Truss</Label>
+                        <Input
+                          value={formData.truss}
+                          onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
+                          placeholder="Truss type"
+                          className="rounded-none"
                         />
-                        <Label htmlFor="electrical" className="cursor-pointer">Electrical</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="hvac"
-                          checked={formData.has_hvac}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
-                        />
-                        <Label htmlFor="hvac" className="cursor-pointer">HVAC</Label>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
 
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Notes</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Site/Sketch Notes</Label>
-                  <Textarea
-                    value={formData.site_notes}
-                    onChange={(e) => setFormData({ ...formData, site_notes: e.target.value })}
-                    placeholder="Site-specific notes and observations"
-                    rows={4}
-                    className="rounded-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Structural Notes</Label>
-                  <Textarea
-                    value={formData.structural_notes}
-                    onChange={(e) => setFormData({ ...formData, structural_notes: e.target.value })}
-                    placeholder="Structural requirements and considerations"
-                    rows={4}
-                    className="rounded-none"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                {/* Foundation & Floor */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Foundation & Floor</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Foundation Type</Label>
+                        <Select 
+                          value={formData.foundation_type} 
+                          onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="concrete">Concrete</SelectItem>
+                            <SelectItem value="gravel">Gravel</SelectItem>
+                            <SelectItem value="pier">Pier</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Floor</Label>
+                        <Select 
+                          value={formData.floor_type} 
+                          onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none">
+                            <SelectValue placeholder="Select floor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="concrete">Concrete</SelectItem>
+                            <SelectItem value="wood">Wood</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Soffit</Label>
+                        <Select 
+                          value={formData.soffit_type} 
+                          onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none">
+                            <SelectValue placeholder="Select soffit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="steel">Steel</SelectItem>
+                            <SelectItem value="vinyl">Vinyl</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
 
-          {/* Finishes Tab */}
-          <TabsContent value="finishes" className="space-y-4">
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Exterior Colors</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Roof Material</Label>
-                    <Input
-                      value={formData.roof_material}
-                      onChange={(e) => setFormData({ ...formData, roof_material: e.target.value })}
-                      placeholder="Steel, Shingles, etc."
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Roof Color</Label>
-                    <Input
-                      value={formData.roof_color}
-                      onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
-                      placeholder="Color name"
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Trim Color</Label>
-                    <Input
-                      value={formData.trim_color}
-                      onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
-                      placeholder="Color name"
-                      className="rounded-none"
-                    />
-                  </div>
-                  <div className="space-y-2 flex items-end">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="wainscot"
-                        checked={formData.wainscot_enabled}
-                        onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
+                {/* Structure & Design */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Structure & Design</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Snow Load (psf)</Label>
+                        <Input
+                          type="number"
+                          value={formData.snow_load}
+                          onChange={(e) => setFormData({ ...formData, snow_load: Number(e.target.value) })}
+                          placeholder="20"
+                          className="rounded-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Wind Load (mph)</Label>
+                        <Input
+                          type="number"
+                          value={formData.wind_load}
+                          onChange={(e) => setFormData({ ...formData, wind_load: Number(e.target.value) })}
+                          placeholder="90"
+                          className="rounded-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Building Use</Label>
+                        <Input
+                          value={formData.building_use}
+                          onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
+                          placeholder="Storage, Garage, etc."
+                          className="rounded-none"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Exterior Colors & Finishes */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Exterior Colors & Finishes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Roof Material</Label>
+                        <Input
+                          value={formData.roof_material}
+                          onChange={(e) => setFormData({ ...formData, roof_material: e.target.value })}
+                          placeholder="Steel, Shingles, etc."
+                          className="rounded-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Roof Color</Label>
+                        <Input
+                          value={formData.roof_color}
+                          onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
+                          placeholder="Color name"
+                          className="rounded-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Trim Color</Label>
+                        <Input
+                          value={formData.trim_color}
+                          onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
+                          placeholder="Color name"
+                          className="rounded-none"
+                        />
+                      </div>
+                      <div className="space-y-2 flex items-end">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="wainscot"
+                            checked={formData.wainscot_enabled}
+                            onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
+                          />
+                          <Label htmlFor="wainscot" className="cursor-pointer">Include Wainscot</Label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="pt-4 border-t">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Checkbox
+                          id="overhang_same"
+                          checked={formData.overhang_same_all}
+                          onCheckedChange={(checked) => setFormData({ ...formData, overhang_same_all: checked as boolean })}
+                        />
+                        <Label htmlFor="overhang_same" className="cursor-pointer font-semibold">Overhang - Same on all sides</Label>
+                      </div>
+                      {formData.overhang_same_all ? (
+                        <div className="space-y-2">
+                          <Label>Overhang (inches)</Label>
+                          <Input
+                            type="number"
+                            value={formData.overhang_front}
+                            onChange={(e) => {
+                              const value = Number(e.target.value);
+                              setFormData({ 
+                                ...formData, 
+                                overhang_front: value,
+                                overhang_back: value,
+                                overhang_left: value,
+                                overhang_right: value,
+                              });
+                            }}
+                            className="rounded-none"
+                          />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Front (inches)</Label>
+                            <Input
+                              type="number"
+                              value={formData.overhang_front}
+                              onChange={(e) => setFormData({ ...formData, overhang_front: Number(e.target.value) })}
+                              className="rounded-none"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Back (inches)</Label>
+                            <Input
+                              type="number"
+                              value={formData.overhang_back}
+                              onChange={(e) => setFormData({ ...formData, overhang_back: Number(e.target.value) })}
+                              className="rounded-none"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Left (inches)</Label>
+                            <Input
+                              type="number"
+                              value={formData.overhang_left}
+                              onChange={(e) => setFormData({ ...formData, overhang_left: Number(e.target.value) })}
+                              className="rounded-none"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Right (inches)</Label>
+                            <Input
+                              type="number"
+                              value={formData.overhang_right}
+                              onChange={(e) => setFormData({ ...formData, overhang_right: Number(e.target.value) })}
+                              className="rounded-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 border-t">
+                      <Label className="font-semibold">Insulation</Label>
+                      <Textarea
+                        value={formData.insulation_type}
+                        onChange={(e) => setFormData({ ...formData, insulation_type: e.target.value })}
+                        placeholder="Interior partitions, ceiling, etc."
+                        rows={3}
+                        className="rounded-none mt-2"
                       />
-                      <Label htmlFor="wainscot" className="cursor-pointer">Include Wainscot</Label>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
 
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Overhang</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="overhang_same"
-                    checked={formData.overhang_same_all}
-                    onCheckedChange={(checked) => setFormData({ ...formData, overhang_same_all: checked as boolean })}
-                  />
-                  <Label htmlFor="overhang_same" className="cursor-pointer">Same on all sides</Label>
-                </div>
-                {formData.overhang_same_all ? (
-                  <div className="space-y-2">
-                    <Label>Overhang (inches)</Label>
-                    <Input
-                      type="number"
-                      value={formData.overhang_front}
-                      onChange={(e) => {
-                        const value = Number(e.target.value);
-                        setFormData({ 
-                          ...formData, 
-                          overhang_front: value,
-                          overhang_back: value,
-                          overhang_left: value,
-                          overhang_right: value,
-                        });
-                      }}
-                      className="rounded-none"
-                    />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
+                {/* Special Features & Utilities */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Special Features & Utilities</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold">Special Features</Label>
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="loft"
+                              checked={formData.has_loft}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_loft: checked as boolean })}
+                            />
+                            <Label htmlFor="loft" className="cursor-pointer">Loft</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="porch"
+                              checked={formData.has_porch}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_porch: checked as boolean })}
+                            />
+                            <Label htmlFor="porch" className="cursor-pointer">Porch</Label>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold">Utilities</Label>
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="plumbing"
+                              checked={formData.has_plumbing}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
+                            />
+                            <Label htmlFor="plumbing" className="cursor-pointer">Plumbing</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="electrical"
+                              checked={formData.has_electrical}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
+                            />
+                            <Label htmlFor="electrical" className="cursor-pointer">Electrical</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="hvac"
+                              checked={formData.has_hvac}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
+                            />
+                            <Label htmlFor="hvac" className="cursor-pointer">HVAC</Label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Notes */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader>
+                    <CardTitle>Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Front (inches)</Label>
-                      <Input
-                        type="number"
-                        value={formData.overhang_front}
-                        onChange={(e) => setFormData({ ...formData, overhang_front: Number(e.target.value) })}
+                      <Label>Site/Sketch Notes</Label>
+                      <Textarea
+                        value={formData.site_notes}
+                        onChange={(e) => setFormData({ ...formData, site_notes: e.target.value })}
+                        placeholder="Site-specific notes and observations"
+                        rows={3}
                         className="rounded-none"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Back (inches)</Label>
-                      <Input
-                        type="number"
-                        value={formData.overhang_back}
-                        onChange={(e) => setFormData({ ...formData, overhang_back: Number(e.target.value) })}
+                      <Label>Structural Notes</Label>
+                      <Textarea
+                        value={formData.structural_notes}
+                        onChange={(e) => setFormData({ ...formData, structural_notes: e.target.value })}
+                        placeholder="Structural requirements and considerations"
+                        rows={3}
                         className="rounded-none"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Left (inches)</Label>
-                      <Input
-                        type="number"
-                        value={formData.overhang_left}
-                        onChange={(e) => setFormData({ ...formData, overhang_left: Number(e.target.value) })}
-                        className="rounded-none"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Right (inches)</Label>
-                      <Input
-                        type="number"
-                        value={formData.overhang_right}
-                        onChange={(e) => setFormData({ ...formData, overhang_right: Number(e.target.value) })}
-                        className="rounded-none"
-                      />
-                    </div>
-                  </div>
+                  </CardContent>
+                </Card>
+
+                {existingQuote && (
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CardHeader>
+                      <CardTitle>Pricing & Status</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Estimated Price</Label>
+                          <Input
+                            type="number"
+                            value={formData.estimated_price || ''}
+                            onChange={(e) => setFormData({ 
+                              ...formData, 
+                              estimated_price: e.target.value ? Number(e.target.value) : null 
+                            })}
+                            placeholder="Enter estimated price"
+                            className="rounded-none"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Status</Label>
+                          <Select 
+                            value={formData.status} 
+                            onValueChange={(value) => setFormData({ ...formData, status: value })}
+                          >
+                            <SelectTrigger className="rounded-none">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="draft">Draft</SelectItem>
+                              <SelectItem value="submitted">Submitted</SelectItem>
+                              <SelectItem value="estimated">Estimated</SelectItem>
+                              <SelectItem value="won">Won</SelectItem>
+                              <SelectItem value="lost">Lost</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
-              </CardContent>
-            </Card>
+              </div>
 
-            <Card className="rounded-none border-2 border-slate-300">
-              <CardHeader>
-                <CardTitle>Insulation</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Insulation Type</Label>
-                  <Textarea
-                    value={formData.insulation_type}
-                    onChange={(e) => setFormData({ ...formData, insulation_type: e.target.value })}
-                    placeholder="Interior partitions, ceiling, etc."
-                    rows={3}
-                    className="rounded-none"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {existingQuote && (
-              <Card className="rounded-none border-2 border-slate-300">
-                <CardHeader>
-                  <CardTitle>Pricing & Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Estimated Price</Label>
-                      <Input
-                        type="number"
-                        value={formData.estimated_price || ''}
-                        onChange={(e) => setFormData({ 
-                          ...formData, 
-                          estimated_price: e.target.value ? Number(e.target.value) : null 
-                        })}
-                        placeholder="Enter estimated price"
-                        className="rounded-none"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Status</Label>
-                      <Select 
-                        value={formData.status} 
-                        onValueChange={(value) => setFormData({ ...formData, status: value })}
-                      >
-                        <SelectTrigger className="rounded-none">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="submitted">Submitted</SelectItem>
-                          <SelectItem value="estimated">Estimated</SelectItem>
-                          <SelectItem value="won">Won</SelectItem>
-                          <SelectItem value="lost">Lost</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+              {/* Right Column - Floor Plan (2/5 width) */}
+              <div className="xl:col-span-2 xl:sticky xl:top-24 h-fit">
+                <FloorPlanBuilder
+                  width={formData.width}
+                  length={formData.length}
+                  quoteId={quoteId}
+                />
+              </div>
+            </div>
           </TabsContent>
 
           {/* Floor Plan Tab */}
