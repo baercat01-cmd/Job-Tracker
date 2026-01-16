@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Move, MousePointer, DoorOpen, Square } from 'lucide-react';
+import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface FloorPlanBuilderProps {
@@ -73,17 +73,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [cupolas, setCupolas] = useState<Cupola[]>([]);
   
   // Drawing modes
-  const [mode, setMode] = useState<'select' | 'wall' | 'door' | 'window'>('select');
+  const [mode, setMode] = useState<'select' | 'wall' | 'door' | 'window' | 'room'>('select');
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
   const [draggingOpening, setDraggingOpening] = useState<Opening | null>(null);
+  const [pendingRoomPlacement, setPendingRoomPlacement] = useState<{
+    type: 'room' | 'porch' | 'loft';
+    width: number;
+    length: number;
+  } | null>(null);
   
   // Dialog states
   const [showAddOpening, setShowAddOpening] = useState(false);
   const [showAddDrain, setShowAddDrain] = useState(false);
   const [showAddCupola, setShowAddCupola] = useState(false);
   const [showEditOpening, setShowEditOpening] = useState(false);
+  const [showAddRoom, setShowAddRoom] = useState(false);
   
   // Forms
   const [newOpening, setNewOpening] = useState({
@@ -109,6 +115,22 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     weather_vane: false,
     location: '',
   });
+
+  const [newRoom, setNewRoom] = useState({
+    type: 'room' as 'room' | 'porch' | 'loft',
+    width: 10,
+    length: 10,
+  });
+
+  // Track unsaved items (items without a real database ID)
+  const [tempIdCounter, setTempIdCounter] = useState(0);
+
+  // Helper to generate temporary IDs
+  const generateTempId = () => {
+    const id = `temp_${tempIdCounter}`;
+    setTempIdCounter(tempIdCounter + 1);
+    return id;
+  };
 
   useEffect(() => {
     if (quoteId) {
@@ -330,6 +352,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     } else if (mode === 'door' || mode === 'window') {
       // Place door/window at clicked position
       placeOpening(coords.x, coords.y, mode === 'door' ? 'walkdoor' : 'window');
+    } else if (mode === 'room' && pendingRoomPlacement) {
+      // Place room at clicked position
+      placeRoom(coords.x, coords.y);
     }
   }
 
@@ -364,52 +389,71 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    if (draggingOpening && quoteId) {
-      // Update opening position in database
-      const { error } = await supabase
-        .from('quote_openings')
-        .update({
-          position_x: coords.x,
-          position_y: coords.y,
-        })
-        .eq('id', draggingOpening.id);
+    if (draggingOpening) {
+      // If this is a saved opening, update in database
+      if (quoteId && !draggingOpening.id.startsWith('temp_')) {
+        const { error } = await supabase
+          .from('quote_openings')
+          .update({
+            position_x: coords.x,
+            position_y: coords.y,
+          })
+          .eq('id', draggingOpening.id);
 
-      if (error) {
-        console.error('Error updating opening position:', error);
-        toast.error('Failed to move opening');
-      } else {
-        setOpenings(openings.map(o => 
-          o.id === draggingOpening.id 
-            ? { ...o, position_x: coords.x, position_y: coords.y }
-            : o
-        ));
-        toast.success('Opening moved');
+        if (error) {
+          console.error('Error updating opening position:', error);
+          toast.error('Failed to move opening');
+          setDraggingOpening(null);
+          return;
+        }
       }
+
+      // Update in local state
+      setOpenings(openings.map(o => 
+        o.id === draggingOpening.id 
+          ? { ...o, position_x: coords.x, position_y: coords.y }
+          : o
+      ));
+      toast.success('Opening moved');
       setDraggingOpening(null);
-    } else if (isDragging && dragStart && mode === 'wall' && quoteId) {
+    } else if (isDragging && dragStart && mode === 'wall') {
       if (Math.abs(coords.x - dragStart.x) < 1 && Math.abs(coords.y - dragStart.y) < 1) {
         setIsDragging(false);
         setDragStart(null);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('quote_interior_walls')
-        .insert({
-          quote_id: quoteId,
+      // If we have a quoteId, save to database
+      if (quoteId) {
+        const { data, error } = await supabase
+          .from('quote_interior_walls')
+          .insert({
+            quote_id: quoteId,
+            start_x: dragStart.x,
+            start_y: dragStart.y,
+            end_x: coords.x,
+            end_y: coords.y,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          toast.error('Failed to add wall');
+        } else {
+          setWalls([...walls, data]);
+          toast.success('Interior wall added');
+        }
+      } else {
+        // No quoteId yet, just add to local state with temporary ID
+        const tempWall: Wall = {
+          id: generateTempId(),
           start_x: dragStart.x,
           start_y: dragStart.y,
           end_x: coords.x,
           end_y: coords.y,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        toast.error('Failed to add wall');
-      } else {
-        setWalls([...walls, data]);
-        toast.success('Interior wall added');
+        };
+        setWalls([...walls, tempWall]);
+        toast.success('Wall added (will save when quote is saved)');
       }
 
       setIsDragging(false);
@@ -417,15 +461,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
   }
 
-  async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window') {
-    if (!quoteId) {
-      toast.error('Save the quote first');
-      return;
-    }
-
+  function placeOpening(x: number, y: number, type: 'walkdoor' | 'window') {
     setNewOpening({
       opening_type: type,
-      size_detail: type === 'walkdoor' ? '3\' × 7\'' : '3\' × 4\'',
+      size_detail: type === 'walkdoor' ? "3' × 7'" : "3' × 4'",
       quantity: 1,
       location: '',
       wall: 'front',
@@ -435,71 +474,140 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     setShowAddOpening(true);
   }
 
+  function placeRoom(x: number, y: number) {
+    if (!pendingRoomPlacement) return;
+
+    // Create a wall rectangle for the room
+    const roomWidth = pendingRoomPlacement.width;
+    const roomLength = pendingRoomPlacement.length;
+
+    // Add four walls to create the room
+    const roomWalls: Wall[] = [
+      // Top wall
+      {
+        id: generateTempId(),
+        start_x: x,
+        start_y: y,
+        end_x: x + roomWidth,
+        end_y: y,
+      },
+      // Right wall
+      {
+        id: generateTempId(),
+        start_x: x + roomWidth,
+        start_y: y,
+        end_x: x + roomWidth,
+        end_y: y + roomLength,
+      },
+      // Bottom wall
+      {
+        id: generateTempId(),
+        start_x: x + roomWidth,
+        start_y: y + roomLength,
+        end_x: x,
+        end_y: y + roomLength,
+      },
+      // Left wall
+      {
+        id: generateTempId(),
+        start_x: x,
+        start_y: y + roomLength,
+        end_x: x,
+        end_y: y,
+      },
+    ];
+
+    setWalls([...walls, ...roomWalls]);
+    toast.success(`${pendingRoomPlacement.type.charAt(0).toUpperCase() + pendingRoomPlacement.type.slice(1)} placed`);
+    setPendingRoomPlacement(null);
+    setMode('select');
+  }
+
   async function addOpening() {
-    if (!quoteId || !newOpening.size_detail || !dragStart) {
+    if (!newOpening.size_detail || !dragStart) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('quote_openings')
-        .insert({
-          quote_id: quoteId,
-          ...newOpening,
-          position_x: dragStart.x,
-          position_y: dragStart.y,
-        })
-        .select()
-        .single();
+    // If we have a quoteId, save to database
+    if (quoteId) {
+      try {
+        const { data, error } = await supabase
+          .from('quote_openings')
+          .insert({
+            quote_id: quoteId,
+            ...newOpening,
+            position_x: dragStart.x,
+            position_y: dragStart.y,
+          })
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setOpenings([...openings, data]);
-      toast.success('Opening added');
-      setShowAddOpening(false);
-      setNewOpening({
-        opening_type: 'walkdoor',
-        size_detail: '',
-        quantity: 1,
-        location: '',
-        wall: 'front',
-        swing_direction: 'right',
-      });
-      setDragStart(null);
-      setMode('select');
-    } catch (error: any) {
-      console.error('Error adding opening:', error);
-      toast.error('Failed to add opening');
+        setOpenings([...openings, data]);
+        toast.success('Opening added');
+      } catch (error: any) {
+        console.error('Error adding opening:', error);
+        toast.error('Failed to add opening');
+        return;
+      }
+    } else {
+      // No quoteId yet, just add to local state with temporary ID
+      const tempOpening: Opening = {
+        id: generateTempId(),
+        ...newOpening,
+        position_x: dragStart.x,
+        position_y: dragStart.y,
+      };
+      setOpenings([...openings, tempOpening]);
+      toast.success('Opening added (will save when quote is saved)');
     }
+
+    setShowAddOpening(false);
+    setNewOpening({
+      opening_type: 'walkdoor',
+      size_detail: '',
+      quantity: 1,
+      location: '',
+      wall: 'front',
+      swing_direction: 'right',
+    });
+    setDragStart(null);
+    setMode('select');
   }
 
   async function updateOpening() {
     if (!editingOpening) return;
 
-    try {
-      const { error } = await supabase
-        .from('quote_openings')
-        .update({
-          size_detail: editingOpening.size_detail,
-          quantity: editingOpening.quantity,
-          location: editingOpening.location,
-          wall: editingOpening.wall,
-          swing_direction: editingOpening.swing_direction,
-        })
-        .eq('id', editingOpening.id);
+    // If this is a saved opening (has real ID), update in database
+    if (quoteId && !editingOpening.id.startsWith('temp_')) {
+      try {
+        const { error } = await supabase
+          .from('quote_openings')
+          .update({
+            size_detail: editingOpening.size_detail,
+            quantity: editingOpening.quantity,
+            location: editingOpening.location,
+            wall: editingOpening.wall,
+            swing_direction: editingOpening.swing_direction,
+          })
+          .eq('id', editingOpening.id);
 
-      if (error) throw error;
-
-      setOpenings(openings.map(o => o.id === editingOpening.id ? editingOpening : o));
-      toast.success('Opening updated');
-      setShowEditOpening(false);
-      setEditingOpening(null);
-      setSelectedOpening(null);
-    } catch (error: any) {
-      console.error('Error updating opening:', error);
-      toast.error('Failed to update opening');
+        if (error) throw error;
+      } catch (error: any) {
+        console.error('Error updating opening:', error);
+        toast.error('Failed to update opening');
+        return;
+      }
     }
+
+    // Update in local state
+    setOpenings(openings.map(o => o.id === editingOpening.id ? editingOpening : o));
+    toast.success('Opening updated');
+    setShowEditOpening(false);
+    setEditingOpening(null);
+    setSelectedOpening(null);
   }
 
   function openEditDialog() {
@@ -509,42 +617,55 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   async function deleteOpening(openingId: string) {
-    try {
-      const { error } = await supabase
-        .from('quote_openings')
-        .delete()
-        .eq('id', openingId);
+    // If this is a saved opening, delete from database
+    if (quoteId && !openingId.startsWith('temp_')) {
+      try {
+        const { error } = await supabase
+          .from('quote_openings')
+          .delete()
+          .eq('id', openingId);
 
-      if (error) throw error;
-
-      setOpenings(openings.filter(o => o.id !== openingId));
-      setSelectedOpening(null);
-      toast.success('Opening deleted');
-    } catch (error: any) {
-      console.error('Error deleting opening:', error);
-      toast.error('Failed to delete opening');
+        if (error) throw error;
+      } catch (error: any) {
+        console.error('Error deleting opening:', error);
+        toast.error('Failed to delete opening');
+        return;
+      }
     }
+
+    // Remove from local state
+    setOpenings(openings.filter(o => o.id !== openingId));
+    setSelectedOpening(null);
+    toast.success('Opening deleted');
   }
 
   async function deleteWall(wallId: string) {
-    try {
-      const { error } = await supabase
-        .from('quote_interior_walls')
-        .delete()
-        .eq('id', wallId);
+    // If this is a saved wall, delete from database
+    if (quoteId && !wallId.startsWith('temp_')) {
+      try {
+        const { error } = await supabase
+          .from('quote_interior_walls')
+          .delete()
+          .eq('id', wallId);
 
-      if (error) throw error;
-
-      setWalls(walls.filter(w => w.id !== wallId));
-      toast.success('Wall deleted');
-    } catch (error: any) {
-      console.error('Error deleting wall:', error);
-      toast.error('Failed to delete wall');
+        if (error) throw error;
+      } catch (error: any) {
+        console.error('Error deleting wall:', error);
+        toast.error('Failed to delete wall');
+        return;
+      }
     }
+
+    // Remove from local state
+    setWalls(walls.filter(w => w.id !== wallId));
+    toast.success('Wall deleted');
   }
 
   async function addFloorDrain() {
-    if (!quoteId) return;
+    if (!quoteId) {
+      toast.error('Please save the quote first before adding floor drains');
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -590,7 +711,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   async function addCupola() {
-    if (!quoteId) return;
+    if (!quoteId) {
+      toast.error('Please save the quote first before adding cupolas');
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -681,12 +805,22 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Square className="w-4 h-4 mr-2" />
               Place Window
             </Button>
+            <Button
+              variant={mode === 'room' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowAddRoom(true)}
+              className="rounded-none"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Add Room/Porch/Loft
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             {mode === 'select' && 'Click and drag openings to reposition them'}
             {mode === 'wall' && 'Click and drag to draw interior walls'}
             {mode === 'door' && 'Click to place a door on the floor plan'}
             {mode === 'window' && 'Click to place a window on the floor plan'}
+            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}')`}
           </p>
         </CardContent>
       </Card>
@@ -703,7 +837,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           <div className="border rounded-lg overflow-auto bg-white">
             <canvas
               ref={canvasRef}
-              className={`${mode === 'wall' ? 'cursor-crosshair' : 'cursor-pointer'}`}
+              className={`${mode === 'wall' || mode === 'room' ? 'cursor-crosshair' : 'cursor-pointer'}`}
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
@@ -794,6 +928,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                           {opening.opening_type === 'window' && 'Window'}
                           {opening.opening_type === 'overhead_door' && 'Overhead Door'}
                           {opening.opening_type === 'other' && 'Other Opening'}
+                          {opening.id.startsWith('temp_') && ' (unsaved)'}
                         </div>
                         <div className="text-sm text-muted-foreground">
                           {opening.size_detail} • Qty: {opening.quantity}
@@ -831,7 +966,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   {walls.map((wall, index) => (
                     <div key={wall.id} className="flex items-center justify-between p-2 border rounded">
                       <div className="flex-1">
-                        <div className="font-medium">Wall {index + 1}</div>
+                        <div className="font-medium">
+                          Wall {index + 1}
+                          {wall.id.startsWith('temp_') && ' (unsaved)'}
+                        </div>
                         <div className="text-sm text-muted-foreground">
                           From ({wall.start_x.toFixed(1)}', {wall.start_y.toFixed(1)}') to ({wall.end_x.toFixed(1)}', {wall.end_y.toFixed(1)}')
                         </div>
@@ -856,12 +994,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Floor Drains</CardTitle>
-                {quoteId && (
-                  <Button size="sm" onClick={() => setShowAddDrain(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Drain
-                  </Button>
-                )}
+                <Button size="sm" onClick={() => setShowAddDrain(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Drain
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -899,12 +1035,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Cupolas</CardTitle>
-                {quoteId && (
-                  <Button size="sm" onClick={() => setShowAddCupola(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Cupola
-                  </Button>
-                )}
+                <Button size="sm" onClick={() => setShowAddCupola(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Cupola
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -940,6 +1074,68 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Add Room Dialog */}
+      <Dialog open={showAddRoom} onOpenChange={setShowAddRoom}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Room, Porch, or Loft</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Type *</Label>
+              <Select
+                value={newRoom.type}
+                onValueChange={(value: 'room' | 'porch' | 'loft') => 
+                  setNewRoom({ ...newRoom, type: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="room">Interior Room</SelectItem>
+                  <SelectItem value="porch">Porch</SelectItem>
+                  <SelectItem value="loft">Loft</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Width (ft) *</Label>
+                <Input
+                  type="number"
+                  value={newRoom.width}
+                  onChange={(e) => setNewRoom({ ...newRoom, width: Number(e.target.value) })}
+                  min={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Length (ft) *</Label>
+                <Input
+                  type="number"
+                  value={newRoom.length}
+                  onChange={(e) => setNewRoom({ ...newRoom, length: Number(e.target.value) })}
+                  min={1}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowAddRoom(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => {
+                setPendingRoomPlacement(newRoom);
+                setMode('room');
+                setShowAddRoom(false);
+                toast.info(`Click on the floor plan to place the ${newRoom.type}`);
+              }}>
+                Place on Drawing
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Opening Dialog */}
       <Dialog open={showAddOpening} onOpenChange={setShowAddOpening}>
