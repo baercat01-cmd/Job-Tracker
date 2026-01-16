@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -33,8 +34,10 @@ import {
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('office-active-tab') || 'jobs';
+    return tabParam || localStorage.getItem('office-active-tab') || 'jobs';
   });
   const [calendarView, setCalendarView] = useState(() => {
     return localStorage.getItem('office-calendar-view') || 'calendar';
@@ -45,9 +48,10 @@ export function OfficeDashboard() {
     return (localStorage.getItem('office-view-mode') as 'office' | 'field') || 'field';
   });
 
-  // Save view state to localStorage
+  // Save view state to localStorage and update URL
   useEffect(() => {
     localStorage.setItem('office-active-tab', activeTab);
+    setSearchParams({ tab: activeTab }, { replace: true });
   }, [activeTab]);
 
   useEffect(() => {

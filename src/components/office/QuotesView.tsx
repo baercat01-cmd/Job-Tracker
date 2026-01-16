@@ -1,18 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase } from 'lucide-react';
 import { toast } from 'sonner';
-import { QuoteIntakeForm } from './QuoteIntakeForm';
 
 interface Quote {
   id: string;
@@ -40,12 +34,11 @@ const STATUS_CONFIG = {
 };
 
 export function QuotesView() {
+  const navigate = useNavigate();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | Quote['status']>('all');
-  const [showNewQuote, setShowNewQuote] = useState(false);
-  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
 
   useEffect(() => {
     loadQuotes();
@@ -121,7 +114,7 @@ export function QuotesView() {
             Manage building quotes and convert them to active jobs
           </p>
         </div>
-        <Button onClick={() => setShowNewQuote(true)} size="lg">
+        <Button onClick={() => navigate('/office/quotes/new')} size="lg">
           <Plus className="w-4 h-4 mr-2" />
           New Quote
         </Button>
@@ -187,7 +180,7 @@ export function QuotesView() {
               <Card 
                 key={quote.id} 
                 className="cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => setSelectedQuote(quote)}
+                onClick={() => navigate(`/office/quotes/${quote.id}`)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -242,46 +235,7 @@ export function QuotesView() {
         </div>
       )}
 
-      {/* New Quote Dialog */}
-      <Dialog open={showNewQuote} onOpenChange={setShowNewQuote}>
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>New Quote</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
-            <QuoteIntakeForm
-              onSuccess={() => {
-                setShowNewQuote(false);
-                loadQuotes();
-              }}
-              onCancel={() => setShowNewQuote(false)}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* Edit Quote Dialog */}
-      <Dialog open={!!selectedQuote} onOpenChange={(open) => !open && setSelectedQuote(null)}>
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedQuote?.project_name || selectedQuote?.customer_name || 'Edit Quote'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
-            {selectedQuote && (
-              <QuoteIntakeForm
-                quoteId={selectedQuote.id}
-                onSuccess={() => {
-                  setSelectedQuote(null);
-                  loadQuotes();
-                }}
-                onCancel={() => setSelectedQuote(null)}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

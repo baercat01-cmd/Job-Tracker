@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 import { UserSelectPage } from '@/pages/UserSelectPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -7,6 +8,7 @@ import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
+import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -120,7 +122,15 @@ function AppContent() {
 
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {
-    return <OfficeDashboard />;
+    return (
+      <Routes>
+        <Route path="/" element={<Navigate to="/office" replace />} />
+        <Route path="/office" element={<OfficeDashboard />} />
+        <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
+        <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
+        <Route path="*" element={<Navigate to="/office" replace />} />
+      </Routes>
+    );
   }
 
   // Payroll users: time tracking and export for payroll processing
@@ -156,11 +166,13 @@ function AppContent() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <AppContent />
+      <BrowserRouter>
+        <AuthProvider>
+          <AppContent />
 
-        <Toaster position="top-center" richColors />
-      </AuthProvider>
+          <Toaster position="top-center" richColors />
+        </AuthProvider>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }
