@@ -429,18 +429,9 @@ export function QuoteIntakePage() {
 
           {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <div className="space-y-3">
-              {/* Top Section - Floor Plan */}
-              <div className="xl:h-[45vh]">
-                <FloorPlanBuilder
-                  width={formData.width}
-                  length={formData.length}
-                  quoteId={quoteId}
-                />
-              </div>
-              
-              {/* Bottom Section - Forms - Scrollable */}
-              <div className="space-y-2 xl:max-h-[calc(100vh-45vh-16rem)] xl:overflow-y-auto">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:h-[calc(100vh-14rem)]">
+              {/* Left Column - Forms - Scrollable */}
+              <div className="space-y-2 xl:pr-2 xl:overflow-y-auto xl:h-full">
                 {/* Building Dimensions */}
                 <Card className="rounded-none border-2 border-slate-300">
                   <CardHeader className="py-1.5 px-3">
@@ -868,6 +859,26 @@ export function QuoteIntakePage() {
                     </CardContent>
                   </Card>
                 )}
+              </div>
+
+              {/* Right Column - Floor Plan - Fixed/Sticky */}
+              <div className="hidden xl:block xl:h-full">
+                <div className="sticky top-0 h-full overflow-y-auto">
+                  <FloorPlanBuilder
+                    width={formData.width}
+                    length={formData.length}
+                    quoteId={quoteId}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile: Floor Plan Below */}
+              <div className="xl:hidden">
+                <FloorPlanBuilder
+                  width={formData.width}
+                  length={formData.length}
+                  quoteId={quoteId}
+                />
               </div>
             </div>
           </TabsContent>
