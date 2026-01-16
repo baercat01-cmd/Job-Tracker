@@ -1128,8 +1128,604 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         </CardContent>
       </Card>
 
-      {/* Tabs and Dialogs continue as before... */}
-      {/* Include all the tabs and dialog code from the original file */}
+      {/* Tabs for Managing Items */}
+      <Tabs defaultValue="openings" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="openings">Doors & Windows</TabsTrigger>
+          <TabsTrigger value="drains">Floor Drains</TabsTrigger>
+          <TabsTrigger value="cupolas">Cupolas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="openings" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold">Placed Openings</h3>
+            <Button size="sm" onClick={() => setShowAddOpening(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Opening
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {openings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No openings placed yet</p>
+            ) : (
+              openings.map((opening) => (
+                <div key={opening.id} className="flex items-center justify-between p-2 border rounded bg-white">
+                  <div>
+                    <p className="text-sm font-medium capitalize">
+                      {opening.opening_type.replace('_', ' ')}: {opening.size_detail}
+                      {opening.id.startsWith('temp_') && (
+                        <span className="ml-2 text-xs text-orange-600">(unsaved)</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {opening.location || 'Location not specified'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingOpening(opening);
+                        setShowEditOpening(true);
+                      }}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteOpening(opening.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="drains" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold">Floor Drains</h3>
+            <Button size="sm" onClick={() => setShowAddDrain(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Drain
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {floorDrains.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No floor drains added yet</p>
+            ) : (
+              floorDrains.map((drain) => (
+                <div key={drain.id} className="flex items-center justify-between p-2 border rounded bg-white">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {drain.length_ft}' {drain.orientation}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {drain.location || 'Location not specified'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditDrainDialog(drain)}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteFloorDrain(drain.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="cupolas" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold">Cupolas</h3>
+            <Button size="sm" onClick={() => setShowAddCupola(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Cupola
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {cupolas.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No cupolas added yet</p>
+            ) : (
+              cupolas.map((cupola) => (
+                <div key={cupola.id} className="flex items-center justify-between p-2 border rounded bg-white">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {cupola.size} - {cupola.cupola_type}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {cupola.location || 'Location not specified'}
+                      {cupola.weather_vane && ' • With Weather Vane'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditCupolaDialog(cupola)}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteCupola(cupola.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Add Opening Dialog */}
+      <Dialog open={showAddOpening} onOpenChange={setShowAddOpening}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Opening</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select
+                value={newOpening.opening_type}
+                onValueChange={(value: any) => setNewOpening({ ...newOpening, opening_type: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="walkdoor">Walk Door</SelectItem>
+                  <SelectItem value="window">Window</SelectItem>
+                  <SelectItem value="overhead_door">Overhead Door</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Size/Details</Label>
+              <Input
+                value={newOpening.size_detail}
+                onChange={(e) => setNewOpening({ ...newOpening, size_detail: e.target.value })}
+                placeholder="e.g., 3' × 7'"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                value={newOpening.location}
+                onChange={(e) => setNewOpening({ ...newOpening, location: e.target.value })}
+                placeholder="e.g., Front wall, left side"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Wall</Label>
+              <Select
+                value={newOpening.wall}
+                onValueChange={(value) => setNewOpening({ ...newOpening, wall: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="front">Front</SelectItem>
+                  <SelectItem value="back">Back</SelectItem>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(newOpening.opening_type === 'walkdoor' || newOpening.opening_type === 'overhead_door') && (
+              <div className="space-y-2">
+                <Label>Swing Direction</Label>
+                <Select
+                  value={newOpening.swing_direction}
+                  onValueChange={(value: any) => setNewOpening({ ...newOpening, swing_direction: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="right">Right</SelectItem>
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="in">In</SelectItem>
+                    <SelectItem value="out">Out</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={addOpening} className="flex-1">
+                Add Opening
+              </Button>
+              <Button variant="outline" onClick={() => setShowAddOpening(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Opening Dialog */}
+      <Dialog open={showEditOpening} onOpenChange={setShowEditOpening}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Opening</DialogTitle>
+          </DialogHeader>
+          {editingOpening && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Size/Details</Label>
+                <Input
+                  value={editingOpening.size_detail}
+                  onChange={(e) => setEditingOpening({ ...editingOpening, size_detail: e.target.value })}
+                  placeholder="e.g., 3' × 7'"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input
+                  value={editingOpening.location}
+                  onChange={(e) => setEditingOpening({ ...editingOpening, location: e.target.value })}
+                  placeholder="e.g., Front wall, left side"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Wall</Label>
+                <Select
+                  value={editingOpening.wall}
+                  onValueChange={(value) => setEditingOpening({ ...editingOpening, wall: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="front">Front</SelectItem>
+                    <SelectItem value="back">Back</SelectItem>
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(editingOpening.opening_type === 'walkdoor' || editingOpening.opening_type === 'overhead_door') && (
+                <div className="space-y-2">
+                  <Label>Swing Direction</Label>
+                  <Select
+                    value={editingOpening.swing_direction}
+                    onValueChange={(value: any) => setEditingOpening({ ...editingOpening, swing_direction: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="right">Right</SelectItem>
+                      <SelectItem value="left">Left</SelectItem>
+                      <SelectItem value="in">In</SelectItem>
+                      <SelectItem value="out">Out</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button onClick={updateOpening} className="flex-1">
+                  Update Opening
+                </Button>
+                <Button variant="outline" onClick={() => setShowEditOpening(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Room Dialog */}
+      <Dialog open={showAddRoom} onOpenChange={setShowAddRoom}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Room/Porch/Loft</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select
+                value={newRoom.type}
+                onValueChange={(value: any) => setNewRoom({ ...newRoom, type: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="room">Interior Room</SelectItem>
+                  <SelectItem value="porch">Porch</SelectItem>
+                  <SelectItem value="loft">Loft</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Width (ft)</Label>
+              <Input
+                type="number"
+                value={newRoom.width}
+                onChange={(e) => setNewRoom({ ...newRoom, width: Number(e.target.value) })}
+                placeholder="10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Length (ft)</Label>
+              <Input
+                type="number"
+                value={newRoom.length}
+                onChange={(e) => setNewRoom({ ...newRoom, length: Number(e.target.value) })}
+                placeholder="10"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  setPendingRoomPlacement(newRoom);
+                  setMode('room');
+                  setShowAddRoom(false);
+                  toast.info(`Click on the floor plan to place ${newRoom.type}`);
+                }}
+                className="flex-1"
+              >
+                Place on Floor Plan
+              </Button>
+              <Button variant="outline" onClick={() => setShowAddRoom(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Floor Drain Dialog */}
+      <Dialog open={showAddDrain} onOpenChange={setShowAddDrain}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Floor Drain</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Length (ft)</Label>
+              <Input
+                type="number"
+                value={newDrain.length_ft}
+                onChange={(e) => setNewDrain({ ...newDrain, length_ft: Number(e.target.value) })}
+                placeholder="10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Orientation</Label>
+              <Select
+                value={newDrain.orientation}
+                onValueChange={(value) => setNewDrain({ ...newDrain, orientation: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="horizontal">Horizontal</SelectItem>
+                  <SelectItem value="vertical">Vertical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                value={newDrain.location}
+                onChange={(e) => setNewDrain({ ...newDrain, location: e.target.value })}
+                placeholder="e.g., Center of building"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={addFloorDrain} className="flex-1">
+                Add Floor Drain
+              </Button>
+              <Button variant="outline" onClick={() => setShowAddDrain(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Floor Drain Dialog */}
+      <Dialog open={showEditDrain} onOpenChange={setShowEditDrain}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Floor Drain</DialogTitle>
+          </DialogHeader>
+          {editingDrain && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Length (ft)</Label>
+                <Input
+                  type="number"
+                  value={editingDrain.length_ft}
+                  onChange={(e) => setEditingDrain({ ...editingDrain, length_ft: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Orientation</Label>
+                <Select
+                  value={editingDrain.orientation}
+                  onValueChange={(value) => setEditingDrain({ ...editingDrain, orientation: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="horizontal">Horizontal</SelectItem>
+                    <SelectItem value="vertical">Vertical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input
+                  value={editingDrain.location}
+                  onChange={(e) => setEditingDrain({ ...editingDrain, location: e.target.value })}
+                  placeholder="e.g., Center of building"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={updateFloorDrain} className="flex-1">
+                  Update Floor Drain
+                </Button>
+                <Button variant="outline" onClick={() => setShowEditDrain(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Cupola Dialog */}
+      <Dialog open={showAddCupola} onOpenChange={setShowAddCupola}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Cupola</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Size</Label>
+              <Select
+                value={newCupola.size}
+                onValueChange={(value) => setNewCupola({ ...newCupola, size: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='18"x18"'>18" × 18"</SelectItem>
+                  <SelectItem value='24"x24"'>24" × 24"</SelectItem>
+                  <SelectItem value='30"x30"'>30" × 30"</SelectItem>
+                  <SelectItem value='36"x36"'>36" × 36"</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Input
+                value={newCupola.cupola_type}
+                onChange={(e) => setNewCupola({ ...newCupola, cupola_type: e.target.value })}
+                placeholder="e.g., Standard, Louvered"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                value={newCupola.location}
+                onChange={(e) => setNewCupola({ ...newCupola, location: e.target.value })}
+                placeholder="e.g., Center of roof"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="weather_vane"
+                checked={newCupola.weather_vane}
+                onCheckedChange={(checked) => setNewCupola({ ...newCupola, weather_vane: checked as boolean })}
+              />
+              <Label htmlFor="weather_vane" className="cursor-pointer">
+                Include Weather Vane
+              </Label>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={addCupola} className="flex-1">
+                Add Cupola
+              </Button>
+              <Button variant="outline" onClick={() => setShowAddCupola(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Cupola Dialog */}
+      <Dialog open={showEditCupola} onOpenChange={setShowEditCupola}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Cupola</DialogTitle>
+          </DialogHeader>
+          {editingCupola && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Size</Label>
+                <Select
+                  value={editingCupola.size}
+                  onValueChange={(value) => setEditingCupola({ ...editingCupola, size: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='18"x18"'>18" × 18"</SelectItem>
+                    <SelectItem value='24"x24"'>24" × 24"</SelectItem>
+                    <SelectItem value='30"x30"'>30" × 30"</SelectItem>
+                    <SelectItem value='36"x36"'>36" × 36"</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Input
+                  value={editingCupola.cupola_type}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, cupola_type: e.target.value })}
+                  placeholder="e.g., Standard, Louvered"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input
+                  value={editingCupola.location}
+                  onChange={(e) => setEditingCupola({ ...editingCupola, location: e.target.value })}
+                  placeholder="e.g., Center of roof"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="edit_weather_vane"
+                  checked={editingCupola.weather_vane}
+                  onCheckedChange={(checked) => setEditingCupola({ ...editingCupola, weather_vane: checked as boolean })}
+                />
+                <Label htmlFor="edit_weather_vane" className="cursor-pointer">
+                  Include Weather Vane
+                </Label>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={updateCupola} className="flex-1">
+                  Update Cupola
+                </Button>
+                <Button variant="outline" onClick={() => setShowEditCupola(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
