@@ -350,8 +350,8 @@ export function QuoteIntakePage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <main className="container mx-auto px-4 py-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full grid-cols-3 bg-white border-2 border-slate-300 rounded-none">
             <TabsTrigger value="customer" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white">
               <User className="w-4 h-4 mr-2" />
@@ -429,15 +429,15 @@ export function QuoteIntakePage() {
 
           {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 xl:h-[calc(100vh-16rem)]">
               {/* Left Column - Forms - Scrollable */}
-              <div className="space-y-6 xl:pr-4">
+              <div className="space-y-4 xl:pr-4 xl:overflow-y-auto xl:h-full">
                 {/* Building Dimensions */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Building Dimensions</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Building Dimensions</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>Width (ft)</Label>
@@ -501,10 +501,10 @@ export function QuoteIntakePage() {
 
                 {/* Foundation & Floor */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Foundation & Floor</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Foundation & Floor</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>Foundation Type</Label>
@@ -560,10 +560,10 @@ export function QuoteIntakePage() {
 
                 {/* Structure & Design */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Structure & Design</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Structure & Design</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>Snow Load (psf)</Label>
@@ -600,10 +600,10 @@ export function QuoteIntakePage() {
 
                 {/* Exterior Colors & Finishes */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Exterior Colors & Finishes</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Exterior Colors & Finishes</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Roof Material</Label>
@@ -729,10 +729,10 @@ export function QuoteIntakePage() {
 
                 {/* Special Features & Utilities */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Special Features & Utilities</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Special Features & Utilities</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-3">
                         <Label className="text-base font-semibold">Special Features</Label>
@@ -790,10 +790,10 @@ export function QuoteIntakePage() {
 
                 {/* Notes */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader>
-                    <CardTitle>Notes</CardTitle>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">Notes</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3 py-3">
                     <div className="space-y-2">
                       <Label>Site/Sketch Notes</Label>
                       <Textarea
@@ -819,10 +819,10 @@ export function QuoteIntakePage() {
 
                 {existingQuote && (
                   <Card className="rounded-none border-2 border-slate-300">
-                    <CardHeader>
-                      <CardTitle>Pricing & Status</CardTitle>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-base">Pricing & Status</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-3 py-3">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Estimated Price</Label>
@@ -862,8 +862,8 @@ export function QuoteIntakePage() {
               </div>
 
               {/* Right Column - Floor Plan - Fixed/Sticky */}
-              <div className="hidden xl:block">
-                <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+              <div className="hidden xl:block xl:h-full">
+                <div className="sticky top-0 h-full overflow-y-auto">
                   <FloorPlanBuilder
                     width={formData.width}
                     length={formData.length}
