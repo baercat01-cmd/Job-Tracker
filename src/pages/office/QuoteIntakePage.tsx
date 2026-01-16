@@ -429,9 +429,9 @@ export function QuoteIntakePage() {
 
           {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-              {/* Left Column - Forms (3/5 width) */}
-              <div className="xl:col-span-3 space-y-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* Left Column - Forms - Scrollable */}
+              <div className="space-y-6 xl:pr-4">
                 {/* Building Dimensions */}
                 <Card className="rounded-none border-2 border-slate-300">
                   <CardHeader>
@@ -861,8 +861,19 @@ export function QuoteIntakePage() {
                 )}
               </div>
 
-              {/* Right Column - Floor Plan (2/5 width) */}
-              <div className="xl:col-span-2 xl:sticky xl:top-24 h-fit">
+              {/* Right Column - Floor Plan - Fixed/Sticky */}
+              <div className="hidden xl:block">
+                <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+                  <FloorPlanBuilder
+                    width={formData.width}
+                    length={formData.length}
+                    quoteId={quoteId}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile: Floor Plan Below */}
+              <div className="xl:hidden">
                 <FloorPlanBuilder
                   width={formData.width}
                   length={formData.length}
