@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -22,6 +22,7 @@ import { SubcontractorManagement } from '@/components/office/SubcontractorManage
 import { SubcontractorScheduling } from '@/components/office/SubcontractorScheduling';
 import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
+import { QuotesView } from '@/components/office/QuotesView';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import {
   DropdownMenu,
@@ -223,7 +224,11 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-6 bg-white border-2 border-slate-300 rounded-none">
+          <TabsList className="grid w-full grid-cols-6 mb-6 bg-white border-2 border-slate-300 rounded-none">
+            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">Quotes</span>
+            </TabsTrigger>
             <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
@@ -245,6 +250,10 @@ export function OfficeDashboard() {
               <span className="hidden sm:inline">Settings</span>
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="quotes">
+            <QuotesView />
+          </TabsContent>
 
           <TabsContent value="jobs">
             <div className="space-y-6">
