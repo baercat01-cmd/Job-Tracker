@@ -882,9 +882,24 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    // Update mouse position for floating items
-    if (floatingOpening || floatingRoom) {
+    // Update mouse position and apply snapping for floating opening
+    if (floatingOpening) {
+      const snapped = snapOpeningToWall(coords.x, coords.y);
+      setMousePosition({ x: snapped.x, y: snapped.y });
+      
+      // Update the floating opening's position in the openings array
+      setOpenings(openings.map(o => 
+        o.id === floatingOpening.id 
+          ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+          : o
+      ));
+      return;
+    }
+
+    // Update mouse position for floating room
+    if (floatingRoom) {
       setMousePosition(coords);
+      return;
     }
 
     if (mode === 'select' && !floatingOpening && !floatingRoom && !draggingWallHandle) {
@@ -1090,27 +1105,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     const snapped = snapOpeningToWall(x, y);
     
-    // If this is a new opening (temp ID), add it to the database and openings array
+    // If this is a new opening (temp ID), save it to the database
     if (floatingOpening.id.startsWith('temp_')) {
-      const newOpening = {
-        ...floatingOpening,
-        position_x: snapped.x,
-        position_y: snapped.y,
-        rotation: snapped.rotation,
-      };
-
       if (quoteId) {
         try {
           const { data, error } = await supabase
             .from('quote_openings')
             .insert({
               quote_id: quoteId,
-              opening_type: newOpening.opening_type,
-              size_detail: newOpening.size_detail,
-              quantity: newOpening.quantity,
-              location: newOpening.location,
-              wall: newOpening.wall,
-              swing_direction: newOpening.swing_direction,
+              opening_type: floatingOpening.opening_type,
+              size_detail: floatingOpening.size_detail,
+              quantity: floatingOpening.quantity,
+              location: floatingOpening.location,
+              wall: floatingOpening.wall,
+              swing_direction: floatingOpening.swing_direction,
               position_x: snapped.x,
               position_y: snapped.y,
               rotation: snapped.rotation,
@@ -1120,15 +1128,22 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
           if (error) throw error;
 
-          setOpenings([...openings, data]);
+          // Replace the temp opening with the saved one
+          setOpenings(openings.map(o => o.id === floatingOpening.id ? data : o));
           toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
         } catch (error: any) {
           console.error('Error placing opening:', error);
           toast.error('Failed to place opening');
+          // Remove the temp opening on error
+          setOpenings(openings.filter(o => o.id !== floatingOpening.id));
         }
       } else {
-        // No quote yet, just add to local state
-        setOpenings([...openings, newOpening]);
+        // No quote yet, keep in local state with final position
+        setOpenings(openings.map(o => 
+          o.id === floatingOpening.id 
+            ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+            : o
+        ));
         toast.success('Opening placed (will save when quote is saved)');
       }
     } else {
@@ -1152,11 +1167,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         }
       }
 
-      setOpenings(openings.map(o => 
-        o.id === floatingOpening.id 
-          ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
-          : o
-      ));
       toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     }
 
@@ -1538,12 +1548,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                     location: '',
                     wall: 'front',
                     swing_direction: 'right',
-                    position_x: 0,
-                    position_y: 0,
+                    position_x: width / 2, // Start at center
+                    position_y: 0, // Start at top
                     rotation: 0,
                   };
+                  setOpenings([...openings, defaultOpening]);
                   setFloatingOpening(defaultOpening);
-                  toast.info('Click on the floor plan to place door');
+                  toast.info('Move cursor to position door - it will snap to walls');
                 }}
                 className="rounded-none h-8 px-3"
               >
@@ -1563,12 +1574,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                     location: '',
                     wall: 'front',
                     swing_direction: 'right',
-                    position_x: 0,
-                    position_y: 0,
+                    position_x: width / 2, // Start at center
+                    position_y: 0, // Start at top
                     rotation: 0,
                   };
+                  setOpenings([...openings, defaultOpening]);
                   setFloatingOpening(defaultOpening);
-                  toast.info('Click on the floor plan to place window');
+                  toast.info('Move cursor to position window - it will snap to walls');
                 }}
                 className="rounded-none h-8 px-3"
               >
@@ -1588,12 +1600,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                     location: '',
                     wall: 'front',
                     swing_direction: 'right',
-                    position_x: 0,
-                    position_y: 0,
+                    position_x: width / 2, // Start at center
+                    position_y: 0, // Start at top
                     rotation: 0,
                   };
+                  setOpenings([...openings, defaultOpening]);
                   setFloatingOpening(defaultOpening);
-                  toast.info('Click on the floor plan to place overhead door');
+                  toast.info('Move cursor to position overhead door - it will snap to walls');
                 }}
                 className="rounded-none h-8 px-3"
               >
