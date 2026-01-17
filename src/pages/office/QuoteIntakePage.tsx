@@ -515,9 +515,9 @@ export function QuoteIntakePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-2 h-[calc(100vh-18rem)]">
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-2 h-[calc(100vh-14rem)]">
               {/* Left Column - Fixed Floor Plan (Desktop) */}
-              <div className="hidden xl:block xl:h-full xl:overflow-hidden">
+              <div className="hidden xl:block xl:h-full xl:overflow-hidden flex flex-col">
                 <FloorPlanBuilder
                   width={formData.width}
                   length={formData.length}

@@ -1378,11 +1378,17 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="rounded-none border-2 border-slate-300">
+    <div className="flex flex-col h-full">
+      {/* Building Layout - Takes most of the space */}
+      <Card className="rounded-none border-2 border-slate-300 flex-1 flex flex-col min-h-0">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle>Drawing Tools</CardTitle>
+            <div>
+              <CardTitle>Building Layout</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {width}' × {length}' • Zoom: {Math.round(zoom * 100)}%
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -1414,85 +1420,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-2">
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={mode === 'select' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode('select')}
-              className="rounded-none"
-            >
-              <MousePointer className="w-4 h-4 mr-2" />
-              Select/Move
-            </Button>
-            <Button
-              variant={mode === 'wall' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode('wall')}
-              className="rounded-none"
-            >
-              <Move className="w-4 h-4 mr-2" />
-              Draw Walls
-            </Button>
-            <Button
-              variant={mode === 'door' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode('door')}
-              className="rounded-none"
-            >
-              <DoorOpen className="w-4 h-4 mr-2" />
-              Place Door
-            </Button>
-            <Button
-              variant={mode === 'window' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode('window')}
-              className="rounded-none"
-            >
-              <Square className="w-4 h-4 mr-2" />
-              Place Window
-            </Button>
-            <Button
-              variant={mode === 'overhead' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode('overhead')}
-              className="rounded-none"
-            >
-              <Square className="w-4 h-4 mr-2" />
-              Overhead Door
-            </Button>
-            <Button
-              variant={mode === 'room' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setShowAddRoom(true)}
-              className="rounded-none"
-            >
-              <Home className="w-4 h-4 mr-2" />
-              Add Room/Porch/Loft
-            </Button>
-          </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move, click once more to place (doors/windows snap to all walls, rooms snap to exterior walls only)'}
-            {mode === 'select' && floatingOpening && 'Click anywhere to place opening (snaps to exterior or interior walls)'}
-            {mode === 'select' && floatingRoom && 'Click anywhere to place room (snaps to exterior walls only)'}
-            {mode === 'wall' && 'Click and drag to draw interior walls (auto-snaps to all walls)'}
-            {mode === 'door' && 'Click to place a walk door (snaps to exterior or interior walls)'}
-            {mode === 'window' && 'Click to place a window (snaps to exterior or interior walls)'}
-            {mode === 'overhead' && 'Click to place an overhead door (snaps to exterior or interior walls)'}
-            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}') - snaps to exterior walls only`}
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-2 border-slate-300">
-        <CardHeader>
-          <CardTitle>Building Layout</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {width}' × {length}' • Zoom: {Math.round(zoom * 100)}% • Items snap to walls automatically
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="border rounded-lg overflow-auto bg-white" style={{ height: 'calc(100vh - 32rem)' }}>
+        <CardContent className="flex-1 flex flex-col space-y-4 min-h-0">
+          <div className="border rounded-lg overflow-auto bg-white flex-1">
             <canvas
               ref={canvasRef}
               className={`${
@@ -1567,34 +1496,79 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </div>
           )}
 
-          <div className="space-y-2 text-sm">
-            <div className="font-semibold">Legend:</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-1 bg-blue-700 rounded"></div>
-                <span>Building/Interior Wall</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-1 bg-green-500 rounded"></div>
-                <span>Walk Door</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-1 bg-blue-500 rounded"></div>
-                <span>Window</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-1 bg-orange-500 rounded"></div>
-                <span>Overhead Door</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-purple-500 bg-purple-100"></div>
-                <span>Room/Porch/Loft</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-1 border-t-2 border-dashed border-cyan-500"></div>
-                <span>Floor Drain</span>
-              </div>
+        </CardContent>
+      </Card>
+
+      {/* Drawing Tools - Fixed at bottom */}
+      <Card className="rounded-none border-2 border-slate-300 mt-2">
+        <CardContent className="py-2">
+          <div className="flex gap-2 flex-wrap items-center justify-between">
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant={mode === 'select' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setMode('select')}
+                className="rounded-none"
+              >
+                <MousePointer className="w-4 h-4 mr-1" />
+                Select
+              </Button>
+              <Button
+                variant={mode === 'wall' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setMode('wall')}
+                className="rounded-none"
+              >
+                <Move className="w-4 h-4 mr-1" />
+                Walls
+              </Button>
+              <Button
+                variant={mode === 'door' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setMode('door')}
+                className="rounded-none"
+              >
+                <DoorOpen className="w-4 h-4 mr-1" />
+                Door
+              </Button>
+              <Button
+                variant={mode === 'window' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setMode('window')}
+                className="rounded-none"
+              >
+                <Square className="w-4 h-4 mr-1" />
+                Window
+              </Button>
+              <Button
+                variant={mode === 'overhead' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setMode('overhead')}
+                className="rounded-none"
+              >
+                <Square className="w-4 h-4 mr-1" />
+                Overhead
+              </Button>
+              <Button
+                variant={mode === 'room' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowAddRoom(true)}
+                className="rounded-none"
+              >
+                <Home className="w-4 h-4 mr-1" />
+                Room
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground max-w-md">
+              {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move'}
+              {mode === 'select' && floatingOpening && 'Click to place opening (snaps to walls)'}
+              {mode === 'select' && floatingRoom && 'Click to place room (snaps to exterior walls)'}
+              {mode === 'wall' && 'Click and drag to draw interior walls'}
+              {mode === 'door' && 'Click to place a walk door'}
+              {mode === 'window' && 'Click to place a window'}
+              {mode === 'overhead' && 'Click to place an overhead door'}
+              {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type}`}
+            </p>
           </div>
         </CardContent>
       </Card>
