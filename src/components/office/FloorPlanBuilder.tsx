@@ -97,6 +97,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
   const [selectedWall, setSelectedWall] = useState<Wall | null>(null);
   const [draggingWallHandle, setDraggingWallHandle] = useState<{ wall: Wall; handleType: 'start' | 'end' } | null>(null);
+  const [draggingWall, setDraggingWall] = useState<{ wall: Wall; startMouseX: number; startMouseY: number; startWallPos: number } | null>(null);
   const [draggingRoomHandle, setDraggingRoomHandle] = useState<{ room: Room; initialWidth: number; initialLength: number; initialMouseX: number; initialMouseY: number } | null>(null);
   const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle' | 'room' | 'room_resize'; id: string; handleType?: 'start' | 'end' } | null>(null);
   const [pendingRoomPlacement, setPendingRoomPlacement] = useState<{
@@ -197,7 +198,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, draggingRoomHandle, hoveredItem, zoom, showDimensions, measureStart, measureEnd, panOffset, baseZoom]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, draggingWall, draggingRoomHandle, hoveredItem, zoom, showDimensions, measureStart, measureEnd, panOffset, baseZoom]);
 
   // Add keyboard handler for ESC to cancel floating placement
   useEffect(() => {
@@ -589,38 +590,50 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     });
 
-    // Draw interior walls with drag handles
+    // Draw interior walls
     walls.forEach(wall => {
       const isSelected = selectedWall?.id === wall.id;
       const isHovered = hoveredItem?.type === 'wall' && hoveredItem?.id === wall.id;
-      const isDragging = draggingWallHandle?.wall.id === wall.id;
+      const isDraggingThisWall = draggingWall?.wall.id === wall.id;
+      const isDraggingHandle = draggingWallHandle?.wall.id === wall.id;
 
-      if (isSelected || isHovered || isDragging) {
-        ctx.strokeStyle = isSelected || isDragging ? '#ef4444' : '#f59e0b';
-        ctx.lineWidth = isSelected || isDragging ? 4 : 3;
+      if (isSelected || isHovered || isDraggingThisWall || isDraggingHandle) {
+        ctx.strokeStyle = isSelected || isDraggingThisWall || isDraggingHandle ? '#ef4444' : '#f59e0b';
+        ctx.lineWidth = isSelected || isDraggingThisWall || isDraggingHandle ? 4 : 3;
       } else {
         ctx.strokeStyle = '#1e40af';
         ctx.lineWidth = 3;
       }
 
-      const startX = isDragging && draggingWallHandle.handleType === 'start' ? draggingWallHandle.wall.start_x : wall.start_x;
-      const startY = isDragging && draggingWallHandle.handleType === 'start' ? draggingWallHandle.wall.start_y : wall.start_y;
-      const endX = isDragging && draggingWallHandle.handleType === 'end' ? draggingWallHandle.wall.end_x : wall.end_x;
-      const endY = isDragging && draggingWallHandle.handleType === 'end' ? draggingWallHandle.wall.end_y : wall.end_y;
+      let startX = wall.start_x;
+      let startY = wall.start_y;
+      let endX = wall.end_x;
+      let endY = wall.end_y;
+      
+      if (isDraggingThisWall) {
+        startX = draggingWall.wall.start_x;
+        startY = draggingWall.wall.start_y;
+        endX = draggingWall.wall.end_x;
+        endY = draggingWall.wall.end_y;
+      } else if (isDraggingHandle) {
+        if (draggingWallHandle.handleType === 'start') {
+          startX = draggingWallHandle.wall.start_x;
+          startY = draggingWallHandle.wall.start_y;
+        } else {
+          endX = draggingWallHandle.wall.end_x;
+          endY = draggingWallHandle.wall.end_y;
+        }
+      }
 
       ctx.beginPath();
       ctx.moveTo(startX * SCALE, startY * SCALE);
       ctx.lineTo(endX * SCALE, endY * SCALE);
       ctx.stroke();
 
-      if (isSelected || isDragging) {
-        const handleSize = 8;
-        ctx.fillStyle = hoveredItem?.type === 'handle' && hoveredItem?.handleType === 'start' && hoveredItem?.id === wall.id ? '#fbbf24' : '#ef4444';
-        ctx.fillRect(startX * SCALE - handleSize/2, startY * SCALE - handleSize/2, handleSize, handleSize);
-        
-        ctx.fillStyle = hoveredItem?.type === 'handle' && hoveredItem?.handleType === 'end' && hoveredItem?.id === wall.id ? '#fbbf24' : '#ef4444';
-        ctx.fillRect(endX * SCALE - handleSize/2, endY * SCALE - handleSize/2, handleSize, handleSize);
+      if (isSelected || isDraggingThisWall || isDraggingHandle) {
 
+        // Draw position label showing where the wall is
+        const isHorizontal = Math.abs(endX - startX) > Math.abs(endY - startY);
         const wallLength = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)).toFixed(1);
         const midX = (startX + endX) / 2 * SCALE;
         const midY = (startY + endY) / 2 * SCALE;
@@ -629,7 +642,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${wallLength}'`, midX, midY);
+        
+        if (isHorizontal) {
+          ctx.fillText(`${startY.toFixed(1)}' from top`, midX, midY - 15);
+        } else {
+          ctx.fillText(`${startX.toFixed(1)}' from left`, midX + 50, midY);
+        }
       }
     });
 
@@ -1216,11 +1234,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         return;
       }
 
-      // Handle wall handle dragging
+      // Handle wall dragging (entire wall, not just handles)
       if (selectedWall) {
-        const handle = findWallHandleAtPosition(coords.x, coords.y);
-        if (handle) {
-          setDraggingWallHandle(handle);
+        const clickedWall = findWallAtPosition(coords.x, coords.y);
+        if (clickedWall && clickedWall.id === selectedWall.id) {
+          // Determine if wall is horizontal or vertical
+          const isHorizontal = Math.abs(selectedWall.end_x - selectedWall.start_x) > Math.abs(selectedWall.end_y - selectedWall.start_y);
+          const wallPos = isHorizontal ? selectedWall.start_y : selectedWall.start_x;
+          
+          setDraggingWall({
+            wall: selectedWall,
+            startMouseX: coords.x,
+            startMouseY: coords.y,
+            startWallPos: wallPos,
+          });
           return;
         }
       }
@@ -1282,29 +1309,34 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setSelectedWall(null);
       setSelectedRoom(null);
     } else if (mode === 'wall') {
-      // Auto-create full-span dividing wall
-      const snappedStart = snapToWall(coords.x, coords.y);
-      
-      // Determine if wall should be horizontal or vertical based on click position
+      // Create divider wall perpendicular to nearest exterior wall
       const distToTop = Math.abs(coords.y);
       const distToBottom = Math.abs(coords.y - length);
       const distToLeft = Math.abs(coords.x);
       const distToRight = Math.abs(coords.x - width);
       
-      const minVertDist = Math.min(distToTop, distToBottom);
-      const minHorzDist = Math.min(distToLeft, distToRight);
+      // Find closest exterior wall
+      const distances = [
+        { dist: distToTop, wall: 'top' },
+        { dist: distToBottom, wall: 'bottom' },
+        { dist: distToLeft, wall: 'left' },
+        { dist: distToRight, wall: 'right' },
+      ];
+      distances.sort((a, b) => a.dist - b.dist);
+      const closestWall = distances[0].wall;
       
       let wallStart: { x: number; y: number };
       let wallEnd: { x: number; y: number };
       
-      if (minHorzDist < minVertDist) {
-        // Create vertical wall (spans full length)
-        wallStart = { x: snappedStart.x, y: 0 };
-        wallEnd = { x: snappedStart.x, y: length };
+      // Create perpendicular divider from the closest wall
+      if (closestWall === 'left' || closestWall === 'right') {
+        // Clicked near left/right wall -> create horizontal divider at this Y position
+        wallStart = { x: 0, y: coords.y };
+        wallEnd = { x: width, y: coords.y };
       } else {
-        // Create horizontal wall (spans full width)
-        wallStart = { x: 0, y: snappedStart.y };
-        wallEnd = { x: width, y: snappedStart.y };
+        // Clicked near top/bottom wall -> create vertical divider at this X position
+        wallStart = { x: coords.x, y: 0 };
+        wallEnd = { x: coords.x, y: length };
       }
       
       if (quoteId) {
@@ -1419,7 +1451,32 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     }
 
-    if (draggingRoomHandle) {
+    if (draggingWall) {
+      // Move the entire wall along its perpendicular axis
+      const isHorizontal = Math.abs(draggingWall.wall.end_x - draggingWall.wall.start_x) > Math.abs(draggingWall.wall.end_y - draggingWall.wall.start_y);
+      
+      if (isHorizontal) {
+        // Horizontal wall - move up/down
+        const deltaY = coords.y - draggingWall.startMouseY;
+        const newY = Math.max(0, Math.min(length, draggingWall.startWallPos + deltaY));
+        const updatedWall = {
+          ...draggingWall.wall,
+          start_y: newY,
+          end_y: newY,
+        };
+        setDraggingWall({ ...draggingWall, wall: updatedWall });
+      } else {
+        // Vertical wall - move left/right
+        const deltaX = coords.x - draggingWall.startMouseX;
+        const newX = Math.max(0, Math.min(width, draggingWall.startWallPos + deltaX));
+        const updatedWall = {
+          ...draggingWall.wall,
+          start_x: newX,
+          end_x: newX,
+        };
+        setDraggingWall({ ...draggingWall, wall: updatedWall });
+      }
+    } else if (draggingRoomHandle) {
       // Calculate new dimensions based on mouse movement
       const deltaX = coords.x - draggingRoomHandle.initialMouseX;
       const deltaY = coords.y - draggingRoomHandle.initialMouseY;
@@ -1470,7 +1527,32 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    if (draggingRoomHandle) {
+    if (draggingWall) {
+      // Save the moved wall position
+      if (quoteId && !draggingWall.wall.id.startsWith('temp_')) {
+        const { error } = await supabase
+          .from('quote_interior_walls')
+          .update({
+            start_x: draggingWall.wall.start_x,
+            start_y: draggingWall.wall.start_y,
+            end_x: draggingWall.wall.end_x,
+            end_y: draggingWall.wall.end_y,
+          })
+          .eq('id', draggingWall.wall.id);
+
+        if (error) {
+          console.error('Error moving wall:', error);
+          toast.error('Failed to move wall');
+          setDraggingWall(null);
+          return;
+        }
+      }
+
+      setWalls(walls.map(w => w.id === draggingWall.wall.id ? draggingWall.wall : w));
+      setSelectedWall(draggingWall.wall);
+      toast.success('Wall repositioned');
+      setDraggingWall(null);
+    } else if (draggingRoomHandle) {
       setRooms(rooms.map(r => r.id === draggingRoomHandle.room.id ? draggingRoomHandle.room : r));
       setSelectedRoom(draggingRoomHandle.room);
       toast.success(`Room resized to ${draggingRoomHandle.room.width.toFixed(1)}' × ${draggingRoomHandle.room.length.toFixed(1)}'`);
