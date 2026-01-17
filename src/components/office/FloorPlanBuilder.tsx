@@ -1379,202 +1379,170 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   return (
     <div className="flex flex-col h-full">
-      {/* Building Layout - Takes most of the space */}
-      <Card className="rounded-none border-2 border-slate-300 flex-1 flex flex-col min-h-0">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Building Layout</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {width}' × {length}' • Zoom: {Math.round(zoom * 100)}%
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-                disabled={zoom <= 0.5}
-                className="rounded-none h-8 px-2"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </Button>
-              <span className="text-sm font-medium min-w-[60px] text-center">{Math.round(zoom * 100)}%</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setZoom(Math.min(2.0, zoom + 0.25))}
-                disabled={zoom >= 2.0}
-                className="rounded-none h-8 px-2"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setZoom(1.0)}
-                className="rounded-none h-8 px-3 text-xs"
-              >
-                Reset
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col space-y-4 min-h-0">
-          <div className="border rounded-lg overflow-auto bg-white flex-1">
-            <canvas
-              ref={canvasRef}
-              className={`${
-                mode === 'wall' || mode === 'room' 
-                  ? 'cursor-crosshair' 
-                  : floatingOpening || floatingRoom
-                  ? 'cursor-move'
-                  : draggingWallHandle
-                  ? 'cursor-grabbing'
-                  : hoveredItem?.type === 'handle'
-                  ? 'cursor-grab'
-                  : 'cursor-pointer'
-              }`}
-              onMouseDown={handleCanvasMouseDown}
-              onMouseMove={handleCanvasMouseMove}
-              onMouseUp={handleCanvasMouseUp}
-              onDoubleClick={handleCanvasDoubleClick}
-            />
-          </div>
+      {/* Main Drawing Area - Maximized and Centered */}
+      <div className="flex-1 flex items-center justify-center bg-slate-50 border-2 border-slate-300 rounded-none overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className={`${
+            mode === 'wall' || mode === 'room' 
+              ? 'cursor-crosshair' 
+              : floatingOpening || floatingRoom
+              ? 'cursor-move'
+              : draggingWallHandle
+              ? 'cursor-grabbing'
+              : hoveredItem?.type === 'handle'
+              ? 'cursor-grab'
+              : 'cursor-pointer'
+          }`}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onDoubleClick={handleCanvasDoubleClick}
+        />
+      </div>
 
-          {selectedOpening && mode === 'select' && (
-            <div className="flex gap-2 p-2 bg-slate-100 rounded">
-              <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {selectedOpening.opening_type === 'walkdoor' && 'Door: '}
-                  {selectedOpening.opening_type === 'window' && 'Window: '}
-                  {selectedOpening.opening_type === 'overhead_door' && 'Overhead Door: '}
-                  {selectedOpening.size_detail}
-                </p>
-              </div>
-              <Button size="sm" variant="outline" onClick={rotateSelectedOpening}>
-                <RotateCw className="w-4 h-4 mr-1" />
-                Rotate
-              </Button>
-              <Button size="sm" variant="outline" onClick={openEditDialog}>
-                <Edit2 className="w-4 h-4 mr-1" />
-                Edit
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => deleteOpening(selectedOpening.id)}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
 
-          {selectedRoom && mode === 'select' && (
-            <div className="flex gap-2 p-2 bg-purple-50 rounded border border-purple-200">
-              <div className="flex-1">
-                <p className="text-sm font-medium capitalize">{selectedRoom.type}: {selectedRoom.width}' × {selectedRoom.length}'</p>
-                <p className="text-xs text-muted-foreground">Click again to release and move, rotate to change orientation</p>
-              </div>
-              <Button size="sm" variant="outline" onClick={rotateSelectedRoom}>
-                <RotateCw className="w-4 h-4 mr-1" />
-                Rotate
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => deleteRoom(selectedRoom.id)}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
 
-          {selectedWall && mode === 'select' && (
-            <div className="flex gap-2 p-2 bg-red-50 rounded border border-red-200">
-              <div className="flex-1">
-                <p className="text-sm font-medium">Interior Wall - Drag handles to resize</p>
-                <p className="text-xs text-muted-foreground">
-                  From ({selectedWall.start_x.toFixed(1)}', {selectedWall.start_y.toFixed(1)}') to ({selectedWall.end_x.toFixed(1)}', {selectedWall.end_y.toFixed(1)}')
-                </p>
-              </div>
-              <Button size="sm" variant="destructive" onClick={() => deleteWall(selectedWall.id)}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-
-        </CardContent>
-      </Card>
-
-      {/* Drawing Tools - Fixed at bottom */}
-      <Card className="rounded-none border-2 border-slate-300 mt-2">
-        <CardContent className="py-2">
-          <div className="flex gap-2 flex-wrap items-center justify-between">
-            <div className="flex gap-2 flex-wrap">
+      {/* Drawing Tools - Compact Bottom Toolbar */}
+      <div className="border-t-2 border-slate-300 bg-white">
+        <div className="container mx-auto px-4 py-2">
+          <div className="flex items-center justify-between gap-4">
+            {/* Tool Buttons */}
+            <div className="flex gap-1">
               <Button
                 variant={mode === 'select' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setMode('select')}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <MousePointer className="w-4 h-4 mr-1" />
-                Select
+                <MousePointer className="w-3 h-3 mr-1" />
+                <span className="text-xs">Select</span>
               </Button>
               <Button
                 variant={mode === 'wall' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setMode('wall')}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <Move className="w-4 h-4 mr-1" />
-                Walls
+                <Move className="w-3 h-3 mr-1" />
+                <span className="text-xs">Walls</span>
               </Button>
               <Button
                 variant={mode === 'door' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setMode('door')}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <DoorOpen className="w-4 h-4 mr-1" />
-                Door
+                <DoorOpen className="w-3 h-3 mr-1" />
+                <span className="text-xs">Door</span>
               </Button>
               <Button
                 variant={mode === 'window' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setMode('window')}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <Square className="w-4 h-4 mr-1" />
-                Window
+                <Square className="w-3 h-3 mr-1" />
+                <span className="text-xs">Window</span>
               </Button>
               <Button
                 variant={mode === 'overhead' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setMode('overhead')}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <Square className="w-4 h-4 mr-1" />
-                Overhead
+                <Square className="w-3 h-3 mr-1" />
+                <span className="text-xs">Overhead</span>
               </Button>
               <Button
                 variant={mode === 'room' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setShowAddRoom(true)}
-                className="rounded-none"
+                className="rounded-none h-8 px-3"
               >
-                <Home className="w-4 h-4 mr-1" />
-                Room
+                <Home className="w-3 h-3 mr-1" />
+                <span className="text-xs">Room</span>
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground max-w-md">
-              {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move'}
-              {mode === 'select' && floatingOpening && 'Click to place opening (snaps to walls)'}
-              {mode === 'select' && floatingRoom && 'Click to place room (snaps to exterior walls)'}
-              {mode === 'wall' && 'Click and drag to draw interior walls'}
-              {mode === 'door' && 'Click to place a walk door'}
-              {mode === 'window' && 'Click to place a window'}
-              {mode === 'overhead' && 'Click to place an overhead door'}
-              {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type}`}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Tabs for Managing Items */}
-      <Tabs defaultValue="openings" className="space-y-4">
+            {/* Selected Item Actions */}
+            <div className="flex items-center gap-2">
+              {selectedOpening && mode === 'select' && (
+                <>
+                  <span className="text-xs font-medium">
+                    {selectedOpening.opening_type === 'walkdoor' && 'Door: '}
+                    {selectedOpening.opening_type === 'window' && 'Window: '}
+                    {selectedOpening.opening_type === 'overhead_door' && 'Overhead: '}
+                    {selectedOpening.size_detail}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={rotateSelectedOpening} className="h-7 px-2 rounded-none">
+                    <RotateCw className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={openEditDialog} className="h-7 px-2 rounded-none">
+                    <Edit2 className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteOpening(selectedOpening.id)} className="h-7 px-2 rounded-none">
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </>
+              )}
+              {selectedRoom && mode === 'select' && (
+                <>
+                  <span className="text-xs font-medium capitalize">{selectedRoom.type}: {selectedRoom.width}' × {selectedRoom.length}'</span>
+                  <Button size="sm" variant="outline" onClick={rotateSelectedRoom} className="h-7 px-2 rounded-none">
+                    <RotateCw className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteRoom(selectedRoom.id)} className="h-7 px-2 rounded-none">
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </>
+              )}
+              {selectedWall && mode === 'select' && (
+                <>
+                  <span className="text-xs font-medium">Wall</span>
+                  <Button size="sm" variant="destructive" onClick={() => deleteWall(selectedWall.id)} className="h-7 px-2 rounded-none">
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                disabled={zoom <= 0.5}
+                className="rounded-none h-7 px-2"
+              >
+                <ZoomOut className="w-3 h-3" />
+              </Button>
+              <span className="text-xs font-medium min-w-[45px] text-center">{Math.round(zoom * 100)}%</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(Math.min(2.0, zoom + 0.25))}
+                disabled={zoom >= 2.0}
+                className="rounded-none h-7 px-2"
+              >
+                <ZoomIn className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(1.0)}
+                className="rounded-none h-7 px-2 text-xs"
+              >
+                Reset
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs for Managing Items - Hidden by default, can be toggled */}
+      <Tabs defaultValue="openings" className="hidden space-y-4">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="openings">Doors & Windows</TabsTrigger>
           <TabsTrigger value="rooms">Rooms</TabsTrigger>
