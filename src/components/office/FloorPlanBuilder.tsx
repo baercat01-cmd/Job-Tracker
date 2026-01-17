@@ -92,8 +92,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [draggingOpening, setDraggingOpening] = useState<Opening | null>(null);
-  const [draggingRoom, setDraggingRoom] = useState<Room | null>(null);
+  const [floatingOpening, setFloatingOpening] = useState<Opening | null>(null);
+  const [floatingRoom, setFloatingRoom] = useState<Room | null>(null);
+  const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
   const [selectedWall, setSelectedWall] = useState<Wall | null>(null);
   const [draggingWallHandle, setDraggingWallHandle] = useState<{ wall: Wall; handleType: 'start' | 'end' } | null>(null);
   const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle' | 'room'; id: string; handleType?: 'start' | 'end' } | null>(null);
@@ -159,7 +160,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, draggingOpening, draggingRoom, draggingWallHandle, hoveredItem]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem]);
 
   async function loadFloorPlanData() {
     if (!quoteId) return;
@@ -202,38 +203,41 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     return { width: 3, height: 7 }; // default
   }
 
-  // Snap position to nearest wall
-  function snapToWall(x: number, y: number): { x: number; y: number; snapped: boolean } {
+  // Snap position to nearest wall and return rotation based on wall orientation
+  function snapToWall(x: number, y: number): { x: number; y: number; snapped: boolean; rotation: number; wallType: string } {
     // Check exterior walls first
     const exteriorWalls = [
-      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal' }, // top
-      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal' }, // bottom
-      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical' }, // left
-      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical' }, // right
+      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top', rotation: 180 }, // top
+      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal', name: 'bottom', rotation: 0 }, // bottom
+      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical', name: 'left', rotation: 90 }, // left
+      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical', name: 'right', rotation: 270 }, // right
     ];
 
     for (const wall of exteriorWalls) {
       if (wall.type === 'horizontal') {
         if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
-          return { x, y: wall.y1, snapped: true };
+          return { x, y: wall.y1, snapped: true, rotation: wall.rotation, wallType: wall.name };
         }
       } else {
         if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
-          return { x: wall.x1, y, snapped: true };
+          return { x: wall.x1, y, snapped: true, rotation: wall.rotation, wallType: wall.name };
         }
       }
     }
 
-    // Check interior walls
+    // Check interior walls - determine rotation based on wall orientation
     for (const wall of walls) {
       const distToLine = pointToLineDistance(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
       if (distToLine < SNAP_THRESHOLD) {
         const snapped = snapToLine(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
-        return { ...snapped, snapped: true };
+        // Determine wall orientation
+        const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
+        const rotation = isHorizontal ? 0 : 90;
+        return { ...snapped, snapped: true, rotation, wallType: 'interior' };
       }
     }
 
-    return { x, y, snapped: false };
+    return { x, y, snapped: false, rotation: 0, wallType: 'none' };
   }
 
   function pointToLineDistance(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
@@ -331,26 +335,26 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     // Draw rooms
     rooms.forEach(room => {
       const isSelected = selectedRoom?.id === room.id;
-      const isDraggingThis = draggingRoom?.id === room.id;
+      const isFloating = floatingRoom?.id === room.id;
       const isHovered = hoveredItem?.type === 'room' && hoveredItem?.id === room.id;
 
-      const roomX = isDraggingThis ? draggingRoom.x : room.x;
-      const roomY = isDraggingThis ? draggingRoom.y : room.y;
+      const roomX = isFloating && mousePosition ? mousePosition.x : room.x;
+      const roomY = isFloating && mousePosition ? mousePosition.y : room.y;
 
       ctx.save();
       ctx.translate(50 + roomX * SCALE, 50 + roomY * SCALE);
       ctx.rotate((room.rotation * Math.PI) / 180);
 
       // Draw room walls
-      ctx.strokeStyle = isSelected || isDraggingThis ? '#ef4444' : isHovered ? '#f59e0b' : '#9333ea';
-      ctx.lineWidth = isSelected || isDraggingThis ? 4 : 3;
+      ctx.strokeStyle = isSelected || isFloating ? '#ef4444' : isHovered ? '#f59e0b' : '#9333ea';
+      ctx.lineWidth = isSelected || isFloating ? 4 : 3;
       ctx.strokeRect(0, 0, room.width * SCALE, room.length * SCALE);
 
       // Fill with semi-transparent color
       ctx.fillStyle = room.type === 'porch' ? 'rgba(147, 51, 234, 0.1)' : 'rgba(147, 51, 234, 0.05)';
       ctx.fillRect(0, 0, room.width * SCALE, room.length * SCALE);
 
-      // Draw label
+      // Draw label - text only, no box
       ctx.fillStyle = '#000';
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
@@ -363,31 +367,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       ctx.restore();
 
       // Draw dimensions if selected
-      if (isSelected || isDraggingThis) {
-        ctx.strokeStyle = '#ef4444';
-        ctx.fillStyle = '#fff';
-        ctx.lineWidth = 1;
-
-        // Width dimension
-        const midX = 50 + roomX * SCALE + (room.width * SCALE) / 2;
-        const topY = 50 + roomY * SCALE - 15;
-        const dimWidth = 45;
-        const dimHeight = 18;
-        ctx.fillRect(midX - dimWidth/2, topY - dimHeight/2, dimWidth, dimHeight);
-        ctx.strokeRect(midX - dimWidth/2, topY - dimHeight/2, dimWidth, dimHeight);
+      if (isSelected || isFloating) {
         ctx.fillStyle = '#000';
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+
+        // Width dimension - text only
+        const midX = 50 + roomX * SCALE + (room.width * SCALE) / 2;
+        const topY = 50 + roomY * SCALE - 15;
         ctx.fillText(`${room.width}'`, midX, topY);
 
-        // Length dimension
+        // Length dimension - text only
         const rightX = 50 + roomX * SCALE + room.width * SCALE + 15;
         const midY = 50 + roomY * SCALE + (room.length * SCALE) / 2;
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(rightX - dimWidth/2, midY - dimHeight/2, dimWidth, dimHeight);
-        ctx.strokeRect(rightX - dimWidth/2, midY - dimHeight/2, dimWidth, dimHeight);
-        ctx.fillStyle = '#000';
         ctx.fillText(`${room.length}'`, rightX, midY);
       }
     });
@@ -428,14 +421,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         const midX = 50 + (startX + endX) / 2 * SCALE;
         const midY = 50 + (startY + endY) / 2 * SCALE;
         
-        ctx.fillStyle = '#fff';
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2;
-        const labelWidth = 50;
-        const labelHeight = 20;
-        ctx.fillRect(midX - labelWidth/2, midY - labelHeight/2, labelWidth, labelHeight);
-        ctx.strokeRect(midX - labelWidth/2, midY - labelHeight/2, labelWidth, labelHeight);
-        
         ctx.fillStyle = '#000';
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
@@ -450,11 +435,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const y = opening.position_y !== undefined ? opening.position_y : 0;
       
       const isSelected = selectedOpening?.id === opening.id;
-      const isDraggingThis = draggingOpening?.id === opening.id;
+      const isFloating = floatingOpening?.id === opening.id;
       const isHovered = hoveredItem?.type === 'opening' && hoveredItem?.id === opening.id;
 
-      const posX = isDraggingThis ? draggingOpening!.position_x! : x;
-      const posY = isDraggingThis ? draggingOpening!.position_y! : y;
+      const posX = isFloating && mousePosition ? mousePosition.x : x;
+      const posY = isFloating && mousePosition ? mousePosition.y : y;
 
       const canvasX = 50 + posX * SCALE;
       const canvasY = 50 + posY * SCALE;
@@ -558,29 +543,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
       ctx.restore();
 
-      // Draw label and dimensions
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      // Draw label - text only, no box
       const labelText = opening.size_detail;
-      ctx.font = '11px sans-serif';
-      const labelWidth = ctx.measureText(labelText).width + 8;
-      const labelHeight = 18;
-      const labelX = canvasX;
-      const labelY = canvasY - 20;
-      
-      ctx.fillRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
-      ctx.strokeRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
-      
       ctx.fillStyle = '#000';
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      const labelX = canvasX;
+      const labelY = canvasY - 20;
       ctx.fillText(labelText, labelX, labelY);
 
       // Highlight if selected/hovered
-      if (isSelected || isDraggingThis || isHovered) {
-        ctx.strokeStyle = isSelected || isDraggingThis ? color : color + '80';
+      if (isSelected || isFloating || isHovered) {
+        ctx.strokeStyle = isSelected || isFloating ? color : color + '80';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         const highlightSize = 25;
@@ -683,6 +658,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!coords) return;
 
     if (mode === 'select') {
+      // If an item is floating, place it
+      if (floatingOpening) {
+        placeFloatingOpening(coords.x, coords.y);
+        return;
+      }
+
+      if (floatingRoom) {
+        placeFloatingRoom(coords.x, coords.y);
+        return;
+      }
+
+      // Handle wall handle dragging
       if (selectedWall) {
         const handle = findWallHandleAtPosition(coords.x, coords.y);
         if (handle) {
@@ -691,24 +678,39 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         }
       }
 
+      // Check if clicking on a room
       const clickedRoom = findRoomAtPosition(coords.x, coords.y);
       if (clickedRoom) {
-        setSelectedRoom(clickedRoom);
-        setSelectedOpening(null);
-        setSelectedWall(null);
-        setDraggingRoom(clickedRoom);
+        // If clicking on already selected room, release it to float
+        if (selectedRoom?.id === clickedRoom.id) {
+          setFloatingRoom(clickedRoom);
+          setSelectedRoom(null);
+          toast.info('Room released - click to place');
+        } else {
+          setSelectedRoom(clickedRoom);
+          setSelectedOpening(null);
+          setSelectedWall(null);
+        }
         return;
       }
 
+      // Check if clicking on an opening
       const clickedOpening = findOpeningAtPosition(coords.x, coords.y);
       if (clickedOpening) {
-        setSelectedOpening(clickedOpening);
-        setSelectedRoom(null);
-        setSelectedWall(null);
-        setDraggingOpening(clickedOpening);
+        // If clicking on already selected opening, release it to float
+        if (selectedOpening?.id === clickedOpening.id) {
+          setFloatingOpening(clickedOpening);
+          setSelectedOpening(null);
+          toast.info('Item released - click to place');
+        } else {
+          setSelectedOpening(clickedOpening);
+          setSelectedRoom(null);
+          setSelectedWall(null);
+        }
         return;
       }
 
+      // Check if clicking on a wall
       const clickedWall = findWallAtPosition(coords.x, coords.y);
       if (clickedWall) {
         setSelectedWall(clickedWall);
@@ -717,6 +719,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         return;
       }
 
+      // Clear selections if clicking empty space
       setSelectedOpening(null);
       setSelectedWall(null);
       setSelectedRoom(null);
@@ -735,7 +738,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    if (mode === 'select' && !draggingOpening && !draggingRoom && !draggingWallHandle) {
+    // Update mouse position for floating items
+    if (floatingOpening || floatingRoom) {
+      setMousePosition(coords);
+    }
+
+    if (mode === 'select' && !floatingOpening && !floatingRoom && !draggingWallHandle) {
       if (selectedWall) {
         const handle = findWallHandleAtPosition(coords.x, coords.y);
         if (handle) {
@@ -774,20 +782,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         updatedWall.end_y = snapped.y;
       }
       setDraggingWallHandle({ ...draggingWallHandle, wall: updatedWall });
-    } else if (draggingOpening) {
-      const snapped = snapToWall(coords.x, coords.y);
-      setDraggingOpening({
-        ...draggingOpening,
-        position_x: snapped.x,
-        position_y: snapped.y,
-      });
-    } else if (draggingRoom) {
-      const snapped = snapToWall(coords.x, coords.y);
-      setDraggingRoom({
-        ...draggingRoom,
-        x: snapped.x,
-        y: snapped.y,
-      });
     } else if (isDragging && dragStart && mode === 'wall') {
       drawFloorPlan();
       const canvas = canvasRef.current;
@@ -835,34 +829,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setSelectedWall(draggingWallHandle.wall);
       toast.success('Wall resized');
       setDraggingWallHandle(null);
-    } else if (draggingOpening) {
-      const snapped = snapToWall(coords.x, coords.y);
-      
-      if (quoteId && !draggingOpening.id.startsWith('temp_')) {
-        const { error } = await supabase
-          .from('quote_openings')
-          .update({
-            position_x: snapped.x,
-            position_y: snapped.y,
-          })
-          .eq('id', draggingOpening.id);
-
-        if (error) {
-          console.error('Error updating opening position:', error);
-          toast.error('Failed to move opening');
-          setDraggingOpening(null);
-          return;
-        }
-      }
-
-      setOpenings(openings.map(o => o.id === draggingOpening.id ? { ...o, position_x: snapped.x, position_y: snapped.y } : o));
-      toast.success(snapped.snapped ? 'Opening moved and snapped to wall' : 'Opening moved');
-      setDraggingOpening(null);
-    } else if (draggingRoom) {
-      const snapped = snapToWall(coords.x, coords.y);
-      setRooms(rooms.map(r => r.id === draggingRoom.id ? { ...r, x: snapped.x, y: snapped.y } : r));
-      toast.success(snapped.snapped ? 'Room moved and snapped to wall' : 'Room moved');
-      setDraggingRoom(null);
     } else if (isDragging && dragStart && mode === 'wall') {
       if (Math.abs(coords.x - dragStart.x) < 1 && Math.abs(coords.y - dragStart.y) < 1) {
         setIsDragging(false);
@@ -939,7 +905,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             swing_direction: 'right',
             position_x: snapped.x,
             position_y: snapped.y,
-            rotation: 0,
+            rotation: snapped.rotation,
           })
           .select()
           .single();
@@ -965,7 +931,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         swing_direction: 'right',
         position_x: snapped.x,
         position_y: snapped.y,
-        rotation: 0,
+        rotation: snapped.rotation,
       };
       setOpenings([...openings, tempOpening]);
       setSelectedOpening(tempOpening);
@@ -973,6 +939,40 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
 
     setMode('select');
+  }
+
+  async function placeFloatingOpening(x: number, y: number) {
+    if (!floatingOpening) return;
+
+    const snapped = snapToWall(x, y);
+    
+    if (quoteId && !floatingOpening.id.startsWith('temp_')) {
+      const { error } = await supabase
+        .from('quote_openings')
+        .update({
+          position_x: snapped.x,
+          position_y: snapped.y,
+          rotation: snapped.rotation,
+        })
+        .eq('id', floatingOpening.id);
+
+      if (error) {
+        console.error('Error updating opening position:', error);
+        toast.error('Failed to move opening');
+        setFloatingOpening(null);
+        setMousePosition(null);
+        return;
+      }
+    }
+
+    setOpenings(openings.map(o => 
+      o.id === floatingOpening.id 
+        ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+        : o
+    ));
+    toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
+    setFloatingOpening(null);
+    setMousePosition(null);
   }
 
   function placeRoom(x: number, y: number) {
@@ -994,6 +994,16 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     toast.success(`${pendingRoomPlacement.type.charAt(0).toUpperCase() + pendingRoomPlacement.type.slice(1)} placed`);
     setPendingRoomPlacement(null);
     setMode('select');
+  }
+
+  function placeFloatingRoom(x: number, y: number) {
+    if (!floatingRoom) return;
+
+    const snapped = snapToWall(x, y);
+    setRooms(rooms.map(r => r.id === floatingRoom.id ? { ...r, x: snapped.x, y: snapped.y } : r));
+    toast.success(snapped.snapped ? 'Room placed and snapped to wall' : 'Room placed');
+    setFloatingRoom(null);
+    setMousePosition(null);
   }
 
   function rotateSelectedOpening() {
@@ -1337,11 +1347,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && 'Click to select items, drag to reposition (auto-snaps to walls), use buttons to rotate or edit'}
+            {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move, click once more to place (auto-snaps and orients to walls)'}
+            {mode === 'select' && (floatingOpening || floatingRoom) && 'Click anywhere to place item (auto-snaps and orients to walls)'}
             {mode === 'wall' && 'Click and drag to draw interior walls (auto-snaps to walls)'}
-            {mode === 'door' && 'Click to place a walk door (auto-snaps to walls)'}
-            {mode === 'window' && 'Click to place a window (auto-snaps to walls)'}
-            {mode === 'overhead' && 'Click to place an overhead door (auto-snaps to walls)'}
+            {mode === 'door' && 'Click to place a walk door (auto-snaps and orients to walls)'}
+            {mode === 'window' && 'Click to place a window (auto-snaps and orients to walls)'}
+            {mode === 'overhead' && 'Click to place an overhead door (auto-snaps and orients to walls)'}
             {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}') - auto-snaps to walls`}
           </p>
         </CardContent>
@@ -1361,7 +1372,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               className={`${
                 mode === 'wall' || mode === 'room' 
                   ? 'cursor-crosshair' 
-                  : draggingOpening || draggingRoom || draggingWallHandle
+                  : floatingOpening || floatingRoom
+                  ? 'cursor-move'
+                  : draggingWallHandle
                   ? 'cursor-grabbing'
                   : hoveredItem?.type === 'handle'
                   ? 'cursor-grab'
@@ -1402,7 +1415,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             <div className="flex gap-2 p-2 bg-purple-50 rounded border border-purple-200">
               <div className="flex-1">
                 <p className="text-sm font-medium capitalize">{selectedRoom.type}: {selectedRoom.width}' × {selectedRoom.length}'</p>
-                <p className="text-xs text-muted-foreground">Drag to move (snaps to walls), rotate to change orientation</p>
+                <p className="text-xs text-muted-foreground">Click again to release and move, rotate to change orientation</p>
               </div>
               <Button size="sm" variant="outline" onClick={rotateSelectedRoom}>
                 <RotateCw className="w-4 h-4 mr-1" />
