@@ -377,7 +377,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     // Apply zoom and rotation
     ctx.save();
-    ctx.translate(canvasWidth - 50, 50);
+    ctx.translate(50, width * SCALE * zoom + 50);
     ctx.rotate(Math.PI / 2);
     ctx.scale(zoom, zoom);
 
@@ -641,7 +641,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     // Draw floor drains (in rotated context)
     ctx.save();
-    ctx.translate(canvasWidth - 50, 50);
+    ctx.translate(50, width * SCALE * zoom + 50);
     ctx.rotate(Math.PI / 2);
     ctx.scale(zoom, zoom);
     ctx.strokeStyle = '#06b6d4';
@@ -684,10 +684,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const rawY = e.clientY - rect.top;
     
     // Reverse the 90-degree rotation transformation and zoom
-    // Original: translate(canvasWidth - 50, 50) then rotate(90deg) then scale(zoom)
+    // Original: translate(50, width * SCALE * zoom + 50) then rotate(90deg) then scale(zoom)
     // Click point needs to be transformed back
-    const transformedX = rawX - (canvasWidth - 50);
-    const transformedY = rawY - 50;
+    const transformedX = rawX - 50;
+    const transformedY = rawY - (width * SCALE * zoom + 50);
     
     // Reverse rotation and zoom: (x', y') = (y, -x) for 90deg clockwise, divided by zoom
     const x = transformedY / (SCALE * zoom);
