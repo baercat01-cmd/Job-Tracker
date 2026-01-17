@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home, Edit2, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -46,6 +46,19 @@ interface Opening {
   position_y?: number;
   wall?: string;
   swing_direction?: 'left' | 'right' | 'in' | 'out';
+  rotation?: number; // 0, 90, 180, 270
+  width_ft?: number;
+  height_ft?: number;
+}
+
+interface Room {
+  id: string;
+  type: 'room' | 'porch' | 'loft';
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  rotation: number; // 0, 90, 180, 270
 }
 
 interface FloorDrain {
@@ -64,23 +77,26 @@ interface Cupola {
 }
 
 const SCALE = 10;
-const OPENING_SIZE = 10;
+const SNAP_THRESHOLD = 1.0; // 1 foot snapping distance
 
 export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
   const [openings, setOpenings] = useState<Opening[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [floorDrains, setFloorDrains] = useState<FloorDrain[]>([]);
   const [cupolas, setCupolas] = useState<Cupola[]>([]);
   
-  const [mode, setMode] = useState<'select' | 'wall' | 'door' | 'window' | 'room'>('select');
+  const [mode, setMode] = useState<'select' | 'wall' | 'door' | 'window' | 'overhead' | 'room'>('select');
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [draggingOpening, setDraggingOpening] = useState<Opening | null>(null);
+  const [draggingRoom, setDraggingRoom] = useState<Room | null>(null);
   const [selectedWall, setSelectedWall] = useState<Wall | null>(null);
   const [draggingWallHandle, setDraggingWallHandle] = useState<{ wall: Wall; handleType: 'start' | 'end' } | null>(null);
-  const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle'; id: string; handleType?: 'start' | 'end' } | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle' | 'room'; id: string; handleType?: 'start' | 'end' } | null>(null);
   const [pendingRoomPlacement, setPendingRoomPlacement] = useState<{
     type: 'room' | 'porch' | 'loft';
     width: number;
@@ -143,7 +159,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, floorDrains, selectedOpening, selectedWall, draggingOpening, draggingWallHandle, hoveredItem]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, draggingOpening, draggingRoom, draggingWallHandle, hoveredItem]);
 
   async function loadFloorPlanData() {
     if (!quoteId) return;
@@ -177,6 +193,107 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
   }
 
+  // Parse opening size from size_detail string (e.g., "3' × 7'" -> {width: 3, height: 7})
+  function parseOpeningSize(sizeDetail: string): { width: number; height: number } {
+    const match = sizeDetail.match(/(\d+)'?\s*[x×]\s*(\d+)'?/i);
+    if (match) {
+      return { width: parseFloat(match[1]), height: parseFloat(match[2]) };
+    }
+    return { width: 3, height: 7 }; // default
+  }
+
+  // Snap position to nearest wall
+  function snapToWall(x: number, y: number): { x: number; y: number; snapped: boolean } {
+    // Check exterior walls first
+    const exteriorWalls = [
+      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal' }, // top
+      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal' }, // bottom
+      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical' }, // left
+      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical' }, // right
+    ];
+
+    for (const wall of exteriorWalls) {
+      if (wall.type === 'horizontal') {
+        if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
+          return { x, y: wall.y1, snapped: true };
+        }
+      } else {
+        if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
+          return { x: wall.x1, y, snapped: true };
+        }
+      }
+    }
+
+    // Check interior walls
+    for (const wall of walls) {
+      const distToLine = pointToLineDistance(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
+      if (distToLine < SNAP_THRESHOLD) {
+        const snapped = snapToLine(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
+        return { ...snapped, snapped: true };
+      }
+    }
+
+    return { x, y, snapped: false };
+  }
+
+  function pointToLineDistance(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) param = dot / lenSq;
+
+    let xx, yy;
+
+    if (param < 0) {
+      xx = x1;
+      yy = y1;
+    } else if (param > 1) {
+      xx = x2;
+      yy = y2;
+    } else {
+      xx = x1 + param * C;
+      yy = y1 + param * D;
+    }
+
+    const dx = px - xx;
+    const dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function snapToLine(px: number, py: number, x1: number, y1: number, x2: number, y2: number): { x: number; y: number } {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) param = dot / lenSq;
+
+    let xx, yy;
+
+    if (param < 0) {
+      xx = x1;
+      yy = y1;
+    } else if (param > 1) {
+      xx = x2;
+      yy = y2;
+    } else {
+      xx = x1 + param * C;
+      yy = y1 + param * D;
+    }
+
+    return { x: xx, y: yy };
+  }
+
   function drawFloorPlan() {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -191,25 +308,91 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
+    // Draw building outline
     ctx.strokeStyle = '#1e40af';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.strokeRect(50, 50, width * SCALE, length * SCALE);
 
+    // Draw dimension labels for building
     ctx.fillStyle = '#000';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`${width}' (Width)`, 50 + (width * SCALE) / 2, 35);
+    ctx.fillText(`${width}'`, 50 + (width * SCALE) / 2, 35);
 
     ctx.save();
     ctx.translate(35, 50 + (length * SCALE) / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText(`${length}' (Length)`, 0, 0);
+    ctx.fillText(`${length}'`, 0, 0);
     ctx.restore();
 
     ctx.textAlign = 'left';
     ctx.fillText(`Scale: 1:${SCALE}'`, 10, canvasHeight - 10);
 
-    // Draw walls with drag handles
+    // Draw rooms
+    rooms.forEach(room => {
+      const isSelected = selectedRoom?.id === room.id;
+      const isDraggingThis = draggingRoom?.id === room.id;
+      const isHovered = hoveredItem?.type === 'room' && hoveredItem?.id === room.id;
+
+      const roomX = isDraggingThis ? draggingRoom.x : room.x;
+      const roomY = isDraggingThis ? draggingRoom.y : room.y;
+
+      ctx.save();
+      ctx.translate(50 + roomX * SCALE, 50 + roomY * SCALE);
+      ctx.rotate((room.rotation * Math.PI) / 180);
+
+      // Draw room walls
+      ctx.strokeStyle = isSelected || isDraggingThis ? '#ef4444' : isHovered ? '#f59e0b' : '#9333ea';
+      ctx.lineWidth = isSelected || isDraggingThis ? 4 : 3;
+      ctx.strokeRect(0, 0, room.width * SCALE, room.length * SCALE);
+
+      // Fill with semi-transparent color
+      ctx.fillStyle = room.type === 'porch' ? 'rgba(147, 51, 234, 0.1)' : 'rgba(147, 51, 234, 0.05)';
+      ctx.fillRect(0, 0, room.width * SCALE, room.length * SCALE);
+
+      // Draw label
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = room.type.charAt(0).toUpperCase() + room.type.slice(1);
+      ctx.fillText(label, (room.width * SCALE) / 2, (room.length * SCALE) / 2 - 10);
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`${room.width}' × ${room.length}'`, (room.width * SCALE) / 2, (room.length * SCALE) / 2 + 5);
+
+      ctx.restore();
+
+      // Draw dimensions if selected
+      if (isSelected || isDraggingThis) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.fillStyle = '#fff';
+        ctx.lineWidth = 1;
+
+        // Width dimension
+        const midX = 50 + roomX * SCALE + (room.width * SCALE) / 2;
+        const topY = 50 + roomY * SCALE - 15;
+        const dimWidth = 45;
+        const dimHeight = 18;
+        ctx.fillRect(midX - dimWidth/2, topY - dimHeight/2, dimWidth, dimHeight);
+        ctx.strokeRect(midX - dimWidth/2, topY - dimHeight/2, dimWidth, dimHeight);
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${room.width}'`, midX, topY);
+
+        // Length dimension
+        const rightX = 50 + roomX * SCALE + room.width * SCALE + 15;
+        const midY = 50 + roomY * SCALE + (room.length * SCALE) / 2;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(rightX - dimWidth/2, midY - dimHeight/2, dimWidth, dimHeight);
+        ctx.strokeRect(rightX - dimWidth/2, midY - dimHeight/2, dimWidth, dimHeight);
+        ctx.fillStyle = '#000';
+        ctx.fillText(`${room.length}'`, rightX, midY);
+      }
+    });
+
+    // Draw interior walls with drag handles
     walls.forEach(wall => {
       const isSelected = selectedWall?.id === wall.id;
       const isHovered = hoveredItem?.type === 'wall' && hoveredItem?.id === wall.id;
@@ -220,7 +403,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.lineWidth = isSelected || isDragging ? 4 : 3;
       } else {
         ctx.strokeStyle = '#1e40af';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
       }
 
       const startX = isDragging && draggingWallHandle.handleType === 'start' ? draggingWallHandle.wall.start_x : wall.start_x;
@@ -241,7 +424,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.fillStyle = hoveredItem?.type === 'handle' && hoveredItem?.handleType === 'end' && hoveredItem?.id === wall.id ? '#fbbf24' : '#ef4444';
         ctx.fillRect(50 + endX * SCALE - handleSize/2, 50 + endY * SCALE - handleSize/2, handleSize, handleSize);
 
-        const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)).toFixed(1);
+        const wallLength = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)).toFixed(1);
         const midX = 50 + (startX + endX) / 2 * SCALE;
         const midY = 50 + (startY + endY) / 2 * SCALE;
         
@@ -257,90 +440,156 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${length}'`, midX, midY);
+        ctx.fillText(`${wallLength}'`, midX, midY);
       }
     });
 
-    // Draw openings with size labels
+    // Draw openings with proper representations
     openings.forEach(opening => {
-      const x = opening.position_x !== undefined ? 50 + opening.position_x * SCALE : 50;
-      const y = opening.position_y !== undefined ? 50 + opening.position_y * SCALE : 50;
+      const x = opening.position_x !== undefined ? opening.position_x : 0;
+      const y = opening.position_y !== undefined ? opening.position_y : 0;
       
       const isSelected = selectedOpening?.id === opening.id;
       const isDraggingThis = draggingOpening?.id === opening.id;
       const isHovered = hoveredItem?.type === 'opening' && hoveredItem?.id === opening.id;
 
+      const posX = isDraggingThis ? draggingOpening!.position_x! : x;
+      const posY = isDraggingThis ? draggingOpening!.position_y! : y;
+
+      const canvasX = 50 + posX * SCALE;
+      const canvasY = 50 + posY * SCALE;
+
+      const size = parseOpeningSize(opening.size_detail);
+      const rotation = opening.rotation || 0;
+
       let color = '#10b981';
       if (opening.opening_type === 'window') color = '#3b82f6';
       if (opening.opening_type === 'overhead_door') color = '#f59e0b';
-      if (opening.opening_type === 'other') color = '#a855f7';
 
-      if (isSelected || isDraggingThis || isHovered) {
-        ctx.fillStyle = isSelected ? color + '60' : color + '40';
-        const highlightSize = isSelected ? 4 : 2;
-        ctx.fillRect(x - OPENING_SIZE - highlightSize, y - OPENING_SIZE - highlightSize, OPENING_SIZE * 2 + highlightSize * 2, OPENING_SIZE * 2 + highlightSize * 2);
-      }
+      ctx.save();
+      ctx.translate(canvasX, canvasY);
+      ctx.rotate((rotation * Math.PI) / 180);
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x - OPENING_SIZE/2, y - OPENING_SIZE/2, OPENING_SIZE, OPENING_SIZE);
-
-      if (opening.opening_type === 'walkdoor' || opening.opening_type === 'overhead_door') {
-        const swingRadius = 20;
+      // Draw based on type
+      if (opening.opening_type === 'window') {
+        // Window: draw a line with width proportional to actual width
+        const windowWidth = size.width * SCALE;
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([3, 3]);
-
-        const swingDirection = opening.swing_direction || 'right';
-        
+        ctx.lineWidth = 4;
         ctx.beginPath();
-        if (swingDirection === 'right') {
-          ctx.arc(x, y, swingRadius, -Math.PI/2, 0);
-          ctx.lineTo(x, y);
-        } else if (swingDirection === 'left') {
-          ctx.arc(x, y, swingRadius, Math.PI/2, Math.PI);
-          ctx.lineTo(x, y);
-        } else if (swingDirection === 'in') {
-          ctx.arc(x, y, swingRadius, 0, Math.PI/2);
-          ctx.lineTo(x, y);
+        ctx.moveTo(-windowWidth / 2, 0);
+        ctx.lineTo(windowWidth / 2, 0);
+        ctx.stroke();
+
+        // Draw perpendicular markers at ends
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-windowWidth / 2, -4);
+        ctx.lineTo(-windowWidth / 2, 4);
+        ctx.moveTo(windowWidth / 2, -4);
+        ctx.lineTo(windowWidth / 2, 4);
+        ctx.stroke();
+      } else if (opening.opening_type === 'overhead_door') {
+        // Overhead door: similar to window but with dotted line showing open position
+        const doorWidth = size.width * SCALE;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-doorWidth / 2, 0);
+        ctx.lineTo(doorWidth / 2, 0);
+        ctx.stroke();
+
+        // Draw open position (dotted line above/inside)
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = color + '80';
+        ctx.beginPath();
+        ctx.moveTo(-doorWidth / 2, -size.height * SCALE);
+        ctx.lineTo(doorWidth / 2, -size.height * SCALE);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw side markers
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-doorWidth / 2, 0);
+        ctx.lineTo(-doorWidth / 2, -size.height * SCALE);
+        ctx.moveTo(doorWidth / 2, 0);
+        ctx.lineTo(doorWidth / 2, -size.height * SCALE);
+        ctx.stroke();
+      } else if (opening.opening_type === 'walkdoor') {
+        // Walk door: solid line for door, dotted arc for swing
+        const doorWidth = size.width * SCALE;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-doorWidth / 2, 0);
+        ctx.lineTo(doorWidth / 2, 0);
+        ctx.stroke();
+
+        // Draw door panel (solid line)
+        const swingDir = opening.swing_direction || 'right';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        if (swingDir === 'right' || swingDir === 'out') {
+          ctx.moveTo(doorWidth / 2, 0);
+          ctx.lineTo(doorWidth / 2, -doorWidth);
         } else {
-          ctx.arc(x, y, swingRadius, Math.PI, 3*Math.PI/2);
-          ctx.lineTo(x, y);
+          ctx.moveTo(-doorWidth / 2, 0);
+          ctx.lineTo(-doorWidth / 2, -doorWidth);
+        }
+        ctx.stroke();
+
+        // Draw swing arc (dotted)
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = color + '60';
+        ctx.beginPath();
+        if (swingDir === 'right' || swingDir === 'out') {
+          ctx.arc(doorWidth / 2, 0, doorWidth, -Math.PI / 2, 0);
+        } else {
+          ctx.arc(-doorWidth / 2, 0, doorWidth, -Math.PI / 2, Math.PI, true);
         }
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
+      ctx.restore();
+
+      // Draw label and dimensions
       ctx.fillStyle = '#fff';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      const labelText = opening.size_detail;
+      ctx.font = '11px sans-serif';
+      const labelWidth = ctx.measureText(labelText).width + 8;
+      const labelHeight = 18;
+      const labelX = canvasX;
+      const labelY = canvasY - 20;
+      
+      ctx.fillRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
+      ctx.strokeRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
+      
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = 'bold 10px sans-serif';
-      let label = 'O';
-      if (opening.opening_type === 'walkdoor') label = 'D';
-      if (opening.opening_type === 'window') label = 'W';
-      if (opening.opening_type === 'overhead_door') label = 'OH';
-      ctx.fillText(label, x, y);
+      ctx.fillText(labelText, labelX, labelY);
 
-      if (isSelected || isHovered) {
-        ctx.fillStyle = '#fff';
-        ctx.strokeStyle = color;
+      // Highlight if selected/hovered
+      if (isSelected || isDraggingThis || isHovered) {
+        ctx.strokeStyle = isSelected || isDraggingThis ? color : color + '80';
         ctx.lineWidth = 2;
-        const labelText = opening.size_detail || 'No size';
-        const labelWidth = ctx.measureText(labelText).width + 8;
-        const labelHeight = 16;
-        const labelX = x;
-        const labelY = y - OPENING_SIZE - 12;
-        
-        ctx.fillRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
-        ctx.strokeRect(labelX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
-        
-        ctx.fillStyle = '#000';
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, labelX, labelY);
+        ctx.setLineDash([5, 5]);
+        const highlightSize = 25;
+        ctx.strokeRect(canvasX - highlightSize, canvasY - highlightSize, highlightSize * 2, highlightSize * 2);
+        ctx.setLineDash([]);
       }
     });
 
+    // Draw floor drains
     ctx.strokeStyle = '#06b6d4';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
@@ -386,8 +635,17 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const dy = Math.abs(y - opening.position_y);
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      if (distance < 1) {
+      if (distance < 2) {
         return opening;
+      }
+    }
+    return null;
+  }
+
+  function findRoomAtPosition(x: number, y: number): Room | null {
+    for (const room of rooms) {
+      if (x >= room.x && x <= room.x + room.width && y >= room.y && y <= room.y + room.length) {
+        return room;
       }
     }
     return null;
@@ -395,34 +653,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   function findWallAtPosition(x: number, y: number): Wall | null {
     for (const wall of walls) {
-      const A = x - wall.start_x;
-      const B = y - wall.start_y;
-      const C = wall.end_x - wall.start_x;
-      const D = wall.end_y - wall.start_y;
-
-      const dot = A * C + B * D;
-      const lenSq = C * C + D * D;
-      let param = -1;
-      
-      if (lenSq !== 0) param = dot / lenSq;
-
-      let xx, yy;
-
-      if (param < 0) {
-        xx = wall.start_x;
-        yy = wall.start_y;
-      } else if (param > 1) {
-        xx = wall.end_x;
-        yy = wall.end_y;
-      } else {
-        xx = wall.start_x + param * C;
-        yy = wall.start_y + param * D;
-      }
-
-      const dx = x - xx;
-      const dy = y - yy;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
+      const distance = pointToLineDistance(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
       if (distance < 0.5) {
         return wall;
       }
@@ -460,9 +691,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         }
       }
 
+      const clickedRoom = findRoomAtPosition(coords.x, coords.y);
+      if (clickedRoom) {
+        setSelectedRoom(clickedRoom);
+        setSelectedOpening(null);
+        setSelectedWall(null);
+        setDraggingRoom(clickedRoom);
+        return;
+      }
+
       const clickedOpening = findOpeningAtPosition(coords.x, coords.y);
       if (clickedOpening) {
         setSelectedOpening(clickedOpening);
+        setSelectedRoom(null);
         setSelectedWall(null);
         setDraggingOpening(clickedOpening);
         return;
@@ -472,16 +713,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       if (clickedWall) {
         setSelectedWall(clickedWall);
         setSelectedOpening(null);
+        setSelectedRoom(null);
         return;
       }
 
       setSelectedOpening(null);
       setSelectedWall(null);
+      setSelectedRoom(null);
     } else if (mode === 'wall') {
       setIsDragging(true);
       setDragStart(coords);
-    } else if (mode === 'door' || mode === 'window') {
-      placeOpening(coords.x, coords.y, mode === 'door' ? 'walkdoor' : 'window');
+    } else if (mode === 'door' || mode === 'window' || mode === 'overhead') {
+      const type = mode === 'door' ? 'walkdoor' : mode === 'overhead' ? 'overhead_door' : 'window';
+      placeOpening(coords.x, coords.y, type);
     } else if (mode === 'room' && pendingRoomPlacement) {
       placeRoom(coords.x, coords.y);
     }
@@ -491,13 +735,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    if (mode === 'select' && !draggingOpening && !draggingWallHandle) {
+    if (mode === 'select' && !draggingOpening && !draggingRoom && !draggingWallHandle) {
       if (selectedWall) {
         const handle = findWallHandleAtPosition(coords.x, coords.y);
         if (handle) {
           setHoveredItem({ type: 'handle', id: handle.wall.id, handleType: handle.handleType });
           return;
         }
+      }
+
+      const hoveredRoom = findRoomAtPosition(coords.x, coords.y);
+      if (hoveredRoom) {
+        setHoveredItem({ type: 'room', id: hoveredRoom.id });
+        return;
       }
 
       const hoveredOpening = findOpeningAtPosition(coords.x, coords.y);
@@ -514,20 +764,29 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
 
     if (draggingWallHandle) {
+      const snapped = snapToWall(coords.x, coords.y);
       const updatedWall = { ...draggingWallHandle.wall };
       if (draggingWallHandle.handleType === 'start') {
-        updatedWall.start_x = coords.x;
-        updatedWall.start_y = coords.y;
+        updatedWall.start_x = snapped.x;
+        updatedWall.start_y = snapped.y;
       } else {
-        updatedWall.end_x = coords.x;
-        updatedWall.end_y = coords.y;
+        updatedWall.end_x = snapped.x;
+        updatedWall.end_y = snapped.y;
       }
       setDraggingWallHandle({ ...draggingWallHandle, wall: updatedWall });
     } else if (draggingOpening) {
+      const snapped = snapToWall(coords.x, coords.y);
       setDraggingOpening({
         ...draggingOpening,
-        position_x: coords.x,
-        position_y: coords.y,
+        position_x: snapped.x,
+        position_y: snapped.y,
+      });
+    } else if (draggingRoom) {
+      const snapped = snapToWall(coords.x, coords.y);
+      setDraggingRoom({
+        ...draggingRoom,
+        x: snapped.x,
+        y: snapped.y,
       });
     } else if (isDragging && dragStart && mode === 'wall') {
       drawFloorPlan();
@@ -535,12 +794,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const ctx = canvas?.getContext('2d');
       if (!ctx) return;
 
+      const snapped = snapToWall(coords.x, coords.y);
+
       ctx.strokeStyle = '#1e40af';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
       ctx.beginPath();
       ctx.moveTo(50 + dragStart.x * SCALE, 50 + dragStart.y * SCALE);
-      ctx.lineTo(50 + coords.x * SCALE, 50 + coords.y * SCALE);
+      ctx.lineTo(50 + snapped.x * SCALE, 50 + snapped.y * SCALE);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -575,12 +836,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       toast.success('Wall resized');
       setDraggingWallHandle(null);
     } else if (draggingOpening) {
+      const snapped = snapToWall(coords.x, coords.y);
+      
       if (quoteId && !draggingOpening.id.startsWith('temp_')) {
         const { error } = await supabase
           .from('quote_openings')
           .update({
-            position_x: coords.x,
-            position_y: coords.y,
+            position_x: snapped.x,
+            position_y: snapped.y,
           })
           .eq('id', draggingOpening.id);
 
@@ -592,9 +855,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         }
       }
 
-      setOpenings(openings.map(o => o.id === draggingOpening.id ? { ...o, position_x: coords.x, position_y: coords.y } : o));
-      toast.success('Opening moved');
+      setOpenings(openings.map(o => o.id === draggingOpening.id ? { ...o, position_x: snapped.x, position_y: snapped.y } : o));
+      toast.success(snapped.snapped ? 'Opening moved and snapped to wall' : 'Opening moved');
       setDraggingOpening(null);
+    } else if (draggingRoom) {
+      const snapped = snapToWall(coords.x, coords.y);
+      setRooms(rooms.map(r => r.id === draggingRoom.id ? { ...r, x: snapped.x, y: snapped.y } : r));
+      toast.success(snapped.snapped ? 'Room moved and snapped to wall' : 'Room moved');
+      setDraggingRoom(null);
     } else if (isDragging && dragStart && mode === 'wall') {
       if (Math.abs(coords.x - dragStart.x) < 1 && Math.abs(coords.y - dragStart.y) < 1) {
         setIsDragging(false);
@@ -602,15 +870,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         return;
       }
 
+      const snappedStart = snapToWall(dragStart.x, dragStart.y);
+      const snappedEnd = snapToWall(coords.x, coords.y);
+
       if (quoteId) {
         const { data, error } = await supabase
           .from('quote_interior_walls')
           .insert({
             quote_id: quoteId,
-            start_x: dragStart.x,
-            start_y: dragStart.y,
-            end_x: coords.x,
-            end_y: coords.y,
+            start_x: snappedStart.x,
+            start_y: snappedStart.y,
+            end_x: snappedEnd.x,
+            end_y: snappedEnd.y,
           })
           .select()
           .single();
@@ -624,10 +895,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       } else {
         const tempWall: Wall = {
           id: generateTempId(),
-          start_x: dragStart.x,
-          start_y: dragStart.y,
-          end_x: coords.x,
-          end_y: coords.y,
+          start_x: snappedStart.x,
+          start_y: snappedStart.y,
+          end_x: snappedEnd.x,
+          end_y: snappedEnd.y,
         };
         setWalls([...walls, tempWall]);
         toast.success('Wall added (will save when quote is saved)');
@@ -649,8 +920,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
   }
 
-  async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window') {
-    const defaultSize = type === 'walkdoor' ? "3' × 7'" : "3' × 4'";
+  async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window' | 'overhead_door') {
+    const snapped = snapToWall(x, y);
+    
+    const defaultSize = type === 'walkdoor' ? "3' × 7'" : type === 'overhead_door' ? "10' × 10'" : "3' × 4'";
     
     if (quoteId) {
       try {
@@ -664,8 +937,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             location: '',
             wall: 'front',
             swing_direction: 'right',
-            position_x: x,
-            position_y: y,
+            position_x: snapped.x,
+            position_y: snapped.y,
+            rotation: 0,
           })
           .select()
           .single();
@@ -674,7 +948,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
         setOpenings([...openings, data]);
         setSelectedOpening(data);
-        toast.success('Opening placed - click Edit or drag to reposition');
+        toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
       } catch (error: any) {
         console.error('Error adding opening:', error);
         toast.error('Failed to place opening');
@@ -689,12 +963,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         location: '',
         wall: 'front',
         swing_direction: 'right',
-        position_x: x,
-        position_y: y,
+        position_x: snapped.x,
+        position_y: snapped.y,
+        rotation: 0,
       };
       setOpenings([...openings, tempOpening]);
       setSelectedOpening(tempOpening);
-      toast.success('Opening placed - click Edit or drag to reposition (will save when quote is saved)');
+      toast.success('Opening placed (will save when quote is saved)');
     }
 
     setMode('select');
@@ -703,72 +978,54 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function placeRoom(x: number, y: number) {
     if (!pendingRoomPlacement) return;
 
-    const roomWidth = pendingRoomPlacement.width;
-    const roomLength = pendingRoomPlacement.length;
+    const snapped = snapToWall(x, y);
 
-    const roomWalls: Wall[] = [
-      { id: generateTempId(), start_x: x, start_y: y, end_x: x + roomWidth, end_y: y },
-      { id: generateTempId(), start_x: x + roomWidth, start_y: y, end_x: x + roomWidth, end_y: y + roomLength },
-      { id: generateTempId(), start_x: x + roomWidth, start_y: y + roomLength, end_x: x, end_y: y + roomLength },
-      { id: generateTempId(), start_x: x, start_y: y + roomLength, end_x: x, end_y: y },
-    ];
+    const newRoom: Room = {
+      id: generateTempId(),
+      type: pendingRoomPlacement.type,
+      x: snapped.x,
+      y: snapped.y,
+      width: pendingRoomPlacement.width,
+      length: pendingRoomPlacement.length,
+      rotation: 0,
+    };
 
-    setWalls([...walls, ...roomWalls]);
+    setRooms([...rooms, newRoom]);
     toast.success(`${pendingRoomPlacement.type.charAt(0).toUpperCase() + pendingRoomPlacement.type.slice(1)} placed`);
     setPendingRoomPlacement(null);
     setMode('select');
   }
 
-  async function addOpening() {
-    if (!newOpening.size_detail || !dragStart) {
-      toast.error('Please fill in all required fields');
-      return;
+  function rotateSelectedOpening() {
+    if (!selectedOpening) return;
+    
+    const newRotation = ((selectedOpening.rotation || 0) + 90) % 360;
+    const updated = { ...selectedOpening, rotation: newRotation };
+    setOpenings(openings.map(o => o.id === selectedOpening.id ? updated : o));
+    setSelectedOpening(updated);
+
+    if (quoteId && !selectedOpening.id.startsWith('temp_')) {
+      supabase
+        .from('quote_openings')
+        .update({ rotation: newRotation })
+        .eq('id', selectedOpening.id)
+        .then(({ error }) => {
+          if (error) console.error('Error rotating opening:', error);
+        });
     }
 
-    if (quoteId) {
-      try {
-        const { data, error } = await supabase
-          .from('quote_openings')
-          .insert({
-            quote_id: quoteId,
-            ...newOpening,
-            position_x: dragStart.x,
-            position_y: dragStart.y,
-          })
-          .select()
-          .single();
+    toast.success('Opening rotated');
+  }
 
-        if (error) throw error;
+  function rotateSelectedRoom() {
+    if (!selectedRoom) return;
+    
+    const newRotation = (selectedRoom.rotation + 90) % 360;
+    const updated = { ...selectedRoom, rotation: newRotation };
+    setRooms(rooms.map(r => r.id === selectedRoom.id ? updated : r));
+    setSelectedRoom(updated);
 
-        setOpenings([...openings, data]);
-        toast.success('Opening added');
-      } catch (error: any) {
-        console.error('Error adding opening:', error);
-        toast.error('Failed to add opening');
-        return;
-      }
-    } else {
-      const tempOpening: Opening = {
-        id: generateTempId(),
-        ...newOpening,
-        position_x: dragStart.x,
-        position_y: dragStart.y,
-      };
-      setOpenings([...openings, tempOpening]);
-      toast.success('Opening added (will save when quote is saved)');
-    }
-
-    setShowAddOpening(false);
-    setNewOpening({
-      opening_type: 'walkdoor',
-      size_detail: '',
-      quantity: 1,
-      location: '',
-      wall: 'front',
-      swing_direction: 'right',
-    });
-    setDragStart(null);
-    setMode('select');
+    toast.success('Room rotated');
   }
 
   async function updateOpening() {
@@ -837,6 +1094,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     setOpenings(openings.filter(o => o.id !== openingId));
     setSelectedOpening(null);
     toast.success('Opening deleted');
+  }
+
+  async function deleteRoom(roomId: string) {
+    setRooms(rooms.filter(r => r.id !== roomId));
+    setSelectedRoom(null);
+    toast.success('Room deleted');
   }
 
   async function deleteWall(wallId: string) {
@@ -1055,6 +1318,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               Place Window
             </Button>
             <Button
+              variant={mode === 'overhead' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setMode('overhead')}
+              className="rounded-none"
+            >
+              <Square className="w-4 h-4 mr-2" />
+              Overhead Door
+            </Button>
+            <Button
               variant={mode === 'room' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowAddRoom(true)}
@@ -1065,11 +1337,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && 'Click to select items, drag to reposition, drag wall handles to resize, click Edit button or double-click to edit'}
-            {mode === 'wall' && 'Click and drag to draw interior walls'}
-            {mode === 'door' && 'Click on the floor plan to place a door - then drag to move or click to edit details'}
-            {mode === 'window' && 'Click on the floor plan to place a window - then drag to move or click to edit details'}
-            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}')`}
+            {mode === 'select' && 'Click to select items, drag to reposition (auto-snaps to walls), use buttons to rotate or edit'}
+            {mode === 'wall' && 'Click and drag to draw interior walls (auto-snaps to walls)'}
+            {mode === 'door' && 'Click to place a walk door (auto-snaps to walls)'}
+            {mode === 'window' && 'Click to place a window (auto-snaps to walls)'}
+            {mode === 'overhead' && 'Click to place an overhead door (auto-snaps to walls)'}
+            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}') - auto-snaps to walls`}
           </p>
         </CardContent>
       </Card>
@@ -1078,7 +1351,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         <CardHeader>
           <CardTitle>Building Layout</CardTitle>
           <p className="text-sm text-muted-foreground">
-            {width}' × {length}' • Scale: 1:{SCALE}'
+            {width}' × {length}' • Scale: 1:{SCALE}' • Items snap to walls automatically
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1088,7 +1361,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               className={`${
                 mode === 'wall' || mode === 'room' 
                   ? 'cursor-crosshair' 
-                  : draggingOpening || draggingWallHandle
+                  : draggingOpening || draggingRoom || draggingWallHandle
                   ? 'cursor-grabbing'
                   : hoveredItem?.type === 'handle'
                   ? 'cursor-grab'
@@ -1111,11 +1384,31 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   {selectedOpening.size_detail}
                 </p>
               </div>
+              <Button size="sm" variant="outline" onClick={rotateSelectedOpening}>
+                <RotateCw className="w-4 h-4 mr-1" />
+                Rotate
+              </Button>
               <Button size="sm" variant="outline" onClick={openEditDialog}>
                 <Edit2 className="w-4 h-4 mr-1" />
                 Edit
               </Button>
               <Button size="sm" variant="destructive" onClick={() => deleteOpening(selectedOpening.id)}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {selectedRoom && mode === 'select' && (
+            <div className="flex gap-2 p-2 bg-purple-50 rounded border border-purple-200">
+              <div className="flex-1">
+                <p className="text-sm font-medium capitalize">{selectedRoom.type}: {selectedRoom.width}' × {selectedRoom.length}'</p>
+                <p className="text-xs text-muted-foreground">Drag to move (snaps to walls), rotate to change orientation</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={rotateSelectedRoom}>
+                <RotateCw className="w-4 h-4 mr-1" />
+                Rotate
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => deleteRoom(selectedRoom.id)}>
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
@@ -1139,27 +1432,27 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             <div className="font-semibold">Legend:</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-1 bg-blue-500"></div>
-                <span>Building Outline</span>
+                <div className="w-6 h-1 bg-blue-700 rounded"></div>
+                <span>Building/Interior Wall</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-1 bg-blue-500"></div>
-                <span>Interior Wall</span>
+                <div className="w-6 h-1 bg-green-500 rounded"></div>
+                <span>Walk Door</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500"></div>
-                <span>Door (D)</span>
+                <div className="w-6 h-1 bg-blue-500 rounded"></div>
+                <span>Window</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500"></div>
-                <span>Window (W)</span>
+                <div className="w-6 h-1 bg-orange-500 rounded"></div>
+                <span>Overhead Door</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-orange-500"></div>
-                <span>Overhead (OH)</span>
+                <div className="w-4 h-4 border-2 border-purple-500 bg-purple-100"></div>
+                <span>Room/Porch/Loft</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-1 border-t-2 border-dashed border-cyan-500"></div>
+                <div className="w-6 h-1 border-t-2 border-dashed border-cyan-500"></div>
                 <span>Floor Drain</span>
               </div>
             </div>
@@ -1169,8 +1462,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
       {/* Tabs for Managing Items */}
       <Tabs defaultValue="openings" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="openings">Doors & Windows</TabsTrigger>
+          <TabsTrigger value="rooms">Rooms</TabsTrigger>
           <TabsTrigger value="drains">Floor Drains</TabsTrigger>
           <TabsTrigger value="cupolas">Cupolas</TabsTrigger>
         </TabsList>
@@ -1178,10 +1472,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         <TabsContent value="openings" className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-semibold">Placed Openings</h3>
-            <Button size="sm" onClick={() => setShowAddOpening(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Opening
-            </Button>
           </div>
           <div className="space-y-2">
             {openings.length === 0 ? (
@@ -1197,7 +1487,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {opening.location || 'Location not specified'}
+                      Position: ({opening.position_x?.toFixed(1) || '0'}', {opening.position_y?.toFixed(1) || '0'}') • Rotation: {opening.rotation || 0}°
                     </p>
                   </div>
                   <div className="flex gap-1">
@@ -1215,6 +1505,39 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                       size="sm"
                       variant="destructive"
                       onClick={() => deleteOpening(opening.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="rooms" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold">Rooms/Porches/Lofts</h3>
+          </div>
+          <div className="space-y-2">
+            {rooms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No rooms placed yet</p>
+            ) : (
+              rooms.map((room) => (
+                <div key={room.id} className="flex items-center justify-between p-2 border rounded bg-white">
+                  <div>
+                    <p className="text-sm font-medium capitalize">
+                      {room.type}: {room.width}' × {room.length}'
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Position: ({room.x.toFixed(1)}', {room.y.toFixed(1)}') • Rotation: {room.rotation}°
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteRoom(room.id)}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -1315,94 +1638,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         </TabsContent>
       </Tabs>
 
-      {/* Add Opening Dialog */}
-      <Dialog open={showAddOpening} onOpenChange={setShowAddOpening}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Opening</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select
-                value={newOpening.opening_type}
-                onValueChange={(value: any) => setNewOpening({ ...newOpening, opening_type: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="walkdoor">Walk Door</SelectItem>
-                  <SelectItem value="window">Window</SelectItem>
-                  <SelectItem value="overhead_door">Overhead Door</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Size/Details</Label>
-              <Input
-                value={newOpening.size_detail}
-                onChange={(e) => setNewOpening({ ...newOpening, size_detail: e.target.value })}
-                placeholder="e.g., 3' × 7'"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <Input
-                value={newOpening.location}
-                onChange={(e) => setNewOpening({ ...newOpening, location: e.target.value })}
-                placeholder="e.g., Front wall, left side"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Wall</Label>
-              <Select
-                value={newOpening.wall}
-                onValueChange={(value) => setNewOpening({ ...newOpening, wall: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="front">Front</SelectItem>
-                  <SelectItem value="back">Back</SelectItem>
-                  <SelectItem value="left">Left</SelectItem>
-                  <SelectItem value="right">Right</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {(newOpening.opening_type === 'walkdoor' || newOpening.opening_type === 'overhead_door') && (
-              <div className="space-y-2">
-                <Label>Swing Direction</Label>
-                <Select
-                  value={newOpening.swing_direction}
-                  onValueChange={(value: any) => setNewOpening({ ...newOpening, swing_direction: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="right">Right</SelectItem>
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="in">In</SelectItem>
-                    <SelectItem value="out">Out</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button onClick={addOpening} className="flex-1">
-                Add Opening
-              </Button>
-              <Button variant="outline" onClick={() => setShowAddOpening(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Edit Opening Dialog */}
       <Dialog open={showEditOpening} onOpenChange={setShowEditOpening}>
         <DialogContent>
@@ -1418,31 +1653,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   onChange={(e) => setEditingOpening({ ...editingOpening, size_detail: e.target.value })}
                   placeholder="e.g., 3' × 7'"
                 />
+                <p className="text-xs text-muted-foreground">Format: Width × Height (e.g., "3' × 7'" or "10' × 10'")</p>
               </div>
               <div className="space-y-2">
-                <Label>Location</Label>
+                <Label>Location Description</Label>
                 <Input
                   value={editingOpening.location}
                   onChange={(e) => setEditingOpening({ ...editingOpening, location: e.target.value })}
-                  placeholder="e.g., Front wall, left side"
+                  placeholder="e.g., Front wall, center"
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>Wall</Label>
-                <Select
-                  value={editingOpening.wall}
-                  onValueChange={(value) => setEditingOpening({ ...editingOpening, wall: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="front">Front</SelectItem>
-                    <SelectItem value="back">Back</SelectItem>
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="right">Right</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               {(editingOpening.opening_type === 'walkdoor' || editingOpening.opening_type === 'overhead_door') && (
                 <div className="space-y-2">
@@ -1517,13 +1736,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                 placeholder="10"
               />
             </div>
+            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+              <p className="text-sm text-blue-900">
+                <strong>Note:</strong> Room size is locked to your specified dimensions. After placing, you can move and rotate it, but the dimensions will remain {newRoom.width}' × {newRoom.length}'.
+              </p>
+            </div>
             <div className="flex gap-2">
               <Button
                 onClick={() => {
                   setPendingRoomPlacement(newRoom);
                   setMode('room');
                   setShowAddRoom(false);
-                  toast.info(`Click on the floor plan to place ${newRoom.type}`);
+                  toast.info(`Click on the floor plan to place ${newRoom.type} - it will snap to walls`);
                 }}
                 className="flex-1"
               >
