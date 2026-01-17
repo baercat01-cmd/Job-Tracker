@@ -150,9 +150,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [tempIdCounter, setTempIdCounter] = useState(0);
   const [zoom, setZoom] = useState(1.0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showGrid, setShowGrid] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
-  const [gridSize, setGridSize] = useState(1); // 1 foot grid
   const [measureMode, setMeasureMode] = useState(false);
   const [measureStart, setMeasureStart] = useState<{ x: number; y: number } | null>(null);
   const [measureEnd, setMeasureEnd] = useState<{ x: number; y: number } | null>(null);
@@ -482,39 +480,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Draw grid background (before any transformations)
-    if (showGrid) {
-      const effectiveZoom = baseZoom * zoom;
-      const centerX = canvasWidth / 2;
-      const centerY = canvasHeight / 2;
-      
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(Math.PI / 2);
-      ctx.scale(effectiveZoom, effectiveZoom);
-      ctx.translate(-width * SCALE / 2, -length * SCALE / 2);
-      
-      ctx.strokeStyle = '#e5e7eb';
-      ctx.lineWidth = 0.5;
-      
-      // Vertical grid lines
-      for (let x = 0; x <= width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x * SCALE, 0);
-        ctx.lineTo(x * SCALE, length * SCALE);
-        ctx.stroke();
-      }
-      
-      // Horizontal grid lines
-      for (let y = 0; y <= length; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * SCALE);
-        ctx.lineTo(width * SCALE, y * SCALE);
-        ctx.stroke();
-      }
-      
-      ctx.restore();
-    }
+
 
     // Calculate effective zoom (base zoom * user zoom)
     const effectiveZoom = baseZoom * zoom;
@@ -912,99 +878,61 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const leftOpenings = openings.filter(o => o.position_x !== undefined && Math.abs(o.position_x) < 1);
     const rightOpenings = openings.filter(o => o.position_x !== undefined && Math.abs(o.position_x - width) < 1);
 
-    // Top wall running dimensions
+    // Top wall running dimensions - from building edge to each opening
     if (topOpenings.length > 0) {
       const sorted = [...topOpenings].sort((a, b) => (a.position_x || 0) - (b.position_x || 0));
-      let prevX = 0;
       const dimY = -40;
       
       sorted.forEach((opening) => {
         const x = opening.position_x || 0;
-        const dist = x - prevX;
         
-        // Draw dimension line
+        // Draw dimension line from building edge to opening
         ctx.strokeStyle = '#666';
         ctx.beginPath();
-        ctx.moveTo(prevX * SCALE, dimY);
+        ctx.moveTo(0, dimY);
         ctx.lineTo(x * SCALE, dimY);
         ctx.stroke();
         
         // Draw ticks
         ctx.beginPath();
-        ctx.moveTo(prevX * SCALE, dimY - 5);
-        ctx.lineTo(prevX * SCALE, dimY + 5);
+        ctx.moveTo(0, dimY - 5);
+        ctx.lineTo(0, dimY + 5);
         ctx.moveTo(x * SCALE, dimY - 5);
         ctx.lineTo(x * SCALE, dimY + 5);
         ctx.stroke();
         
-        // Draw distance
+        // Draw distance from edge
         ctx.fillStyle = '#000';
-        ctx.fillText(`${dist.toFixed(1)}'`, ((prevX + x) / 2) * SCALE, dimY);
-        
-        prevX = x;
+        ctx.fillText(`${x.toFixed(1)}'`, (x / 2) * SCALE, dimY);
       });
-      
-      // Last segment to end
-      const dist = width - prevX;
-      ctx.strokeStyle = '#666';
-      ctx.beginPath();
-      ctx.moveTo(prevX * SCALE, dimY);
-      ctx.lineTo(width * SCALE, dimY);
-      ctx.stroke();
-      
-      ctx.beginPath();
-      ctx.moveTo(prevX * SCALE, dimY - 5);
-      ctx.lineTo(prevX * SCALE, dimY + 5);
-      ctx.moveTo(width * SCALE, dimY - 5);
-      ctx.lineTo(width * SCALE, dimY + 5);
-      ctx.stroke();
-      
-      ctx.fillText(`${dist.toFixed(1)}'`, ((prevX + width) / 2) * SCALE, dimY);
     }
 
-    // Left wall running dimensions
+    // Left wall running dimensions - from building edge to each opening
     if (leftOpenings.length > 0) {
       const sorted = [...leftOpenings].sort((a, b) => (a.position_y || 0) - (b.position_y || 0));
-      let prevY = 0;
       const dimX = -40;
       
       sorted.forEach((opening) => {
         const y = opening.position_y || 0;
-        const dist = y - prevY;
         
+        // Draw dimension line from building edge to opening
         ctx.strokeStyle = '#666';
         ctx.beginPath();
-        ctx.moveTo(dimX, prevY * SCALE);
+        ctx.moveTo(dimX, 0);
         ctx.lineTo(dimX, y * SCALE);
         ctx.stroke();
         
+        // Draw ticks
         ctx.beginPath();
-        ctx.moveTo(dimX - 5, prevY * SCALE);
-        ctx.lineTo(dimX + 5, prevY * SCALE);
+        ctx.moveTo(dimX - 5, 0);
+        ctx.lineTo(dimX + 5, 0);
         ctx.moveTo(dimX - 5, y * SCALE);
         ctx.lineTo(dimX + 5, y * SCALE);
         ctx.stroke();
         
-        ctx.fillText(`${dist.toFixed(1)}'`, dimX, ((prevY + y) / 2) * SCALE);
-        
-        prevY = y;
+        // Draw distance from edge
+        ctx.fillText(`${y.toFixed(1)}'`, dimX, (y / 2) * SCALE);
       });
-      
-      const dist = length - prevY;
-      ctx.strokeStyle = '#666';
-      ctx.beginPath();
-      ctx.moveTo(dimX, prevY * SCALE);
-      ctx.lineTo(dimX, length * SCALE);
-      ctx.stroke();
-      
-      ctx.beginPath();
-      ctx.moveTo(dimX - 5, prevY * SCALE);
-      ctx.lineTo(dimX + 5, prevY * SCALE);
-      ctx.moveTo(dimX - 5, length * SCALE);
-      ctx.lineTo(dimX + 5, length * SCALE);
-      ctx.stroke();
-      
-      ctx.fillText(`${dist.toFixed(1)}'`, dimX, ((prevY + length) / 2) * SCALE);
     }
 
     // Draw room dimensions
@@ -1054,51 +982,51 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     });
 
-    // Draw interior wall dimensions
+    // Draw interior wall dimensions - always show for all walls
     walls.forEach(wall => {
-      if (selectedWall?.id === wall.id || hoveredItem?.id === wall.id) {
-        const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
+      const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
+      const isSelected = selectedWall?.id === wall.id || hoveredItem?.id === wall.id;
+      
+      ctx.strokeStyle = isSelected ? '#1e40af' : '#94a3b8';
+      ctx.setLineDash([3, 3]);
+      
+      if (isHorizontal) {
+        // Show distance from left edge to wall position
+        const dimY = wall.start_y * SCALE - 20;
+        ctx.beginPath();
+        ctx.moveTo(0, dimY);
+        ctx.lineTo(wall.start_x * SCALE, dimY);
+        ctx.stroke();
         
-        ctx.strokeStyle = '#1e40af';
-        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(0, dimY - 5);
+        ctx.lineTo(0, dimY + 5);
+        ctx.moveTo(wall.start_x * SCALE, dimY - 5);
+        ctx.lineTo(wall.start_x * SCALE, dimY + 5);
+        ctx.stroke();
         
-        if (isHorizontal) {
-          // Show distance from left edge to start
-          const dimY = wall.start_y * SCALE - 20;
-          ctx.beginPath();
-          ctx.moveTo(0, dimY);
-          ctx.lineTo(wall.start_x * SCALE, dimY);
-          ctx.stroke();
-          
-          ctx.beginPath();
-          ctx.moveTo(0, dimY - 5);
-          ctx.lineTo(0, dimY + 5);
-          ctx.moveTo(wall.start_x * SCALE, dimY - 5);
-          ctx.lineTo(wall.start_x * SCALE, dimY + 5);
-          ctx.stroke();
-          
-          ctx.fillStyle = '#1e40af';
-          ctx.fillText(`${wall.start_x.toFixed(1)}'`, (wall.start_x / 2) * SCALE, dimY);
-        } else {
-          // Show distance from top edge to start
-          const dimX = wall.start_x * SCALE - 20;
-          ctx.beginPath();
-          ctx.moveTo(dimX, 0);
-          ctx.lineTo(dimX, wall.start_y * SCALE);
-          ctx.stroke();
-          
-          ctx.beginPath();
-          ctx.moveTo(dimX - 5, 0);
-          ctx.lineTo(dimX + 5, 0);
-          ctx.moveTo(dimX - 5, wall.start_y * SCALE);
-          ctx.lineTo(dimX + 5, wall.start_y * SCALE);
-          ctx.stroke();
-          
-          ctx.fillText(`${wall.start_y.toFixed(1)}'`, dimX, (wall.start_y / 2) * SCALE);
-        }
+        ctx.fillStyle = isSelected ? '#1e40af' : '#64748b';
+        ctx.fillText(`${wall.start_x.toFixed(1)}'`, (wall.start_x / 2) * SCALE, dimY);
+      } else {
+        // Show distance from top edge to wall position
+        const dimX = wall.start_x * SCALE - 20;
+        ctx.beginPath();
+        ctx.moveTo(dimX, 0);
+        ctx.lineTo(dimX, wall.start_y * SCALE);
+        ctx.stroke();
         
-        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(dimX - 5, 0);
+        ctx.lineTo(dimX + 5, 0);
+        ctx.moveTo(dimX - 5, wall.start_y * SCALE);
+        ctx.lineTo(dimX + 5, wall.start_y * SCALE);
+        ctx.stroke();
+        
+        ctx.fillStyle = isSelected ? '#1e40af' : '#64748b';
+        ctx.fillText(`${wall.start_y.toFixed(1)}'`, dimX, (wall.start_y / 2) * SCALE);
       }
+      
+      ctx.setLineDash([]);
     });
   }
 
@@ -1274,16 +1202,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       // Check if clicking on an opening
       const clickedOpening = findOpeningAtPosition(coords.x, coords.y);
       if (clickedOpening) {
-        // If clicking on already selected opening, release it to float
-        if (selectedOpening?.id === clickedOpening.id) {
-          setFloatingOpening(clickedOpening);
-          setSelectedOpening(null);
-          toast.info('Item released - click to place');
-        } else {
-          setSelectedOpening(clickedOpening);
-          setSelectedRoom(null);
-          setSelectedWall(null);
-        }
+        // Select the opening (no floating on click, only on toolbar button)
+        setSelectedOpening(clickedOpening);
+        setSelectedRoom(null);
+        setSelectedWall(null);
         return;
       }
 
@@ -1303,8 +1225,62 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setSelectedWall(null);
       setSelectedRoom(null);
     } else if (mode === 'wall') {
-      setIsDragging(true);
-      setDragStart(coords);
+      // Auto-create full-span dividing wall
+      const snappedStart = snapToWall(coords.x, coords.y);
+      
+      // Determine if wall should be horizontal or vertical based on click position
+      const distToTop = Math.abs(coords.y);
+      const distToBottom = Math.abs(coords.y - length);
+      const distToLeft = Math.abs(coords.x);
+      const distToRight = Math.abs(coords.x - width);
+      
+      const minVertDist = Math.min(distToTop, distToBottom);
+      const minHorzDist = Math.min(distToLeft, distToRight);
+      
+      let wallStart: { x: number; y: number };
+      let wallEnd: { x: number; y: number };
+      
+      if (minHorzDist < minVertDist) {
+        // Create vertical wall (spans full length)
+        wallStart = { x: snappedStart.x, y: 0 };
+        wallEnd = { x: snappedStart.x, y: length };
+      } else {
+        // Create horizontal wall (spans full width)
+        wallStart = { x: 0, y: snappedStart.y };
+        wallEnd = { x: width, y: snappedStart.y };
+      }
+      
+      if (quoteId) {
+        supabase
+          .from('quote_interior_walls')
+          .insert({
+            quote_id: quoteId,
+            start_x: wallStart.x,
+            start_y: wallStart.y,
+            end_x: wallEnd.x,
+            end_y: wallEnd.y,
+          })
+          .select()
+          .single()
+          .then(({ data, error }) => {
+            if (error) {
+              toast.error('Failed to add wall');
+            } else {
+              setWalls([...walls, data]);
+              toast.success('Dividing wall added');
+            }
+          });
+      } else {
+        const tempWall: Wall = {
+          id: generateTempId(),
+          start_x: wallStart.x,
+          start_y: wallStart.y,
+          end_x: wallEnd.x,
+          end_y: wallEnd.y,
+        };
+        setWalls([...walls, tempWall]);
+        toast.success('Wall added (will save when quote is saved)');
+      }
     } else if (mode === 'room' && pendingRoomPlacement) {
       placeRoom(coords.x, coords.y);
     }
@@ -1466,49 +1442,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setSelectedWall(draggingWallHandle.wall);
       toast.success('Wall resized');
       setDraggingWallHandle(null);
-    } else if (isDragging && dragStart && mode === 'wall') {
-      if (Math.abs(coords.x - dragStart.x) < 1 && Math.abs(coords.y - dragStart.y) < 1) {
-        setIsDragging(false);
-        setDragStart(null);
-        return;
-      }
-
-      const snappedStart = snapToWall(dragStart.x, dragStart.y);
-      const snappedEnd = snapToWall(coords.x, coords.y);
-
-      if (quoteId) {
-        const { data, error } = await supabase
-          .from('quote_interior_walls')
-          .insert({
-            quote_id: quoteId,
-            start_x: snappedStart.x,
-            start_y: snappedStart.y,
-            end_x: snappedEnd.x,
-            end_y: snappedEnd.y,
-          })
-          .select()
-          .single();
-
-        if (error) {
-          toast.error('Failed to add wall');
-        } else {
-          setWalls([...walls, data]);
-          toast.success('Interior wall added');
-        }
-      } else {
-        const tempWall: Wall = {
-          id: generateTempId(),
-          start_x: snappedStart.x,
-          start_y: snappedStart.y,
-          end_x: snappedEnd.x,
-          end_y: snappedEnd.y,
-        };
-        setWalls([...walls, tempWall]);
-        toast.success('Wall added (will save when quote is saved)');
-      }
-
-      setIsDragging(false);
-      setDragStart(null);
     }
   }
 
@@ -1610,25 +1543,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     const snapped = snapOpeningToWall(x, y);
     
-    // Save the opening type and size for creating another instance
-    const openingType = floatingOpening.opening_type;
-    const openingSize = floatingOpening.size_detail;
-    const currentFloatingId = floatingOpening.id;
-    
-    // Create the new floating opening for continuous placement
-    const newFloatingOpening: Opening = {
-      id: generateTempId(),
-      opening_type: openingType,
-      size_detail: openingSize,
-      quantity: 1,
-      location: '',
-      wall: 'front',
-      swing_direction: 'right',
-      position_x: width / 2,
-      position_y: 0,
-      rotation: 0,
-    };
-    
     // If this is a new opening (temp ID), save it to the database
     if (floatingOpening.id.startsWith('temp_')) {
       if (quoteId) {
@@ -1652,8 +1566,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
           if (error) throw error;
 
-          // Replace temp with saved, and add new floating
-          setOpenings(prev => [...prev.filter(o => o.id !== currentFloatingId), data, newFloatingOpening]);
+          // Replace temp with saved
+          setOpenings(prev => prev.map(o => o.id === floatingOpening.id ? data : o));
           toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
         } catch (error: any) {
           console.error('Error placing opening:', error);
@@ -1664,15 +1578,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           return;
         }
       } else {
-        // No quote yet, update position in local state and add new floating
-        setOpenings(prev => [
-          ...prev.map(o => 
+        // No quote yet, update position in local state
+        setOpenings(prev => 
+          prev.map(o => 
             o.id === floatingOpening.id 
               ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
               : o
-          ),
-          newFloatingOpening
-        ]);
+          )
+        );
         toast.success('Opening placed (will save when quote is saved)');
       }
     } else {
@@ -1703,14 +1616,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ));
       }
 
-      // Add new floating for continuous placement
-      setOpenings(prev => [...prev, newFloatingOpening]);
       toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     }
 
-    // Set the new floating opening as active
-    setFloatingOpening(newFloatingOpening);
-    toast.info('Click to place another, or click "Done Placing" to stop');
+    // Clear floating state - no continuous placement
+    setFloatingOpening(null);
+    setMousePosition(null);
   }
 
   function placeRoom(x: number, y: number) {
@@ -2266,16 +2177,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <Checkbox
-                  id="show_grid"
-                  checked={showGrid}
-                  onCheckedChange={(checked) => setShowGrid(checked as boolean)}
-                />
-                <Label htmlFor="show_grid" className="cursor-pointer text-xs">
-                  Grid
-                </Label>
-              </div>
-              <div className="flex items-center gap-1">
-                <Checkbox
                   id="show_dimensions"
                   checked={showDimensions}
                   onCheckedChange={(checked) => setShowDimensions(checked as boolean)}
@@ -2284,17 +2185,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   Dimensions
                 </Label>
               </div>
-              <Select value={gridSize.toString()} onValueChange={(val) => setGridSize(Number(val))}>
-                <SelectTrigger className="h-7 w-20 text-xs rounded-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1' Grid</SelectItem>
-                  <SelectItem value="2">2' Grid</SelectItem>
-                  <SelectItem value="5">5' Grid</SelectItem>
-                  <SelectItem value="10">10' Grid</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             {/* Zoom Controls */}
