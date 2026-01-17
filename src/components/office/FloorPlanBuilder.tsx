@@ -294,29 +294,54 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function snapRoomToWall(x: number, y: number, roomWidth: number, roomLength: number): { x: number; y: number; snapped: boolean; wallType: string } {
     const snapDistance = SNAP_THRESHOLD * 2; // Increase snap threshold for rooms
     
-    // Check each exterior wall and snap room edge to it
-    // Top wall (y=0)
-    if (Math.abs(y) < snapDistance && x >= -roomWidth && x <= width) {
-      const snappedX = Math.max(0, Math.min(width - roomWidth, x));
-      return { x: snappedX, y: 0, snapped: true, wallType: 'top' };
+    // Calculate distances to each wall
+    const distToTop = Math.abs(y);
+    const distToBottom = Math.abs((y + roomLength) - length);
+    const distToLeft = Math.abs(x);
+    const distToRight = Math.abs((x + roomWidth) - width);
+    
+    // Find the closest wall
+    const distances = [
+      { dist: distToTop, wall: 'top' },
+      { dist: distToBottom, wall: 'bottom' },
+      { dist: distToLeft, wall: 'left' },
+      { dist: distToRight, wall: 'right' },
+    ];
+    
+    distances.sort((a, b) => a.dist - b.dist);
+    const closestWall = distances[0];
+    
+    // Only snap if within threshold
+    if (closestWall.dist > snapDistance) {
+      return { x, y, snapped: false, wallType: 'none' };
     }
     
-    // Bottom wall (y=length)
-    if (Math.abs(y + roomLength - length) < snapDistance && x >= -roomWidth && x <= width) {
-      const snappedX = Math.max(0, Math.min(width - roomWidth, x));
-      return { x: snappedX, y: length - roomLength, snapped: true, wallType: 'bottom' };
-    }
-    
-    // Left wall (x=0)
-    if (Math.abs(x) < snapDistance && y >= -roomLength && y <= length) {
-      const snappedY = Math.max(0, Math.min(length - roomLength, y));
-      return { x: 0, y: snappedY, snapped: true, wallType: 'left' };
-    }
-    
-    // Right wall (x=width)
-    if (Math.abs(x + roomWidth - width) < snapDistance && y >= -roomLength && y <= length) {
-      const snappedY = Math.max(0, Math.min(length - roomLength, y));
-      return { x: width - roomWidth, y: snappedY, snapped: true, wallType: 'right' };
+    // Snap to the closest wall
+    switch (closestWall.wall) {
+      case 'top':
+        if (x >= -roomWidth && x <= width) {
+          const snappedX = Math.max(0, Math.min(width - roomWidth, x));
+          return { x: snappedX, y: 0, snapped: true, wallType: 'top' };
+        }
+        break;
+      case 'bottom':
+        if (x >= -roomWidth && x <= width) {
+          const snappedX = Math.max(0, Math.min(width - roomWidth, x));
+          return { x: snappedX, y: length - roomLength, snapped: true, wallType: 'bottom' };
+        }
+        break;
+      case 'left':
+        if (y >= -roomLength && y <= length) {
+          const snappedY = Math.max(0, Math.min(length - roomLength, y));
+          return { x: 0, y: snappedY, snapped: true, wallType: 'left' };
+        }
+        break;
+      case 'right':
+        if (y >= -roomLength && y <= length) {
+          const snappedY = Math.max(0, Math.min(length - roomLength, y));
+          return { x: width - roomWidth, y: snappedY, snapped: true, wallType: 'right' };
+        }
+        break;
     }
 
     return { x, y, snapped: false, wallType: 'none' };
@@ -1142,6 +1167,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const openingSize = floatingOpening.size_detail;
     const currentFloatingId = floatingOpening.id;
     
+    // Create the new floating opening for continuous placement
+    const newFloatingOpening: Opening = {
+      id: generateTempId(),
+      opening_type: openingType,
+      size_detail: openingSize,
+      quantity: 1,
+      location: '',
+      wall: 'front',
+      swing_direction: 'right',
+      position_x: width / 2,
+      position_y: 0,
+      rotation: 0,
+    };
+    
     // If this is a new opening (temp ID), save it to the database
     if (floatingOpening.id.startsWith('temp_')) {
       if (quoteId) {
@@ -1165,25 +1204,27 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
           if (error) throw error;
 
-          // Replace the temp opening with the saved one
-          setOpenings(openings.map(o => o.id === floatingOpening.id ? data : o));
+          // Replace temp with saved, and add new floating
+          setOpenings(prev => [...prev.filter(o => o.id !== currentFloatingId), data, newFloatingOpening]);
           toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
         } catch (error: any) {
           console.error('Error placing opening:', error);
           toast.error('Failed to place opening');
-          // Remove the temp opening on error
           setOpenings(openings.filter(o => o.id !== floatingOpening.id));
           setFloatingOpening(null);
           setMousePosition(null);
           return;
         }
       } else {
-        // No quote yet, keep in local state with final position
-        setOpenings(openings.map(o => 
-          o.id === floatingOpening.id 
-            ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
-            : o
-        ));
+        // No quote yet, update position in local state and add new floating
+        setOpenings(prev => [
+          ...prev.map(o => 
+            o.id === floatingOpening.id 
+              ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+              : o
+          ),
+          newFloatingOpening
+        ]);
         toast.success('Opening placed (will save when quote is saved)');
       }
     } else {
@@ -1205,26 +1246,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           setMousePosition(null);
           return;
         }
+      } else {
+        // Update local state
+        setOpenings(openings.map(o => 
+          o.id === floatingOpening.id 
+            ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+            : o
+        ));
       }
 
+      // Add new floating for continuous placement
+      setOpenings(prev => [...prev, newFloatingOpening]);
       toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     }
 
-    // Create a new floating opening of the same type for continuous placement
-    const newFloatingOpening: Opening = {
-      id: generateTempId(),
-      opening_type: openingType,
-      size_detail: openingSize,
-      quantity: 1,
-      location: '',
-      wall: 'front',
-      swing_direction: 'right',
-      position_x: width / 2,
-      position_y: 0,
-      rotation: 0,
-    };
-    
-    setOpenings(prev => [...prev.filter(o => o.id !== currentFloatingId || !o.id.startsWith('temp_')), newFloatingOpening]);
+    // Set the new floating opening as active
     setFloatingOpening(newFloatingOpening);
     toast.info('Click to place another, or press ESC to stop');
   }
