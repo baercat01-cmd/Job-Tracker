@@ -35,12 +35,11 @@ interface QuoteData {
   foundation_type: string;
   floor_type: string;
   soffit_type: string;
-  snow_load: number;
-  wind_load: number;
   building_use: string;
-  roof_material: string;
   roof_color: string;
   trim_color: string;
+  side_color: string;
+  liner_package: boolean;
   wainscot_enabled: boolean;
   overhang_same_all: boolean;
   overhang_front: number;
@@ -48,8 +47,6 @@ interface QuoteData {
   overhang_left: number;
   overhang_right: number;
   insulation_type: string;
-  has_loft: boolean;
-  has_porch: boolean;
   has_plumbing: boolean;
   has_electrical: boolean;
   has_hvac: boolean;
@@ -82,12 +79,11 @@ export function QuoteIntakePage() {
     foundation_type: '',
     floor_type: '',
     soffit_type: '',
-    snow_load: 0,
-    wind_load: 0,
     building_use: '',
-    roof_material: '',
     roof_color: '',
     trim_color: '',
+    side_color: '',
+    liner_package: false,
     wainscot_enabled: false,
     overhang_same_all: true,
     overhang_front: 12,
@@ -95,8 +91,6 @@ export function QuoteIntakePage() {
     overhang_left: 12,
     overhang_right: 12,
     insulation_type: '',
-    has_loft: false,
-    has_porch: false,
     has_plumbing: false,
     has_electrical: false,
     has_hvac: false,
@@ -140,12 +134,11 @@ export function QuoteIntakePage() {
         foundation_type: data.foundation_type || '',
         floor_type: data.floor_type || '',
         soffit_type: data.soffit_type || '',
-        snow_load: data.snow_load || 0,
-        wind_load: data.wind_load || 0,
         building_use: data.building_use || '',
-        roof_material: data.roof_material || '',
         roof_color: data.roof_color || '',
         trim_color: data.trim_color || '',
+        side_color: data.side_color || '',
+        liner_package: data.liner_package || false,
         wainscot_enabled: data.wainscot_enabled || false,
         overhang_same_all: data.overhang_same_all !== false,
         overhang_front: data.overhang_front || 12,
@@ -153,8 +146,6 @@ export function QuoteIntakePage() {
         overhang_left: data.overhang_left || 12,
         overhang_right: data.overhang_right || 12,
         insulation_type: data.insulation_type || '',
-        has_loft: data.has_loft || false,
-        has_porch: data.has_porch || false,
         has_plumbing: data.has_plumbing || false,
         has_electrical: data.has_electrical || false,
         has_hvac: data.has_hvac || false,
@@ -496,153 +487,6 @@ export function QuoteIntakePage() {
                         />
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* Foundation & Floor */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Foundation & Floor</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Foundation Type</Label>
-                        <Select 
-                          value={formData.foundation_type} 
-                          onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="concrete">Concrete</SelectItem>
-                            <SelectItem value="gravel">Gravel</SelectItem>
-                            <SelectItem value="pier">Pier</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Floor</Label>
-                        <Select 
-                          value={formData.floor_type} 
-                          onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
-                            <SelectValue placeholder="Select floor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="concrete">Concrete</SelectItem>
-                            <SelectItem value="wood">Wood</SelectItem>
-                            <SelectItem value="none">None</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Soffit</Label>
-                        <Select 
-                          value={formData.soffit_type} 
-                          onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
-                            <SelectValue placeholder="Select soffit" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="steel">Steel</SelectItem>
-                            <SelectItem value="vinyl">Vinyl</SelectItem>
-                            <SelectItem value="none">None</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Structure & Design */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Structure & Design</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Snow Load (psf)</Label>
-                        <Input
-                          type="number"
-                          value={formData.snow_load}
-                          onChange={(e) => setFormData({ ...formData, snow_load: Number(e.target.value) })}
-                          placeholder="20"
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Wind Load (mph)</Label>
-                        <Input
-                          type="number"
-                          value={formData.wind_load}
-                          onChange={(e) => setFormData({ ...formData, wind_load: Number(e.target.value) })}
-                          placeholder="90"
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Building Use</Label>
-                        <Input
-                          value={formData.building_use}
-                          onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
-                          placeholder="Storage, Garage, etc."
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Exterior Colors & Finishes */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Exterior Colors & Finishes</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Roof Material</Label>
-                        <Input
-                          value={formData.roof_material}
-                          onChange={(e) => setFormData({ ...formData, roof_material: e.target.value })}
-                          placeholder="Steel, Shingles, etc."
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Roof Color</Label>
-                        <Input
-                          value={formData.roof_color}
-                          onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
-                          placeholder="Color name"
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Trim Color</Label>
-                        <Input
-                          value={formData.trim_color}
-                          onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
-                          placeholder="Color name"
-                          className="rounded-none h-8 text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1 flex items-end">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="wainscot"
-                            checked={formData.wainscot_enabled}
-                            onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
-                          />
-                          <Label htmlFor="wainscot" className="cursor-pointer text-xs">Include Wainscot</Label>
-                        </div>
-                      </div>
-                    </div>
                     
                     <div className="pt-2 border-t">
                       <div className="flex items-center space-x-2 mb-2">
@@ -713,76 +557,195 @@ export function QuoteIntakePage() {
                         </div>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
 
-                    <div className="pt-2 border-t">
-                      <Label className="font-semibold text-xs">Insulation</Label>
-                      <Textarea
-                        value={formData.insulation_type}
-                        onChange={(e) => setFormData({ ...formData, insulation_type: e.target.value })}
-                        placeholder="Interior partitions, ceiling, etc."
-                        rows={2}
-                        className="rounded-none mt-1 text-sm"
+                {/* Foundation & Floor */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader className="py-1.5 px-3">
+                    <CardTitle className="text-sm font-semibold">Foundation & Floor</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 py-2 px-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Foundation Type</Label>
+                        <Select 
+                          value={formData.foundation_type} 
+                          onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none h-8 text-sm">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="concrete">Concrete</SelectItem>
+                            <SelectItem value="gravel">Gravel</SelectItem>
+                            <SelectItem value="pier">Pier</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Floor</Label>
+                        <Select 
+                          value={formData.floor_type} 
+                          onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none h-8 text-sm">
+                            <SelectValue placeholder="Select floor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="concrete">Concrete</SelectItem>
+                            <SelectItem value="wood">Wood</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Soffit</Label>
+                        <Select 
+                          value={formData.soffit_type} 
+                          onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
+                        >
+                          <SelectTrigger className="rounded-none h-8 text-sm">
+                            <SelectValue placeholder="Select soffit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="steel">Steel</SelectItem>
+                            <SelectItem value="vinyl">Vinyl</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Structure & Design */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader className="py-1.5 px-3">
+                    <CardTitle className="text-sm font-semibold">Structure & Design</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 py-2 px-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Building Use</Label>
+                      <Input
+                        value={formData.building_use}
+                        onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
+                        placeholder="Storage, Garage, etc."
+                        className="rounded-none h-8 text-sm"
                       />
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Special Features & Utilities */}
+                {/* Exterior Colors & Finishes */}
                 <Card className="rounded-none border-2 border-slate-300">
                   <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Special Features & Utilities</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Exterior Colors & Finishes</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold">Special Features</Label>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="loft"
-                              checked={formData.has_loft}
-                              onCheckedChange={(checked) => setFormData({ ...formData, has_loft: checked as boolean })}
-                            />
-                            <Label htmlFor="loft" className="cursor-pointer text-xs">Loft</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="porch"
-                              checked={formData.has_porch}
-                              onCheckedChange={(checked) => setFormData({ ...formData, has_porch: checked as boolean })}
-                            />
-                            <Label htmlFor="porch" className="cursor-pointer text-xs">Porch</Label>
-                          </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Roof Color</Label>
+                        <Input
+                          value={formData.roof_color}
+                          onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
+                          placeholder="Color name"
+                          className="rounded-none h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Trim Color</Label>
+                        <Input
+                          value={formData.trim_color}
+                          onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
+                          placeholder="Color name"
+                          className="rounded-none h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Side Color</Label>
+                        <Input
+                          value={formData.side_color}
+                          onChange={(e) => setFormData({ ...formData, side_color: e.target.value })}
+                          placeholder="Color name"
+                          className="rounded-none h-8 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1 flex items-end">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="wainscot"
+                            checked={formData.wainscot_enabled}
+                            onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
+                          />
+                          <Label htmlFor="wainscot" className="cursor-pointer text-xs">Include Wainscot</Label>
                         </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold">Utilities</Label>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="plumbing"
-                              checked={formData.has_plumbing}
-                              onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
-                            />
-                            <Label htmlFor="plumbing" className="cursor-pointer text-xs">Plumbing</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="electrical"
-                              checked={formData.has_electrical}
-                              onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
-                            />
-                            <Label htmlFor="electrical" className="cursor-pointer text-xs">Electrical</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox
-                              id="hvac"
-                              checked={formData.has_hvac}
-                              onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
-                            />
-                            <Label htmlFor="hvac" className="cursor-pointer text-xs">HVAC</Label>
-                          </div>
-                        </div>
+                    </div>
+
+                    <div className="pt-2 border-t">
+                      <Label className="font-semibold text-xs">Insulation</Label>
+                      <Select 
+                        value={formData.insulation_type} 
+                        onValueChange={(value) => setFormData({ ...formData, insulation_type: value })}
+                      >
+                        <SelectTrigger className="rounded-none h-8 text-sm mt-1">
+                          <SelectValue placeholder="Select insulation type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="fiberglass">Fiberglass Batts</SelectItem>
+                          <SelectItem value="spray_foam">Spray Foam</SelectItem>
+                          <SelectItem value="blown_in">Blown-In Cellulose</SelectItem>
+                          <SelectItem value="rigid_foam">Rigid Foam Board</SelectItem>
+                          <SelectItem value="reflective">Reflective/Radiant Barrier</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="pt-2 border-t">
+                      <Button
+                        variant={formData.liner_package ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setFormData({ ...formData, liner_package: !formData.liner_package })}
+                        className="rounded-none w-full"
+                      >
+                        {formData.liner_package ? '✓ Liner Package Included' : 'Add Liner Package'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Utilities */}
+                <Card className="rounded-none border-2 border-slate-300">
+                  <CardHeader className="py-1.5 px-3">
+                    <CardTitle className="text-sm font-semibold">Utilities</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 py-2 px-3">
+                    <div className="flex flex-wrap gap-4">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="plumbing"
+                          checked={formData.has_plumbing}
+                          onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
+                        />
+                        <Label htmlFor="plumbing" className="cursor-pointer text-xs">Plumbing</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="electrical"
+                          checked={formData.has_electrical}
+                          onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
+                        />
+                        <Label htmlFor="electrical" className="cursor-pointer text-xs">Electrical</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="hvac"
+                          checked={formData.has_hvac}
+                          onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
+                        />
+                        <Label htmlFor="hvac" className="cursor-pointer text-xs">HVAC</Label>
                       </div>
                     </div>
                   </CardContent>
