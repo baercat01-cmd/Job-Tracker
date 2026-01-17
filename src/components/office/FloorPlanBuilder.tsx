@@ -649,17 +649,55 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     }
   }
 
-  function placeOpening(x: number, y: number, type: 'walkdoor' | 'window') {
-    setNewOpening({
-      opening_type: type,
-      size_detail: type === 'walkdoor' ? "3' × 7'" : "3' × 4'",
-      quantity: 1,
-      location: '',
-      wall: 'front',
-      swing_direction: 'right',
-    });
-    setDragStart({ x, y });
-    setShowAddOpening(true);
+  async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window') {
+    const defaultSize = type === 'walkdoor' ? "3' × 7'" : "3' × 4'";
+    
+    if (quoteId) {
+      try {
+        const { data, error } = await supabase
+          .from('quote_openings')
+          .insert({
+            quote_id: quoteId,
+            opening_type: type,
+            size_detail: defaultSize,
+            quantity: 1,
+            location: '',
+            wall: 'front',
+            swing_direction: 'right',
+            position_x: x,
+            position_y: y,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setOpenings([...openings, data]);
+        setSelectedOpening(data);
+        toast.success('Opening placed - click Edit or drag to reposition');
+      } catch (error: any) {
+        console.error('Error adding opening:', error);
+        toast.error('Failed to place opening');
+        return;
+      }
+    } else {
+      const tempOpening: Opening = {
+        id: generateTempId(),
+        opening_type: type,
+        size_detail: defaultSize,
+        quantity: 1,
+        location: '',
+        wall: 'front',
+        swing_direction: 'right',
+        position_x: x,
+        position_y: y,
+      };
+      setOpenings([...openings, tempOpening]);
+      setSelectedOpening(tempOpening);
+      toast.success('Opening placed - click Edit or drag to reposition (will save when quote is saved)');
+    }
+
+    setMode('select');
   }
 
   function placeRoom(x: number, y: number) {
@@ -1027,10 +1065,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && 'Click to select items, drag to reposition, drag wall handles to resize, double-click to edit'}
+            {mode === 'select' && 'Click to select items, drag to reposition, drag wall handles to resize, click Edit button or double-click to edit'}
             {mode === 'wall' && 'Click and drag to draw interior walls'}
-            {mode === 'door' && 'Click to place a door on the floor plan'}
-            {mode === 'window' && 'Click to place a window on the floor plan'}
+            {mode === 'door' && 'Click on the floor plan to place a door - then drag to move or click to edit details'}
+            {mode === 'window' && 'Click on the floor plan to place a window - then drag to move or click to edit details'}
             {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}')`}
           </p>
         </CardContent>
