@@ -160,6 +160,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
+  const [wallPreview, setWallPreview] = useState<{ start_x: number; start_y: number; end_x: number; end_y: number } | null>(null);
 
   const generateTempId = () => {
     const id = `temp_${tempIdCounter}`;
@@ -198,7 +199,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, draggingWall, draggingRoomHandle, hoveredItem, zoom, showDimensions, measureStart, measureEnd, panOffset, baseZoom]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, draggingWall, draggingRoomHandle, hoveredItem, zoom, showDimensions, measureStart, measureEnd, panOffset, baseZoom, wallPreview]);
 
   // Add keyboard handler for ESC to cancel floating placement
   useEffect(() => {
@@ -589,6 +590,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.fillText(`${room.length}'`, rightX, midY);
       }
     });
+
+    // Draw wall preview if in wall mode
+    if (wallPreview && mode === 'wall') {
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath();
+      ctx.moveTo(wallPreview.start_x * SCALE, wallPreview.start_y * SCALE);
+      ctx.lineTo(wallPreview.end_x * SCALE, wallPreview.end_y * SCALE);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Draw interior walls
     walls.forEach(wall => {
@@ -1309,45 +1322,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setSelectedWall(null);
       setSelectedRoom(null);
     } else if (mode === 'wall') {
-      // Create divider wall perpendicular to nearest exterior wall
-      const distToTop = Math.abs(coords.y);
-      const distToBottom = Math.abs(coords.y - length);
-      const distToLeft = Math.abs(coords.x);
-      const distToRight = Math.abs(coords.x - width);
-      
-      // Find closest exterior wall
-      const distances = [
-        { dist: distToTop, wall: 'top' },
-        { dist: distToBottom, wall: 'bottom' },
-        { dist: distToLeft, wall: 'left' },
-        { dist: distToRight, wall: 'right' },
-      ];
-      distances.sort((a, b) => a.dist - b.dist);
-      const closestWall = distances[0].wall;
-      
-      let wallStart: { x: number; y: number };
-      let wallEnd: { x: number; y: number };
-      
-      // Create perpendicular divider from the closest wall
-      if (closestWall === 'left' || closestWall === 'right') {
-        // Clicked near left/right wall -> create horizontal divider at this Y position
-        wallStart = { x: 0, y: coords.y };
-        wallEnd = { x: width, y: coords.y };
-      } else {
-        // Clicked near top/bottom wall -> create vertical divider at this X position
-        wallStart = { x: coords.x, y: 0 };
-        wallEnd = { x: coords.x, y: length };
-      }
+      // Place wall from preview
+      if (!wallPreview) return;
       
       if (quoteId) {
         supabase
           .from('quote_interior_walls')
           .insert({
             quote_id: quoteId,
-            start_x: wallStart.x,
-            start_y: wallStart.y,
-            end_x: wallEnd.x,
-            end_y: wallEnd.y,
+            start_x: wallPreview.start_x,
+            start_y: wallPreview.start_y,
+            end_x: wallPreview.end_x,
+            end_y: wallPreview.end_y,
           })
           .select()
           .single()
@@ -1356,19 +1342,25 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               toast.error('Failed to add wall');
             } else {
               setWalls([...walls, data]);
+              setSelectedWall(data);
               toast.success('Dividing wall added');
+              setMode('select');
+              setWallPreview(null);
             }
           });
       } else {
         const tempWall: Wall = {
           id: generateTempId(),
-          start_x: wallStart.x,
-          start_y: wallStart.y,
-          end_x: wallEnd.x,
-          end_y: wallEnd.y,
+          start_x: wallPreview.start_x,
+          start_y: wallPreview.start_y,
+          end_x: wallPreview.end_x,
+          end_y: wallPreview.end_y,
         };
         setWalls([...walls, tempWall]);
+        setSelectedWall(tempWall);
         toast.success('Wall added (will save when quote is saved)');
+        setMode('select');
+        setWallPreview(null);
       }
     } else if (mode === 'room' && pendingRoomPlacement) {
       placeRoom(coords.x, coords.y);
@@ -1412,6 +1404,53 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (floatingRoom) {
       const snapped = snapRoomToWall(coords.x, coords.y, floatingRoom.width, floatingRoom.length);
       setMousePosition({ x: snapped.x, y: snapped.y });
+      return;
+    }
+
+    // Update wall preview when in wall mode
+    if (mode === 'wall') {
+      const WALL_PREVIEW_THRESHOLD = 3; // Only show preview within 3 feet of exterior walls
+      
+      const distToTop = Math.abs(coords.y);
+      const distToBottom = Math.abs(coords.y - length);
+      const distToLeft = Math.abs(coords.x);
+      const distToRight = Math.abs(coords.x - width);
+      
+      // Find closest exterior wall
+      const distances = [
+        { dist: distToTop, wall: 'top' },
+        { dist: distToBottom, wall: 'bottom' },
+        { dist: distToLeft, wall: 'left' },
+        { dist: distToRight, wall: 'right' },
+      ];
+      distances.sort((a, b) => a.dist - b.dist);
+      const closest = distances[0];
+      
+      // Only show preview if near an exterior wall
+      if (closest.dist <= WALL_PREVIEW_THRESHOLD) {
+        let wallStart: { x: number; y: number };
+        let wallEnd: { x: number; y: number };
+        
+        // Create perpendicular divider from the closest wall
+        if (closest.wall === 'left' || closest.wall === 'right') {
+          // Near left/right wall -> create horizontal divider at this Y position
+          wallStart = { x: 0, y: coords.y };
+          wallEnd = { x: width, y: coords.y };
+        } else {
+          // Near top/bottom wall -> create vertical divider at this X position
+          wallStart = { x: coords.x, y: 0 };
+          wallEnd = { x: coords.x, y: length };
+        }
+        
+        setWallPreview({
+          start_x: wallStart.x,
+          start_y: wallStart.y,
+          end_x: wallEnd.x,
+          end_y: wallEnd.y,
+        });
+      } else {
+        setWallPreview(null);
+      }
       return;
     }
 
