@@ -97,7 +97,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null);
   const [selectedWall, setSelectedWall] = useState<Wall | null>(null);
   const [draggingWallHandle, setDraggingWallHandle] = useState<{ wall: Wall; handleType: 'start' | 'end' } | null>(null);
-  const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle' | 'room'; id: string; handleType?: 'start' | 'end' } | null>(null);
+  const [draggingRoomHandle, setDraggingRoomHandle] = useState<{ room: Room; initialWidth: number; initialLength: number; initialMouseX: number; initialMouseY: number } | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<{ type: 'opening' | 'wall' | 'handle' | 'room' | 'room_resize'; id: string; handleType?: 'start' | 'end' } | null>(null);
   const [pendingRoomPlacement, setPendingRoomPlacement] = useState<{
     type: 'room' | 'porch' | 'loft';
     width: number;
@@ -544,6 +545,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
       ctx.restore();
 
+      // Draw resize handle if selected (bottom-right corner)
+      if (isSelected && !isFloating) {
+        const handleSize = 10;
+        const handleX = (roomX + room.width) * SCALE;
+        const handleY = (roomY + room.length) * SCALE;
+        ctx.fillStyle = hoveredItem?.type === 'room_resize' && hoveredItem?.id === room.id ? '#fbbf24' : '#ef4444';
+        ctx.fillRect(handleX - handleSize/2, handleY - handleSize/2, handleSize, handleSize);
+      }
+
       // Draw dimensions if selected
       if (isSelected || isFloating) {
         ctx.fillStyle = '#000';
@@ -867,6 +877,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     return null;
   }
 
+  function findRoomResizeHandleAtPosition(x: number, y: number): Room | null {
+    if (!selectedRoom) return null;
+
+    // Check bottom-right corner resize handle
+    const handleX = selectedRoom.x + selectedRoom.width;
+    const handleY = selectedRoom.y + selectedRoom.length;
+    const dist = Math.sqrt(Math.pow(x - handleX, 2) + Math.pow(y - handleY, 2));
+    
+    if (dist < 1.0) {
+      return selectedRoom;
+    }
+    return null;
+  }
+
   function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     const coords = getCanvasCoords(e);
     if (!coords) return;
@@ -888,6 +912,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         const handle = findWallHandleAtPosition(coords.x, coords.y);
         if (handle) {
           setDraggingWallHandle(handle);
+          return;
+        }
+      }
+
+      // Handle room resize handle dragging
+      if (selectedRoom) {
+        const resizeRoom = findRoomResizeHandleAtPosition(coords.x, coords.y);
+        if (resizeRoom) {
+          setDraggingRoomHandle({
+            room: resizeRoom,
+            initialWidth: resizeRoom.width,
+            initialLength: resizeRoom.length,
+            initialMouseX: coords.x,
+            initialMouseY: coords.y,
+          });
           return;
         }
       }
@@ -970,11 +1009,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       return;
     }
 
-    if (mode === 'select' && !floatingOpening && !floatingRoom && !draggingWallHandle) {
+    if (mode === 'select' && !floatingOpening && !floatingRoom && !draggingWallHandle && !draggingRoomHandle) {
       if (selectedWall) {
         const handle = findWallHandleAtPosition(coords.x, coords.y);
         if (handle) {
           setHoveredItem({ type: 'handle', id: handle.wall.id, handleType: handle.handleType });
+          return;
+        }
+      }
+
+      if (selectedRoom) {
+        const resizeRoom = findRoomResizeHandleAtPosition(coords.x, coords.y);
+        if (resizeRoom) {
+          setHoveredItem({ type: 'room_resize', id: resizeRoom.id });
           return;
         }
       }
@@ -998,7 +1045,17 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     }
 
-    if (draggingWallHandle) {
+    if (draggingRoomHandle) {
+      // Calculate new dimensions based on mouse movement
+      const deltaX = coords.x - draggingRoomHandle.initialMouseX;
+      const deltaY = coords.y - draggingRoomHandle.initialMouseY;
+      
+      const newWidth = Math.max(5, draggingRoomHandle.initialWidth + deltaX);
+      const newLength = Math.max(5, draggingRoomHandle.initialLength + deltaY);
+      
+      const updatedRoom = { ...draggingRoomHandle.room, width: newWidth, length: newLength };
+      setDraggingRoomHandle({ ...draggingRoomHandle, room: updatedRoom });
+    } else if (draggingWallHandle) {
       const snapped = snapToWall(coords.x, coords.y);
       const updatedWall = { ...draggingWallHandle.wall };
       if (draggingWallHandle.handleType === 'start') {
@@ -1032,7 +1089,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
-    if (draggingWallHandle) {
+    if (draggingRoomHandle) {
+      setRooms(rooms.map(r => r.id === draggingRoomHandle.room.id ? draggingRoomHandle.room : r));
+      setSelectedRoom(draggingRoomHandle.room);
+      toast.success(`Room resized to ${draggingRoomHandle.room.width.toFixed(1)}' × ${draggingRoomHandle.room.length.toFixed(1)}'`);
+      setDraggingRoomHandle(null);
+    } else if (draggingWallHandle) {
       if (quoteId && !draggingWallHandle.wall.id.startsWith('temp_')) {
         const { error } = await supabase
           .from('quote_interior_walls')
@@ -1343,11 +1405,31 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!selectedRoom) return;
     
     const newRotation = (selectedRoom.rotation + 90) % 360;
-    const updated = { ...selectedRoom, rotation: newRotation };
+    
+    // Calculate the center of the room before rotation
+    const centerX = selectedRoom.x + selectedRoom.width / 2;
+    const centerY = selectedRoom.y + selectedRoom.length / 2;
+    
+    // After rotating 90 degrees, width and length swap
+    const newWidth = selectedRoom.length;
+    const newLength = selectedRoom.width;
+    
+    // Calculate new top-left position to keep the center in the same place
+    const newX = centerX - newWidth / 2;
+    const newY = centerY - newLength / 2;
+    
+    const updated = { 
+      ...selectedRoom, 
+      rotation: newRotation,
+      x: newX,
+      y: newY,
+      width: newWidth,
+      length: newLength
+    };
     setRooms(rooms.map(r => r.id === selectedRoom.id ? updated : r));
     setSelectedRoom(updated);
 
-    toast.success('Room rotated');
+    toast.success('Room rotated around center');
   }
 
   async function updateOpening() {
@@ -1609,9 +1691,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ? 'cursor-crosshair' 
               : floatingOpening || floatingRoom
               ? 'cursor-move'
-              : draggingWallHandle
+              : draggingWallHandle || draggingRoomHandle
               ? 'cursor-grabbing'
-              : hoveredItem?.type === 'handle'
+              : hoveredItem?.type === 'handle' || hoveredItem?.type === 'room_resize'
               ? 'cursor-grab'
               : 'cursor-pointer'
           }`}
