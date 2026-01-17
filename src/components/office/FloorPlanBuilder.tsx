@@ -197,7 +197,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom, showGrid, showDimensions, measureStart, measureEnd, panOffset]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, draggingRoomHandle, hoveredItem, zoom, showDimensions, measureStart, measureEnd, panOffset, baseZoom]);
 
   // Add keyboard handler for ESC to cancel floating placement
   useEffect(() => {
@@ -479,8 +479,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-
 
     // Calculate effective zoom (base zoom * user zoom)
     const effectiveZoom = baseZoom * zoom;
@@ -779,12 +777,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     ctx.textAlign = 'left';
     ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, canvasHeight - 10);
 
-    // Draw floor drains (need to apply same transforms)
+    // Draw floor drains - inside the main rotated context before restore
     ctx.save();
     ctx.translate(centerX, centerY);
+    ctx.translate(panOffset.x, panOffset.y);
     ctx.rotate(Math.PI / 2);
     ctx.scale(effectiveZoom, effectiveZoom);
     ctx.translate(-width * SCALE / 2, -length * SCALE / 2);
+    
     ctx.strokeStyle = '#06b6d4';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
@@ -1480,7 +1480,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
     const newZoom = Math.max(0.5, Math.min(3.0, zoom + zoomDelta));
     
-    setZoom(newZoom);
+    if (newZoom !== zoom) {
+      setZoom(newZoom);
+    }
   }
 
   async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window' | 'overhead_door') {
