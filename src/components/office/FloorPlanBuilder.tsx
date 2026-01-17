@@ -907,10 +907,67 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       });
     }
 
+    // Bottom wall running dimensions - from building edge to each opening
+    if (bottomOpenings.length > 0) {
+      const sorted = [...bottomOpenings].sort((a, b) => (a.position_x || 0) - (b.position_x || 0));
+      const dimY = length * SCALE + 40;
+      
+      sorted.forEach((opening) => {
+        const x = opening.position_x || 0;
+        
+        // Draw dimension line from building edge to opening
+        ctx.strokeStyle = '#666';
+        ctx.beginPath();
+        ctx.moveTo(0, dimY);
+        ctx.lineTo(x * SCALE, dimY);
+        ctx.stroke();
+        
+        // Draw ticks
+        ctx.beginPath();
+        ctx.moveTo(0, dimY - 5);
+        ctx.lineTo(0, dimY + 5);
+        ctx.moveTo(x * SCALE, dimY - 5);
+        ctx.lineTo(x * SCALE, dimY + 5);
+        ctx.stroke();
+        
+        // Draw distance from edge
+        ctx.fillStyle = '#000';
+        ctx.fillText(`${x.toFixed(1)}'`, (x / 2) * SCALE, dimY);
+      });
+    }
+
     // Left wall running dimensions - from building edge to each opening
     if (leftOpenings.length > 0) {
       const sorted = [...leftOpenings].sort((a, b) => (a.position_y || 0) - (b.position_y || 0));
       const dimX = -40;
+      
+      sorted.forEach((opening) => {
+        const y = opening.position_y || 0;
+        
+        // Draw dimension line from building edge to opening
+        ctx.strokeStyle = '#666';
+        ctx.beginPath();
+        ctx.moveTo(dimX, 0);
+        ctx.lineTo(dimX, y * SCALE);
+        ctx.stroke();
+        
+        // Draw ticks
+        ctx.beginPath();
+        ctx.moveTo(dimX - 5, 0);
+        ctx.lineTo(dimX + 5, 0);
+        ctx.moveTo(dimX - 5, y * SCALE);
+        ctx.lineTo(dimX + 5, y * SCALE);
+        ctx.stroke();
+        
+        // Draw distance from edge
+        ctx.fillText(`${y.toFixed(1)}'`, dimX, (y / 2) * SCALE);
+      });
+    }
+
+    // Right wall running dimensions - from building edge to each opening
+    if (rightOpenings.length > 0) {
+      const sorted = [...rightOpenings].sort((a, b) => (a.position_y || 0) - (b.position_y || 0));
+      const dimX = width * SCALE + 40;
       
       sorted.forEach((opening) => {
         const y = opening.position_y || 0;
