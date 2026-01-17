@@ -254,6 +254,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   // Snap position to nearest wall for openings (doors/windows) - snaps to BOTH exterior and interior walls
   function snapOpeningToWall(x: number, y: number): { x: number; y: number; snapped: boolean; rotation: number; wallType: string } {
+    const OPENING_SNAP_THRESHOLD = SNAP_THRESHOLD * 1.5; // Slightly larger threshold for openings
+    
     // Check exterior walls first
     const exteriorWalls = [
       { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top', rotation: 180 }, // top
@@ -264,12 +266,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     for (const wall of exteriorWalls) {
       if (wall.type === 'horizontal') {
-        if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
-          return { x, y: wall.y1, snapped: true, rotation: wall.rotation, wallType: wall.name };
+        if (Math.abs(y - wall.y1) < OPENING_SNAP_THRESHOLD && x >= wall.x1 - 1 && x <= wall.x2 + 1) {
+          const clampedX = Math.max(wall.x1, Math.min(wall.x2, x));
+          return { x: clampedX, y: wall.y1, snapped: true, rotation: wall.rotation, wallType: wall.name };
         }
       } else {
-        if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
-          return { x: wall.x1, y, snapped: true, rotation: wall.rotation, wallType: wall.name };
+        if (Math.abs(x - wall.x1) < OPENING_SNAP_THRESHOLD && y >= wall.y1 - 1 && y <= wall.y2 + 1) {
+          const clampedY = Math.max(wall.y1, Math.min(wall.y2, y));
+          return { x: wall.x1, y: clampedY, snapped: true, rotation: wall.rotation, wallType: wall.name };
         }
       }
     }
@@ -277,11 +281,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     // Check interior walls - determine rotation based on wall orientation
     for (const wall of walls) {
       const distToLine = pointToLineDistance(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
-      if (distToLine < SNAP_THRESHOLD) {
+      if (distToLine < OPENING_SNAP_THRESHOLD) {
         const snapped = snapToLine(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
-        // Determine wall orientation
+        // Determine wall orientation and rotation
         const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
-        const rotation = isHorizontal ? 0 : 90;
+        // For horizontal walls: if point is above wall, rotate 180, else 0
+        // For vertical walls: if point is to the left, rotate 90, else 270
+        let rotation = 0;
+        if (isHorizontal) {
+          rotation = y < wall.start_y ? 180 : 0;
+        } else {
+          rotation = x < wall.start_x ? 90 : 270;
+        }
         return { ...snapped, snapped: true, rotation, wallType: 'interior' };
       }
     }
@@ -1262,7 +1273,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     // Set the new floating opening as active
     setFloatingOpening(newFloatingOpening);
-    toast.info('Click to place another, or press ESC to stop');
+    toast.info('Click to place another, or click "Done Placing" to stop');
   }
 
   function placeRoom(x: number, y: number) {
@@ -1619,6 +1630,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           <div className="flex items-center justify-between gap-4">
             {/* Tool Buttons */}
             <div className="flex gap-1">
+              {floatingOpening && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setOpenings(openings.filter(o => o.id !== floatingOpening.id));
+                    setFloatingOpening(null);
+                    setMousePosition(null);
+                    toast.success('Stopped placing openings');
+                  }}
+                  className="rounded-none h-8 px-3 animate-pulse"
+                >
+                  <span className="text-xs font-bold">Done Placing</span>
+                </Button>
+              )}
               <Button
                 variant={mode === 'select' ? 'default' : 'outline'}
                 size="sm"
