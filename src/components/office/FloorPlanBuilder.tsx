@@ -150,6 +150,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [tempIdCounter, setTempIdCounter] = useState(0);
   const [zoom, setZoom] = useState(1.0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showGrid, setShowGrid] = useState(true);
+  const [showDimensions, setShowDimensions] = useState(true);
+  const [gridSize, setGridSize] = useState(1); // 1 foot grid
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measureStart, setMeasureStart] = useState<{ x: number; y: number } | null>(null);
+  const [measureEnd, setMeasureEnd] = useState<{ x: number; y: number } | null>(null);
+  const [showPlacementDialog, setShowPlacementDialog] = useState(false);
+  const [preciseCoords, setPreciseCoords] = useState({ x: 0, y: 0 });
 
   const generateTempId = () => {
     const id = `temp_${tempIdCounter}`;
@@ -188,7 +196,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom, showGrid, showDimensions, measureStart, measureEnd]);
 
   // Add keyboard handler for ESC to cancel floating placement
   useEffect(() => {
@@ -471,6 +479,40 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
+    // Draw grid background (before any transformations)
+    if (showGrid) {
+      const effectiveZoom = baseZoom * zoom;
+      const centerX = canvasWidth / 2;
+      const centerY = canvasHeight / 2;
+      
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(Math.PI / 2);
+      ctx.scale(effectiveZoom, effectiveZoom);
+      ctx.translate(-width * SCALE / 2, -length * SCALE / 2);
+      
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 0.5;
+      
+      // Vertical grid lines
+      for (let x = 0; x <= width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x * SCALE, 0);
+        ctx.lineTo(x * SCALE, length * SCALE);
+        ctx.stroke();
+      }
+      
+      // Horizontal grid lines
+      for (let y = 0; y <= length; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * SCALE);
+        ctx.lineTo(width * SCALE, y * SCALE);
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+    }
+
     // Calculate effective zoom (base zoom * user zoom)
     const effectiveZoom = baseZoom * zoom;
     
@@ -498,6 +540,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     ctx.strokeStyle = '#1e40af';
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, width * SCALE, length * SCALE);
+
+    // Draw dimension lines if enabled
+    if (showDimensions) {
+      drawDimensionLines(ctx);
+    }
 
     // Draw dimension labels for building
     ctx.fillStyle = '#000';
@@ -793,6 +840,261 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     });
     ctx.setLineDash([]);
     ctx.restore();
+
+    // Draw measurement tool if active
+    if (measureMode && measureStart) {
+      const startX = measureStart.x * SCALE;
+      const startY = measureStart.y * SCALE;
+      
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      
+      if (measureEnd) {
+        const endX = measureEnd.x * SCALE;
+        const endY = measureEnd.y * SCALE;
+        
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        
+        // Draw distance label
+        const distance = Math.sqrt(
+          Math.pow(measureEnd.x - measureStart.x, 2) + 
+          Math.pow(measureEnd.y - measureStart.y, 2)
+        ).toFixed(2);
+        
+        const midX = (startX + endX) / 2;
+        const midY = (startY + endY) / 2;
+        
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(midX - 30, midY - 15, 60, 30);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.strokeRect(midX - 30, midY - 15, 60, 30);
+        
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${distance}'`, midX, midY);
+      }
+      
+      // Draw start point
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.setLineDash([]);
+    }
+  }
+
+  function drawDimensionLines(ctx: CanvasRenderingContext2D) {
+    ctx.fillStyle = '#000';
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Draw opening positions along walls
+    // Group openings by wall
+    const topOpenings = openings.filter(o => o.position_y !== undefined && Math.abs(o.position_y) < 1);
+    const bottomOpenings = openings.filter(o => o.position_y !== undefined && Math.abs(o.position_y - length) < 1);
+    const leftOpenings = openings.filter(o => o.position_x !== undefined && Math.abs(o.position_x) < 1);
+    const rightOpenings = openings.filter(o => o.position_x !== undefined && Math.abs(o.position_x - width) < 1);
+
+    // Top wall running dimensions
+    if (topOpenings.length > 0) {
+      const sorted = [...topOpenings].sort((a, b) => (a.position_x || 0) - (b.position_x || 0));
+      let prevX = 0;
+      const dimY = -40;
+      
+      sorted.forEach((opening) => {
+        const x = opening.position_x || 0;
+        const dist = x - prevX;
+        
+        // Draw dimension line
+        ctx.strokeStyle = '#666';
+        ctx.beginPath();
+        ctx.moveTo(prevX * SCALE, dimY);
+        ctx.lineTo(x * SCALE, dimY);
+        ctx.stroke();
+        
+        // Draw ticks
+        ctx.beginPath();
+        ctx.moveTo(prevX * SCALE, dimY - 5);
+        ctx.lineTo(prevX * SCALE, dimY + 5);
+        ctx.moveTo(x * SCALE, dimY - 5);
+        ctx.lineTo(x * SCALE, dimY + 5);
+        ctx.stroke();
+        
+        // Draw distance
+        ctx.fillStyle = '#000';
+        ctx.fillText(`${dist.toFixed(1)}'`, ((prevX + x) / 2) * SCALE, dimY);
+        
+        prevX = x;
+      });
+      
+      // Last segment to end
+      const dist = width - prevX;
+      ctx.strokeStyle = '#666';
+      ctx.beginPath();
+      ctx.moveTo(prevX * SCALE, dimY);
+      ctx.lineTo(width * SCALE, dimY);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(prevX * SCALE, dimY - 5);
+      ctx.lineTo(prevX * SCALE, dimY + 5);
+      ctx.moveTo(width * SCALE, dimY - 5);
+      ctx.lineTo(width * SCALE, dimY + 5);
+      ctx.stroke();
+      
+      ctx.fillText(`${dist.toFixed(1)}'`, ((prevX + width) / 2) * SCALE, dimY);
+    }
+
+    // Left wall running dimensions
+    if (leftOpenings.length > 0) {
+      const sorted = [...leftOpenings].sort((a, b) => (a.position_y || 0) - (b.position_y || 0));
+      let prevY = 0;
+      const dimX = -40;
+      
+      sorted.forEach((opening) => {
+        const y = opening.position_y || 0;
+        const dist = y - prevY;
+        
+        ctx.strokeStyle = '#666';
+        ctx.beginPath();
+        ctx.moveTo(dimX, prevY * SCALE);
+        ctx.lineTo(dimX, y * SCALE);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(dimX - 5, prevY * SCALE);
+        ctx.lineTo(dimX + 5, prevY * SCALE);
+        ctx.moveTo(dimX - 5, y * SCALE);
+        ctx.lineTo(dimX + 5, y * SCALE);
+        ctx.stroke();
+        
+        ctx.fillText(`${dist.toFixed(1)}'`, dimX, ((prevY + y) / 2) * SCALE);
+        
+        prevY = y;
+      });
+      
+      const dist = length - prevY;
+      ctx.strokeStyle = '#666';
+      ctx.beginPath();
+      ctx.moveTo(dimX, prevY * SCALE);
+      ctx.lineTo(dimX, length * SCALE);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(dimX - 5, prevY * SCALE);
+      ctx.lineTo(dimX + 5, prevY * SCALE);
+      ctx.moveTo(dimX - 5, length * SCALE);
+      ctx.lineTo(dimX + 5, length * SCALE);
+      ctx.stroke();
+      
+      ctx.fillText(`${dist.toFixed(1)}'`, dimX, ((prevY + length) / 2) * SCALE);
+    }
+
+    // Draw room dimensions
+    rooms.forEach(room => {
+      if (selectedRoom?.id === room.id || hoveredItem?.id === room.id) {
+        const roomX = room.x;
+        const roomY = room.y;
+        
+        // Distance from left edge
+        ctx.strokeStyle = '#9333ea';
+        ctx.setLineDash([3, 3]);
+        
+        // Horizontal line from left edge to room
+        const leftDimY = roomY * SCALE - 25;
+        ctx.beginPath();
+        ctx.moveTo(0, leftDimY);
+        ctx.lineTo(roomX * SCALE, leftDimY);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(0, leftDimY - 5);
+        ctx.lineTo(0, leftDimY + 5);
+        ctx.moveTo(roomX * SCALE, leftDimY - 5);
+        ctx.lineTo(roomX * SCALE, leftDimY + 5);
+        ctx.stroke();
+        
+        ctx.fillStyle = '#9333ea';
+        ctx.fillText(`${roomX.toFixed(1)}'`, (roomX / 2) * SCALE, leftDimY);
+        
+        // Distance from top edge
+        const topDimX = roomX * SCALE - 25;
+        ctx.beginPath();
+        ctx.moveTo(topDimX, 0);
+        ctx.lineTo(topDimX, roomY * SCALE);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(topDimX - 5, 0);
+        ctx.lineTo(topDimX + 5, 0);
+        ctx.moveTo(topDimX - 5, roomY * SCALE);
+        ctx.lineTo(topDimX + 5, roomY * SCALE);
+        ctx.stroke();
+        
+        ctx.fillText(`${roomY.toFixed(1)}'`, topDimX, (roomY / 2) * SCALE);
+        
+        ctx.setLineDash([]);
+      }
+    });
+
+    // Draw interior wall dimensions
+    walls.forEach(wall => {
+      if (selectedWall?.id === wall.id || hoveredItem?.id === wall.id) {
+        const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
+        
+        ctx.strokeStyle = '#1e40af';
+        ctx.setLineDash([3, 3]);
+        
+        if (isHorizontal) {
+          // Show distance from left edge to start
+          const dimY = wall.start_y * SCALE - 20;
+          ctx.beginPath();
+          ctx.moveTo(0, dimY);
+          ctx.lineTo(wall.start_x * SCALE, dimY);
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.moveTo(0, dimY - 5);
+          ctx.lineTo(0, dimY + 5);
+          ctx.moveTo(wall.start_x * SCALE, dimY - 5);
+          ctx.lineTo(wall.start_x * SCALE, dimY + 5);
+          ctx.stroke();
+          
+          ctx.fillStyle = '#1e40af';
+          ctx.fillText(`${wall.start_x.toFixed(1)}'`, (wall.start_x / 2) * SCALE, dimY);
+        } else {
+          // Show distance from top edge to start
+          const dimX = wall.start_x * SCALE - 20;
+          ctx.beginPath();
+          ctx.moveTo(dimX, 0);
+          ctx.lineTo(dimX, wall.start_y * SCALE);
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.moveTo(dimX - 5, 0);
+          ctx.lineTo(dimX + 5, 0);
+          ctx.moveTo(dimX - 5, wall.start_y * SCALE);
+          ctx.lineTo(dimX + 5, wall.start_y * SCALE);
+          ctx.stroke();
+          
+          ctx.fillText(`${wall.start_y.toFixed(1)}'`, dimX, (wall.start_y / 2) * SCALE);
+        }
+        
+        ctx.setLineDash([]);
+      }
+    });
   }
 
   function getCanvasCoords(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -895,6 +1197,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
+    // Handle measure mode
+    if (measureMode) {
+      if (!measureStart) {
+        setMeasureStart(coords);
+        setMeasureEnd(coords);
+      } else {
+        const distance = Math.sqrt(
+          Math.pow(coords.x - measureStart.x, 2) + 
+          Math.pow(coords.y - measureStart.y, 2)
+        ).toFixed(2);
+        toast.success(`Distance: ${distance} feet`);
+        setMeasureStart(null);
+        setMeasureEnd(null);
+      }
+      return;
+    }
+
     if (mode === 'select') {
       // If an item is floating, place it
       if (floatingOpening) {
@@ -987,6 +1306,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const coords = getCanvasCoords(e);
     if (!coords) return;
+
+    // Update measure end point if measuring
+    if (measureMode && measureStart) {
+      setMeasureEnd(coords);
+      return;
+    }
 
     // Update mouse position and apply snapping for floating opening
     if (floatingOpening) {
@@ -1728,13 +2053,35 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                 </Button>
               )}
               <Button
-                variant={mode === 'select' ? 'default' : 'outline'}
+                variant={mode === 'select' && !measureMode ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setMode('select')}
+                onClick={() => {
+                  setMode('select');
+                  setMeasureMode(false);
+                  setMeasureStart(null);
+                  setMeasureEnd(null);
+                }}
                 className="rounded-none h-8 px-3"
               >
                 <MousePointer className="w-3 h-3 mr-1" />
                 <span className="text-xs">Select</span>
+              </Button>
+              <Button
+                variant={measureMode ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setMeasureMode(!measureMode);
+                  setMode('select');
+                  setMeasureStart(null);
+                  setMeasureEnd(null);
+                  if (!measureMode) {
+                    toast.info('Click two points to measure distance');
+                  }
+                }}
+                className="rounded-none h-8 px-3"
+              >
+                <Edit2 className="w-3 h-3 mr-1" />
+                <span className="text-xs">Measure</span>
               </Button>
               <Button
                 variant={mode === 'wall' ? 'default' : 'outline'}
@@ -1859,6 +2206,41 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   </Button>
                 </>
               )}
+            </div>
+
+            {/* Display Controls */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Checkbox
+                  id="show_grid"
+                  checked={showGrid}
+                  onCheckedChange={(checked) => setShowGrid(checked as boolean)}
+                />
+                <Label htmlFor="show_grid" className="cursor-pointer text-xs">
+                  Grid
+                </Label>
+              </div>
+              <div className="flex items-center gap-1">
+                <Checkbox
+                  id="show_dimensions"
+                  checked={showDimensions}
+                  onCheckedChange={(checked) => setShowDimensions(checked as boolean)}
+                />
+                <Label htmlFor="show_dimensions" className="cursor-pointer text-xs">
+                  Dimensions
+                </Label>
+              </div>
+              <Select value={gridSize.toString()} onValueChange={(val) => setGridSize(Number(val))}>
+                <SelectTrigger className="h-7 w-20 text-xs rounded-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1' Grid</SelectItem>
+                  <SelectItem value="2">2' Grid</SelectItem>
+                  <SelectItem value="5">5' Grid</SelectItem>
+                  <SelectItem value="10">10' Grid</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Zoom Controls */}
