@@ -266,25 +266,33 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   // Snap position to nearest wall for rooms - snaps ONLY to exterior walls
-  function snapRoomToWall(x: number, y: number): { x: number; y: number; snapped: boolean; wallType: string } {
-    // Check exterior walls only
-    const exteriorWalls = [
-      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top' }, // top
-      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal', name: 'bottom' }, // bottom
-      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical', name: 'left' }, // left
-      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical', name: 'right' }, // right
-    ];
-
-    for (const wall of exteriorWalls) {
-      if (wall.type === 'horizontal') {
-        if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
-          return { x, y: wall.y1, snapped: true, wallType: wall.name };
-        }
-      } else {
-        if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
-          return { x: wall.x1, y, snapped: true, wallType: wall.name };
-        }
-      }
+  // Takes room dimensions into account to snap edges to walls
+  function snapRoomToWall(x: number, y: number, roomWidth: number, roomLength: number): { x: number; y: number; snapped: boolean; wallType: string } {
+    const snapDistance = SNAP_THRESHOLD * 2; // Increase snap threshold for rooms
+    
+    // Check each exterior wall and snap room edge to it
+    // Top wall (y=0)
+    if (Math.abs(y) < snapDistance && x >= -roomWidth && x <= width) {
+      const snappedX = Math.max(0, Math.min(width - roomWidth, x));
+      return { x: snappedX, y: 0, snapped: true, wallType: 'top' };
+    }
+    
+    // Bottom wall (y=length)
+    if (Math.abs(y + roomLength - length) < snapDistance && x >= -roomWidth && x <= width) {
+      const snappedX = Math.max(0, Math.min(width - roomWidth, x));
+      return { x: snappedX, y: length - roomLength, snapped: true, wallType: 'bottom' };
+    }
+    
+    // Left wall (x=0)
+    if (Math.abs(x) < snapDistance && y >= -roomLength && y <= length) {
+      const snappedY = Math.max(0, Math.min(length - roomLength, y));
+      return { x: 0, y: snappedY, snapped: true, wallType: 'left' };
+    }
+    
+    // Right wall (x=width)
+    if (Math.abs(x + roomWidth - width) < snapDistance && y >= -roomLength && y <= length) {
+      const snappedY = Math.max(0, Math.min(length - roomLength, y));
+      return { x: width - roomWidth, y: snappedY, snapped: true, wallType: 'right' };
     }
 
     return { x, y, snapped: false, wallType: 'none' };
@@ -895,9 +903,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       return;
     }
 
-    // Update mouse position for floating room
+    // Update mouse position for floating room with snapping preview
     if (floatingRoom) {
-      setMousePosition(coords);
+      const snapped = snapRoomToWall(coords.x, coords.y, floatingRoom.width, floatingRoom.length);
+      setMousePosition({ x: snapped.x, y: snapped.y });
       return;
     }
 
@@ -1176,7 +1185,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function placeRoom(x: number, y: number) {
     if (!pendingRoomPlacement) return;
 
-    const snapped = snapRoomToWall(x, y);
+    const snapped = snapRoomToWall(x, y, pendingRoomPlacement.width, pendingRoomPlacement.length);
+    
+    if (!snapped.snapped) {
+      toast.error('Room must be attached to an exterior wall');
+      return;
+    }
 
     const newRoom: Room = {
       id: generateTempId(),
@@ -1189,7 +1203,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     };
 
     setRooms([...rooms, newRoom]);
-    toast.success(`${pendingRoomPlacement.type.charAt(0).toUpperCase() + pendingRoomPlacement.type.slice(1)} placed`);
+    toast.success(`${pendingRoomPlacement.type.charAt(0).toUpperCase() + pendingRoomPlacement.type.slice(1)} placed and snapped to ${snapped.wallType} wall`);
     setPendingRoomPlacement(null);
     setMode('select');
   }
@@ -1197,9 +1211,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function placeFloatingRoom(x: number, y: number) {
     if (!floatingRoom) return;
 
-    const snapped = snapRoomToWall(x, y);
+    const snapped = snapRoomToWall(x, y, floatingRoom.width, floatingRoom.length);
+    
+    if (!snapped.snapped) {
+      toast.error('Room must be attached to an exterior wall');
+      return;
+    }
+    
     setRooms(rooms.map(r => r.id === floatingRoom.id ? { ...r, x: snapped.x, y: snapped.y } : r));
-    toast.success(snapped.snapped ? 'Room placed and snapped to wall' : 'Room placed');
+    toast.success(`Room placed and snapped to ${snapped.wallType} wall`);
     setFloatingRoom(null);
     setMousePosition(null);
   }
