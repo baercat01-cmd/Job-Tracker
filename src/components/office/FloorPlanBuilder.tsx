@@ -159,19 +159,18 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!containerRef.current) return;
     
     const container = containerRef.current;
-    const containerWidth = container.clientWidth - 100; // padding
-    const containerHeight = container.clientHeight - 100; // padding
+    const containerWidth = container.clientWidth - 40;
+    const containerHeight = container.clientHeight - 40;
     
-    // After 90-degree rotation, length becomes width and width becomes height
-    const drawingWidth = length * SCALE;
-    const drawingHeight = width * SCALE;
+    const padding = 200;
+    const drawingWidth = length * SCALE + padding;
+    const drawingHeight = width * SCALE + padding;
     
-    // Calculate zoom to fit both dimensions
     const zoomX = containerWidth / drawingWidth;
     const zoomY = containerHeight / drawingHeight;
-    const initialZoom = Math.min(zoomX, zoomY, 1.0); // Don't zoom in beyond 1.0
+    const initialZoom = Math.min(zoomX, zoomY, 1.0);
     
-    setZoom(Math.max(0.2, initialZoom)); // Minimum zoom of 0.2
+    setZoom(Math.max(0.2, initialZoom));
   }, [width, length]);
 
   useEffect(() => {
@@ -388,20 +387,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Swap dimensions for 90-degree rotation (portrait -> landscape) with zoom
-    // Add extra padding to ensure everything is visible
     const padding = 100;
-    const canvasWidth = length * SCALE * zoom + padding * 2;
-    const canvasHeight = width * SCALE * zoom + padding * 2;
+    const drawingWidth = length * SCALE;
+    const drawingHeight = width * SCALE;
+    
+    const canvasWidth = drawingWidth * zoom + padding * 2;
+    const canvasHeight = drawingHeight * zoom + padding * 2;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Apply zoom and rotation - center the drawing
     ctx.save();
     const offsetX = padding;
-    const offsetY = width * SCALE * zoom + padding;
+    const offsetY = drawingHeight * zoom + padding;
     ctx.translate(offsetX, offsetY);
     ctx.rotate(Math.PI / 2);
     ctx.scale(zoom, zoom);
