@@ -146,12 +146,33 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   const [tempIdCounter, setTempIdCounter] = useState(0);
   const [zoom, setZoom] = useState(1.0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const generateTempId = () => {
     const id = `temp_${tempIdCounter}`;
     setTempIdCounter(tempIdCounter + 1);
     return id;
   };
+
+  // Calculate initial zoom to fit the drawing in the viewport
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const container = containerRef.current;
+    const containerWidth = container.clientWidth - 100; // padding
+    const containerHeight = container.clientHeight - 100; // padding
+    
+    // After 90-degree rotation, length becomes width and width becomes height
+    const drawingWidth = length * SCALE;
+    const drawingHeight = width * SCALE;
+    
+    // Calculate zoom to fit both dimensions
+    const zoomX = containerWidth / drawingWidth;
+    const zoomY = containerHeight / drawingHeight;
+    const initialZoom = Math.min(zoomX, zoomY, 1.0); // Don't zoom in beyond 1.0
+    
+    setZoom(Math.max(0.2, initialZoom)); // Minimum zoom of 0.2
+  }, [width, length]);
 
   useEffect(() => {
     if (quoteId) {
@@ -368,16 +389,20 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!ctx) return;
 
     // Swap dimensions for 90-degree rotation (portrait -> landscape) with zoom
-    const canvasWidth = length * SCALE * zoom + 100;
-    const canvasHeight = width * SCALE * zoom + 100;
+    // Add extra padding to ensure everything is visible
+    const padding = 100;
+    const canvasWidth = length * SCALE * zoom + padding * 2;
+    const canvasHeight = width * SCALE * zoom + padding * 2;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Apply zoom and rotation
+    // Apply zoom and rotation - center the drawing
     ctx.save();
-    ctx.translate(50, width * SCALE * zoom + 50);
+    const offsetX = padding;
+    const offsetY = width * SCALE * zoom + padding;
+    ctx.translate(offsetX, offsetY);
     ctx.rotate(Math.PI / 2);
     ctx.scale(zoom, zoom);
 
@@ -1380,7 +1405,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   return (
     <div className="flex flex-col h-full">
       {/* Main Drawing Area - Maximized and Centered */}
-      <div className="flex-1 flex items-center justify-center bg-slate-50 border-2 border-slate-300 rounded-none overflow-hidden">
+      <div 
+        ref={containerRef}
+        className="flex-1 flex items-center justify-center bg-slate-50 border-2 border-slate-300 rounded-none overflow-auto"
+      >
         <canvas
           ref={canvasRef}
           className={`${
