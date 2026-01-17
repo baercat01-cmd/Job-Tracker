@@ -420,49 +420,58 @@ export function QuoteIntakePage() {
 
           {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:h-[calc(100vh-14rem)]">
-              {/* Left Column - Forms - Scrollable */}
-              <div className="space-y-2 xl:pr-2 xl:overflow-y-auto xl:h-full">
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-3 xl:h-[calc(100vh-14rem)]">
+              {/* Left Column - Floor Plan - Large */}
+              <div className="hidden xl:block xl:h-full xl:overflow-y-auto">
+                <FloorPlanBuilder
+                  width={formData.width}
+                  length={formData.length}
+                  quoteId={quoteId}
+                />
+              </div>
+
+              {/* Right Column - Forms - Scrollable Compact */}
+              <div className="space-y-1.5 xl:overflow-y-auto xl:h-full xl:pl-2">
                 {/* Building Dimensions */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Building Dimensions</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Building Dimensions</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Width (ft)</Label>
+                  <CardContent className="space-y-1.5 py-1.5 px-2">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Width</Label>
                         <Input
                           type="number"
                           value={formData.width}
                           onChange={(e) => setFormData({ ...formData, width: Number(e.target.value) })}
-                          className="rounded-none h-8 text-sm"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Length (ft)</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Length</Label>
                         <Input
                           type="number"
                           value={formData.length}
                           onChange={(e) => setFormData({ ...formData, length: Number(e.target.value) })}
-                          className="rounded-none h-8 text-sm"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Eave (ft)</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Eave</Label>
                         <Input
                           type="number"
                           value={formData.eave}
                           onChange={(e) => setFormData({ ...formData, eave: Number(e.target.value) })}
-                          className="rounded-none h-8 text-sm"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pitch</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Pitch</Label>
                         <Select value={formData.pitch} onValueChange={(value) => setFormData({ ...formData, pitch: value })}>
-                          <SelectTrigger className="rounded-none h-8 text-sm">
+                          <SelectTrigger className="rounded-none h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -477,29 +486,30 @@ export function QuoteIntakePage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Truss</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Truss</Label>
                         <Input
                           value={formData.truss}
                           onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
-                          placeholder="Truss type"
-                          className="rounded-none h-8 text-sm"
+                          placeholder="Type"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
                     </div>
                     
-                    <div className="pt-2 border-t">
-                      <div className="flex items-center space-x-2 mb-2">
+                    <div className="pt-1 border-t">
+                      <div className="flex items-center space-x-1.5 mb-1">
                         <Checkbox
                           id="overhang_same"
                           checked={formData.overhang_same_all}
                           onCheckedChange={(checked) => setFormData({ ...formData, overhang_same_all: checked as boolean })}
+                          className="h-3 w-3"
                         />
-                        <Label htmlFor="overhang_same" className="cursor-pointer font-semibold text-xs">Overhang - Same on all sides</Label>
+                        <Label htmlFor="overhang_same" className="cursor-pointer font-semibold text-[10px]">Same overhang</Label>
                       </div>
                       {formData.overhang_same_all ? (
-                        <div className="space-y-1">
-                          <Label className="text-xs">Overhang (inches)</Label>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Overhang (in)</Label>
                           <Input
                             type="number"
                             value={formData.overhang_front}
@@ -513,45 +523,45 @@ export function QuoteIntakePage() {
                                 overhang_right: value,
                               });
                             }}
-                            className="rounded-none h-8 text-sm"
+                            className="rounded-none h-7 text-xs"
                           />
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Front (inches)</Label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Front</Label>
                             <Input
                               type="number"
                               value={formData.overhang_front}
                               onChange={(e) => setFormData({ ...formData, overhang_front: Number(e.target.value) })}
-                              className="rounded-none h-8 text-sm"
+                              className="rounded-none h-7 text-xs"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Back (inches)</Label>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Back</Label>
                             <Input
                               type="number"
                               value={formData.overhang_back}
                               onChange={(e) => setFormData({ ...formData, overhang_back: Number(e.target.value) })}
-                              className="rounded-none h-8 text-sm"
+                              className="rounded-none h-7 text-xs"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Left (inches)</Label>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Left</Label>
                             <Input
                               type="number"
                               value={formData.overhang_left}
                               onChange={(e) => setFormData({ ...formData, overhang_left: Number(e.target.value) })}
-                              className="rounded-none h-8 text-sm"
+                              className="rounded-none h-7 text-xs"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Right (inches)</Label>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Right</Label>
                             <Input
                               type="number"
                               value={formData.overhang_right}
                               onChange={(e) => setFormData({ ...formData, overhang_right: Number(e.target.value) })}
-                              className="rounded-none h-8 text-sm"
+                              className="rounded-none h-7 text-xs"
                             />
                           </div>
                         </div>
@@ -562,18 +572,18 @@ export function QuoteIntakePage() {
 
                 {/* Foundation & Floor */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Foundation & Floor</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Foundation & Floor</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Foundation Type</Label>
+                  <CardContent className="space-y-1.5 py-1.5 px-2">
+                    <div className="grid grid-cols-1 gap-1.5">
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Foundation</Label>
                         <Select 
                           value={formData.foundation_type} 
                           onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
                         >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
+                          <SelectTrigger className="rounded-none h-7 text-xs">
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
                           <SelectContent>
@@ -583,13 +593,13 @@ export function QuoteIntakePage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Floor</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Floor</Label>
                         <Select 
                           value={formData.floor_type} 
                           onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
                         >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
+                          <SelectTrigger className="rounded-none h-7 text-xs">
                             <SelectValue placeholder="Select floor" />
                           </SelectTrigger>
                           <SelectContent>
@@ -599,13 +609,13 @@ export function QuoteIntakePage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Soffit</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Soffit</Label>
                         <Select 
                           value={formData.soffit_type} 
                           onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
                         >
-                          <SelectTrigger className="rounded-none h-8 text-sm">
+                          <SelectTrigger className="rounded-none h-7 text-xs">
                             <SelectValue placeholder="Select soffit" />
                           </SelectTrigger>
                           <SelectContent>
@@ -621,17 +631,17 @@ export function QuoteIntakePage() {
 
                 {/* Structure & Design */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Structure & Design</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Structure & Design</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Building Use</Label>
+                  <CardContent className="space-y-1.5 py-1.5 px-2">
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px]">Building Use</Label>
                       <Input
                         value={formData.building_use}
                         onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
                         placeholder="Storage, Garage, etc."
-                        className="rounded-none h-8 text-sm"
+                        className="rounded-none h-7 text-xs"
                       />
                     </div>
                   </CardContent>
@@ -639,57 +649,56 @@ export function QuoteIntakePage() {
 
                 {/* Exterior Colors & Finishes */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Exterior Colors & Finishes</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Colors & Finishes</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Roof Color</Label>
+                  <CardContent className="space-y-1.5 py-1.5 px-2">
+                    <div className="grid grid-cols-1 gap-1.5">
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Roof Color</Label>
                         <Input
                           value={formData.roof_color}
                           onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
-                          placeholder="Color name"
-                          className="rounded-none h-8 text-sm"
+                          placeholder="Color"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Trim Color</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Trim Color</Label>
                         <Input
                           value={formData.trim_color}
                           onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
-                          placeholder="Color name"
-                          className="rounded-none h-8 text-sm"
+                          placeholder="Color"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Side Color</Label>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Side Color</Label>
                         <Input
                           value={formData.side_color}
                           onChange={(e) => setFormData({ ...formData, side_color: e.target.value })}
-                          placeholder="Color name"
-                          className="rounded-none h-8 text-sm"
+                          placeholder="Color"
+                          className="rounded-none h-7 text-xs"
                         />
                       </div>
-                      <div className="space-y-1 flex items-end">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="wainscot"
-                            checked={formData.wainscot_enabled}
-                            onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
-                          />
-                          <Label htmlFor="wainscot" className="cursor-pointer text-xs">Include Wainscot</Label>
-                        </div>
+                      <div className="flex items-center space-x-1.5">
+                        <Checkbox
+                          id="wainscot"
+                          checked={formData.wainscot_enabled}
+                          onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
+                          className="h-3 w-3"
+                        />
+                        <Label htmlFor="wainscot" className="cursor-pointer text-[10px]">Include Wainscot</Label>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t">
-                      <Label className="font-semibold text-xs">Insulation</Label>
+                    <div className="pt-1 border-t">
+                      <Label className="font-semibold text-[10px]">Insulation</Label>
                       <Select 
                         value={formData.insulation_type} 
                         onValueChange={(value) => setFormData({ ...formData, insulation_type: value })}
                       >
-                        <SelectTrigger className="rounded-none h-8 text-sm mt-1">
+                        <SelectTrigger className="rounded-none h-7 text-xs mt-0.5">
                           <SelectValue placeholder="Select insulation type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -703,49 +712,52 @@ export function QuoteIntakePage() {
                       </Select>
                     </div>
                     
-                    <div className="pt-2 border-t">
+                    <div className="pt-1 border-t">
                       <Button
                         variant={formData.liner_package ? "default" : "outline"}
                         size="sm"
                         onClick={() => setFormData({ ...formData, liner_package: !formData.liner_package })}
-                        className="rounded-none w-full"
+                        className="rounded-none w-full h-7 text-xs"
                       >
-                        {formData.liner_package ? '✓ Liner Package Included' : 'Add Liner Package'}
-                      </Button>
+                        {formData.liner_package ? '✓ Liner' : 'Add Liner'}
+                      </Button> {/* Closing tag added here */}
                     </div>
                   </CardContent>
                 </Card>
 
                 {/* Utilities */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Utilities</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Utilities</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="flex flex-wrap gap-4">
-                      <div className="flex items-center space-x-2">
+                  <CardContent className="space-y-1 py-1.5 px-2">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center space-x-1.5">
                         <Checkbox
                           id="plumbing"
                           checked={formData.has_plumbing}
                           onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
+                          className="h-3 w-3"
                         />
-                        <Label htmlFor="plumbing" className="cursor-pointer text-xs">Plumbing</Label>
+                        <Label htmlFor="plumbing" className="cursor-pointer text-[10px]">Plumbing</Label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1.5">
                         <Checkbox
                           id="electrical"
                           checked={formData.has_electrical}
                           onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
+                          className="h-3 w-3"
                         />
-                        <Label htmlFor="electrical" className="cursor-pointer text-xs">Electrical</Label>
+                        <Label htmlFor="electrical" className="cursor-pointer text-[10px]">Electrical</Label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1.5">
                         <Checkbox
                           id="hvac"
                           checked={formData.has_hvac}
                           onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
+                          className="h-3 w-3"
                         />
-                        <Label htmlFor="hvac" className="cursor-pointer text-xs">HVAC</Label>
+                        <Label htmlFor="hvac" className="cursor-pointer text-[10px]">HVAC</Label>
                       </div>
                     </div>
                   </CardContent>
@@ -753,28 +765,28 @@ export function QuoteIntakePage() {
 
                 {/* Notes */}
                 <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1.5 px-3">
-                    <CardTitle className="text-sm font-semibold">Notes</CardTitle>
+                  <CardHeader className="py-1 px-2">
+                    <CardTitle className="text-xs font-semibold">Notes</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 py-2 px-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Site/Sketch Notes</Label>
+                  <CardContent className="space-y-1.5 py-1.5 px-2">
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px]">Site Notes</Label>
                       <Textarea
                         value={formData.site_notes}
                         onChange={(e) => setFormData({ ...formData, site_notes: e.target.value })}
-                        placeholder="Site-specific notes and observations"
+                        placeholder="Site notes"
                         rows={2}
-                        className="rounded-none text-sm"
+                        className="rounded-none text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Structural Notes</Label>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px]">Structural</Label>
                       <Textarea
                         value={formData.structural_notes}
                         onChange={(e) => setFormData({ ...formData, structural_notes: e.target.value })}
-                        placeholder="Structural requirements and considerations"
+                        placeholder="Structural notes"
                         rows={2}
-                        className="rounded-none text-sm"
+                        className="rounded-none text-xs"
                       />
                     </div>
                   </CardContent>
@@ -782,13 +794,13 @@ export function QuoteIntakePage() {
 
                 {existingQuote && (
                   <Card className="rounded-none border-2 border-slate-300">
-                    <CardHeader className="py-1.5 px-3">
-                      <CardTitle className="text-sm font-semibold">Pricing & Status</CardTitle>
+                    <CardHeader className="py-1 px-2">
+                      <CardTitle className="text-xs font-semibold">Pricing & Status</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2 py-2 px-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Estimated Price</Label>
+                    <CardContent className="space-y-1.5 py-1.5 px-2">
+                      <div className="grid grid-cols-1 gap-1.5">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Price</Label>
                           <Input
                             type="number"
                             value={formData.estimated_price || ''}
@@ -796,17 +808,17 @@ export function QuoteIntakePage() {
                               ...formData, 
                               estimated_price: e.target.value ? Number(e.target.value) : null 
                             })}
-                            placeholder="Enter estimated price"
-                            className="rounded-none h-8 text-sm"
+                            placeholder="Price"
+                            className="rounded-none h-7 text-xs"
                           />
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Status</Label>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Status</Label>
                           <Select 
                             value={formData.status} 
                             onValueChange={(value) => setFormData({ ...formData, status: value })}
                           >
-                            <SelectTrigger className="rounded-none h-8 text-sm">
+                            <SelectTrigger className="rounded-none h-7 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -822,17 +834,6 @@ export function QuoteIntakePage() {
                     </CardContent>
                   </Card>
                 )}
-              </div>
-
-              {/* Right Column - Floor Plan - Fixed/Sticky */}
-              <div className="hidden xl:block xl:h-full">
-                <div className="sticky top-0 h-full overflow-y-auto">
-                  <FloorPlanBuilder
-                    width={formData.width}
-                    length={formData.length}
-                    quoteId={quoteId}
-                  />
-                </div>
               </div>
 
               {/* Mobile: Floor Plan Below */}
