@@ -111,6 +111,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [showEditDrain, setShowEditDrain] = useState(false);
   const [showEditCupola, setShowEditCupola] = useState(false);
   const [showAddRoom, setShowAddRoom] = useState(false);
+  const [showOverheadInput, setShowOverheadInput] = useState(false);
+  const [overheadDimensions, setOverheadDimensions] = useState({ width: 10, height: 10 });
   
   const [newOpening, setNewOpening] = useState({
     opening_type: 'walkdoor' as const,
@@ -186,6 +188,28 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   useEffect(() => {
     drawFloorPlan();
   }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom]);
+
+  // Add keyboard handler for ESC to cancel floating placement
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (floatingOpening) {
+          setOpenings(openings.filter(o => o.id !== floatingOpening.id));
+          setFloatingOpening(null);
+          setMousePosition(null);
+          toast.info('Placement cancelled');
+        } else if (floatingRoom) {
+          setRooms(rooms.filter(r => r.id !== floatingRoom.id));
+          setFloatingRoom(null);
+          setMousePosition(null);
+          toast.info('Room placement cancelled');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [floatingOpening, floatingRoom, openings, rooms]);
 
   async function loadFloorPlanData() {
     if (!quoteId) return;
@@ -1113,6 +1137,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     const snapped = snapOpeningToWall(x, y);
     
+    // Save the opening type and size for creating another instance
+    const openingType = floatingOpening.opening_type;
+    const openingSize = floatingOpening.size_detail;
+    const currentFloatingId = floatingOpening.id;
+    
     // If this is a new opening (temp ID), save it to the database
     if (floatingOpening.id.startsWith('temp_')) {
       if (quoteId) {
@@ -1144,6 +1173,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           toast.error('Failed to place opening');
           // Remove the temp opening on error
           setOpenings(openings.filter(o => o.id !== floatingOpening.id));
+          setFloatingOpening(null);
+          setMousePosition(null);
+          return;
         }
       } else {
         // No quote yet, keep in local state with final position
@@ -1178,8 +1210,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     }
 
-    setFloatingOpening(null);
-    setMousePosition(null);
+    // Create a new floating opening of the same type for continuous placement
+    const newFloatingOpening: Opening = {
+      id: generateTempId(),
+      opening_type: openingType,
+      size_detail: openingSize,
+      quantity: 1,
+      location: '',
+      wall: 'front',
+      swing_direction: 'right',
+      position_x: width / 2,
+      position_y: 0,
+      rotation: 0,
+    };
+    
+    setOpenings(prev => [...prev.filter(o => o.id !== currentFloatingId || !o.id.startsWith('temp_')), newFloatingOpening]);
+    setFloatingOpening(newFloatingOpening);
+    toast.info('Click to place another, or press ESC to stop');
   }
 
   function placeRoom(x: number, y: number) {
@@ -1573,7 +1620,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   };
                   setOpenings([...openings, defaultOpening]);
                   setFloatingOpening(defaultOpening);
-                  toast.info('Move cursor to position door - it will snap to walls');
+                  toast.info('Move cursor to position door - it will snap to walls. Press ESC to cancel.');
                 }}
                 className="rounded-none h-8 px-3"
               >
@@ -1599,7 +1646,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                   };
                   setOpenings([...openings, defaultOpening]);
                   setFloatingOpening(defaultOpening);
-                  toast.info('Move cursor to position window - it will snap to walls');
+                  toast.info('Move cursor to position window - it will snap to walls. Press ESC to cancel.');
                 }}
                 className="rounded-none h-8 px-3"
               >
@@ -1610,22 +1657,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                 variant={mode === 'overhead' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  setMode('select');
-                  const defaultOpening: Opening = {
-                    id: generateTempId(),
-                    opening_type: 'overhead_door',
-                    size_detail: "10' × 10'",
-                    quantity: 1,
-                    location: '',
-                    wall: 'front',
-                    swing_direction: 'right',
-                    position_x: width / 2, // Start at center
-                    position_y: 0, // Start at top
-                    rotation: 0,
-                  };
-                  setOpenings([...openings, defaultOpening]);
-                  setFloatingOpening(defaultOpening);
-                  toast.info('Move cursor to position overhead door - it will snap to walls');
+                  setShowOverheadInput(true);
                 }}
                 className="rounded-none h-8 px-3"
               >
@@ -1897,7 +1929,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         </TabsContent>
       </Tabs>
 
-      {/* All dialog components remain the same, omitted for brevity */}
       {/* Edit Opening Dialog */}
       <Dialog open={showEditOpening} onOpenChange={setShowEditOpening}>
         <DialogContent>
@@ -2014,6 +2045,68 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
                 Place on Floor Plan
               </Button>
               <Button variant="outline" onClick={() => setShowAddRoom(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Overhead Door Dimensions Input Dialog */}
+      <Dialog open={showOverheadInput} onOpenChange={setShowOverheadInput}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Overhead Door Dimensions</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Width (feet)</Label>
+              <Input
+                type="number"
+                value={overheadDimensions.width}
+                onChange={(e) => setOverheadDimensions({ ...overheadDimensions, width: Number(e.target.value) })}
+                placeholder="10"
+                min="1"
+                max="50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Height (feet)</Label>
+              <Input
+                type="number"
+                value={overheadDimensions.height}
+                onChange={(e) => setOverheadDimensions({ ...overheadDimensions, height: Number(e.target.value) })}
+                placeholder="10"
+                min="1"
+                max="30"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  setMode('select');
+                  const defaultOpening: Opening = {
+                    id: generateTempId(),
+                    opening_type: 'overhead_door',
+                    size_detail: `${overheadDimensions.width}' × ${overheadDimensions.height}'`,
+                    quantity: 1,
+                    location: '',
+                    wall: 'front',
+                    swing_direction: 'right',
+                    position_x: width / 2,
+                    position_y: 0,
+                    rotation: 0,
+                  };
+                  setOpenings([...openings, defaultOpening]);
+                  setFloatingOpening(defaultOpening);
+                  setShowOverheadInput(false);
+                  toast.info('Move cursor to position overhead door - it will snap to walls. Press ESC to cancel.');
+                }}
+                className="flex-1"
+              >
+                Place on Floor Plan
+              </Button>
+              <Button variant="outline" onClick={() => setShowOverheadInput(false)}>
                 Cancel
               </Button>
             </div>
