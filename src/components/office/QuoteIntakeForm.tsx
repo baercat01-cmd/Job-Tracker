@@ -88,6 +88,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [existingQuote, setExistingQuote] = useState<any>(null);
+  const [currentQuoteId, setCurrentQuoteId] = useState<string | undefined>(quoteId);
   
   const [formData, setFormData] = useState<QuoteData>({
     customer_name: '',
@@ -129,6 +130,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
   useEffect(() => {
     if (quoteId) {
+      setCurrentQuoteId(quoteId);
       loadQuote();
     }
   }, [quoteId]);
@@ -219,15 +221,15 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         }),
       };
 
-      if (quoteId) {
+      if (currentQuoteId) {
         // Update existing quote
         const { error } = await supabase
           .from('quotes')
           .update(quoteData)
-          .eq('id', quoteId);
+          .eq('id', currentQuoteId);
 
         if (error) throw error;
-        toast.success('Quote updated successfully');
+        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
       } else {
         // Create new quote
         const { data, error } = await supabase
@@ -245,7 +247,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .update({ quote_number: quoteNumber })
           .eq('id', data.id);
 
-        toast.success('Quote created successfully');
+        // Update the current quote ID so subsequent saves update instead of creating new
+        setCurrentQuoteId(data.id);
+        setExistingQuote(data);
+        
+        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote created successfully');
       }
 
       onSuccess();
@@ -854,7 +860,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           <FloorPlanBuilder
             width={formData.width}
             length={formData.length}
-            quoteId={quoteId}
+            quoteId={currentQuoteId}
           />
         </div>
       </div>
