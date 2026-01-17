@@ -737,10 +737,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const transformedX = rawX - centerX;
     const transformedY = rawY - centerY;
     
-    // Reverse rotation (90deg clockwise means: (x', y') after rotation = (y, -x) before)
-    // So to reverse: if (x', y') is what we have, then original was (-y', x')
-    const beforeRotationX = -transformedY;
-    const beforeRotationY = transformedX;
+    // Reverse rotation (90deg clockwise: to reverse, rotate -90deg which transforms (x', y') → (y', -x'))
+    const beforeRotationX = transformedY;
+    const beforeRotationY = -transformedX;
     
     // Reverse scale and translate
     const x = (beforeRotationX / effectiveZoom + width * SCALE / 2) / SCALE;
