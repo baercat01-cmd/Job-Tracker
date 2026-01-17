@@ -159,18 +159,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!containerRef.current) return;
     
     const container = containerRef.current;
-    const containerWidth = container.clientWidth - 40;
-    const containerHeight = container.clientHeight - 40;
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
     
-    const padding = 200;
-    const drawingWidth = length * SCALE + padding;
-    const drawingHeight = width * SCALE + padding;
+    const padding = 100;
+    const drawingWidth = length * SCALE;
+    const drawingHeight = width * SCALE;
     
-    const zoomX = containerWidth / drawingWidth;
-    const zoomY = containerHeight / drawingHeight;
+    // Calculate zoom to fit the entire canvas (including padding) in the container
+    const zoomX = (containerWidth - padding * 2) / drawingWidth;
+    const zoomY = (containerHeight - padding * 2) / drawingHeight;
     const initialZoom = Math.min(zoomX, zoomY, 1.0);
     
-    setZoom(Math.max(0.2, initialZoom));
+    setZoom(Math.max(0.3, initialZoom));
   }, [width, length]);
 
   useEffect(() => {
@@ -701,17 +702,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
-    const canvasWidth = length * SCALE * zoom + 100;
+    const padding = 100;
     
-    // Get raw click position
+    // Get raw click position relative to canvas
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
     
-    // Reverse the 90-degree rotation transformation and zoom
-    // Original: translate(50, width * SCALE * zoom + 50) then rotate(90deg) then scale(zoom)
-    // Click point needs to be transformed back
-    const transformedX = rawX - 50;
-    const transformedY = rawY - (width * SCALE * zoom + 50);
+    // Reverse the transformations: translate(padding, width * SCALE * zoom + padding) then rotate(90deg) then scale(zoom)
+    const transformedX = rawX - padding;
+    const transformedY = rawY - (width * SCALE * zoom + padding);
     
     // Reverse rotation and zoom: (x', y') = (y, -x) for 90deg clockwise, divided by zoom
     const x = transformedY / (SCALE * zoom);
