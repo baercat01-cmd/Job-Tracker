@@ -16,8 +16,9 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Send, Briefcase, User, Home } from 'lucide-react';
+import { ArrowLeft, Save, Send, Briefcase, User, Home, ChevronDown, ChevronRight } from 'lucide-react';
 import { FloorPlanBuilder } from '@/components/office/FloorPlanBuilder';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -99,6 +100,21 @@ export function QuoteIntakePage() {
     status: 'draft',
     estimated_price: null,
   });
+
+  // Collapsible sections state
+  const [openSections, setOpenSections] = useState({
+    dimensions: true,
+    foundation: true,
+    structure: true,
+    colors: true,
+    utilities: true,
+    notes: true,
+    pricing: true,
+  });
+
+  const toggleSection = (section: keyof typeof openSections) => {
+    setOpenSections({ ...openSections, [section]: !openSections[section] });
+  };
 
   useEffect(() => {
     if (quoteId) {
@@ -420,9 +436,462 @@ export function QuoteIntakePage() {
 
           {/* Building Details Tab - Combined with Floor Plan */}
           <TabsContent value="building">
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-3 xl:h-[calc(100vh-14rem)]">
-              {/* Left Column - Floor Plan - Large */}
-              <div className="hidden xl:block xl:h-full xl:overflow-y-auto">
+            {/* Top Bar - Key Dimensions */}
+            <div className="bg-white border-2 border-slate-300 p-2 mb-2 rounded-none">
+              <div className="grid grid-cols-6 gap-2">
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Width</Label>
+                  <Input
+                    type="number"
+                    value={formData.width}
+                    onChange={(e) => setFormData({ ...formData, width: Number(e.target.value) })}
+                    className="rounded-none h-7 text-xs"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Length</Label>
+                  <Input
+                    type="number"
+                    value={formData.length}
+                    onChange={(e) => setFormData({ ...formData, length: Number(e.target.value) })}
+                    className="rounded-none h-7 text-xs"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Eave</Label>
+                  <Input
+                    type="number"
+                    value={formData.eave}
+                    onChange={(e) => setFormData({ ...formData, eave: Number(e.target.value) })}
+                    className="rounded-none h-7 text-xs"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Pitch</Label>
+                  <Select value={formData.pitch} onValueChange={(value) => setFormData({ ...formData, pitch: value })}>
+                    <SelectTrigger className="rounded-none h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3/12">3/12</SelectItem>
+                      <SelectItem value="4/12">4/12</SelectItem>
+                      <SelectItem value="5/12">5/12</SelectItem>
+                      <SelectItem value="6/12">6/12</SelectItem>
+                      <SelectItem value="7/12">7/12</SelectItem>
+                      <SelectItem value="8/12">8/12</SelectItem>
+                      <SelectItem value="10/12">10/12</SelectItem>
+                      <SelectItem value="12/12">12/12</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Building Use</Label>
+                  <Input
+                    value={formData.building_use}
+                    onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
+                    placeholder="Storage, Garage"
+                    className="rounded-none h-7 text-xs"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-semibold">Insulation</Label>
+                  <Select 
+                    value={formData.insulation_type} 
+                    onValueChange={(value) => setFormData({ ...formData, insulation_type: value })}
+                  >
+                    <SelectTrigger className="rounded-none h-7 text-xs">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="fiberglass">Fiberglass</SelectItem>
+                      <SelectItem value="spray_foam">Spray Foam</SelectItem>
+                      <SelectItem value="blown_in">Blown-In</SelectItem>
+                      <SelectItem value="rigid_foam">Rigid Foam</SelectItem>
+                      <SelectItem value="reflective">Reflective</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[250px_1fr] gap-2 h-[calc(100vh-18rem)]">
+              {/* Left Column - Collapsible Forms */}
+              <div className="space-y-1 overflow-y-auto xl:h-full pr-1">
+                {/* Overhang Section */}
+                <Collapsible open={openSections.dimensions} onOpenChange={() => toggleSection('dimensions')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Overhang</CardTitle>
+                        {openSections.dimensions ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1.5 py-1.5 px-2">
+                        <div className="flex items-center space-x-1.5 mb-1">
+                          <Checkbox
+                            id="overhang_same"
+                            checked={formData.overhang_same_all}
+                            onCheckedChange={(checked) => setFormData({ ...formData, overhang_same_all: checked as boolean })}
+                            className="h-3 w-3"
+                          />
+                          <Label htmlFor="overhang_same" className="cursor-pointer font-semibold text-[10px]">Same all sides</Label>
+                        </div>
+                        {formData.overhang_same_all ? (
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Overhang (in)</Label>
+                            <Input
+                              type="number"
+                              value={formData.overhang_front}
+                              onChange={(e) => {
+                                const value = Number(e.target.value);
+                                setFormData({ 
+                                  ...formData, 
+                                  overhang_front: value,
+                                  overhang_back: value,
+                                  overhang_left: value,
+                                  overhang_right: value,
+                                });
+                              }}
+                              className="rounded-none h-7 text-xs"
+                            />
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Front</Label>
+                              <Input
+                                type="number"
+                                value={formData.overhang_front}
+                                onChange={(e) => setFormData({ ...formData, overhang_front: Number(e.target.value) })}
+                                className="rounded-none h-7 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Back</Label>
+                              <Input
+                                type="number"
+                                value={formData.overhang_back}
+                                onChange={(e) => setFormData({ ...formData, overhang_back: Number(e.target.value) })}
+                                className="rounded-none h-7 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Left</Label>
+                              <Input
+                                type="number"
+                                value={formData.overhang_left}
+                                onChange={(e) => setFormData({ ...formData, overhang_left: Number(e.target.value) })}
+                                className="rounded-none h-7 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Right</Label>
+                              <Input
+                                type="number"
+                                value={formData.overhang_right}
+                                onChange={(e) => setFormData({ ...formData, overhang_right: Number(e.target.value) })}
+                                className="rounded-none h-7 text-xs"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {/* Foundation & Floor */}
+                <Collapsible open={openSections.foundation} onOpenChange={() => toggleSection('foundation')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Foundation & Floor</CardTitle>
+                        {openSections.foundation ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1.5 py-1.5 px-2">
+                        <div className="grid grid-cols-1 gap-1.5">
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Foundation</Label>
+                            <Select 
+                              value={formData.foundation_type} 
+                              onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
+                            >
+                              <SelectTrigger className="rounded-none h-7 text-xs">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="concrete">Concrete</SelectItem>
+                                <SelectItem value="gravel">Gravel</SelectItem>
+                                <SelectItem value="pier">Pier</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Floor</Label>
+                            <Select 
+                              value={formData.floor_type} 
+                              onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
+                            >
+                              <SelectTrigger className="rounded-none h-7 text-xs">
+                                <SelectValue placeholder="Select floor" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="concrete">Concrete</SelectItem>
+                                <SelectItem value="wood">Wood</SelectItem>
+                                <SelectItem value="none">None</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Soffit</Label>
+                            <Select 
+                              value={formData.soffit_type} 
+                              onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
+                            >
+                              <SelectTrigger className="rounded-none h-7 text-xs">
+                                <SelectValue placeholder="Select soffit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="steel">Steel</SelectItem>
+                                <SelectItem value="vinyl">Vinyl</SelectItem>
+                                <SelectItem value="none">None</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {/* Structure & Design */}
+                <Collapsible open={openSections.structure} onOpenChange={() => toggleSection('structure')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Structure</CardTitle>
+                        {openSections.structure ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1.5 py-1.5 px-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Truss</Label>
+                          <Input
+                            value={formData.truss}
+                            onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
+                            placeholder="Type"
+                            className="rounded-none h-7 text-xs"
+                          />
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {/* Exterior Colors & Finishes */}
+                <Collapsible open={openSections.colors} onOpenChange={() => toggleSection('colors')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Colors & Finishes</CardTitle>
+                        {openSections.colors ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1.5 py-1.5 px-2">
+                        <div className="grid grid-cols-1 gap-1.5">
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Roof Color</Label>
+                            <Input
+                              value={formData.roof_color}
+                              onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
+                              placeholder="Color"
+                              className="rounded-none h-7 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Trim Color</Label>
+                            <Input
+                              value={formData.trim_color}
+                              onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
+                              placeholder="Color"
+                              className="rounded-none h-7 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[10px]">Side Color</Label>
+                            <Input
+                              value={formData.side_color}
+                              onChange={(e) => setFormData({ ...formData, side_color: e.target.value })}
+                              placeholder="Color"
+                              className="rounded-none h-7 text-xs"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Checkbox
+                              id="wainscot"
+                              checked={formData.wainscot_enabled}
+                              onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="wainscot" className="cursor-pointer text-[10px]">Include Wainscot</Label>
+                          </div>
+                        </div>
+
+                        <div className="pt-1 border-t">
+                          <Button
+                            variant={formData.liner_package ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setFormData({ ...formData, liner_package: !formData.liner_package })}
+                            className="rounded-none w-full h-7 text-xs"
+                          >
+                            {formData.liner_package ? '✓ Liner' : 'Add Liner'}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {/* Utilities */}
+                <Collapsible open={openSections.utilities} onOpenChange={() => toggleSection('utilities')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Utilities</CardTitle>
+                        {openSections.utilities ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1 py-1.5 px-2">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center space-x-1.5">
+                            <Checkbox
+                              id="plumbing"
+                              checked={formData.has_plumbing}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="plumbing" className="cursor-pointer text-[10px]">Plumbing</Label>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Checkbox
+                              id="electrical"
+                              checked={formData.has_electrical}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="electrical" className="cursor-pointer text-[10px]">Electrical</Label>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Checkbox
+                              id="hvac"
+                              checked={formData.has_hvac}
+                              onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="hvac" className="cursor-pointer text-[10px]">HVAC</Label>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {/* Notes */}
+                <Collapsible open={openSections.notes} onOpenChange={() => toggleSection('notes')}>
+                  <Card className="rounded-none border-2 border-slate-300">
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">Notes</CardTitle>
+                        {openSections.notes ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-1.5 py-1.5 px-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Site Notes</Label>
+                          <Textarea
+                            value={formData.site_notes}
+                            onChange={(e) => setFormData({ ...formData, site_notes: e.target.value })}
+                            placeholder="Site notes"
+                            rows={2}
+                            className="rounded-none text-xs"
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Structural</Label>
+                          <Textarea
+                            value={formData.structural_notes}
+                            onChange={(e) => setFormData({ ...formData, structural_notes: e.target.value })}
+                            placeholder="Structural notes"
+                            rows={2}
+                            className="rounded-none text-xs"
+                          />
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                {existingQuote && (
+                  <Collapsible open={openSections.pricing} onOpenChange={() => toggleSection('pricing')}>
+                    <Card className="rounded-none border-2 border-slate-300">
+                      <CollapsibleTrigger className="w-full">
+                        <CardHeader className="py-1 px-2 flex flex-row items-center justify-between">
+                          <CardTitle className="text-xs font-semibold">Pricing & Status</CardTitle>
+                          {openSections.pricing ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        </CardHeader>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <CardContent className="space-y-1.5 py-1.5 px-2">
+                          <div className="grid grid-cols-1 gap-1.5">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Price</Label>
+                              <Input
+                                type="number"
+                                value={formData.estimated_price || ''}
+                                onChange={(e) => setFormData({ 
+                                  ...formData, 
+                                  estimated_price: e.target.value ? Number(e.target.value) : null 
+                                })}
+                                placeholder="Price"
+                                className="rounded-none h-7 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px]">Status</Label>
+                              <Select 
+                                value={formData.status} 
+                                onValueChange={(value) => setFormData({ ...formData, status: value })}
+                              >
+                                <SelectTrigger className="rounded-none h-7 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="draft">Draft</SelectItem>
+                                  <SelectItem value="submitted">Submitted</SelectItem>
+                                  <SelectItem value="estimated">Estimated</SelectItem>
+                                  <SelectItem value="won">Won</SelectItem>
+                                  <SelectItem value="lost">Lost</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </CollapsibleContent>
+                    </Card>
+                  </Collapsible>
+                )}
+              </div>
+
+              {/* Right Column - Fixed Floor Plan (Rotated) */}
+              <div className="hidden xl:block xl:h-full xl:overflow-hidden">
                 <FloorPlanBuilder
                   width={formData.width}
                   length={formData.length}
@@ -430,414 +899,8 @@ export function QuoteIntakePage() {
                 />
               </div>
 
-              {/* Right Column - Forms - Scrollable Compact */}
-              <div className="space-y-1.5 xl:overflow-y-auto xl:h-full xl:pl-2">
-                {/* Building Dimensions */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Building Dimensions</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5 py-1.5 px-2">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Width</Label>
-                        <Input
-                          type="number"
-                          value={formData.width}
-                          onChange={(e) => setFormData({ ...formData, width: Number(e.target.value) })}
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Length</Label>
-                        <Input
-                          type="number"
-                          value={formData.length}
-                          onChange={(e) => setFormData({ ...formData, length: Number(e.target.value) })}
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Eave</Label>
-                        <Input
-                          type="number"
-                          value={formData.eave}
-                          onChange={(e) => setFormData({ ...formData, eave: Number(e.target.value) })}
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Pitch</Label>
-                        <Select value={formData.pitch} onValueChange={(value) => setFormData({ ...formData, pitch: value })}>
-                          <SelectTrigger className="rounded-none h-7 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="3/12">3/12</SelectItem>
-                            <SelectItem value="4/12">4/12</SelectItem>
-                            <SelectItem value="5/12">5/12</SelectItem>
-                            <SelectItem value="6/12">6/12</SelectItem>
-                            <SelectItem value="7/12">7/12</SelectItem>
-                            <SelectItem value="8/12">8/12</SelectItem>
-                            <SelectItem value="10/12">10/12</SelectItem>
-                            <SelectItem value="12/12">12/12</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Truss</Label>
-                        <Input
-                          value={formData.truss}
-                          onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
-                          placeholder="Type"
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="pt-1 border-t">
-                      <div className="flex items-center space-x-1.5 mb-1">
-                        <Checkbox
-                          id="overhang_same"
-                          checked={formData.overhang_same_all}
-                          onCheckedChange={(checked) => setFormData({ ...formData, overhang_same_all: checked as boolean })}
-                          className="h-3 w-3"
-                        />
-                        <Label htmlFor="overhang_same" className="cursor-pointer font-semibold text-[10px]">Same overhang</Label>
-                      </div>
-                      {formData.overhang_same_all ? (
-                        <div className="space-y-0.5">
-                          <Label className="text-[10px]">Overhang (in)</Label>
-                          <Input
-                            type="number"
-                            value={formData.overhang_front}
-                            onChange={(e) => {
-                              const value = Number(e.target.value);
-                              setFormData({ 
-                                ...formData, 
-                                overhang_front: value,
-                                overhang_back: value,
-                                overhang_left: value,
-                                overhang_right: value,
-                              });
-                            }}
-                            className="rounded-none h-7 text-xs"
-                          />
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <div className="space-y-0.5">
-                            <Label className="text-[10px]">Front</Label>
-                            <Input
-                              type="number"
-                              value={formData.overhang_front}
-                              onChange={(e) => setFormData({ ...formData, overhang_front: Number(e.target.value) })}
-                              className="rounded-none h-7 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-0.5">
-                            <Label className="text-[10px]">Back</Label>
-                            <Input
-                              type="number"
-                              value={formData.overhang_back}
-                              onChange={(e) => setFormData({ ...formData, overhang_back: Number(e.target.value) })}
-                              className="rounded-none h-7 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-0.5">
-                            <Label className="text-[10px]">Left</Label>
-                            <Input
-                              type="number"
-                              value={formData.overhang_left}
-                              onChange={(e) => setFormData({ ...formData, overhang_left: Number(e.target.value) })}
-                              className="rounded-none h-7 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-0.5">
-                            <Label className="text-[10px]">Right</Label>
-                            <Input
-                              type="number"
-                              value={formData.overhang_right}
-                              onChange={(e) => setFormData({ ...formData, overhang_right: Number(e.target.value) })}
-                              className="rounded-none h-7 text-xs"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Foundation & Floor */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Foundation & Floor</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5 py-1.5 px-2">
-                    <div className="grid grid-cols-1 gap-1.5">
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Foundation</Label>
-                        <Select 
-                          value={formData.foundation_type} 
-                          onValueChange={(value) => setFormData({ ...formData, foundation_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-7 text-xs">
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="concrete">Concrete</SelectItem>
-                            <SelectItem value="gravel">Gravel</SelectItem>
-                            <SelectItem value="pier">Pier</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Floor</Label>
-                        <Select 
-                          value={formData.floor_type} 
-                          onValueChange={(value) => setFormData({ ...formData, floor_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-7 text-xs">
-                            <SelectValue placeholder="Select floor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="concrete">Concrete</SelectItem>
-                            <SelectItem value="wood">Wood</SelectItem>
-                            <SelectItem value="none">None</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Soffit</Label>
-                        <Select 
-                          value={formData.soffit_type} 
-                          onValueChange={(value) => setFormData({ ...formData, soffit_type: value })}
-                        >
-                          <SelectTrigger className="rounded-none h-7 text-xs">
-                            <SelectValue placeholder="Select soffit" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="steel">Steel</SelectItem>
-                            <SelectItem value="vinyl">Vinyl</SelectItem>
-                            <SelectItem value="none">None</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Structure & Design */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Structure & Design</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5 py-1.5 px-2">
-                    <div className="space-y-0.5">
-                      <Label className="text-[10px]">Building Use</Label>
-                      <Input
-                        value={formData.building_use}
-                        onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
-                        placeholder="Storage, Garage, etc."
-                        className="rounded-none h-7 text-xs"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Exterior Colors & Finishes */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Colors & Finishes</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5 py-1.5 px-2">
-                    <div className="grid grid-cols-1 gap-1.5">
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Roof Color</Label>
-                        <Input
-                          value={formData.roof_color}
-                          onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
-                          placeholder="Color"
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Trim Color</Label>
-                        <Input
-                          value={formData.trim_color}
-                          onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
-                          placeholder="Color"
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px]">Side Color</Label>
-                        <Input
-                          value={formData.side_color}
-                          onChange={(e) => setFormData({ ...formData, side_color: e.target.value })}
-                          placeholder="Color"
-                          className="rounded-none h-7 text-xs"
-                        />
-                      </div>
-                      <div className="flex items-center space-x-1.5">
-                        <Checkbox
-                          id="wainscot"
-                          checked={formData.wainscot_enabled}
-                          onCheckedChange={(checked) => setFormData({ ...formData, wainscot_enabled: checked as boolean })}
-                          className="h-3 w-3"
-                        />
-                        <Label htmlFor="wainscot" className="cursor-pointer text-[10px]">Include Wainscot</Label>
-                      </div>
-                    </div>
-
-                    <div className="pt-1 border-t">
-                      <Label className="font-semibold text-[10px]">Insulation</Label>
-                      <Select 
-                        value={formData.insulation_type} 
-                        onValueChange={(value) => setFormData({ ...formData, insulation_type: value })}
-                      >
-                        <SelectTrigger className="rounded-none h-7 text-xs mt-0.5">
-                          <SelectValue placeholder="Select insulation type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          <SelectItem value="fiberglass">Fiberglass Batts</SelectItem>
-                          <SelectItem value="spray_foam">Spray Foam</SelectItem>
-                          <SelectItem value="blown_in">Blown-In Cellulose</SelectItem>
-                          <SelectItem value="rigid_foam">Rigid Foam Board</SelectItem>
-                          <SelectItem value="reflective">Reflective/Radiant Barrier</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="pt-1 border-t">
-                      <Button
-                        variant={formData.liner_package ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFormData({ ...formData, liner_package: !formData.liner_package })}
-                        className="rounded-none w-full h-7 text-xs"
-                      >
-                        {formData.liner_package ? '✓ Liner' : 'Add Liner'}
-                      </Button> {/* Closing tag added here */}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Utilities */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Utilities</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1 py-1.5 px-2">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center space-x-1.5">
-                        <Checkbox
-                          id="plumbing"
-                          checked={formData.has_plumbing}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_plumbing: checked as boolean })}
-                          className="h-3 w-3"
-                        />
-                        <Label htmlFor="plumbing" className="cursor-pointer text-[10px]">Plumbing</Label>
-                      </div>
-                      <div className="flex items-center space-x-1.5">
-                        <Checkbox
-                          id="electrical"
-                          checked={formData.has_electrical}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_electrical: checked as boolean })}
-                          className="h-3 w-3"
-                        />
-                        <Label htmlFor="electrical" className="cursor-pointer text-[10px]">Electrical</Label>
-                      </div>
-                      <div className="flex items-center space-x-1.5">
-                        <Checkbox
-                          id="hvac"
-                          checked={formData.has_hvac}
-                          onCheckedChange={(checked) => setFormData({ ...formData, has_hvac: checked as boolean })}
-                          className="h-3 w-3"
-                        />
-                        <Label htmlFor="hvac" className="cursor-pointer text-[10px]">HVAC</Label>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Notes */}
-                <Card className="rounded-none border-2 border-slate-300">
-                  <CardHeader className="py-1 px-2">
-                    <CardTitle className="text-xs font-semibold">Notes</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5 py-1.5 px-2">
-                    <div className="space-y-0.5">
-                      <Label className="text-[10px]">Site Notes</Label>
-                      <Textarea
-                        value={formData.site_notes}
-                        onChange={(e) => setFormData({ ...formData, site_notes: e.target.value })}
-                        placeholder="Site notes"
-                        rows={2}
-                        className="rounded-none text-xs"
-                      />
-                    </div>
-                    <div className="space-y-0.5">
-                      <Label className="text-[10px]">Structural</Label>
-                      <Textarea
-                        value={formData.structural_notes}
-                        onChange={(e) => setFormData({ ...formData, structural_notes: e.target.value })}
-                        placeholder="Structural notes"
-                        rows={2}
-                        className="rounded-none text-xs"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {existingQuote && (
-                  <Card className="rounded-none border-2 border-slate-300">
-                    <CardHeader className="py-1 px-2">
-                      <CardTitle className="text-xs font-semibold">Pricing & Status</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1.5 py-1.5 px-2">
-                      <div className="grid grid-cols-1 gap-1.5">
-                        <div className="space-y-0.5">
-                          <Label className="text-[10px]">Price</Label>
-                          <Input
-                            type="number"
-                            value={formData.estimated_price || ''}
-                            onChange={(e) => setFormData({ 
-                              ...formData, 
-                              estimated_price: e.target.value ? Number(e.target.value) : null 
-                            })}
-                            placeholder="Price"
-                            className="rounded-none h-7 text-xs"
-                          />
-                        </div>
-                        <div className="space-y-0.5">
-                          <Label className="text-[10px]">Status</Label>
-                          <Select 
-                            value={formData.status} 
-                            onValueChange={(value) => setFormData({ ...formData, status: value })}
-                          >
-                            <SelectTrigger className="rounded-none h-7 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="draft">Draft</SelectItem>
-                              <SelectItem value="submitted">Submitted</SelectItem>
-                              <SelectItem value="estimated">Estimated</SelectItem>
-                              <SelectItem value="won">Won</SelectItem>
-                              <SelectItem value="lost">Lost</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-
               {/* Mobile: Floor Plan Below */}
-              <div className="xl:hidden">
+              <div className="xl:hidden mt-2">
                 <FloorPlanBuilder
                   width={formData.width}
                   length={formData.length}

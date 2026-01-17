@@ -366,32 +366,35 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const canvasWidth = width * SCALE + 100;
-    const canvasHeight = length * SCALE + 100;
+    // Swap dimensions for 90-degree rotation (portrait -> landscape)
+    const canvasWidth = length * SCALE + 100;
+    const canvasHeight = width * SCALE + 100;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Draw building outline
+    // Rotate canvas 90 degrees clockwise and translate
+    ctx.save();
+    ctx.translate(canvasWidth - 50, 50);
+    ctx.rotate(Math.PI / 2);
+
+    // Draw building outline (after rotation, coordinates remain the same)
     ctx.strokeStyle = '#1e40af';
     ctx.lineWidth = 4;
-    ctx.strokeRect(50, 50, width * SCALE, length * SCALE);
+    ctx.strokeRect(0, 0, width * SCALE, length * SCALE);
 
     // Draw dimension labels for building
     ctx.fillStyle = '#000';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`${width}'`, 50 + (width * SCALE) / 2, 35);
+    ctx.fillText(`${width}'`, (width * SCALE) / 2, -15);
 
     ctx.save();
-    ctx.translate(35, 50 + (length * SCALE) / 2);
+    ctx.translate(-15, (length * SCALE) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText(`${length}'`, 0, 0);
     ctx.restore();
-
-    ctx.textAlign = 'left';
-    ctx.fillText(`Scale: 1:${SCALE}'`, 10, canvasHeight - 10);
 
     // Draw rooms
     rooms.forEach(room => {
@@ -403,7 +406,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const roomY = isFloating && mousePosition ? mousePosition.y : room.y;
 
       ctx.save();
-      ctx.translate(50 + roomX * SCALE, 50 + roomY * SCALE);
+      ctx.translate(roomX * SCALE, roomY * SCALE);
       ctx.rotate((room.rotation * Math.PI) / 180);
 
       // Draw room walls
@@ -435,13 +438,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         ctx.textBaseline = 'middle';
 
         // Width dimension - text only
-        const midX = 50 + roomX * SCALE + (room.width * SCALE) / 2;
-        const topY = 50 + roomY * SCALE - 15;
+        const midX = roomX * SCALE + (room.width * SCALE) / 2;
+        const topY = roomY * SCALE - 15;
         ctx.fillText(`${room.width}'`, midX, topY);
 
         // Length dimension - text only
-        const rightX = 50 + roomX * SCALE + room.width * SCALE + 15;
-        const midY = 50 + roomY * SCALE + (room.length * SCALE) / 2;
+        const rightX = roomX * SCALE + room.width * SCALE + 15;
+        const midY = roomY * SCALE + (room.length * SCALE) / 2;
         ctx.fillText(`${room.length}'`, rightX, midY);
       }
     });
@@ -466,21 +469,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const endY = isDragging && draggingWallHandle.handleType === 'end' ? draggingWallHandle.wall.end_y : wall.end_y;
 
       ctx.beginPath();
-      ctx.moveTo(50 + startX * SCALE, 50 + startY * SCALE);
-      ctx.lineTo(50 + endX * SCALE, 50 + endY * SCALE);
+      ctx.moveTo(startX * SCALE, startY * SCALE);
+      ctx.lineTo(endX * SCALE, endY * SCALE);
       ctx.stroke();
 
       if (isSelected || isDragging) {
         const handleSize = 8;
         ctx.fillStyle = hoveredItem?.type === 'handle' && hoveredItem?.handleType === 'start' && hoveredItem?.id === wall.id ? '#fbbf24' : '#ef4444';
-        ctx.fillRect(50 + startX * SCALE - handleSize/2, 50 + startY * SCALE - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(startX * SCALE - handleSize/2, startY * SCALE - handleSize/2, handleSize, handleSize);
         
         ctx.fillStyle = hoveredItem?.type === 'handle' && hoveredItem?.handleType === 'end' && hoveredItem?.id === wall.id ? '#fbbf24' : '#ef4444';
-        ctx.fillRect(50 + endX * SCALE - handleSize/2, 50 + endY * SCALE - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(endX * SCALE - handleSize/2, endY * SCALE - handleSize/2, handleSize, handleSize);
 
         const wallLength = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)).toFixed(1);
-        const midX = 50 + (startX + endX) / 2 * SCALE;
-        const midY = 50 + (startY + endY) / 2 * SCALE;
+        const midX = (startX + endX) / 2 * SCALE;
+        const midY = (startY + endY) / 2 * SCALE;
         
         ctx.fillStyle = '#000';
         ctx.font = 'bold 12px sans-serif';
@@ -502,8 +505,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       const posX = isFloating && mousePosition ? mousePosition.x : x;
       const posY = isFloating && mousePosition ? mousePosition.y : y;
 
-      const canvasX = 50 + posX * SCALE;
-      const canvasY = 50 + posY * SCALE;
+      const canvasX = posX * SCALE;
+      const canvasY = posY * SCALE;
 
       const size = parseOpeningSize(opening.size_detail);
       const rotation = opening.rotation || 0;
@@ -625,17 +628,29 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     });
 
-    // Draw floor drains
+    // Restore canvas after rotation
+    ctx.restore();
+
+    // Draw scale label (outside rotated context)
+    ctx.fillStyle = '#000';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Scale: 1:${SCALE}'`, 10, canvasHeight - 10);
+
+    // Draw floor drains (in rotated context)
+    ctx.save();
+    ctx.translate(canvasWidth - 50, 50);
+    ctx.rotate(Math.PI / 2);
     ctx.strokeStyle = '#06b6d4';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     floorDrains.forEach((drain, index) => {
-      let startX = 50 + (width * SCALE * 0.2) + (index * 30);
-      let startY = 50 + (length * SCALE * 0.2) + (index * 30);
+      let startX = (width * SCALE * 0.2) + (index * 30);
+      let startY = (length * SCALE * 0.2) + (index * 30);
 
       if (drain.location.toLowerCase().includes('center')) {
-        startX = 50 + (width * SCALE / 2);
-        startY = 50 + (length * SCALE / 2);
+        startX = (width * SCALE / 2);
+        startY = (length * SCALE / 2);
       }
 
       if (drain.orientation === 'horizontal') {
@@ -651,6 +666,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       }
     });
     ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function getCanvasCoords(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -658,8 +674,22 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - 50) / SCALE;
-    const y = (e.clientY - rect.top - 50) / SCALE;
+    const canvasWidth = length * SCALE + 100;
+    
+    // Get raw click position
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+    
+    // Reverse the 90-degree rotation transformation
+    // Original: translate(canvasWidth - 50, 50) then rotate(90deg)
+    // Click point needs to be transformed back
+    const transformedX = rawX - (canvasWidth - 50);
+    const transformedY = rawY - 50;
+    
+    // Reverse rotation: (x', y') = (y, -x) for 90deg clockwise
+    const x = transformedY / SCALE;
+    const y = -transformedX / SCALE;
+    
     return { x, y };
   }
 
