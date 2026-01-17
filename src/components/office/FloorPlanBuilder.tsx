@@ -873,9 +873,6 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     } else if (mode === 'wall') {
       setIsDragging(true);
       setDragStart(coords);
-    } else if (mode === 'door' || mode === 'window' || mode === 'overhead') {
-      const type = mode === 'door' ? 'walkdoor' : mode === 'overhead' ? 'overhead_door' : 'window';
-      placeOpening(coords.x, coords.y, type);
     } else if (mode === 'room' && pendingRoomPlacement) {
       placeRoom(coords.x, coords.y);
     }
@@ -1093,31 +1090,76 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
     const snapped = snapOpeningToWall(x, y);
     
-    if (quoteId && !floatingOpening.id.startsWith('temp_')) {
-      const { error } = await supabase
-        .from('quote_openings')
-        .update({
-          position_x: snapped.x,
-          position_y: snapped.y,
-          rotation: snapped.rotation,
-        })
-        .eq('id', floatingOpening.id);
+    // If this is a new opening (temp ID), add it to the database and openings array
+    if (floatingOpening.id.startsWith('temp_')) {
+      const newOpening = {
+        ...floatingOpening,
+        position_x: snapped.x,
+        position_y: snapped.y,
+        rotation: snapped.rotation,
+      };
 
-      if (error) {
-        console.error('Error updating opening position:', error);
-        toast.error('Failed to move opening');
-        setFloatingOpening(null);
-        setMousePosition(null);
-        return;
+      if (quoteId) {
+        try {
+          const { data, error } = await supabase
+            .from('quote_openings')
+            .insert({
+              quote_id: quoteId,
+              opening_type: newOpening.opening_type,
+              size_detail: newOpening.size_detail,
+              quantity: newOpening.quantity,
+              location: newOpening.location,
+              wall: newOpening.wall,
+              swing_direction: newOpening.swing_direction,
+              position_x: snapped.x,
+              position_y: snapped.y,
+              rotation: snapped.rotation,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          setOpenings([...openings, data]);
+          toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
+        } catch (error: any) {
+          console.error('Error placing opening:', error);
+          toast.error('Failed to place opening');
+        }
+      } else {
+        // No quote yet, just add to local state
+        setOpenings([...openings, newOpening]);
+        toast.success('Opening placed (will save when quote is saved)');
       }
+    } else {
+      // Existing opening, update position
+      if (quoteId) {
+        const { error } = await supabase
+          .from('quote_openings')
+          .update({
+            position_x: snapped.x,
+            position_y: snapped.y,
+            rotation: snapped.rotation,
+          })
+          .eq('id', floatingOpening.id);
+
+        if (error) {
+          console.error('Error updating opening position:', error);
+          toast.error('Failed to move opening');
+          setFloatingOpening(null);
+          setMousePosition(null);
+          return;
+        }
+      }
+
+      setOpenings(openings.map(o => 
+        o.id === floatingOpening.id 
+          ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
+          : o
+      ));
+      toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     }
 
-    setOpenings(openings.map(o => 
-      o.id === floatingOpening.id 
-        ? { ...o, position_x: snapped.x, position_y: snapped.y, rotation: snapped.rotation } 
-        : o
-    ));
-    toast.success(snapped.snapped ? 'Opening placed and snapped to wall' : 'Opening placed');
     setFloatingOpening(null);
     setMousePosition(null);
   }
@@ -1486,7 +1528,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant={mode === 'door' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setMode('door')}
+                onClick={() => {
+                  setMode('select');
+                  const defaultOpening: Opening = {
+                    id: generateTempId(),
+                    opening_type: 'walkdoor',
+                    size_detail: "3' × 7'",
+                    quantity: 1,
+                    location: '',
+                    wall: 'front',
+                    swing_direction: 'right',
+                    position_x: 0,
+                    position_y: 0,
+                    rotation: 0,
+                  };
+                  setFloatingOpening(defaultOpening);
+                  toast.info('Click on the floor plan to place door');
+                }}
                 className="rounded-none h-8 px-3"
               >
                 <DoorOpen className="w-3 h-3 mr-1" />
@@ -1495,7 +1553,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant={mode === 'window' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setMode('window')}
+                onClick={() => {
+                  setMode('select');
+                  const defaultOpening: Opening = {
+                    id: generateTempId(),
+                    opening_type: 'window',
+                    size_detail: "3' × 4'",
+                    quantity: 1,
+                    location: '',
+                    wall: 'front',
+                    swing_direction: 'right',
+                    position_x: 0,
+                    position_y: 0,
+                    rotation: 0,
+                  };
+                  setFloatingOpening(defaultOpening);
+                  toast.info('Click on the floor plan to place window');
+                }}
                 className="rounded-none h-8 px-3"
               >
                 <Square className="w-3 h-3 mr-1" />
@@ -1504,7 +1578,23 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant={mode === 'overhead' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setMode('overhead')}
+                onClick={() => {
+                  setMode('select');
+                  const defaultOpening: Opening = {
+                    id: generateTempId(),
+                    opening_type: 'overhead_door',
+                    size_detail: "10' × 10'",
+                    quantity: 1,
+                    location: '',
+                    wall: 'front',
+                    swing_direction: 'right',
+                    position_x: 0,
+                    position_y: 0,
+                    rotation: 0,
+                  };
+                  setFloatingOpening(defaultOpening);
+                  toast.info('Click on the floor plan to place overhead door');
+                }}
                 className="rounded-none h-8 px-3"
               >
                 <Square className="w-3 h-3 mr-1" />
