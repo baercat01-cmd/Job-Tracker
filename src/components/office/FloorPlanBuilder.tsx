@@ -154,7 +154,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     return id;
   };
 
-  // Calculate initial zoom to fit the drawing in the viewport
+  // Calculate base zoom to fit the drawing in the viewport
+  const [baseZoom, setBaseZoom] = useState(1.0);
+  
   useEffect(() => {
     if (!containerRef.current) return;
     
@@ -166,12 +168,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const drawingWidth = length * SCALE;
     const drawingHeight = width * SCALE;
     
-    // Calculate zoom to fit the entire canvas (including padding) in the container
+    // Calculate base zoom to fit the entire drawing in the container
     const zoomX = (containerWidth - padding * 2) / drawingWidth;
     const zoomY = (containerHeight - padding * 2) / drawingHeight;
-    const initialZoom = Math.min(zoomX, zoomY, 1.0);
+    const calculatedBaseZoom = Math.min(zoomX, zoomY, 1.0);
     
-    setZoom(Math.max(0.3, initialZoom));
+    setBaseZoom(Math.max(0.3, calculatedBaseZoom));
+    setZoom(1.0); // Reset user zoom to 1.0 (100%)
   }, [width, length]);
 
   useEffect(() => {
@@ -388,23 +391,39 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const padding = 100;
-    const drawingWidth = length * SCALE;
-    const drawingHeight = width * SCALE;
+    // Fixed canvas size based on container
+    const container = containerRef.current;
+    if (!container) return;
     
-    const canvasWidth = drawingWidth * zoom + padding * 2;
-    const canvasHeight = drawingHeight * zoom + padding * 2;
+    const canvasWidth = container.clientWidth;
+    const canvasHeight = container.clientHeight;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
+    // Calculate effective zoom (base zoom * user zoom)
+    const effectiveZoom = baseZoom * zoom;
+    
+    const drawingWidth = length * SCALE;
+    const drawingHeight = width * SCALE;
+    
+    // Center the drawing in the canvas
+    const scaledWidth = drawingHeight * effectiveZoom; // After 90deg rotation: height becomes width
+    const scaledHeight = drawingWidth * effectiveZoom; // After 90deg rotation: width becomes height
+    
+    const centerX = canvasWidth / 2;
+    const centerY = canvasHeight / 2;
+    
     ctx.save();
-    const offsetX = padding;
-    const offsetY = drawingHeight * zoom + padding;
-    ctx.translate(offsetX, offsetY);
+    // Translate to center
+    ctx.translate(centerX, centerY);
+    // Rotate 90 degrees
     ctx.rotate(Math.PI / 2);
-    ctx.scale(zoom, zoom);
+    // Scale with effective zoom
+    ctx.scale(effectiveZoom, effectiveZoom);
+    // Translate so drawing is centered (drawing origin at top-left, so offset by half dimensions)
+    ctx.translate(-width * SCALE / 2, -length * SCALE / 2);
 
     // Draw building outline (after rotation, coordinates remain the same)
     ctx.strokeStyle = '#1e40af';
@@ -664,11 +683,12 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     ctx.textAlign = 'left';
     ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, canvasHeight - 10);
 
-    // Draw floor drains (in rotated context)
+    // Draw floor drains (need to apply same transforms)
     ctx.save();
-    ctx.translate(50, width * SCALE * zoom + 50);
+    ctx.translate(centerX, centerY);
     ctx.rotate(Math.PI / 2);
-    ctx.scale(zoom, zoom);
+    ctx.scale(effectiveZoom, effectiveZoom);
+    ctx.translate(-width * SCALE / 2, -length * SCALE / 2);
     ctx.strokeStyle = '#06b6d4';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
@@ -699,22 +719,32 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   function getCanvasCoords(e: React.MouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
-    if (!canvas) return null;
+    const container = containerRef.current;
+    if (!canvas || !container) return null;
 
     const rect = canvas.getBoundingClientRect();
-    const padding = 100;
+    const effectiveZoom = baseZoom * zoom;
     
     // Get raw click position relative to canvas
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
     
-    // Reverse the transformations: translate(padding, width * SCALE * zoom + padding) then rotate(90deg) then scale(zoom)
-    const transformedX = rawX - padding;
-    const transformedY = rawY - (width * SCALE * zoom + padding);
+    // Canvas center
+    const centerX = container.clientWidth / 2;
+    const centerY = container.clientHeight / 2;
     
-    // Reverse rotation and zoom: (x', y') = (y, -x) for 90deg clockwise, divided by zoom
-    const x = transformedY / (SCALE * zoom);
-    const y = -transformedX / (SCALE * zoom);
+    // Reverse the transformations: from center, then rotated 90deg, then scaled
+    const transformedX = rawX - centerX;
+    const transformedY = rawY - centerY;
+    
+    // Reverse rotation (90deg clockwise means: (x', y') after rotation = (y, -x) before)
+    // So to reverse: if (x', y') is what we have, then original was (-y', x')
+    const beforeRotationX = -transformedY;
+    const beforeRotationY = transformedX;
+    
+    // Reverse scale and translate
+    const x = (beforeRotationX / effectiveZoom + width * SCALE / 2) / SCALE;
+    const y = (beforeRotationY / effectiveZoom + length * SCALE / 2) / SCALE;
     
     return { x, y };
   }
@@ -1538,7 +1568,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
                 disabled={zoom <= 0.5}
                 className="rounded-none h-7 px-2"
               >
@@ -1548,8 +1578,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setZoom(Math.min(2.0, zoom + 0.25))}
-                disabled={zoom >= 2.0}
+                onClick={() => setZoom(Math.min(3.0, zoom + 0.1))}
+                disabled={zoom >= 3.0}
                 className="rounded-none h-7 px-2"
               >
                 <ZoomIn className="w-3 h-3" />
