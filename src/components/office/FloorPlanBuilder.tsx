@@ -158,6 +158,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [measureEnd, setMeasureEnd] = useState<{ x: number; y: number } | null>(null);
   const [showPlacementDialog, setShowPlacementDialog] = useState(false);
   const [preciseCoords, setPreciseCoords] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
 
   const generateTempId = () => {
     const id = `temp_${tempIdCounter}`;
@@ -196,7 +199,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom, showGrid, showDimensions, measureStart, measureEnd]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom, showGrid, showDimensions, measureStart, measureEnd, panOffset]);
 
   // Add keyboard handler for ESC to cancel floating placement
   useEffect(() => {
@@ -529,6 +532,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     ctx.save();
     // Translate to center
     ctx.translate(centerX, centerY);
+    // Apply pan offset
+    ctx.translate(panOffset.x, panOffset.y);
     // Rotate 90 degrees
     ctx.rotate(Math.PI / 2);
     // Scale with effective zoom
@@ -1113,9 +1118,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const centerX = container.clientWidth / 2;
     const centerY = container.clientHeight / 2;
     
-    // Reverse the transformations: from center, then rotated 90deg, then scaled
-    const transformedX = rawX - centerX;
-    const transformedY = rawY - centerY;
+    // Reverse the transformations: from center, then pan, then rotated 90deg, then scaled
+    const transformedX = rawX - centerX - panOffset.x;
+    const transformedY = rawY - centerY - panOffset.y;
     
     // Reverse rotation (90deg clockwise: to reverse, rotate -90deg which transforms (x', y') → (y', -x'))
     const beforeRotationX = transformedY;
@@ -1291,7 +1296,9 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         return;
       }
 
-      // Clear selections if clicking empty space
+      // Start panning if clicking empty space
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, y: e.clientY });
       setSelectedOpening(null);
       setSelectedWall(null);
       setSelectedRoom(null);
@@ -1304,6 +1311,15 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    // Handle panning
+    if (isPanning && panStart) {
+      const deltaX = e.clientX - panStart.x;
+      const deltaY = e.clientY - panStart.y;
+      setPanOffset({ x: panOffset.x + deltaX, y: panOffset.y + deltaY });
+      setPanStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
@@ -1411,6 +1427,13 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   async function handleCanvasMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
+    // Stop panning
+    if (isPanning) {
+      setIsPanning(false);
+      setPanStart(null);
+      return;
+    }
+
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
@@ -1498,6 +1521,33 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       setEditingOpening(clickedOpening);
       setShowEditOpening(true);
     }
+  }
+
+  function handleCanvasRightClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    
+    // Release floating items on right click
+    if (floatingOpening) {
+      setOpenings(openings.filter(o => o.id !== floatingOpening.id));
+      setFloatingOpening(null);
+      setMousePosition(null);
+      toast.info('Placement cancelled');
+    } else if (floatingRoom) {
+      setRooms(rooms.filter(r => r.id !== floatingRoom.id));
+      setFloatingRoom(null);
+      setMousePosition(null);
+      toast.info('Room placement cancelled');
+    }
+  }
+
+  function handleCanvasWheel(e: React.WheelEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    
+    // Zoom in/out with scroll wheel
+    const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(0.5, Math.min(3.0, zoom + zoomDelta));
+    
+    setZoom(newZoom);
   }
 
   async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window' | 'overhead_door') {
@@ -2016,6 +2066,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               ? 'cursor-crosshair' 
               : floatingOpening || floatingRoom
               ? 'cursor-move'
+              : isPanning
+              ? 'cursor-grabbing'
               : draggingWallHandle || draggingRoomHandle
               ? 'cursor-grabbing'
               : hoveredItem?.type === 'handle' || hoveredItem?.type === 'room_resize'
@@ -2026,6 +2078,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           onDoubleClick={handleCanvasDoubleClick}
+          onContextMenu={handleCanvasRightClick}
+          onWheel={handleCanvasWheel}
         />
       </div>
 
@@ -2267,7 +2321,10 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setZoom(1.0)}
+                onClick={() => {
+                  setZoom(1.0);
+                  setPanOffset({ x: 0, y: 0 });
+                }}
                 className="rounded-none h-7 px-2 text-xs"
               >
                 Reset
