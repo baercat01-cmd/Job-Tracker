@@ -203,8 +203,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     return { width: 3, height: 7 }; // default
   }
 
-  // Snap position to nearest wall and return rotation based on wall orientation
-  function snapToWall(x: number, y: number): { x: number; y: number; snapped: boolean; rotation: number; wallType: string } {
+  // Snap position to nearest wall for openings (doors/windows) - snaps to BOTH exterior and interior walls
+  function snapOpeningToWall(x: number, y: number): { x: number; y: number; snapped: boolean; rotation: number; wallType: string } {
     // Check exterior walls first
     const exteriorWalls = [
       { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top', rotation: 180 }, // top
@@ -231,6 +231,67 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
       if (distToLine < SNAP_THRESHOLD) {
         const snapped = snapToLine(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
         // Determine wall orientation
+        const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
+        const rotation = isHorizontal ? 0 : 90;
+        return { ...snapped, snapped: true, rotation, wallType: 'interior' };
+      }
+    }
+
+    return { x, y, snapped: false, rotation: 0, wallType: 'none' };
+  }
+
+  // Snap position to nearest wall for rooms - snaps ONLY to exterior walls
+  function snapRoomToWall(x: number, y: number): { x: number; y: number; snapped: boolean; wallType: string } {
+    // Check exterior walls only
+    const exteriorWalls = [
+      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top' }, // top
+      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal', name: 'bottom' }, // bottom
+      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical', name: 'left' }, // left
+      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical', name: 'right' }, // right
+    ];
+
+    for (const wall of exteriorWalls) {
+      if (wall.type === 'horizontal') {
+        if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
+          return { x, y: wall.y1, snapped: true, wallType: wall.name };
+        }
+      } else {
+        if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
+          return { x: wall.x1, y, snapped: true, wallType: wall.name };
+        }
+      }
+    }
+
+    return { x, y, snapped: false, wallType: 'none' };
+  }
+
+  // Snap position for interior walls - snaps to both exterior and interior walls
+  function snapToWall(x: number, y: number): { x: number; y: number; snapped: boolean; rotation: number; wallType: string } {
+    // Check exterior walls first
+    const exteriorWalls = [
+      { x1: 0, y1: 0, x2: width, y2: 0, type: 'horizontal', name: 'top', rotation: 180 },
+      { x1: 0, y1: length, x2: width, y2: length, type: 'horizontal', name: 'bottom', rotation: 0 },
+      { x1: 0, y1: 0, x2: 0, y2: length, type: 'vertical', name: 'left', rotation: 90 },
+      { x1: width, y1: 0, x2: width, y2: length, type: 'vertical', name: 'right', rotation: 270 },
+    ];
+
+    for (const wall of exteriorWalls) {
+      if (wall.type === 'horizontal') {
+        if (Math.abs(y - wall.y1) < SNAP_THRESHOLD && x >= wall.x1 && x <= wall.x2) {
+          return { x, y: wall.y1, snapped: true, rotation: wall.rotation, wallType: wall.name };
+        }
+      } else {
+        if (Math.abs(x - wall.x1) < SNAP_THRESHOLD && y >= wall.y1 && y <= wall.y2) {
+          return { x: wall.x1, y, snapped: true, rotation: wall.rotation, wallType: wall.name };
+        }
+      }
+    }
+
+    // Check interior walls
+    for (const wall of walls) {
+      const distToLine = pointToLineDistance(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
+      if (distToLine < SNAP_THRESHOLD) {
+        const snapped = snapToLine(x, y, wall.start_x, wall.start_y, wall.end_x, wall.end_y);
         const isHorizontal = Math.abs(wall.end_x - wall.start_x) > Math.abs(wall.end_y - wall.start_y);
         const rotation = isHorizontal ? 0 : 90;
         return { ...snapped, snapped: true, rotation, wallType: 'interior' };
@@ -887,7 +948,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   }
 
   async function placeOpening(x: number, y: number, type: 'walkdoor' | 'window' | 'overhead_door') {
-    const snapped = snapToWall(x, y);
+    const snapped = snapOpeningToWall(x, y);
     
     const defaultSize = type === 'walkdoor' ? "3' × 7'" : type === 'overhead_door' ? "10' × 10'" : "3' × 4'";
     
@@ -944,7 +1005,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   async function placeFloatingOpening(x: number, y: number) {
     if (!floatingOpening) return;
 
-    const snapped = snapToWall(x, y);
+    const snapped = snapOpeningToWall(x, y);
     
     if (quoteId && !floatingOpening.id.startsWith('temp_')) {
       const { error } = await supabase
@@ -978,7 +1039,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function placeRoom(x: number, y: number) {
     if (!pendingRoomPlacement) return;
 
-    const snapped = snapToWall(x, y);
+    const snapped = snapRoomToWall(x, y);
 
     const newRoom: Room = {
       id: generateTempId(),
@@ -999,7 +1060,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   function placeFloatingRoom(x: number, y: number) {
     if (!floatingRoom) return;
 
-    const snapped = snapToWall(x, y);
+    const snapped = snapRoomToWall(x, y);
     setRooms(rooms.map(r => r.id === floatingRoom.id ? { ...r, x: snapped.x, y: snapped.y } : r));
     toast.success(snapped.snapped ? 'Room placed and snapped to wall' : 'Room placed');
     setFloatingRoom(null);
@@ -1347,13 +1408,14 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move, click once more to place (auto-snaps and orients to walls)'}
-            {mode === 'select' && (floatingOpening || floatingRoom) && 'Click anywhere to place item (auto-snaps and orients to walls)'}
-            {mode === 'wall' && 'Click and drag to draw interior walls (auto-snaps to walls)'}
-            {mode === 'door' && 'Click to place a walk door (auto-snaps and orients to walls)'}
-            {mode === 'window' && 'Click to place a window (auto-snaps and orients to walls)'}
-            {mode === 'overhead' && 'Click to place an overhead door (auto-snaps and orients to walls)'}
-            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}') - auto-snaps to walls`}
+            {mode === 'select' && !floatingOpening && !floatingRoom && 'Click to select items, click again to release and move, click once more to place (doors/windows snap to all walls, rooms snap to exterior walls only)'}
+            {mode === 'select' && floatingOpening && 'Click anywhere to place opening (snaps to exterior or interior walls)'}
+            {mode === 'select' && floatingRoom && 'Click anywhere to place room (snaps to exterior walls only)'}
+            {mode === 'wall' && 'Click and drag to draw interior walls (auto-snaps to all walls)'}
+            {mode === 'door' && 'Click to place a walk door (snaps to exterior or interior walls)'}
+            {mode === 'window' && 'Click to place a window (snaps to exterior or interior walls)'}
+            {mode === 'overhead' && 'Click to place an overhead door (snaps to exterior or interior walls)'}
+            {mode === 'room' && pendingRoomPlacement && `Click to place ${pendingRoomPlacement.type} (${pendingRoomPlacement.width}' × ${pendingRoomPlacement.length}') - snaps to exterior walls only`}
           </p>
         </CardContent>
       </Card>
@@ -1751,7 +1813,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded p-3">
               <p className="text-sm text-blue-900">
-                <strong>Note:</strong> Room size is locked to your specified dimensions. After placing, you can move and rotate it, but the dimensions will remain {newRoom.width}' × {newRoom.length}'.
+                <strong>Note:</strong> Room size is locked to your specified dimensions. After placing, you can move and rotate it, but the dimensions will remain {newRoom.width}' × {newRoom.length}'. Rooms snap to exterior walls only.
               </p>
             </div>
             <div className="flex gap-2">
