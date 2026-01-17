@@ -515,8 +515,17 @@ export function QuoteIntakePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-[250px_1fr] gap-2 h-[calc(100vh-18rem)]">
-              {/* Left Column - Collapsible Forms */}
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-2 h-[calc(100vh-18rem)]">
+              {/* Left Column - Fixed Floor Plan (Desktop) */}
+              <div className="hidden xl:block xl:h-full xl:overflow-hidden">
+                <FloorPlanBuilder
+                  width={formData.width}
+                  length={formData.length}
+                  quoteId={quoteId}
+                />
+              </div>
+
+              {/* Right Column - Collapsible Forms */}
               <div className="space-y-1 overflow-y-auto xl:h-full pr-1">
                 {/* Overhang Section */}
                 <Collapsible open={openSections.dimensions} onOpenChange={() => toggleSection('dimensions')}>
@@ -889,24 +898,15 @@ export function QuoteIntakePage() {
                   </Collapsible>
                 )}
               </div>
+            </div>
 
-              {/* Right Column - Fixed Floor Plan (Rotated) */}
-              <div className="hidden xl:block xl:h-full xl:overflow-hidden">
-                <FloorPlanBuilder
-                  width={formData.width}
-                  length={formData.length}
-                  quoteId={quoteId}
-                />
-              </div>
-
-              {/* Mobile: Floor Plan Below */}
-              <div className="xl:hidden mt-2">
-                <FloorPlanBuilder
-                  width={formData.width}
-                  length={formData.length}
-                  quoteId={quoteId}
-                />
-              </div>
+            {/* Mobile: Floor Plan Below */}
+            <div className="xl:hidden mt-2">
+              <FloorPlanBuilder
+                width={formData.width}
+                length={formData.length}
+                quoteId={quoteId}
+              />
             </div>
           </TabsContent>
 

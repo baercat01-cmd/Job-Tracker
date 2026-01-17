@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home, Edit2, RotateCw } from 'lucide-react';
+import { Plus, Trash2, Move, MousePointer, DoorOpen, Square, Home, Edit2, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -145,6 +145,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   });
 
   const [tempIdCounter, setTempIdCounter] = useState(0);
+  const [zoom, setZoom] = useState(1.0);
 
   const generateTempId = () => {
     const id = `temp_${tempIdCounter}`;
@@ -160,7 +161,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   useEffect(() => {
     drawFloorPlan();
-  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem]);
+  }, [width, length, walls, openings, rooms, floorDrains, selectedOpening, selectedRoom, selectedWall, floatingOpening, floatingRoom, mousePosition, draggingWallHandle, hoveredItem, zoom]);
 
   async function loadFloorPlanData() {
     if (!quoteId) return;
@@ -366,18 +367,19 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Swap dimensions for 90-degree rotation (portrait -> landscape)
-    const canvasWidth = length * SCALE + 100;
-    const canvasHeight = width * SCALE + 100;
+    // Swap dimensions for 90-degree rotation (portrait -> landscape) with zoom
+    const canvasWidth = length * SCALE * zoom + 100;
+    const canvasHeight = width * SCALE * zoom + 100;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Rotate canvas 90 degrees clockwise and translate
+    // Apply zoom and rotation
     ctx.save();
     ctx.translate(canvasWidth - 50, 50);
     ctx.rotate(Math.PI / 2);
+    ctx.scale(zoom, zoom);
 
     // Draw building outline (after rotation, coordinates remain the same)
     ctx.strokeStyle = '#1e40af';
@@ -631,16 +633,17 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     // Restore canvas after rotation
     ctx.restore();
 
-    // Draw scale label (outside rotated context)
+    // Draw zoom label (outside rotated context)
     ctx.fillStyle = '#000';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`Scale: 1:${SCALE}'`, 10, canvasHeight - 10);
+    ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, canvasHeight - 10);
 
     // Draw floor drains (in rotated context)
     ctx.save();
     ctx.translate(canvasWidth - 50, 50);
     ctx.rotate(Math.PI / 2);
+    ctx.scale(zoom, zoom);
     ctx.strokeStyle = '#06b6d4';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
@@ -674,21 +677,21 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
     if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
-    const canvasWidth = length * SCALE + 100;
+    const canvasWidth = length * SCALE * zoom + 100;
     
     // Get raw click position
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
     
-    // Reverse the 90-degree rotation transformation
-    // Original: translate(canvasWidth - 50, 50) then rotate(90deg)
+    // Reverse the 90-degree rotation transformation and zoom
+    // Original: translate(canvasWidth - 50, 50) then rotate(90deg) then scale(zoom)
     // Click point needs to be transformed back
     const transformedX = rawX - (canvasWidth - 50);
     const transformedY = rawY - 50;
     
-    // Reverse rotation: (x', y') = (y, -x) for 90deg clockwise
-    const x = transformedY / SCALE;
-    const y = -transformedX / SCALE;
+    // Reverse rotation and zoom: (x', y') = (y, -x) for 90deg clockwise, divided by zoom
+    const x = transformedY / (SCALE * zoom);
+    const y = -transformedX / (SCALE * zoom);
     
     return { x, y };
   }
@@ -1377,10 +1380,41 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   return (
     <div className="space-y-4">
       <Card className="rounded-none border-2 border-slate-300">
-        <CardHeader>
-          <CardTitle>Drawing Tools</CardTitle>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle>Drawing Tools</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                disabled={zoom <= 0.5}
+                className="rounded-none h-8 px-2"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <span className="text-sm font-medium min-w-[60px] text-center">{Math.round(zoom * 100)}%</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(Math.min(2.0, zoom + 0.25))}
+                disabled={zoom >= 2.0}
+                className="rounded-none h-8 px-2"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setZoom(1.0)}
+                className="rounded-none h-8 px-3 text-xs"
+              >
+                Reset
+              </Button>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-2">
           <div className="flex gap-2 flex-wrap">
             <Button
               variant={mode === 'select' ? 'default' : 'outline'}
@@ -1454,11 +1488,11 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         <CardHeader>
           <CardTitle>Building Layout</CardTitle>
           <p className="text-sm text-muted-foreground">
-            {width}' × {length}' • Scale: 1:{SCALE}' • Items snap to walls automatically
+            {width}' × {length}' • Zoom: {Math.round(zoom * 100)}% • Items snap to walls automatically
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="border rounded-lg overflow-auto bg-white">
+          <div className="border rounded-lg overflow-auto bg-white" style={{ height: 'calc(100vh - 32rem)' }}>
             <canvas
               ref={canvasRef}
               className={`${
@@ -1743,6 +1777,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         </TabsContent>
       </Tabs>
 
+      {/* All dialog components remain the same, omitted for brevity */}
       {/* Edit Opening Dialog */}
       <Dialog open={showEditOpening} onOpenChange={setShowEditOpening}>
         <DialogContent>
