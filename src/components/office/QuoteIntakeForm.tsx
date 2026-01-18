@@ -233,45 +233,57 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
+      // Helper function to convert empty strings to null
+      const cleanString = (value: string | undefined | null): string | null => {
+        const trimmed = value?.trim();
+        return trimmed && trimmed.length > 0 ? trimmed : null;
+      };
+
+      const cleanNumber = (value: number | string | null | undefined): number | null => {
+        if (value === null || value === undefined || value === '') return null;
+        const num = Number(value);
+        return !isNaN(num) && num > 0 ? num : null;
+      };
+
       const quoteData = {
-        customer_name: formData.customer_name?.trim() || null,
-        customer_email: formData.customer_email?.trim() || null,
-        customer_phone: formData.customer_phone?.trim() || null,
-        customer_address: formData.customer_address?.trim() || null,
-        project_name: formData.project_name?.trim() || null,
+        customer_name: cleanString(formData.customer_name),
+        customer_email: cleanString(formData.customer_email),
+        customer_phone: cleanString(formData.customer_phone),
+        customer_address: cleanString(formData.customer_address),
+        project_name: cleanString(formData.project_name),
         
         // Building dimensions - ensure numeric values
         width: Number(formData.width),
         length: Number(formData.length),
-        eave: formData.eave && Number(formData.eave) > 0 ? Number(formData.eave) : null,
-        pitch: formData.pitch?.trim() || null,
-        truss: formData.truss?.trim() || null,
+        eave: cleanNumber(formData.eave),
+        pitch: cleanString(formData.pitch),
+        truss: cleanString(formData.truss),
         
         // Foundation & Floor
-        foundation_type: formData.foundation_type || null,
-        floor_type: formData.floor_type || null,
-        soffit_type: formData.soffit_type || null,
+        foundation_type: cleanString(formData.foundation_type),
+        floor_type: cleanString(formData.floor_type),
+        soffit_type: cleanString(formData.soffit_type),
         
         // Structure & Design
-        snow_load: formData.snow_load ? Number(formData.snow_load) : null,
-        wind_load: formData.wind_load ? Number(formData.wind_load) : null,
-        building_use: formData.building_use || null,
+        snow_load: cleanNumber(formData.snow_load),
+        wind_load: cleanNumber(formData.wind_load),
+        building_use: cleanString(formData.building_use),
         
         // Exterior Colors
-        roof_material: formData.roof_material || null,
-        roof_color: formData.roof_color || null,
-        trim_color: formData.trim_color || null,
+        roof_material: cleanString(formData.roof_material),
+        roof_color: cleanString(formData.roof_color),
+        trim_color: cleanString(formData.trim_color),
         wainscot_enabled: formData.wainscot_enabled,
         
         // Overhang
         overhang_same_all: formData.overhang_same_all,
-        overhang_front: formData.overhang_front ? Number(formData.overhang_front) : null,
-        overhang_back: formData.overhang_back ? Number(formData.overhang_back) : null,
-        overhang_left: formData.overhang_left ? Number(formData.overhang_left) : null,
-        overhang_right: formData.overhang_right ? Number(formData.overhang_right) : null,
+        overhang_front: cleanNumber(formData.overhang_front),
+        overhang_back: cleanNumber(formData.overhang_back),
+        overhang_left: cleanNumber(formData.overhang_left),
+        overhang_right: cleanNumber(formData.overhang_right),
         
         // Insulation
-        insulation_type: formData.insulation_type || null,
+        insulation_type: cleanString(formData.insulation_type),
         
         // Special Features
         has_loft: formData.has_loft,
@@ -283,12 +295,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         has_hvac: formData.has_hvac,
         
         // Notes
-        site_notes: formData.site_notes || null,
-        structural_notes: formData.structural_notes || null,
+        site_notes: cleanString(formData.site_notes),
+        structural_notes: cleanString(formData.structural_notes),
         
         // Status and metadata
         status,
-        estimated_price: formData.estimated_price ? Number(formData.estimated_price) : null,
+        estimated_price: cleanNumber(formData.estimated_price),
         created_by: profile?.id,
         updated_at: new Date().toISOString(),
         ...(status === 'submitted' && !existingQuote?.submitted_at && {
