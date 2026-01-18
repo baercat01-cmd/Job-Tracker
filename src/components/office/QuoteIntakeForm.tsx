@@ -211,29 +211,6 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
-      // Validate required fields FIRST
-      const width = Number(formData.width);
-      const length = Number(formData.length);
-      
-      console.log('🔷 Parsed width:', width, 'type:', typeof width, 'isNaN:', isNaN(width));
-      console.log('🔷 Parsed length:', length, 'type:', typeof length, 'isNaN:', isNaN(length));
-      
-      if (!width || width <= 0 || isNaN(width)) {
-        console.error('❌ Invalid width:', width);
-        toast.error('Please enter a valid building width');
-        setSaving(false);
-        return;
-      }
-      
-      if (!length || length <= 0 || isNaN(length)) {
-        console.error('❌ Invalid length:', length);
-        toast.error('Please enter a valid building length');
-        setSaving(false);
-        return;
-      }
-      
-      console.log('✅ Width and length validation passed');
-
       // Helper to clean string values - returns null if empty
       const cleanStr = (val: any): string | null => {
         if (val === null || val === undefined) return null;
@@ -241,20 +218,55 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         return trimmed === '' ? null : trimmed;
       };
 
-      // Helper to clean number values - returns null if invalid
-      const cleanNum = (val: any): number | null => {
-        if (val === null || val === undefined || val === '') return null;
+      // Helper to clean number values - returns 0 for required fields, null for optional
+      const cleanNum = (val: any, required: boolean = false): number | null => {
+        if (val === null || val === undefined || val === '') {
+          return required ? 0 : null;
+        }
         const num = Number(val);
-        return isNaN(num) ? null : num;
+        if (isNaN(num)) {
+          return required ? 0 : null;
+        }
+        return num;
       };
+
+      // Validate required fields FIRST
+      const width = cleanNum(formData.width, true) || 30; // Default to 30 if invalid
+      const length = cleanNum(formData.length, true) || 40; // Default to 40 if invalid
+      
+      console.log('🔷 Sanitized width:', width, 'type:', typeof width);
+      console.log('🔷 Sanitized length:', length, 'type:', typeof length);
+      
+      if (width <= 0) {
+        console.error('❌ Invalid width:', width);
+        toast.error('Please enter a valid building width (must be greater than 0)');
+        setSaving(false);
+        return;
+      }
+      
+      if (length <= 0) {
+        console.error('❌ Invalid length:', length);
+        toast.error('Please enter a valid building length (must be greater than 0)');
+        setSaving(false);
+        return;
+      }
+      
+      console.log('✅ Width and length validation passed');
 
       // Build quote data with ONLY valid values
       const quoteData: any = {
         // Required fields - MUST have valid values
-        width: width,
-        length: length,
-        status: status || 'draft',
+        width: width, // Already validated as number > 0
+        length: length, // Already validated as number > 0
+        status: cleanStr(status) || 'draft',
       };
+
+      // If updating existing quote, include the ID
+      if (currentQuoteId) {
+        quoteData.id = currentQuoteId;
+      }
+
+      // DO NOT include quote_number - let database handle it
 
       // Optional string fields
       const customerName = cleanStr(formData.customer_name);
@@ -272,9 +284,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const projectName = cleanStr(formData.project_name);
       if (projectName) quoteData.project_name = projectName;
       
-      // Dimensions
-      const eave = cleanNum(formData.eave);
-      if (eave) quoteData.eave = eave;
+      // Dimensions (use cleanNum with required=false to get null for empty values)
+      const eave = cleanNum(formData.eave, false);
+      if (eave !== null) quoteData.eave = eave;
       
       const pitch = cleanStr(formData.pitch);
       if (pitch) quoteData.pitch = pitch;
@@ -292,12 +304,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const soffitType = cleanStr(formData.soffit_type);
       if (soffitType) quoteData.soffit_type = soffitType;
       
-      // Structure
-      const snowLoad = cleanNum(formData.snow_load);
-      if (snowLoad) quoteData.snow_load = snowLoad;
+      // Structure (allow 0 values)
+      const snowLoad = cleanNum(formData.snow_load, false);
+      if (snowLoad !== null) quoteData.snow_load = snowLoad;
       
-      const windLoad = cleanNum(formData.wind_load);
-      if (windLoad) quoteData.wind_load = windLoad;
+      const windLoad = cleanNum(formData.wind_load, false);
+      if (windLoad !== null) quoteData.wind_load = windLoad;
       
       const buildingUse = cleanStr(formData.building_use);
       if (buildingUse) quoteData.building_use = buildingUse;
@@ -314,19 +326,19 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       
       quoteData.wainscot_enabled = Boolean(formData.wainscot_enabled);
       
-      // Overhang
+      // Overhang (allow 0 values)
       quoteData.overhang_same_all = Boolean(formData.overhang_same_all);
-      const overhangFront = cleanNum(formData.overhang_front);
-      if (overhangFront) quoteData.overhang_front = overhangFront;
+      const overhangFront = cleanNum(formData.overhang_front, false);
+      if (overhangFront !== null) quoteData.overhang_front = overhangFront;
       
-      const overhangBack = cleanNum(formData.overhang_back);
-      if (overhangBack) quoteData.overhang_back = overhangBack;
+      const overhangBack = cleanNum(formData.overhang_back, false);
+      if (overhangBack !== null) quoteData.overhang_back = overhangBack;
       
-      const overhangLeft = cleanNum(formData.overhang_left);
-      if (overhangLeft) quoteData.overhang_left = overhangLeft;
+      const overhangLeft = cleanNum(formData.overhang_left, false);
+      if (overhangLeft !== null) quoteData.overhang_left = overhangLeft;
       
-      const overhangRight = cleanNum(formData.overhang_right);
-      if (overhangRight) quoteData.overhang_right = overhangRight;
+      const overhangRight = cleanNum(formData.overhang_right, false);
+      if (overhangRight !== null) quoteData.overhang_right = overhangRight;
       
       // Insulation
       const insulationType = cleanStr(formData.insulation_type);
@@ -346,9 +358,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const structuralNotes = cleanStr(formData.structural_notes);
       if (structuralNotes) quoteData.structural_notes = structuralNotes;
       
-      // Price
-      const estimatedPrice = cleanNum(formData.estimated_price);
-      if (estimatedPrice) quoteData.estimated_price = estimatedPrice;
+      // Price (allow 0 values)
+      const estimatedPrice = cleanNum(formData.estimated_price, false);
+      if (estimatedPrice !== null) quoteData.estimated_price = estimatedPrice;
 
       // Metadata
       if (profile?.id) {
@@ -365,46 +377,58 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       console.log('📤 JSON stringified:', JSON.stringify(quoteData, null, 2));
       console.log('📤 Width type:', typeof quoteData.width, 'value:', quoteData.width);
       console.log('📤 Length type:', typeof quoteData.length, 'value:', quoteData.length);
+      console.log('📤 Status type:', typeof quoteData.status, 'value:', quoteData.status);
+      console.log('📤 Has ID:', !!quoteData.id, 'ID value:', quoteData.id);
 
-      // Use upsert for both insert and update
-      if (currentQuoteId) {
-        quoteData.id = currentQuoteId;
-      }
-
+      // Use upsert with explicit conflict resolution on 'id'
       const { data, error } = await supabase
         .from('quotes')
-        .upsert(quoteData)
+        .upsert(quoteData, { onConflict: 'id' })
         .select()
         .single();
 
       if (error) {
-        console.error('❌ UPSERT ERROR:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint,
-          full: JSON.stringify(error),
-        });
-        console.error('📤 Data that was sent:', JSON.stringify(quoteData, null, 2));
+        // Log FULL error details for debugging
+        console.error('❌ ========== SUPABASE ERROR ==========');
+        console.error('❌ Error Object:', error);
+        console.error('❌ Error Message:', error.message);
+        console.error('❌ Error Code:', error.code);
+        console.error('❌ Error Details:', error.details);
+        console.error('❌ Error Hint:', error.hint);
+        console.error('❌ Full Error JSON:', JSON.stringify(error, null, 2));
+        console.error('❌ Data that was sent:', JSON.stringify(quoteData, null, 2));
+        console.error('❌ ====================================');
         
         // Parse error response to get more details
         let userMessage = 'Failed to save quote';
+        
         if (error.code === '23502') {
           // NOT NULL violation
           const columnMatch = error.message.match(/column "([^"]+)"/i);
           const columnName = columnMatch ? columnMatch[1] : 'unknown';
           userMessage = `Missing required field: ${columnName}. Please fill in all required information.`;
+          console.error(`❌ NULL constraint violation on column: ${columnName}`);
         } else if (error.code === '23505') {
           // Unique violation
           userMessage = 'A quote with this information already exists';
+          console.error('❌ Unique constraint violation');
         } else if (error.code === '22P02') {
           // Invalid input syntax
           userMessage = 'Invalid data format - please check all numeric fields';
+          console.error('❌ Invalid input syntax for type');
         } else if (error.code === '42501') {
           // Permission denied
           userMessage = 'Permission denied - please check your access rights';
+          console.error('❌ Permission denied');
+        } else if (error.code === '42703') {
+          // Undefined column
+          userMessage = 'Database schema mismatch - please contact support';
+          console.error('❌ Column does not exist in table');
         } else if (error.message) {
           userMessage = `Database error: ${error.message}`;
+          if (error.hint) {
+            userMessage += ` (Hint: ${error.hint})`;
+          }
         }
         
         toast.error(userMessage, { duration: 10000 });
