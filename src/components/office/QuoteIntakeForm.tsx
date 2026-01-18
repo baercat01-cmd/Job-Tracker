@@ -204,18 +204,6 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   }
 
   async function saveQuote(status: string) {
-    // Validate required fields for new quotes
-    if (!currentQuoteId) {
-      if (!formData.customer_name?.trim()) {
-        toast.error('Customer name is required');
-        return;
-      }
-      if (!formData.project_name?.trim()) {
-        toast.error('Project name is required');
-        return;
-      }
-    }
-
     // Validate required numeric fields
     const width = Number(formData.width);
     const length = Number(formData.length);
@@ -233,7 +221,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
-      // Helper function to convert empty strings to null
+      // Helper function to convert empty strings to null (for optional fields only)
       const cleanString = (value: string | undefined | null): string | null => {
         const trimmed = value?.trim();
         return trimmed && trimmed.length > 0 ? trimmed : null;
@@ -246,15 +234,16 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       };
 
       const quoteData = {
+        // Customer info - all optional in database
         customer_name: cleanString(formData.customer_name),
         customer_email: cleanString(formData.customer_email),
         customer_phone: cleanString(formData.customer_phone),
         customer_address: cleanString(formData.customer_address),
         project_name: cleanString(formData.project_name),
         
-        // Building dimensions - ensure numeric values
-        width: Number(formData.width),
-        length: Number(formData.length),
+        // Building dimensions - width and length are NOT NULL in database
+        width: width,
+        length: length,
         eave: cleanNumber(formData.eave),
         pitch: cleanString(formData.pitch),
         truss: cleanString(formData.truss),
@@ -301,8 +290,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         // Status and metadata
         status,
         estimated_price: cleanNumber(formData.estimated_price),
-        created_by: profile?.id,
-        updated_at: new Date().toISOString(),
+        ...(profile?.id && { created_by: profile.id }),
         ...(status === 'submitted' && !existingQuote?.submitted_at && {
           submitted_at: new Date().toISOString(),
         }),
@@ -310,9 +298,10 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
       if (currentQuoteId) {
         // Update existing quote
+        const updateData = { ...quoteData, updated_at: new Date().toISOString() };
         const { error } = await supabase
           .from('quotes')
-          .update(quoteData)
+          .update(updateData)
           .eq('id', currentQuoteId);
 
         if (error) {
@@ -323,7 +312,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
         onSuccess();
       } else {
-        // Create new quote
+        // Create new quote - don't set created_at or updated_at, let database handle it
         const { data, error } = await supabase
           .from('quotes')
           .insert(quoteData)
@@ -332,7 +321,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
         if (error) {
           console.error('Error creating quote:', error);
-          toast.error(`Failed to create quote: ${error.message || 'Unknown error'}`);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          toast.error(`Failed to create quote: ${error.message || error.hint || 'Unknown error'}`);
           return;
         }
 
