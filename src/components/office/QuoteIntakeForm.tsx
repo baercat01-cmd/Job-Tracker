@@ -221,9 +221,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
-      // Helper function to convert empty strings to null
-      const cleanString = (value: string | undefined | null): string | null => {
-        if (value === null || value === undefined) return null;
+      // Helper to clean optional strings - returns null for empty/whitespace
+      const cleanOptionalString = (value: string | undefined | null): string | null => {
+        if (!value) return null;
         const trimmed = value.trim();
         return trimmed.length > 0 ? trimmed : null;
       };
@@ -235,59 +235,62 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         return !isNaN(num) && num > 0 ? num : null;
       };
 
-      // Build the quote data object - only include fields with values
+      // Build the quote data object with ALL fields
       const quoteData: any = {
-        // Required fields
+        // Required fields - always include
         width: width,
         length: length,
-        status,
+        status: status,
+        
+        // Optional string fields - null if empty
+        customer_name: cleanOptionalString(formData.customer_name),
+        customer_email: cleanOptionalString(formData.customer_email),
+        customer_phone: cleanOptionalString(formData.customer_phone),
+        customer_address: cleanOptionalString(formData.customer_address),
+        project_name: cleanOptionalString(formData.project_name),
+        pitch: cleanOptionalString(formData.pitch),
+        truss: cleanOptionalString(formData.truss),
+        foundation_type: cleanOptionalString(formData.foundation_type),
+        floor_type: cleanOptionalString(formData.floor_type),
+        soffit_type: cleanOptionalString(formData.soffit_type),
+        building_use: cleanOptionalString(formData.building_use),
+        roof_material: cleanOptionalString(formData.roof_material),
+        roof_color: cleanOptionalString(formData.roof_color),
+        trim_color: cleanOptionalString(formData.trim_color),
+        insulation_type: cleanOptionalString(formData.insulation_type),
+        site_notes: cleanOptionalString(formData.site_notes),
+        structural_notes: cleanOptionalString(formData.structural_notes),
+        
+        // Optional number fields - null if invalid
+        eave: cleanOptionalNumber(formData.eave),
+        snow_load: cleanOptionalNumber(formData.snow_load),
+        wind_load: cleanOptionalNumber(formData.wind_load),
+        overhang_front: cleanOptionalNumber(formData.overhang_front),
+        overhang_back: cleanOptionalNumber(formData.overhang_back),
+        overhang_left: cleanOptionalNumber(formData.overhang_left),
+        overhang_right: cleanOptionalNumber(formData.overhang_right),
+        estimated_price: cleanOptionalNumber(formData.estimated_price),
+        
+        // Boolean fields - always include
+        wainscot_enabled: Boolean(formData.wainscot_enabled),
+        overhang_same_all: Boolean(formData.overhang_same_all),
+        has_loft: Boolean(formData.has_loft),
+        has_porch: Boolean(formData.has_porch),
+        has_plumbing: Boolean(formData.has_plumbing),
+        has_electrical: Boolean(formData.has_electrical),
+        has_hvac: Boolean(formData.has_hvac),
       };
 
-      // Add optional string fields only if they have values
-      if (cleanString(formData.customer_name)) quoteData.customer_name = cleanString(formData.customer_name);
-      if (cleanString(formData.customer_email)) quoteData.customer_email = cleanString(formData.customer_email);
-      if (cleanString(formData.customer_phone)) quoteData.customer_phone = cleanString(formData.customer_phone);
-      if (cleanString(formData.customer_address)) quoteData.customer_address = cleanString(formData.customer_address);
-      if (cleanString(formData.project_name)) quoteData.project_name = cleanString(formData.project_name);
-      if (cleanString(formData.pitch)) quoteData.pitch = cleanString(formData.pitch);
-      if (cleanString(formData.truss)) quoteData.truss = cleanString(formData.truss);
-      if (cleanString(formData.foundation_type)) quoteData.foundation_type = cleanString(formData.foundation_type);
-      if (cleanString(formData.floor_type)) quoteData.floor_type = cleanString(formData.floor_type);
-      if (cleanString(formData.soffit_type)) quoteData.soffit_type = cleanString(formData.soffit_type);
-      if (cleanString(formData.building_use)) quoteData.building_use = cleanString(formData.building_use);
-      if (cleanString(formData.roof_material)) quoteData.roof_material = cleanString(formData.roof_material);
-      if (cleanString(formData.roof_color)) quoteData.roof_color = cleanString(formData.roof_color);
-      if (cleanString(formData.trim_color)) quoteData.trim_color = cleanString(formData.trim_color);
-      if (cleanString(formData.insulation_type)) quoteData.insulation_type = cleanString(formData.insulation_type);
-      if (cleanString(formData.site_notes)) quoteData.site_notes = cleanString(formData.site_notes);
-      if (cleanString(formData.structural_notes)) quoteData.structural_notes = cleanString(formData.structural_notes);
-
-      // Add optional number fields only if they have values
-      if (cleanOptionalNumber(formData.eave)) quoteData.eave = cleanOptionalNumber(formData.eave);
-      if (cleanOptionalNumber(formData.snow_load)) quoteData.snow_load = cleanOptionalNumber(formData.snow_load);
-      if (cleanOptionalNumber(formData.wind_load)) quoteData.wind_load = cleanOptionalNumber(formData.wind_load);
-      if (cleanOptionalNumber(formData.overhang_front)) quoteData.overhang_front = cleanOptionalNumber(formData.overhang_front);
-      if (cleanOptionalNumber(formData.overhang_back)) quoteData.overhang_back = cleanOptionalNumber(formData.overhang_back);
-      if (cleanOptionalNumber(formData.overhang_left)) quoteData.overhang_left = cleanOptionalNumber(formData.overhang_left);
-      if (cleanOptionalNumber(formData.overhang_right)) quoteData.overhang_right = cleanOptionalNumber(formData.overhang_right);
-      if (cleanOptionalNumber(formData.estimated_price)) quoteData.estimated_price = cleanOptionalNumber(formData.estimated_price);
-
-      // Add boolean fields
-      quoteData.wainscot_enabled = formData.wainscot_enabled;
-      quoteData.overhang_same_all = formData.overhang_same_all;
-      quoteData.has_loft = formData.has_loft;
-      quoteData.has_porch = formData.has_porch;
-      quoteData.has_plumbing = formData.has_plumbing;
-      quoteData.has_electrical = formData.has_electrical;
-      quoteData.has_hvac = formData.has_hvac;
-
       // Add metadata
-      if (profile?.id) quoteData.created_by = profile.id;
+      if (profile?.id) {
+        quoteData.created_by = profile.id;
+      }
+      
       if (status === 'submitted' && !existingQuote?.submitted_at) {
         quoteData.submitted_at = new Date().toISOString();
       }
 
-      console.log('Saving quote with data:', quoteData);
+      console.log('Saving quote with data:', JSON.stringify(quoteData, null, 2));
 
       if (currentQuoteId) {
         // Update existing quote
@@ -316,12 +319,24 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .single();
 
         if (error) {
-          console.error('Error creating quote:', error);
+          console.error('❌ Error creating quote:', error);
           console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
           console.error('Error details:', error.details);
           console.error('Error hint:', error.hint);
-          console.error('Quote data that failed:', quoteData);
-          toast.error(`Failed to create quote: ${error.message}${error.hint ? ' - ' + error.hint : ''}`);
+          console.error('Quote data that failed:', JSON.stringify(quoteData, null, 2));
+          
+          // Show user-friendly error
+          let errorMessage = 'Failed to create quote';
+          if (error.message.includes('null value')) {
+            errorMessage = 'Missing required field. Please check the form and try again.';
+          } else if (error.hint) {
+            errorMessage = `${error.message} - ${error.hint}`;
+          } else {
+            errorMessage = error.message;
+          }
+          
+          toast.error(errorMessage);
           return;
         }
 
