@@ -207,6 +207,14 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     console.log('🔷 saveQuote called with status:', status);
     console.log('🔷 Current formData:', formData);
     console.log('🔷 Current quoteId:', currentQuoteId);
+    console.log('🔷 Current profile:', profile);
+    
+    // Validate user session FIRST
+    if (!profile?.id) {
+      console.error('❌ Cannot save quote: User profile not loaded or no user ID');
+      toast.error('Unable to save: User session not found. Please refresh and try again.');
+      return;
+    }
     
     setSaving(true);
 
@@ -218,15 +226,22 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         return trimmed === '' ? null : trimmed;
       };
 
-      // Helper to clean number values - returns 0 for required fields, null for optional
+      // Helper to clean number values - NEVER returns NaN
       const cleanNum = (val: any, required: boolean = false): number | null => {
+        // Handle empty/null/undefined
         if (val === null || val === undefined || val === '') {
           return required ? 0 : null;
         }
+        
+        // Convert to number
         const num = Number(val);
-        if (isNaN(num)) {
+        
+        // Check for NaN and return default
+        if (isNaN(num) || !isFinite(num)) {
+          console.warn(`⚠️ Invalid number value: ${val}, using ${required ? 0 : 'null'}`);
           return required ? 0 : null;
         }
+        
         return num;
       };
 
@@ -362,10 +377,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const estimatedPrice = cleanNum(formData.estimated_price, false);
       if (estimatedPrice !== null) quoteData.estimated_price = estimatedPrice;
 
-      // Metadata
-      if (profile?.id) {
-        quoteData.created_by = profile.id;
-      }
+      // Metadata - profile.id is already validated at the top
+      quoteData.created_by = profile.id;
       
       if (status === 'submitted' && !existingQuote?.submitted_at) {
         quoteData.submitted_at = new Date().toISOString();
@@ -379,6 +392,17 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       console.log('📤 Length type:', typeof quoteData.length, 'value:', quoteData.length);
       console.log('📤 Status type:', typeof quoteData.status, 'value:', quoteData.status);
       console.log('📤 Has ID:', !!quoteData.id, 'ID value:', quoteData.id);
+      console.log('📤 Created by:', quoteData.created_by);
+      
+      // Validate ALL values to ensure no NaN or invalid types
+      for (const [key, value] of Object.entries(quoteData)) {
+        if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+          console.error(`❌ Invalid number in quoteData[${key}]:`, value);
+          toast.error(`Invalid value for ${key}. Please check your input.`);
+          setSaving(false);
+          return;
+        }
+      }
 
       // Use upsert with explicit conflict resolution on 'id'
       const { data, error } = await supabase
@@ -437,9 +461,16 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       }
 
       console.log('✅ Quote saved successfully:', data);
+      console.log('✅ Returned quote ID:', data.id);
 
-      // Generate quote number if this is a new quote
+      // CRITICAL: Update currentQuoteId IMMEDIATELY after first save
+      // This ensures subsequent saves UPDATE instead of INSERT
       if (!currentQuoteId && data.id) {
+        console.log('🆕 First save detected - setting currentQuoteId to:', data.id);
+        setCurrentQuoteId(data.id);
+        setExistingQuote(data);
+        
+        // Generate quote number for new quotes
         const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
         const { error: updateError } = await supabase
           .from('quotes')
@@ -451,13 +482,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         } else {
           console.log('✅ Quote number generated:', quoteNumber);
         }
-
-        // Update the current quote ID so subsequent saves update instead of creating new
-        setCurrentQuoteId(data.id);
-        setExistingQuote(data);
         
         toast.success(`Draft saved - Quote #${quoteNumber}`);
       } else {
+        console.log('📝 Update existing quote:', currentQuoteId);
+        // Update the existing quote data
+        setExistingQuote(data);
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
       }
 
