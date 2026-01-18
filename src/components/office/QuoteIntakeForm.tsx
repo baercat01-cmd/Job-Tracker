@@ -204,6 +204,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   }
 
   async function saveQuote(status: string) {
+    console.log('🔷 saveQuote called with status:', status);
+    console.log('🔷 Current formData:', formData);
+    
     setSaving(true);
 
     try {
@@ -211,17 +214,24 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const width = Number(formData.width);
       const length = Number(formData.length);
       
+      console.log('🔷 Parsed width:', width, 'type:', typeof width, 'isNaN:', isNaN(width));
+      console.log('🔷 Parsed length:', length, 'type:', typeof length, 'isNaN:', isNaN(length));
+      
       if (!width || width <= 0 || isNaN(width)) {
+        console.error('❌ Invalid width:', width);
         toast.error('Please enter a valid building width');
         setSaving(false);
         return;
       }
       
       if (!length || length <= 0 || isNaN(length)) {
+        console.error('❌ Invalid length:', length);
         toast.error('Please enter a valid building length');
         setSaving(false);
         return;
       }
+      
+      console.log('✅ Width and length validation passed');
 
       // Helper to clean string values - returns null if empty
       const cleanStr = (val: any): string | null => {
@@ -350,7 +360,10 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
       console.log('💾 Attempting to save quote...');
       console.log('📋 Form data:', formData);
-      console.log('📤 Sending to database:', JSON.stringify(quoteData, null, 2));
+      console.log('📤 Sending to database:', quoteData);
+      console.log('📤 JSON stringified:', JSON.stringify(quoteData, null, 2));
+      console.log('📤 Width type:', typeof quoteData.width, 'value:', quoteData.width);
+      console.log('📤 Length type:', typeof quoteData.length, 'value:', quoteData.length);
 
       if (currentQuoteId) {
         // Update existing quote
