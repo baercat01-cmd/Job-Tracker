@@ -206,6 +206,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   async function saveQuote(status: string) {
     console.log('🔷 saveQuote called with status:', status);
     console.log('🔷 Current formData:', formData);
+    console.log('🔷 Current quoteId:', currentQuoteId);
     
     setSaving(true);
 
@@ -244,7 +245,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       const cleanNum = (val: any): number | null => {
         if (val === null || val === undefined || val === '') return null;
         const num = Number(val);
-        return isNaN(num) || num <= 0 ? null : num;
+        return isNaN(num) ? null : num;
       };
 
       // Build quote data with ONLY valid values
@@ -365,72 +366,56 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       console.log('📤 Width type:', typeof quoteData.width, 'value:', quoteData.width);
       console.log('📤 Length type:', typeof quoteData.length, 'value:', quoteData.length);
 
+      // Use upsert for both insert and update
       if (currentQuoteId) {
-        // Update existing quote
-        quoteData.updated_at = new Date().toISOString();
-        const { error } = await supabase
-          .from('quotes')
-          .update(quoteData)
-          .eq('id', currentQuoteId);
+        quoteData.id = currentQuoteId;
+      }
 
-        if (error) {
-          console.error('❌ UPDATE ERROR:', {
-            message: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint,
-          });
-          toast.error(`Failed to update: ${error.message}`);
-          return;
+      const { data, error } = await supabase
+        .from('quotes')
+        .upsert(quoteData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ UPSERT ERROR:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          full: JSON.stringify(error),
+        });
+        console.error('📤 Data that was sent:', JSON.stringify(quoteData, null, 2));
+        
+        // Parse error response to get more details
+        let userMessage = 'Failed to save quote';
+        if (error.code === '23502') {
+          // NOT NULL violation
+          const columnMatch = error.message.match(/column "([^"]+)"/i);
+          const columnName = columnMatch ? columnMatch[1] : 'unknown';
+          userMessage = `Missing required field: ${columnName}. Please fill in all required information.`;
+        } else if (error.code === '23505') {
+          // Unique violation
+          userMessage = 'A quote with this information already exists';
+        } else if (error.code === '22P02') {
+          // Invalid input syntax
+          userMessage = 'Invalid data format - please check all numeric fields';
+        } else if (error.code === '42501') {
+          // Permission denied
+          userMessage = 'Permission denied - please check your access rights';
+        } else if (error.message) {
+          userMessage = `Database error: ${error.message}`;
         }
         
-        console.log('✅ Quote updated successfully');
-        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
-        onSuccess();
-      } else {
-        // Create new quote
-        console.log('📝 Creating NEW quote...');
-        const { data, error } = await supabase
-          .from('quotes')
-          .insert(quoteData)
-          .select()
-          .single();
+        toast.error(userMessage, { duration: 10000 });
+        setSaving(false);
+        return;
+      }
 
-        if (error) {
-          console.error('❌ INSERT ERROR:', {
-            message: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint,
-            full: error,
-          });
-          console.error('📤 Data that was sent:', JSON.stringify(quoteData, null, 2));
-          
-          // More detailed error message for user
-          let userMessage = 'Failed to create quote';
-          if (error.code === '23502') {
-            // NOT NULL violation - extract column name if possible
-            const columnMatch = error.message.match(/column "([^"]+)"/);
-            const columnName = columnMatch ? columnMatch[1] : 'unknown';
-            userMessage = `Missing required field: ${columnName}. Please fill in all required information.`;
-          } else if (error.code === '23505') {
-            // Unique violation
-            userMessage = 'A quote with this information already exists';
-          } else if (error.code === '22P02') {
-            // Invalid input syntax
-            userMessage = 'Invalid data format - please check all numeric fields';
-          } else if (error.message) {
-            userMessage = `Database error: ${error.message}`;
-          }
-          
-          toast.error(userMessage, { duration: 10000 });
-          setSaving(false);
-          return;
-        }
+      console.log('✅ Quote saved successfully:', data);
 
-        console.log('✅ Quote created:', data);
-
-        // Generate quote number
+      // Generate quote number if this is a new quote
+      if (!currentQuoteId && data.id) {
         const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
         const { error: updateError } = await supabase
           .from('quotes')
@@ -439,17 +424,27 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
         if (updateError) {
           console.error('⚠️ Error updating quote number:', updateError);
+        } else {
+          console.log('✅ Quote number generated:', quoteNumber);
         }
 
         // Update the current quote ID so subsequent saves update instead of creating new
         setCurrentQuoteId(data.id);
         setExistingQuote(data);
         
-        console.log('✅ Quote saved with number:', quoteNumber);
-        toast.success(status === 'draft' ? `Draft saved - Quote #${quoteNumber}` : 'Quote created successfully');
+        toast.success(`Draft saved - Quote #${quoteNumber}`);
+      } else {
+        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
+      }
+
+      // Only call onSuccess if we're submitting (not just saving draft)
+      if (status !== 'draft') {
+        onSuccess();
       }
     } catch (error: any) {
       console.error('❌ CATCH ERROR:', error);
+      console.error('❌ Error name:', error.name);
+      console.error('❌ Error stack:', error.stack);
       toast.error(`Error: ${error.message || 'Unknown error occurred'}`, { duration: 5000 });
     } finally {
       setSaving(false);
