@@ -230,6 +230,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
         if (error) throw error;
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
+        onSuccess();
       } else {
         // Create new quote
         const { data, error } = await supabase
@@ -242,19 +243,22 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
         // Generate quote number
         const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
-        await supabase
+        const { error: updateError } = await supabase
           .from('quotes')
           .update({ quote_number: quoteNumber })
           .eq('id', data.id);
+
+        if (updateError) throw updateError;
 
         // Update the current quote ID so subsequent saves update instead of creating new
         setCurrentQuoteId(data.id);
         setExistingQuote(data);
         
-        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote created successfully');
+        toast.success(status === 'draft' ? `Draft saved successfully - Quote #${quoteNumber}` : 'Quote created successfully');
+        
+        // Don't call onSuccess() here - keep the form open with the new quote ID
+        // This allows the FloorPlanBuilder to work with the new quote ID
       }
-
-      onSuccess();
     } catch (error: any) {
       console.error('Error saving quote:', error);
       toast.error('Failed to save quote');
