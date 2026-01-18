@@ -207,6 +207,22 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
+      // Validate required fields FIRST
+      const width = Number(formData.width);
+      const length = Number(formData.length);
+      
+      if (!width || width <= 0 || isNaN(width)) {
+        toast.error('Please enter a valid building width');
+        setSaving(false);
+        return;
+      }
+      
+      if (!length || length <= 0 || isNaN(length)) {
+        toast.error('Please enter a valid building length');
+        setSaving(false);
+        return;
+      }
+
       // Helper to clean string values - returns null if empty
       const cleanStr = (val: any): string | null => {
         if (val === null || val === undefined) return null;
@@ -224,8 +240,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       // Build quote data with ONLY valid values
       const quoteData: any = {
         // Required fields - MUST have valid values
-        width: Number(formData.width) || 30,
-        length: Number(formData.length) || 40,
+        width: width,
+        length: length,
         status: status || 'draft',
       };
 
@@ -373,6 +389,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
             code: error.code,
             details: error.details,
             hint: error.hint,
+            full: error,
           });
           console.error('📤 Data that was sent:', JSON.stringify(quoteData, null, 2));
           
@@ -382,18 +399,19 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
             // NOT NULL violation - extract column name if possible
             const columnMatch = error.message.match(/column "([^"]+)"/);
             const columnName = columnMatch ? columnMatch[1] : 'unknown';
-            userMessage = `Missing required field: ${columnName}`;
+            userMessage = `Missing required field: ${columnName}. Please fill in all required information.`;
           } else if (error.code === '23505') {
             // Unique violation
             userMessage = 'A quote with this information already exists';
           } else if (error.code === '22P02') {
             // Invalid input syntax
-            userMessage = 'Invalid data format - please check all fields';
+            userMessage = 'Invalid data format - please check all numeric fields';
           } else if (error.message) {
-            userMessage = error.message;
+            userMessage = `Database error: ${error.message}`;
           }
           
           toast.error(userMessage, { duration: 10000 });
+          setSaving(false);
           return;
         }
 
