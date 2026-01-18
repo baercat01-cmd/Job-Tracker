@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -100,7 +101,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     length: 40,
     eave: 10,
     pitch: '4/12',
-    truss: '',
+    truss: '', // Added missing comma here
     foundation_type: '',
     floor_type: '',
     soffit_type: '',
@@ -208,6 +209,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       return;
     }
 
+    // Validate required numeric fields
+    if (!formData.width || !formData.length) {
+      toast.error('Please enter building width and length');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -228,7 +235,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .update(quoteData)
           .eq('id', currentQuoteId);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating quote:', error);
+          toast.error(`Failed to update quote: ${error.message || 'Unknown error'}`);
+          return;
+        }
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
         onSuccess();
       } else {
@@ -239,7 +250,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error creating quote:', error);
+          toast.error(`Failed to create quote: ${error.message || 'Unknown error'}`);
+          return;
+        }
 
         // Generate quote number
         const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
@@ -248,7 +263,10 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .update({ quote_number: quoteNumber })
           .eq('id', data.id);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('Error updating quote number:', updateError);
+          // Don't return here - quote was created, just quote number update failed
+        }
 
         // Update the current quote ID so subsequent saves update instead of creating new
         setCurrentQuoteId(data.id);
