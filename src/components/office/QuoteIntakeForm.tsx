@@ -215,6 +215,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       return;
     }
 
+    // Validate required text fields
+    if (!formData.pitch) {
+      toast.error('Please select a roof pitch');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -223,6 +229,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         status,
         created_by: profile?.id,
         updated_at: new Date().toISOString(),
+        // Ensure required fields have values, not empty strings
+        pitch: formData.pitch || '4/12',
+        truss: formData.truss || '',
+        foundation_type: formData.foundation_type || '',
+        floor_type: formData.floor_type || '',
+        soffit_type: formData.soffit_type || '',
         ...(status === 'submitted' && !existingQuote?.submitted_at && {
           submitted_at: new Date().toISOString(),
         }),
