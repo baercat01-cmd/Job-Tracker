@@ -204,82 +204,57 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   }
 
   async function saveQuote(status: string) {
-    // Validate required numeric fields
-    const width = Number(formData.width);
-    const length = Number(formData.length);
-    
-    if (isNaN(width) || width <= 0) {
-      toast.error('Please enter a valid building width (must be greater than 0)');
-      return;
-    }
-    
-    if (isNaN(length) || length <= 0) {
-      toast.error('Please enter a valid building length (must be greater than 0)');
-      return;
-    }
-
     setSaving(true);
 
     try {
-      // Helper to clean optional strings - returns null for empty/whitespace
-      const cleanOptionalString = (value: string | undefined | null): string | null => {
-        if (!value) return null;
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : null;
-      };
-
-      // Helper for optional numbers - returns null for 0 or invalid values
-      const cleanOptionalNumber = (value: number | string | null | undefined): number | null => {
-        if (value === null || value === undefined || value === '') return null;
-        const num = Number(value);
-        return !isNaN(num) && num > 0 ? num : null;
-      };
-
-      // Build the quote data object with ALL fields
+      // Build minimal quote data with ONLY required fields first
       const quoteData: any = {
-        // Required fields - always include
-        width: width,
-        length: length,
-        status: status,
-        
-        // Optional string fields - null if empty
-        customer_name: cleanOptionalString(formData.customer_name),
-        customer_email: cleanOptionalString(formData.customer_email),
-        customer_phone: cleanOptionalString(formData.customer_phone),
-        customer_address: cleanOptionalString(formData.customer_address),
-        project_name: cleanOptionalString(formData.project_name),
-        pitch: cleanOptionalString(formData.pitch),
-        truss: cleanOptionalString(formData.truss),
-        foundation_type: cleanOptionalString(formData.foundation_type),
-        floor_type: cleanOptionalString(formData.floor_type),
-        soffit_type: cleanOptionalString(formData.soffit_type),
-        building_use: cleanOptionalString(formData.building_use),
-        roof_material: cleanOptionalString(formData.roof_material),
-        roof_color: cleanOptionalString(formData.roof_color),
-        trim_color: cleanOptionalString(formData.trim_color),
-        insulation_type: cleanOptionalString(formData.insulation_type),
-        site_notes: cleanOptionalString(formData.site_notes),
-        structural_notes: cleanOptionalString(formData.structural_notes),
-        
-        // Optional number fields - null if invalid
-        eave: cleanOptionalNumber(formData.eave),
-        snow_load: cleanOptionalNumber(formData.snow_load),
-        wind_load: cleanOptionalNumber(formData.wind_load),
-        overhang_front: cleanOptionalNumber(formData.overhang_front),
-        overhang_back: cleanOptionalNumber(formData.overhang_back),
-        overhang_left: cleanOptionalNumber(formData.overhang_left),
-        overhang_right: cleanOptionalNumber(formData.overhang_right),
-        estimated_price: cleanOptionalNumber(formData.estimated_price),
-        
-        // Boolean fields - always include
-        wainscot_enabled: Boolean(formData.wainscot_enabled),
-        overhang_same_all: Boolean(formData.overhang_same_all),
-        has_loft: Boolean(formData.has_loft),
-        has_porch: Boolean(formData.has_porch),
-        has_plumbing: Boolean(formData.has_plumbing),
-        has_electrical: Boolean(formData.has_electrical),
-        has_hvac: Boolean(formData.has_hvac),
+        width: Number(formData.width) || 30,
+        length: Number(formData.length) || 40,
+        status: status || 'draft',
       };
+
+      // Add optional fields only if they have actual values
+      if (formData.customer_name?.trim()) quoteData.customer_name = formData.customer_name.trim();
+      if (formData.customer_email?.trim()) quoteData.customer_email = formData.customer_email.trim();
+      if (formData.customer_phone?.trim()) quoteData.customer_phone = formData.customer_phone.trim();
+      if (formData.customer_address?.trim()) quoteData.customer_address = formData.customer_address.trim();
+      if (formData.project_name?.trim()) quoteData.project_name = formData.project_name.trim();
+      
+      if (formData.eave && Number(formData.eave) > 0) quoteData.eave = Number(formData.eave);
+      if (formData.pitch?.trim()) quoteData.pitch = formData.pitch.trim();
+      if (formData.truss?.trim()) quoteData.truss = formData.truss.trim();
+      
+      if (formData.foundation_type?.trim()) quoteData.foundation_type = formData.foundation_type.trim();
+      if (formData.floor_type?.trim()) quoteData.floor_type = formData.floor_type.trim();
+      if (formData.soffit_type?.trim()) quoteData.soffit_type = formData.soffit_type.trim();
+      
+      if (formData.snow_load && Number(formData.snow_load) > 0) quoteData.snow_load = Number(formData.snow_load);
+      if (formData.wind_load && Number(formData.wind_load) > 0) quoteData.wind_load = Number(formData.wind_load);
+      if (formData.building_use?.trim()) quoteData.building_use = formData.building_use.trim();
+      
+      if (formData.roof_material?.trim()) quoteData.roof_material = formData.roof_material.trim();
+      if (formData.roof_color?.trim()) quoteData.roof_color = formData.roof_color.trim();
+      if (formData.trim_color?.trim()) quoteData.trim_color = formData.trim_color.trim();
+      quoteData.wainscot_enabled = Boolean(formData.wainscot_enabled);
+      
+      quoteData.overhang_same_all = Boolean(formData.overhang_same_all);
+      if (formData.overhang_front && Number(formData.overhang_front) > 0) quoteData.overhang_front = Number(formData.overhang_front);
+      if (formData.overhang_back && Number(formData.overhang_back) > 0) quoteData.overhang_back = Number(formData.overhang_back);
+      if (formData.overhang_left && Number(formData.overhang_left) > 0) quoteData.overhang_left = Number(formData.overhang_left);
+      if (formData.overhang_right && Number(formData.overhang_right) > 0) quoteData.overhang_right = Number(formData.overhang_right);
+      
+      if (formData.insulation_type?.trim()) quoteData.insulation_type = formData.insulation_type.trim();
+      
+      quoteData.has_loft = Boolean(formData.has_loft);
+      quoteData.has_porch = Boolean(formData.has_porch);
+      quoteData.has_plumbing = Boolean(formData.has_plumbing);
+      quoteData.has_electrical = Boolean(formData.has_electrical);
+      quoteData.has_hvac = Boolean(formData.has_hvac);
+      
+      if (formData.site_notes?.trim()) quoteData.site_notes = formData.site_notes.trim();
+      if (formData.structural_notes?.trim()) quoteData.structural_notes = formData.structural_notes.trim();
+      if (formData.estimated_price && Number(formData.estimated_price) > 0) quoteData.estimated_price = Number(formData.estimated_price);
 
       // Add metadata
       if (profile?.id) {
@@ -290,7 +265,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         quoteData.submitted_at = new Date().toISOString();
       }
 
-      console.log('Saving quote with data:', JSON.stringify(quoteData, null, 2));
+      console.log('💾 Attempting to save quote...');
+      console.log('Quote data:', JSON.stringify(quoteData, null, 2));
 
       if (currentQuoteId) {
         // Update existing quote
@@ -301,17 +277,22 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .eq('id', currentQuoteId);
 
         if (error) {
-          console.error('Error updating quote:', error);
-          console.error('Error code:', error.code);
-          console.error('Error details:', error.details);
-          console.error('Error hint:', error.hint);
-          toast.error(`Failed to update quote: ${error.message}`);
+          console.error('❌ UPDATE ERROR:', {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          });
+          toast.error(`Failed to update: ${error.message}`);
           return;
         }
+        
+        console.log('✅ Quote updated successfully');
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
         onSuccess();
       } else {
         // Create new quote
+        console.log('📝 Creating NEW quote...');
         const { data, error } = await supabase
           .from('quotes')
           .insert(quoteData)
@@ -319,26 +300,31 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .single();
 
         if (error) {
-          console.error('❌ Error creating quote:', error);
-          console.error('Error code:', error.code);
-          console.error('Error message:', error.message);
-          console.error('Error details:', error.details);
-          console.error('Error hint:', error.hint);
-          console.error('Quote data that failed:', JSON.stringify(quoteData, null, 2));
+          console.error('❌ INSERT ERROR:', {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            sentData: quoteData,
+          });
           
-          // Show user-friendly error
-          let errorMessage = 'Failed to create quote';
-          if (error.message.includes('null value')) {
-            errorMessage = 'Missing required field. Please check the form and try again.';
-          } else if (error.hint) {
-            errorMessage = `${error.message} - ${error.hint}`;
-          } else {
-            errorMessage = error.message;
+          // More detailed error message for user
+          let userMessage = 'Failed to create quote';
+          if (error.code === '23502') {
+            // NOT NULL violation
+            userMessage = `Missing required field: ${error.message}`;
+          } else if (error.code === '23505') {
+            // Unique violation
+            userMessage = 'A quote with this information already exists';
+          } else if (error.message) {
+            userMessage = error.message;
           }
           
-          toast.error(errorMessage);
+          toast.error(userMessage, { duration: 5000 });
           return;
         }
+
+        console.log('✅ Quote created:', data);
 
         // Generate quote number
         const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
@@ -348,18 +334,19 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           .eq('id', data.id);
 
         if (updateError) {
-          console.error('Error updating quote number:', updateError);
+          console.error('⚠️ Error updating quote number:', updateError);
         }
 
         // Update the current quote ID so subsequent saves update instead of creating new
         setCurrentQuoteId(data.id);
         setExistingQuote(data);
         
-        toast.success(status === 'draft' ? `Draft saved successfully - Quote #${quoteNumber}` : 'Quote created successfully');
+        console.log('✅ Quote saved with number:', quoteNumber);
+        toast.success(status === 'draft' ? `Draft saved - Quote #${quoteNumber}` : 'Quote created successfully');
       }
     } catch (error: any) {
-      console.error('Error saving quote (catch block):', error);
-      toast.error(`Failed to save quote: ${error.message || 'Unknown error'}`);
+      console.error('❌ CATCH ERROR:', error);
+      toast.error(`Error: ${error.message || 'Unknown error occurred'}`, { duration: 5000 });
     } finally {
       setSaving(false);
     }
