@@ -207,56 +207,123 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     setSaving(true);
 
     try {
-      // Build minimal quote data with ONLY required fields first
+      // Helper to clean string values - returns null if empty
+      const cleanStr = (val: any): string | null => {
+        if (val === null || val === undefined) return null;
+        const trimmed = String(val).trim();
+        return trimmed === '' ? null : trimmed;
+      };
+
+      // Helper to clean number values - returns null if invalid
+      const cleanNum = (val: any): number | null => {
+        if (val === null || val === undefined || val === '') return null;
+        const num = Number(val);
+        return isNaN(num) || num <= 0 ? null : num;
+      };
+
+      // Build quote data with ONLY valid values
       const quoteData: any = {
+        // Required fields - MUST have valid values
         width: Number(formData.width) || 30,
         length: Number(formData.length) || 40,
         status: status || 'draft',
       };
 
-      // Add optional fields only if they have actual values
-      if (formData.customer_name?.trim()) quoteData.customer_name = formData.customer_name.trim();
-      if (formData.customer_email?.trim()) quoteData.customer_email = formData.customer_email.trim();
-      if (formData.customer_phone?.trim()) quoteData.customer_phone = formData.customer_phone.trim();
-      if (formData.customer_address?.trim()) quoteData.customer_address = formData.customer_address.trim();
-      if (formData.project_name?.trim()) quoteData.project_name = formData.project_name.trim();
+      // Optional string fields
+      const customerName = cleanStr(formData.customer_name);
+      if (customerName) quoteData.customer_name = customerName;
       
-      if (formData.eave && Number(formData.eave) > 0) quoteData.eave = Number(formData.eave);
-      if (formData.pitch?.trim()) quoteData.pitch = formData.pitch.trim();
-      if (formData.truss?.trim()) quoteData.truss = formData.truss.trim();
+      const customerEmail = cleanStr(formData.customer_email);
+      if (customerEmail) quoteData.customer_email = customerEmail;
       
-      if (formData.foundation_type?.trim()) quoteData.foundation_type = formData.foundation_type.trim();
-      if (formData.floor_type?.trim()) quoteData.floor_type = formData.floor_type.trim();
-      if (formData.soffit_type?.trim()) quoteData.soffit_type = formData.soffit_type.trim();
+      const customerPhone = cleanStr(formData.customer_phone);
+      if (customerPhone) quoteData.customer_phone = customerPhone;
       
-      if (formData.snow_load && Number(formData.snow_load) > 0) quoteData.snow_load = Number(formData.snow_load);
-      if (formData.wind_load && Number(formData.wind_load) > 0) quoteData.wind_load = Number(formData.wind_load);
-      if (formData.building_use?.trim()) quoteData.building_use = formData.building_use.trim();
+      const customerAddress = cleanStr(formData.customer_address);
+      if (customerAddress) quoteData.customer_address = customerAddress;
       
-      if (formData.roof_material?.trim()) quoteData.roof_material = formData.roof_material.trim();
-      if (formData.roof_color?.trim()) quoteData.roof_color = formData.roof_color.trim();
-      if (formData.trim_color?.trim()) quoteData.trim_color = formData.trim_color.trim();
+      const projectName = cleanStr(formData.project_name);
+      if (projectName) quoteData.project_name = projectName;
+      
+      // Dimensions
+      const eave = cleanNum(formData.eave);
+      if (eave) quoteData.eave = eave;
+      
+      const pitch = cleanStr(formData.pitch);
+      if (pitch) quoteData.pitch = pitch;
+      
+      const truss = cleanStr(formData.truss);
+      if (truss) quoteData.truss = truss;
+      
+      // Foundation & Floor
+      const foundationType = cleanStr(formData.foundation_type);
+      if (foundationType) quoteData.foundation_type = foundationType;
+      
+      const floorType = cleanStr(formData.floor_type);
+      if (floorType) quoteData.floor_type = floorType;
+      
+      const soffitType = cleanStr(formData.soffit_type);
+      if (soffitType) quoteData.soffit_type = soffitType;
+      
+      // Structure
+      const snowLoad = cleanNum(formData.snow_load);
+      if (snowLoad) quoteData.snow_load = snowLoad;
+      
+      const windLoad = cleanNum(formData.wind_load);
+      if (windLoad) quoteData.wind_load = windLoad;
+      
+      const buildingUse = cleanStr(formData.building_use);
+      if (buildingUse) quoteData.building_use = buildingUse;
+      
+      // Exterior
+      const roofMaterial = cleanStr(formData.roof_material);
+      if (roofMaterial) quoteData.roof_material = roofMaterial;
+      
+      const roofColor = cleanStr(formData.roof_color);
+      if (roofColor) quoteData.roof_color = roofColor;
+      
+      const trimColor = cleanStr(formData.trim_color);
+      if (trimColor) quoteData.trim_color = trimColor;
+      
       quoteData.wainscot_enabled = Boolean(formData.wainscot_enabled);
       
+      // Overhang
       quoteData.overhang_same_all = Boolean(formData.overhang_same_all);
-      if (formData.overhang_front && Number(formData.overhang_front) > 0) quoteData.overhang_front = Number(formData.overhang_front);
-      if (formData.overhang_back && Number(formData.overhang_back) > 0) quoteData.overhang_back = Number(formData.overhang_back);
-      if (formData.overhang_left && Number(formData.overhang_left) > 0) quoteData.overhang_left = Number(formData.overhang_left);
-      if (formData.overhang_right && Number(formData.overhang_right) > 0) quoteData.overhang_right = Number(formData.overhang_right);
+      const overhangFront = cleanNum(formData.overhang_front);
+      if (overhangFront) quoteData.overhang_front = overhangFront;
       
-      if (formData.insulation_type?.trim()) quoteData.insulation_type = formData.insulation_type.trim();
+      const overhangBack = cleanNum(formData.overhang_back);
+      if (overhangBack) quoteData.overhang_back = overhangBack;
       
+      const overhangLeft = cleanNum(formData.overhang_left);
+      if (overhangLeft) quoteData.overhang_left = overhangLeft;
+      
+      const overhangRight = cleanNum(formData.overhang_right);
+      if (overhangRight) quoteData.overhang_right = overhangRight;
+      
+      // Insulation
+      const insulationType = cleanStr(formData.insulation_type);
+      if (insulationType) quoteData.insulation_type = insulationType;
+      
+      // Features (always include as boolean)
       quoteData.has_loft = Boolean(formData.has_loft);
       quoteData.has_porch = Boolean(formData.has_porch);
       quoteData.has_plumbing = Boolean(formData.has_plumbing);
       quoteData.has_electrical = Boolean(formData.has_electrical);
       quoteData.has_hvac = Boolean(formData.has_hvac);
       
-      if (formData.site_notes?.trim()) quoteData.site_notes = formData.site_notes.trim();
-      if (formData.structural_notes?.trim()) quoteData.structural_notes = formData.structural_notes.trim();
-      if (formData.estimated_price && Number(formData.estimated_price) > 0) quoteData.estimated_price = Number(formData.estimated_price);
+      // Notes
+      const siteNotes = cleanStr(formData.site_notes);
+      if (siteNotes) quoteData.site_notes = siteNotes;
+      
+      const structuralNotes = cleanStr(formData.structural_notes);
+      if (structuralNotes) quoteData.structural_notes = structuralNotes;
+      
+      // Price
+      const estimatedPrice = cleanNum(formData.estimated_price);
+      if (estimatedPrice) quoteData.estimated_price = estimatedPrice;
 
-      // Add metadata
+      // Metadata
       if (profile?.id) {
         quoteData.created_by = profile.id;
       }
@@ -266,7 +333,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       }
 
       console.log('💾 Attempting to save quote...');
-      console.log('Quote data:', JSON.stringify(quoteData, null, 2));
+      console.log('📋 Form data:', formData);
+      console.log('📤 Sending to database:', JSON.stringify(quoteData, null, 2));
 
       if (currentQuoteId) {
         // Update existing quote
@@ -305,22 +373,27 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
             code: error.code,
             details: error.details,
             hint: error.hint,
-            sentData: quoteData,
           });
+          console.error('📤 Data that was sent:', JSON.stringify(quoteData, null, 2));
           
           // More detailed error message for user
           let userMessage = 'Failed to create quote';
           if (error.code === '23502') {
-            // NOT NULL violation
-            userMessage = `Missing required field: ${error.message}`;
+            // NOT NULL violation - extract column name if possible
+            const columnMatch = error.message.match(/column "([^"]+)"/);
+            const columnName = columnMatch ? columnMatch[1] : 'unknown';
+            userMessage = `Missing required field: ${columnName}`;
           } else if (error.code === '23505') {
             // Unique violation
             userMessage = 'A quote with this information already exists';
+          } else if (error.code === '22P02') {
+            // Invalid input syntax
+            userMessage = 'Invalid data format - please check all fields';
           } else if (error.message) {
             userMessage = error.message;
           }
           
-          toast.error(userMessage, { duration: 5000 });
+          toast.error(userMessage, { duration: 10000 });
           return;
         }
 
