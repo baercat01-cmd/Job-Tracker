@@ -204,20 +204,29 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   }
 
   async function saveQuote(status: string) {
-    if (!formData.customer_name || !formData.project_name) {
-      toast.error('Please fill in customer name and project name');
-      return;
+    // Validate required fields for new quotes
+    if (!currentQuoteId) {
+      if (!formData.customer_name?.trim()) {
+        toast.error('Customer name is required');
+        return;
+      }
+      if (!formData.project_name?.trim()) {
+        toast.error('Project name is required');
+        return;
+      }
     }
 
     // Validate required numeric fields
-    if (!formData.width || !formData.length || formData.width <= 0 || formData.length <= 0) {
-      toast.error('Please enter valid building width and length (must be greater than 0)');
+    const width = Number(formData.width);
+    const length = Number(formData.length);
+    
+    if (isNaN(width) || width <= 0) {
+      toast.error('Please enter a valid building width (must be greater than 0)');
       return;
     }
-
-    // Validate required text fields
-    if (!formData.pitch) {
-      toast.error('Please select a roof pitch');
+    
+    if (isNaN(length) || length <= 0) {
+      toast.error('Please enter a valid building length (must be greater than 0)');
       return;
     }
 
@@ -225,18 +234,18 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
     try {
       const quoteData = {
-        customer_name: formData.customer_name,
-        customer_email: formData.customer_email || null,
-        customer_phone: formData.customer_phone || null,
-        customer_address: formData.customer_address || null,
-        project_name: formData.project_name,
+        customer_name: formData.customer_name?.trim() || null,
+        customer_email: formData.customer_email?.trim() || null,
+        customer_phone: formData.customer_phone?.trim() || null,
+        customer_address: formData.customer_address?.trim() || null,
+        project_name: formData.project_name?.trim() || null,
         
         // Building dimensions - ensure numeric values
         width: Number(formData.width),
         length: Number(formData.length),
-        eave: formData.eave ? Number(formData.eave) : null,
-        pitch: formData.pitch,
-        truss: formData.truss || null,
+        eave: formData.eave && Number(formData.eave) > 0 ? Number(formData.eave) : null,
+        pitch: formData.pitch?.trim() || null,
+        truss: formData.truss?.trim() || null,
         
         // Foundation & Floor
         foundation_type: formData.foundation_type || null,
