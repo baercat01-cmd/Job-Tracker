@@ -210,8 +210,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
 
     // Validate required numeric fields
-    if (!formData.width || !formData.length) {
-      toast.error('Please enter building width and length');
+    if (!formData.width || !formData.length || formData.width <= 0 || formData.length <= 0) {
+      toast.error('Please enter valid building width and length (must be greater than 0)');
       return;
     }
 
@@ -225,16 +225,63 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
     try {
       const quoteData = {
-        ...formData,
+        customer_name: formData.customer_name,
+        customer_email: formData.customer_email || null,
+        customer_phone: formData.customer_phone || null,
+        customer_address: formData.customer_address || null,
+        project_name: formData.project_name,
+        
+        // Building dimensions - ensure numeric values
+        width: Number(formData.width),
+        length: Number(formData.length),
+        eave: formData.eave ? Number(formData.eave) : null,
+        pitch: formData.pitch,
+        truss: formData.truss || null,
+        
+        // Foundation & Floor
+        foundation_type: formData.foundation_type || null,
+        floor_type: formData.floor_type || null,
+        soffit_type: formData.soffit_type || null,
+        
+        // Structure & Design
+        snow_load: formData.snow_load ? Number(formData.snow_load) : null,
+        wind_load: formData.wind_load ? Number(formData.wind_load) : null,
+        building_use: formData.building_use || null,
+        
+        // Exterior Colors
+        roof_material: formData.roof_material || null,
+        roof_color: formData.roof_color || null,
+        trim_color: formData.trim_color || null,
+        wainscot_enabled: formData.wainscot_enabled,
+        
+        // Overhang
+        overhang_same_all: formData.overhang_same_all,
+        overhang_front: formData.overhang_front ? Number(formData.overhang_front) : null,
+        overhang_back: formData.overhang_back ? Number(formData.overhang_back) : null,
+        overhang_left: formData.overhang_left ? Number(formData.overhang_left) : null,
+        overhang_right: formData.overhang_right ? Number(formData.overhang_right) : null,
+        
+        // Insulation
+        insulation_type: formData.insulation_type || null,
+        
+        // Special Features
+        has_loft: formData.has_loft,
+        has_porch: formData.has_porch,
+        
+        // Utilities
+        has_plumbing: formData.has_plumbing,
+        has_electrical: formData.has_electrical,
+        has_hvac: formData.has_hvac,
+        
+        // Notes
+        site_notes: formData.site_notes || null,
+        structural_notes: formData.structural_notes || null,
+        
+        // Status and metadata
         status,
+        estimated_price: formData.estimated_price ? Number(formData.estimated_price) : null,
         created_by: profile?.id,
         updated_at: new Date().toISOString(),
-        // Ensure required fields have values, not empty strings
-        pitch: formData.pitch || '4/12',
-        truss: formData.truss || '',
-        foundation_type: formData.foundation_type || '',
-        floor_type: formData.floor_type || '',
-        soffit_type: formData.soffit_type || '',
         ...(status === 'submitted' && !existingQuote?.submitted_at && {
           submitted_at: new Date().toISOString(),
         }),
