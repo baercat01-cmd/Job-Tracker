@@ -124,11 +124,11 @@ function AppContent() {
   if (profile.role === 'office') {
     return (
       <Routes>
-        <Route path="/" element={<Navigate to="/office/quotes/new" replace />} />
+        <Route path="/" element={<Navigate to="/office?tab=jobs" replace />} />
         <Route path="/office" element={<OfficeDashboard />} />
         <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
         <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
-        <Route path="*" element={<Navigate to="/office/quotes/new" replace />} />
+        <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
       </Routes>
     );
   }
