@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Package, Truck, ListChecks, AlertCircle, Calendar as CalendarIcon, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseDateLocal } from '@/lib/date-utils';
 
 interface CalendarEvent {
   id: string;
@@ -165,7 +166,7 @@ export function EventDetailsDialog({ event, open, onClose, onUpdate }: EventDeta
                 <span className="text-sm text-muted-foreground">Event Date:</span>
                 <Badge variant="outline">
                   <CalendarIcon className="w-3 h-3 mr-1" />
-                  {new Date(event.date).toLocaleDateString('en-US', {
+                  {parseDateLocal(event.date).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',
@@ -273,7 +274,7 @@ export function EventDetailsDialog({ event, open, onClose, onUpdate }: EventDeta
                 <span className="text-sm text-muted-foreground">Completed Date:</span>
                 <Badge variant="outline">
                   <CalendarIcon className="w-3 h-3 mr-1" />
-                  {new Date(event.date).toLocaleDateString('en-US', {
+                  {parseDateLocal(event.date).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',

@@ -37,12 +37,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EventDetailsDialog } from './EventDetailsDialog';
-
-// Helper function to parse date string as local date (not UTC)
-function parseDateLocal(dateString: string): Date {
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
+import { parseDateLocal } from '@/lib/date-utils';
 import {
   Select,
   SelectContent,
@@ -1080,7 +1075,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
-              {selectedDate && new Date(selectedDate).toLocaleDateString('en-US', {
+              {selectedDate && parseDateLocal(selectedDate).toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
@@ -1187,7 +1182,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                               <div>
                                 <p className="text-sm font-semibold text-muted-foreground mb-1">Date</p>
                                 <p className="text-sm">
-                                  {new Date(event.date).toLocaleDateString('en-US', {
+                                  {parseDateLocal(event.date).toLocaleDateString('en-US', {
                                     weekday: 'long',
                                     month: 'long',
                                     day: 'numeric',
@@ -1384,7 +1379,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Current Date: {new Date(editingEventDate.date).toLocaleDateString('en-US', {
+                  Current Date: {parseDateLocal(editingEventDate.date).toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
