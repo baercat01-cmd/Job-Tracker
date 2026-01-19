@@ -393,10 +393,10 @@ export function AllJobsTaskManagement() {
 
   const getPriorityBadge = (priority: JobTask['priority']) => {
     const configs: Record<JobTask['priority'], any> = {
-      urgent: { className: 'bg-red-100 text-red-900', label: 'Urgent' },
-      high: { className: 'bg-orange-100 text-orange-900', label: 'High' },
-      medium: { className: 'bg-blue-100 text-blue-900', label: 'Medium' },
-      low: { className: 'bg-gray-100 text-gray-900', label: 'Low' },
+      urgent: { className: 'bg-red-800 text-red-100 border-2 border-red-900', label: 'Urgent' },
+      high: { className: 'bg-orange-700 text-orange-100 border-2 border-orange-800', label: 'High' },
+      medium: { className: 'bg-blue-700 text-blue-100 border-2 border-blue-800', label: 'Medium' },
+      low: { className: 'bg-slate-600 text-slate-100 border-2 border-slate-700', label: 'Low' },
     };
     const config = configs[priority];
     return (
@@ -432,12 +432,12 @@ export function AllJobsTaskManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
         <div>
-          <h2 className="text-2xl font-bold text-green-900 tracking-tight">Task Management</h2>
-          <p className="text-black">Create and manage tasks across all jobs</p>
+          <h2 className="text-2xl font-bold tracking-tight">Task Management</h2>
+          <p className="text-yellow-400">Create and manage tasks across all jobs</p>
         </div>
-        <Button onClick={openCreateDialog}>
+        <Button onClick={openCreateDialog} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
           <Plus className="w-4 h-4 mr-2" />
           New Task
         </Button>
@@ -464,6 +464,7 @@ export function AllJobsTaskManagement() {
             variant={filterStatus === 'all' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('all')}
+            className={filterStatus === 'all' ? "bg-gradient-to-r from-green-800 to-green-900 hover:from-green-900 hover:to-green-950 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             All ({tasks.length})
           </Button>
@@ -471,6 +472,7 @@ export function AllJobsTaskManagement() {
             variant={filterStatus === 'pending' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('pending')}
+            className={filterStatus === 'pending' ? "bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             Pending ({tasksByStatus.pending.length})
           </Button>
@@ -478,6 +480,7 @@ export function AllJobsTaskManagement() {
             variant={filterStatus === 'in_progress' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('in_progress')}
+            className={filterStatus === 'in_progress' ? "bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 text-black font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             In Progress ({tasksByStatus.in_progress.length})
           </Button>
@@ -485,6 +488,7 @@ export function AllJobsTaskManagement() {
             variant={filterStatus === 'completed' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('completed')}
+            className={filterStatus === 'completed' ? "bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             Completed ({tasksByStatus.completed.length})
           </Button>
@@ -493,6 +497,7 @@ export function AllJobsTaskManagement() {
               variant={filterStatus === 'blocked' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setFilterStatus('blocked')}
+              className={filterStatus === 'blocked' ? "bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
             >
               Blocked ({tasksByStatus.blocked.length})
             </Button>

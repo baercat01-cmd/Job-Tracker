@@ -26,11 +26,11 @@ interface Quote {
 }
 
 const STATUS_CONFIG = {
-  draft: { label: 'Draft', color: 'bg-gray-500', icon: Clock },
-  submitted: { label: 'Submitted', color: 'bg-blue-500', icon: FileText },
-  estimated: { label: 'Estimated', color: 'bg-purple-500', icon: DollarSign },
-  won: { label: 'Won', color: 'bg-green-500', icon: CheckCircle },
-  lost: { label: 'Lost', color: 'bg-red-500', icon: XCircle },
+  draft: { label: 'Draft', color: 'bg-slate-700', icon: Clock },
+  submitted: { label: 'Submitted', color: 'bg-blue-700', icon: FileText },
+  estimated: { label: 'Estimated', color: 'bg-purple-700', icon: DollarSign },
+  won: { label: 'Won', color: 'bg-green-700', icon: CheckCircle },
+  lost: { label: 'Lost', color: 'bg-red-800', icon: XCircle },
 };
 
 export function QuotesView() {
@@ -158,10 +158,10 @@ export function QuotesView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Quote Intake System</h2>
-          <p className="text-muted-foreground">
+          <p className="text-yellow-400">
             {showArchived ? 'Archived quotes (Lost)' : 'Manage building quotes and convert them to active jobs'}
           </p>
         </div>
@@ -169,6 +169,7 @@ export function QuotesView() {
           <Button 
             variant="outline" 
             onClick={() => setShowArchived(!showArchived)}
+            className="border-2 border-yellow-500 bg-black text-white hover:bg-yellow-500 hover:text-black font-semibold"
           >
             {showArchived ? (
               <>
@@ -183,7 +184,7 @@ export function QuotesView() {
             )}
           </Button>
           {!showArchived && (
-            <Button onClick={() => navigate('/office/quotes/new')} size="lg">
+            <Button onClick={() => navigate('/office/quotes/new')} size="lg" className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
               <Plus className="w-4 h-4 mr-2" />
               New Quote
             </Button>
@@ -209,6 +210,7 @@ export function QuotesView() {
             variant={statusFilter === 'all' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setStatusFilter('all')}
+            className={statusFilter === 'all' ? "bg-gradient-to-r from-green-800 to-green-900 hover:from-green-900 hover:to-green-950 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             All ({statusCounts.all})
           </Button>
@@ -218,6 +220,7 @@ export function QuotesView() {
               variant={statusFilter === status ? 'default' : 'outline'}
               size="sm"
               onClick={() => setStatusFilter(status as Quote['status'])}
+              className={statusFilter === status ? "bg-gradient-to-r from-green-800 to-green-900 hover:from-green-900 hover:to-green-950 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
             >
               {config.label} ({statusCounts[status as keyof typeof statusCounts]})
             </Button>
@@ -285,13 +288,13 @@ export function QuotesView() {
                   {quote.estimated_price && (
                     <div className="text-sm">
                       <span className="text-muted-foreground">Estimate:</span>{' '}
-                      <span className="font-medium text-green-600">
+                      <span className="font-medium text-green-700">
                         ${quote.estimated_price.toLocaleString()}
                       </span>
                     </div>
                   )}
                   {quote.job_id && (
-                    <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
+                    <div className="flex items-center gap-1 text-sm text-green-700 font-medium">
                       <Briefcase className="w-3 h-3" />
                       Converted to Job
                     </div>
@@ -303,7 +306,7 @@ export function QuotesView() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 text-green-600 border-green-600 hover:bg-green-50"
+                        className="flex-1 text-white bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 border-2 border-green-600 font-semibold"
                         onClick={(e) => markQuoteAsWon(quote.id, e)}
                       >
                         <CheckCircle className="w-3 h-3 mr-1" />
@@ -312,7 +315,7 @@ export function QuotesView() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 text-red-600 border-red-600 hover:bg-red-50"
+                        className="flex-1 text-white bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 border-2 border-red-600 font-semibold"
                         onClick={(e) => markQuoteAsLost(quote.id, e)}
                       >
                         <XCircle className="w-3 h-3 mr-1" />

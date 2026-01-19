@@ -278,12 +278,12 @@ export function SubcontractorManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
         <div>
-          <h2 className="text-3xl font-bold">Subcontractor Management</h2>
-          <p className="text-muted-foreground">Manage subcontractors and schedule their work</p>
+          <h2 className="text-3xl font-bold tracking-tight">Subcontractor Management</h2>
+          <p className="text-yellow-400">Manage subcontractors and schedule their work</p>
         </div>
-        <Button onClick={() => setShowDialog(true)}>
+        <Button onClick={() => setShowDialog(true)} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
           <Plus className="w-4 h-4 mr-2" />
           Add Subcontractor
         </Button>
@@ -392,7 +392,7 @@ export function SubcontractorManagement() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1"
+                      className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 text-white border-2 border-green-600 font-semibold"
                       onClick={() => {
                         setSelectedSubcontractor(sub);
                         setShowScheduleDialog(true);

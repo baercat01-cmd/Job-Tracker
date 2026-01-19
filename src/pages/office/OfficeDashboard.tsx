@@ -146,7 +146,7 @@ export function OfficeDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-white border-b-2 border-slate-300 shadow-sm">
+      <header className="bg-gradient-to-r from-slate-900 via-black to-slate-900 border-b-4 border-yellow-500 shadow-lg">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <img 
@@ -154,21 +154,21 @@ export function OfficeDashboard() {
               alt="Martin Builder" 
               className="h-10 w-auto"
             />
-            <div className="border-l border-slate-300 pl-4">
-              <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
-              <p className="text-xs text-black">Office Dashboard</p>
+            <div className="border-l-2 border-yellow-500 pl-4">
+              <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
+              <p className="text-xs text-yellow-400">Office Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-none border-slate-300 bg-white text-black hover:bg-slate-100">
+                <Button variant="outline" size="sm" className="rounded-none border-yellow-500 bg-black text-white hover:bg-yellow-500 hover:text-black font-semibold">
                   <Eye className="w-4 h-4 mr-2" />
                   Office View
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="rounded-none border-slate-300">
-                <DropdownMenuItem onClick={() => setViewMode('field')} className="rounded-none">
+              <DropdownMenuContent align="end" className="rounded-none border-yellow-500 bg-black text-white">
+                <DropdownMenuItem onClick={() => setViewMode('field')} className="rounded-none hover:bg-yellow-500 hover:text-black">
                   Switch to Field View
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -208,10 +208,10 @@ export function OfficeDashboard() {
               onViewAll={() => setActiveTab('notifications')}
             />
             <div className="text-right">
-              <p className="text-sm font-bold text-black">{profile?.username || profile?.email}</p>
-              <p className="text-xs text-black capitalize">{profile?.role}</p>
+              <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
+              <p className="text-xs text-yellow-400 capitalize">{profile?.role}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-black hover:bg-slate-100">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-yellow-500 hover:text-black">
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </Button>
@@ -222,24 +222,24 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-6 bg-white border-2 border-slate-300 rounded-none">
-            <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
+            <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
             </TabsTrigger>
-            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">Quotes</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+            <TabsTrigger value="schedule" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+            <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Calendar</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+            <TabsTrigger value="settings" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">Settings</span>
             </TabsTrigger>
@@ -270,9 +270,9 @@ export function OfficeDashboard() {
 
           <TabsContent value="calendar">
             <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Project Timeline</h2>
-                <p className="text-black">Gantt chart view of all active projects</p>
+              <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+                <h2 className="text-2xl font-bold tracking-tight">Project Timeline</h2>
+                <p className="text-yellow-400">Gantt chart view of all active projects</p>
               </div>
               <JobGanttChart onJobSelect={(jobId) => {
                 setSelectedJobId(jobId);
@@ -283,50 +283,50 @@ export function OfficeDashboard() {
 
           <TabsContent value="settings">
             <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Settings</h2>
-                <p className="text-black">Manage system configuration, users, and data export</p>
+              <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+                <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+                <p className="text-yellow-400">Manage system configuration, users, and data export</p>
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-10 bg-white border-2 border-slate-300 rounded-none">
-                  <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                <TabsList className="grid w-full grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
+                  <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Download className="w-4 h-4 mr-2" />
                     Export
                   </TabsTrigger>
-                  <TabsTrigger value="time" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="time" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Clock className="w-4 h-4 mr-2" />
                     Time
                   </TabsTrigger>
-                  <TabsTrigger value="photos" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="photos" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Camera className="w-4 h-4 mr-2" />
                     Photos
                   </TabsTrigger>
-                  <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Settings className="w-4 h-4 mr-2" />
                     Components
                   </TabsTrigger>
-                  <TabsTrigger value="workers" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="workers" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Users className="w-4 h-4 mr-2" />
                     Workers
                   </TabsTrigger>
-                  <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Users className="w-4 h-4 mr-2" />
                     Subs
                   </TabsTrigger>
-                  <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Briefcase className="w-4 h-4 mr-2" />
                     Internal
                   </TabsTrigger>
-                  <TabsTrigger value="users" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="users" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Users className="w-4 h-4 mr-2" />
                     Users
                   </TabsTrigger>
-                  <TabsTrigger value="archived" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="archived" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <Archive className="w-4 h-4 mr-2" />
                     Archived
                   </TabsTrigger>
-                  <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                  <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                     <ListTodo className="w-4 h-4 mr-2" />
                     Shop Tasks
                   </TabsTrigger>
