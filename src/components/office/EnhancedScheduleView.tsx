@@ -10,7 +10,7 @@ export function EnhancedScheduleView() {
   const [subcontractorView, setSubcontractorView] = useState<'list' | 'schedule'>('schedule');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Master Schedule</h2>
