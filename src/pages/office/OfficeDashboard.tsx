@@ -25,6 +25,7 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
+import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -160,6 +161,16 @@ export function OfficeDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* Quick Time Clock for Office Users */}
+            <div className="w-32">
+              <QuickTimeEntry 
+                userId={profile?.id || ''} 
+                onSuccess={() => {
+                  toast.success('Time logged successfully');
+                }}
+              />
+            </div>
+            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold">
