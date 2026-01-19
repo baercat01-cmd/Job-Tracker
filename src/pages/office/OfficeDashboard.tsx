@@ -20,7 +20,7 @@ import { NotificationBell } from '@/components/office/NotificationBell';
 import { JobsCalendar } from '@/components/office/JobsCalendar';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { SubcontractorManagement } from '@/components/office/SubcontractorManagement';
-import { SubcontractorScheduling } from '@/components/office/SubcontractorScheduling';
+import { EnhancedScheduleView } from '@/components/office/EnhancedScheduleView';
 import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
@@ -265,13 +265,7 @@ export function OfficeDashboard() {
           </TabsContent>
 
           <TabsContent value="schedule">
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Subcontractor Schedule</h2>
-                <p className="text-black">Manage subcontractor schedules and assignments</p>
-              </div>
-              <SubcontractorScheduling />
-            </div>
+            <EnhancedScheduleView />
           </TabsContent>
 
           <TabsContent value="calendar">

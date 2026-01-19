@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase } from 'lucide-react';
+import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -58,6 +58,10 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
   const [loading, setLoading] = useState(true);
   const [rescheduleItem, setRescheduleItem] = useState<{ type: 'task' | 'event'; item: any } | null>(null);
   const [newDate, setNewDate] = useState<Date | undefined>(undefined);
+  const [showCalendarView, setShowCalendarView] = useState(false);
+  const [calendarTasks, setCalendarTasks] = useState<Task[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -126,6 +130,43 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       toast.error('Failed to load today\'s tasks');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadAllCalendarItems() {
+    try {
+      // Load all upcoming tasks
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('job_tasks')
+        .select(`
+          *,
+          jobs(id, name, client_name)
+        `)
+        .not('due_date', 'is', null)
+        .neq('status', 'completed')
+        .gte('due_date', todayStr)
+        .order('due_date', { ascending: true });
+
+      if (tasksError) throw tasksError;
+
+      // Load all upcoming events
+      const { data: eventsData, error: eventsError } = await supabase
+        .from('calendar_events')
+        .select(`
+          *,
+          jobs(id, name, client_name)
+        `)
+        .is('completed_at', null)
+        .gte('event_date', todayStr)
+        .order('event_date', { ascending: true });
+
+      if (eventsError) throw eventsError;
+
+      setCalendarTasks(tasksData || []);
+      setCalendarEvents(eventsData || []);
+    } catch (error) {
+      console.error('Error loading calendar items:', error);
+      toast.error('Failed to load calendar');
     }
   }
 
@@ -244,6 +285,18 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               day: 'numeric' 
             })}
           </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full mt-2"
+            onClick={() => {
+              loadAllCalendarItems();
+              setShowCalendarView(true);
+            }}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            View All Tasks Calendar
+          </Button>
         </CardHeader>
         <CardContent className="flex-1 overflow-y-auto space-y-3">
           {totalItems === 0 ? (
@@ -388,6 +441,147 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             <Button onClick={handleReschedule} disabled={!newDate}>
               Reschedule
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Calendar View Dialog */}
+      <Dialog open={showCalendarView} onOpenChange={setShowCalendarView}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5" />
+              Tasks & Events Calendar
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Calendar */}
+            <div>
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                className="rounded-md border"
+                modifiers={{
+                  hasItems: (date) => {
+                    const dateStr = date.toISOString().split('T')[0];
+                    return calendarTasks.some(t => t.due_date === dateStr) ||
+                           calendarEvents.some(e => e.event_date === dateStr);
+                  }
+                }}
+                modifiersStyles={{
+                  hasItems: {
+                    fontWeight: 'bold',
+                    backgroundColor: '#22c55e',
+                    color: 'white',
+                    borderRadius: '50%',
+                  }
+                }}
+              />
+            </div>
+
+            {/* Items for selected date */}
+            <div className="space-y-3">
+              {selectedDate ? (
+                <>
+                  <h3 className="font-semibold text-sm">
+                    {selectedDate.toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </h3>
+                  {(() => {
+                    const dateStr = selectedDate.toISOString().split('T')[0];
+                    const dayTasks = calendarTasks.filter(t => t.due_date === dateStr);
+                    const dayEvents = calendarEvents.filter(e => e.event_date === dateStr);
+                    const totalDayItems = dayTasks.length + dayEvents.length;
+
+                    if (totalDayItems === 0) {
+                      return (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <p className="text-sm">No tasks or events scheduled</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {/* Tasks */}
+                        {dayTasks.map(task => (
+                          <Card key={task.id} className="border-l-4 border-l-blue-500">
+                            <CardContent className="p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="text-xs">
+                                  Task
+                                </Badge>
+                                <Badge className={getPriorityColor(task.priority) + ' text-xs'}>
+                                  {task.priority}
+                                </Badge>
+                              </div>
+                              <p className="font-medium text-sm">{task.title}</p>
+                              {task.description && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {task.description}
+                                </p>
+                              )}
+                              {task.job && (
+                                <button
+                                  onClick={() => {
+                                    onJobSelect?.(task.job_id);
+                                    setShowCalendarView(false);
+                                  }}
+                                  className="flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+                                >
+                                  <Briefcase className="w-3 h-3" />
+                                  {task.job.name}
+                                </button>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+
+                        {/* Events */}
+                        {dayEvents.map(event => (
+                          <Card key={event.id} className="border-l-4 border-l-green-500">
+                            <CardContent className="p-3">
+                              <Badge variant="secondary" className="text-xs mb-2">
+                                {event.event_type}
+                              </Badge>
+                              <p className="font-medium text-sm">{event.title}</p>
+                              {event.description && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {event.description}
+                                </p>
+                              )}
+                              {event.job && (
+                                <button
+                                  onClick={() => {
+                                    onJobSelect?.(event.job_id);
+                                    setShowCalendarView(false);
+                                  }}
+                                  className="flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+                                >
+                                  <Briefcase className="w-3 h-3" />
+                                  {event.job.name}
+                                </button>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <CalendarIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">Select a date to view tasks and events</p>
+                  <p className="text-xs mt-1">Dates with items are highlighted in green</p>
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
