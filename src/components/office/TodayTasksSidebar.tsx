@@ -109,7 +109,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .from('job_tasks')
         .select(`
           *,
-          jobs(id, name, client_name, status)
+          job:jobs(id, name, client_name, status)
         `)
         .not('due_date', 'is', null)
         .lte('due_date', todayStr)
@@ -125,7 +125,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       // Filter to only include tasks from active, quoting, or on hold jobs
       const filteredTasks = (tasksData || []).filter(
-        task => task.jobs && ['active', 'quoting', 'on hold'].includes((task.jobs as any).status)
+        task => task.job && ['active', 'quoting', 'on hold'].includes((task.job as any).status)
       );
 
       console.log('Filtered tasks:', filteredTasks);
@@ -136,7 +136,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .from('calendar_events')
         .select(`
           *,
-          jobs(id, name, client_name, status)
+          job:jobs(id, name, client_name, status)
         `)
         .eq('event_date', todayStr)
         .is('completed_at', null)
@@ -146,7 +146,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       // Filter to only include events from active, quoting, or on hold jobs
       const filteredEvents = (eventsData || []).filter(
-        event => event.jobs && ['active', 'quoting', 'on hold'].includes((event.jobs as any).status)
+        event => event.job && ['active', 'quoting', 'on hold'].includes((event.job as any).status)
       );
 
       console.log('Final tasks to display:', filteredTasks.length);
@@ -221,7 +221,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .from('job_tasks')
         .select(`
           *,
-          jobs(id, name, client_name, status)
+          job:jobs(id, name, client_name, status)
         `)
         .not('due_date', 'is', null)
         .neq('status', 'completed')
@@ -232,7 +232,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       // Filter to only include tasks from active, quoting, or on hold jobs
       const filteredTasks = (tasksData || []).filter(
-        task => task.jobs && ['active', 'quoting', 'on hold'].includes((task.jobs as any).status)
+        task => task.job && ['active', 'quoting', 'on hold'].includes((task.job as any).status)
       );
 
       // Load all upcoming events from active/quoting/on hold jobs
@@ -240,7 +240,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .from('calendar_events')
         .select(`
           *,
-          jobs(id, name, client_name, status)
+          job:jobs(id, name, client_name, status)
         `)
         .is('completed_at', null)
         .gte('event_date', todayStr)
@@ -250,7 +250,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       // Filter to only include events from active, quoting, or on hold jobs
       const filteredEvents = (eventsData || []).filter(
-        event => event.jobs && ['active', 'quoting', 'on hold'].includes((event.jobs as any).status)
+        event => event.job && ['active', 'quoting', 'on hold'].includes((event.job as any).status)
       );
 
       setCalendarTasks(filteredTasks);
