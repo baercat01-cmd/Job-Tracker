@@ -146,21 +146,87 @@ export function OfficeDashboard() {
     <div className="min-h-screen bg-slate-50">
       {/* Header with Navigation */}
       <header className="bg-white border-b-4 border-yellow-500 shadow-lg sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between border-b-2 border-slate-200">
-          <div className="flex items-center gap-4">
-            <img 
-              src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-              alt="Martin Builder" 
-              className="h-10 w-auto"
-            />
-            <div className="border-l-2 border-green-800 pl-4">
-              <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
-              <p className="text-xs text-slate-600">Office Dashboard</p>
-            </div>
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          {/* Logo */}
+          <img 
+            src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+            alt="Martin Builder" 
+            className="h-10 w-auto flex-shrink-0"
+          />
+          
+          {/* Navigation Tabs */}
+          <div className="flex items-center gap-1 flex-1">
+            <Button
+              variant={activeTab === 'jobs' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('jobs')}
+              className={`rounded-none h-9 ${
+                activeTab === 'jobs'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Briefcase className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Jobs</span>
+            </Button>
+            <Button
+              variant={activeTab === 'quotes' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('quotes')}
+              className={`rounded-none h-9 ${
+                activeTab === 'quotes'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <FileText className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Quotes</span>
+            </Button>
+            <Button
+              variant={activeTab === 'schedule' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('schedule')}
+              className={`rounded-none h-9 ${
+                activeTab === 'schedule'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Calendar className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Schedule</span>
+            </Button>
+            <Button
+              variant={activeTab === 'calendar' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('calendar')}
+              className={`rounded-none h-9 ${
+                activeTab === 'calendar'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Calendar className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Calendar</span>
+            </Button>
+            <Button
+              variant={activeTab === 'settings' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('settings')}
+              className={`rounded-none h-9 ${
+                activeTab === 'settings'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Settings className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Settings</span>
+            </Button>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Right Side Actions */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             {/* Quick Time Clock for Office Users */}
-            <div className="w-32">
+            <div className="w-28">
               <QuickTimeEntry 
                 userId={profile?.id || ''} 
                 onSuccess={() => {
@@ -171,9 +237,9 @@ export function OfficeDashboard() {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold">
-                  <Eye className="w-4 h-4 mr-2" />
-                  Office View
+                <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-9">
+                  <Eye className="w-4 h-4 mr-1.5" />
+                  <span className="hidden md:inline">Office View</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="rounded-none border-green-800 bg-white">
@@ -182,6 +248,7 @@ export function OfficeDashboard() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            
             <NotificationBell
               onNotificationClick={(notification) => {
                 // Navigate based on notification type
@@ -216,75 +283,16 @@ export function OfficeDashboard() {
               }}
               onViewAll={() => setActiveTab('notifications')}
             />
-            <div className="text-right">
+            
+            <div className="text-right hidden lg:block">
               <p className="text-sm font-bold text-slate-900">{profile?.username || profile?.email}</p>
               <p className="text-xs text-slate-600 capitalize">{profile?.role}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-slate-900 hover:bg-green-800 hover:text-white">
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+            
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-slate-900 hover:bg-green-800 hover:text-white h-9">
+              <LogOut className="w-4 h-4 mr-1.5" />
+              <span className="hidden md:inline">Sign Out</span>
             </Button>
-          </div>
-        </div>
-        
-        {/* Main Navigation Tabs in Header */}
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-5 bg-black border-2 border-yellow-500 rounded-none shadow-lg h-14">
-            <button
-              onClick={() => setActiveTab('jobs')}
-              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
-                activeTab === 'jobs' 
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
-                  : 'text-white hover:bg-yellow-600/20'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              <span className="hidden sm:inline">Jobs</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('quotes')}
-              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
-                activeTab === 'quotes' 
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
-                  : 'text-white hover:bg-yellow-600/20'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Quotes</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('schedule')}
-              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
-                activeTab === 'schedule' 
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
-                  : 'text-white hover:bg-yellow-600/20'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">Schedule</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('calendar')}
-              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
-                activeTab === 'calendar' 
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
-                  : 'text-white hover:bg-yellow-600/20'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">Calendar</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
-                activeTab === 'settings' 
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
-                  : 'text-white hover:bg-yellow-600/20'
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </button>
           </div>
         </div>
       </header>
