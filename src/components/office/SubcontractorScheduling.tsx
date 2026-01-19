@@ -23,12 +23,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, Plus, Edit, Trash2, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-
-// Helper function to parse date string as local date (not UTC)
-function parseDateLocal(dateString: string): Date {
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
+import { parseDateLocal } from '@/lib/date-utils';
 
 interface Subcontractor {
   id: string;

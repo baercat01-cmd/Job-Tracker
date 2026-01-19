@@ -15,6 +15,7 @@ import {
 import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { formatDateLocal, getTodayString } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -63,9 +64,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getTodayString();
 
   useEffect(() => {
     loadTodayItems();
@@ -213,7 +212,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     if (!rescheduleItem || !newDate) return;
 
     try {
-      const newDateStr = newDate.toISOString().split('T')[0];
+      const newDateStr = formatDateLocal(newDate);
 
       if (rescheduleItem.type === 'task') {
         const { error } = await supabase
@@ -464,7 +463,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                 className="rounded-md border"
                 modifiers={{
                   hasItems: (date) => {
-                    const dateStr = date.toISOString().split('T')[0];
+                    const dateStr = formatDateLocal(date);
                     return calendarTasks.some(t => t.due_date === dateStr) ||
                            calendarEvents.some(e => e.event_date === dateStr);
                   }
@@ -493,7 +492,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     })}
                   </h3>
                   {(() => {
-                    const dateStr = selectedDate.toISOString().split('T')[0];
+                    const dateStr = formatDateLocal(selectedDate);
                     const dayTasks = calendarTasks.filter(t => t.due_date === dateStr);
                     const dayEvents = calendarEvents.filter(e => e.event_date === dateStr);
                     const totalDayItems = dayTasks.length + dayEvents.length;
