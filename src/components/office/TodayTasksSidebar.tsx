@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye } from 'lucide-react';
+import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Info, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateLocal, getTodayString } from '@/lib/date-utils';
@@ -63,11 +63,17 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
   const [calendarTasks, setCalendarTasks] = useState<Task[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showEventDialog, setShowEventDialog] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
 
   const todayStr = getTodayString();
 
   useEffect(() => {
     loadTodayItems();
+    loadUsers();
 
     // Subscribe to changes
     const tasksChannel = supabase
@@ -144,6 +150,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
+    }
+  }
+
   async function loadAllCalendarItems() {
     try {
       // Load all upcoming tasks from active/quoting/on hold jobs
@@ -191,6 +249,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
+    }
+  }
+
   async function handleCompleteTask(taskId: string) {
     try {
       const { error } = await supabase
@@ -211,6 +321,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
+    }
+  }
+
   async function handleCompleteEvent(eventId: string) {
     try {
       const { error } = await supabase
@@ -227,6 +389,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     } catch (error) {
       console.error('Error completing event:', error);
       toast.error('Failed to complete event');
+    }
+  }
+
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
     }
   }
 
@@ -262,6 +476,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
+    }
+  }
+
   const totalItems = tasks.length + events.length;
 
   const getPriorityColor = (priority: string) => {
@@ -272,6 +538,58 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         return 'bg-yellow-500';
       default:
         return 'bg-blue-500';
+    }
+  }
+
+  async function loadUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('username', { ascending: true });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Task deleted');
+      setShowTaskDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+
+      if (error) throw error;
+      toast.success('Event deleted');
+      setShowEventDialog(false);
+      loadTodayItems();
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Failed to delete event');
     }
   };
 
@@ -339,7 +657,11 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                 return (
                 <div
                   key={task.id}
-                  className={`border-2 rounded-lg p-3 space-y-2 hover:shadow-lg transition-all ${
+                  onClick={() => {
+                    setSelectedTask(task);
+                    setShowTaskDialog(true);
+                  }}
+                  className={`border-2 rounded-lg p-3 space-y-2 hover:shadow-lg transition-all cursor-pointer ${
                     isOverdue 
                       ? 'border-red-900 bg-red-50 hover:border-red-700' 
                       : 'border-slate-200 bg-white hover:border-yellow-500'
@@ -355,7 +677,10 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       {/* Job Name - Prominent Display */}
                       {task.job && (
                         <button
-                          onClick={() => onJobSelect?.(task.job_id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJobSelect?.(task.job_id);
+                          }}
                           className={`flex items-center gap-1 mb-2 text-sm font-bold hover:underline ${
                             isOverdue ? 'text-red-900 hover:text-red-700' : 'text-green-900 hover:text-green-700'
                           }`}
@@ -395,15 +720,32 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full text-xs h-7"
-                    onClick={() => setRescheduleItem({ type: 'task', item: task })}
-                  >
-                    <CalendarIcon className="w-3 h-3 mr-1" />
-                    Reschedule
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-xs h-7"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRescheduleItem({ type: 'task', item: task });
+                      }}
+                    >
+                      <CalendarIcon className="w-3 h-3 mr-1" />
+                      Reschedule
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 px-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTask(task);
+                        setShowTaskDialog(true);
+                      }}
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
               );
               })}
@@ -412,7 +754,11 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               {events.map((event) => (
                 <div
                   key={event.id}
-                  className="border-2 border-slate-200 rounded-lg p-3 space-y-2 hover:shadow-lg hover:border-yellow-500 transition-all bg-white border-l-4 border-l-yellow-500"
+                  onClick={() => {
+                    setSelectedEvent(event);
+                    setShowEventDialog(true);
+                  }}
+                  className="border-2 border-slate-200 rounded-lg p-3 space-y-2 hover:shadow-lg hover:border-yellow-500 transition-all bg-white border-l-4 border-l-yellow-500 cursor-pointer"
                 >
                   <div className="flex items-start gap-2">
                     <Checkbox
@@ -424,7 +770,10 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       {/* Job Name - Prominent Display */}
                       {event.job && (
                         <button
-                          onClick={() => onJobSelect?.(event.job_id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJobSelect?.(event.job_id);
+                          }}
                           className="flex items-center gap-1 mb-2 text-sm font-bold text-green-900 hover:text-green-700 hover:underline"
                         >
                           <Briefcase className="w-4 h-4 flex-shrink-0" />
@@ -444,15 +793,32 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full text-xs h-7"
-                    onClick={() => setRescheduleItem({ type: 'event', item: event })}
-                  >
-                    <CalendarIcon className="w-3 h-3 mr-1" />
-                    Reschedule
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-xs h-7"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRescheduleItem({ type: 'event', item: event });
+                      }}
+                    >
+                      <CalendarIcon className="w-3 h-3 mr-1" />
+                      Reschedule
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 px-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedEvent(event);
+                        setShowEventDialog(true);
+                      }}
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </>
@@ -632,6 +998,312 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Details Dialog */}
+      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Task Details</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedTask) {
+                      handleCompleteTask(selectedTask.id);
+                      setShowTaskDialog(false);
+                    }
+                  }}
+                  className="text-green-600 hover:text-green-700"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  Complete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedTask) {
+                      handleDeleteTask(selectedTask.id);
+                    }
+                  }}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTask && (
+            <div className="space-y-4">
+              {/* Job Info */}
+              {selectedTask.job && (
+                <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg">
+                  <p className="text-xs text-green-700 font-semibold mb-1">Job</p>
+                  <button
+                    onClick={() => {
+                      onJobSelect?.(selectedTask.job_id);
+                      setShowTaskDialog(false);
+                    }}
+                    className="flex items-center gap-2 text-lg font-bold text-green-900 hover:text-green-700 hover:underline"
+                  >
+                    <Briefcase className="w-5 h-5" />
+                    {selectedTask.job.name}
+                  </button>
+                  <p className="text-sm text-green-700 mt-1">{selectedTask.job.client_name}</p>
+                </div>
+              )}
+
+              {/* Task Title */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Title</p>
+                <p className="text-lg font-bold">{selectedTask.title}</p>
+              </div>
+
+              {/* Description */}
+              {selectedTask.description && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Description</p>
+                  <p className="text-sm">{selectedTask.description}</p>
+                </div>
+              )}
+
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Status</p>
+                  <Badge variant="secondary" className="capitalize">{selectedTask.status.replace('_', ' ')}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Priority</p>
+                  <Badge 
+                    className={selectedTask.priority === 'high' || selectedTask.priority === 'urgent' 
+                      ? 'bg-red-500 text-white' 
+                      : selectedTask.priority === 'medium' 
+                        ? 'bg-yellow-500 text-black' 
+                        : 'bg-blue-500 text-white'
+                    }
+                  >
+                    {selectedTask.priority}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Type</p>
+                  <Badge variant="outline" className="capitalize">{selectedTask.task_type}</Badge>
+                </div>
+              </div>
+
+              {/* Due Date */}
+              {selectedTask.due_date && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Due Date</p>
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      {new Date(selectedTask.due_date).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </span>
+                    {selectedTask.due_date && new Date(selectedTask.due_date) < new Date() && selectedTask.status !== 'completed' && (
+                      <Badge variant="destructive" className="ml-2">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        OVERDUE
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned To */}
+              {selectedTask.assigned_to && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Assigned To</p>
+                  <p className="text-sm">{users.find(u => u.id === selectedTask.assigned_to)?.username || users.find(u => u.id === selectedTask.assigned_to)?.email || 'Unknown'}</p>
+                </div>
+              )}
+
+              {/* Timestamps */}
+              <div className="pt-4 border-t space-y-2 text-xs text-muted-foreground">
+                <p>Created: {new Date(selectedTask.created_at).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit'
+                })}</p>
+                {selectedTask.status === 'completed' && (
+                  <p>Completed: {new Date(selectedTask.created_at).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })}</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowTaskDialog(false);
+                    setRescheduleItem({ type: 'task', item: selectedTask });
+                  }}
+                  className="flex-1"
+                >
+                  <CalendarIcon className="w-4 h-4 mr-2" />
+                  Reschedule
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => onJobSelect?.(selectedTask.job_id)}
+                  className="flex-1"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  View Job
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Event Details Dialog */}
+      <Dialog open={showEventDialog} onOpenChange={setShowEventDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Event Details</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedEvent) {
+                      handleCompleteEvent(selectedEvent.id);
+                      setShowEventDialog(false);
+                    }
+                  }}
+                  className="text-green-600 hover:text-green-700"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  Complete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedEvent) {
+                      handleDeleteEvent(selectedEvent.id);
+                    }
+                  }}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedEvent && (
+            <div className="space-y-4">
+              {/* Job Info */}
+              {selectedEvent.job && (
+                <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                  <p className="text-xs text-yellow-700 font-semibold mb-1">Job</p>
+                  <button
+                    onClick={() => {
+                      onJobSelect?.(selectedEvent.job_id);
+                      setShowEventDialog(false);
+                    }}
+                    className="flex items-center gap-2 text-lg font-bold text-yellow-900 hover:text-yellow-700 hover:underline"
+                  >
+                    <Briefcase className="w-5 h-5" />
+                    {selectedEvent.job.name}
+                  </button>
+                  <p className="text-sm text-yellow-700 mt-1">{selectedEvent.job.client_name}</p>
+                </div>
+              )}
+
+              {/* Event Title */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Title</p>
+                <p className="text-lg font-bold">{selectedEvent.title}</p>
+              </div>
+
+              {/* Description */}
+              {selectedEvent.description && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold mb-1">Description</p>
+                  <p className="text-sm">{selectedEvent.description}</p>
+                </div>
+              )}
+
+              {/* Event Type */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Event Type</p>
+                <Badge variant="secondary" className="capitalize">{selectedEvent.event_type.replace('_', ' ')}</Badge>
+              </div>
+
+              {/* Event Date */}
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Date</p>
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {new Date(selectedEvent.event_date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Timestamps */}
+              <div className="pt-4 border-t space-y-2 text-xs text-muted-foreground">
+                {selectedEvent.completed_at && (
+                  <p>Completed: {new Date(selectedEvent.completed_at).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })}</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowEventDialog(false);
+                    setRescheduleItem({ type: 'event', item: selectedEvent });
+                  }}
+                  className="flex-1"
+                >
+                  <CalendarIcon className="w-4 h-4 mr-2" />
+                  Reschedule
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => onJobSelect?.(selectedEvent.job_id)}
+                  className="flex-1"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  View Job
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>
