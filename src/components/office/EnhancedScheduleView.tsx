@@ -386,15 +386,12 @@ export function EnhancedScheduleView() {
                           <div className="flex items-start gap-2">
                             <Users className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm">Subcontractor: {schedule.subcontractors.name}</p>
-                              {schedule.work_description && (
-                                <p className="text-xs text-muted-foreground">
-                                  {schedule.work_description}
-                                </p>
-                              )}
+                              <p className="font-medium text-sm">
+                                {schedule.jobs.name}{schedule.work_description ? `: ${schedule.work_description}` : ''}
+                              </p>
                               <div className="flex items-center gap-2 mt-1">
                                 <p className="text-xs text-muted-foreground">
-                                  Job: {schedule.jobs.name}
+                                  Subcontractor: {schedule.subcontractors.name}
                                 </p>
                                 {schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 && (
                                   <Badge variant="outline" className="text-xs">
