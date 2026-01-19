@@ -3,15 +3,38 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, Calendar, ChevronDown, ChevronRight, Users, Briefcase, ListChecks } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Clock, User, Calendar, ChevronDown, ChevronRight, Users, Briefcase, ListChecks, Plus } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 export function TimeEntriesView() {
+  const { profile } = useAuth();
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'job' | 'user' | 'component' | 'day'>('job');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [showLogDialog, setShowLogDialog] = useState(false);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [components, setComponents] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    job_id: '',
+    component_id: '',
+    date: new Date().toISOString().split('T')[0],
+    start_time: '',
+    end_time: '',
+    crew_count: 1,
+    worker_names: [] as string[],
+    notes: '',
+  });
 
   function toggleItem(id: string) {
     setExpandedItems(prev => {
@@ -45,6 +68,9 @@ export function TimeEntriesView() {
 
   useEffect(() => {
     loadTimeEntries();
+    loadJobs();
+    loadComponents();
+    loadWorkers();
   }, []);
 
   async function loadTimeEntries() {
@@ -66,6 +92,118 @@ export function TimeEntriesView() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadJobs() {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, name, job_number, client_name')
+        .eq('status', 'active')
+        .order('name');
+
+      if (error) throw error;
+      setJobs(data || []);
+    } catch (error) {
+      console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function loadComponents() {
+    try {
+      const { data, error } = await supabase
+        .from('components')
+        .select('id, name')
+        .eq('archived', false)
+        .order('name');
+
+      if (error) throw error;
+      setComponents(data || []);
+    } catch (error) {
+      console.error('Error loading components:', error);
+    }
+  }
+
+  async function loadWorkers() {
+    try {
+      const { data, error } = await supabase
+        .from('workers')
+        .select('id, name')
+        .eq('active', true)
+        .order('name');
+
+      if (error) throw error;
+      setWorkers(data || []);
+    } catch (error) {
+      console.error('Error loading workers:', error);
+    }
+  }
+
+  async function handleLogTime() {
+    if (!formData.job_id || !formData.start_time || !formData.end_time) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Calculate hours
+      const startDateTime = new Date(`${formData.date}T${formData.start_time}`);
+      const endDateTime = new Date(`${formData.date}T${formData.end_time}`);
+      const totalHours = (endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60);
+
+      if (totalHours <= 0) {
+        toast.error('End time must be after start time');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('time_entries')
+        .insert({
+          job_id: formData.job_id,
+          component_id: formData.component_id || null,
+          user_id: profile?.id,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          total_hours: totalHours,
+          crew_count: formData.crew_count,
+          worker_names: formData.worker_names.length > 0 ? formData.worker_names : null,
+          notes: formData.notes || null,
+          is_manual: true,
+          is_active: false,
+        });
+
+      if (error) throw error;
+
+      toast.success('Time entry logged successfully');
+      setShowLogDialog(false);
+      setFormData({
+        job_id: '',
+        component_id: '',
+        date: new Date().toISOString().split('T')[0],
+        start_time: '',
+        end_time: '',
+        crew_count: 1,
+        worker_names: [],
+        notes: '',
+      });
+      loadTimeEntries();
+    } catch (error: any) {
+      console.error('Error logging time:', error);
+      toast.error('Failed to log time entry');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleWorker(workerName: string) {
+    setFormData(prev => ({
+      ...prev,
+      worker_names: prev.worker_names.includes(workerName)
+        ? prev.worker_names.filter(w => w !== workerName)
+        : [...prev.worker_names, workerName],
+    }));
   }
 
   function formatDate(dateString: string): string {
@@ -233,6 +371,10 @@ export function TimeEntriesView() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button onClick={() => setShowLogDialog(true)} className="gradient-primary">
+            <Plus className="w-4 h-4 mr-2" />
+            Log Time
+          </Button>
           <Button variant="ghost" size="sm" onClick={expandAll}>
             Expand All
           </Button>
@@ -241,6 +383,124 @@ export function TimeEntriesView() {
           </Button>
         </div>
       </div>
+
+      {/* Log Time Dialog */}
+      <Dialog open={showLogDialog} onOpenChange={setShowLogDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Log Time Entry</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Job *</Label>
+                <Select value={formData.job_id} onValueChange={(value) => setFormData({ ...formData, job_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select job" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jobs.map(job => (
+                      <SelectItem key={job.id} value={job.id}>
+                        {job.name} - {job.client_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Component (Optional)</Label>
+                <Select value={formData.component_id} onValueChange={(value) => setFormData({ ...formData, component_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select component" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {components.map(component => (
+                      <SelectItem key={component.id} value={component.id}>
+                        {component.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Start Time *</Label>
+                <Input
+                  type="time"
+                  value={formData.start_time}
+                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>End Time *</Label>
+                <Input
+                  type="time"
+                  value={formData.end_time}
+                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Crew Count</Label>
+              <Input
+                type="number"
+                min="1"
+                value={formData.crew_count}
+                onChange={(e) => setFormData({ ...formData, crew_count: parseInt(e.target.value) || 1 })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Workers (Optional)</Label>
+              <div className="flex flex-wrap gap-2 p-3 border rounded-md">
+                {workers.map(worker => (
+                  <Badge
+                    key={worker.id}
+                    variant={formData.worker_names.includes(worker.name) ? 'default' : 'outline'}
+                    className="cursor-pointer"
+                    onClick={() => toggleWorker(worker.name)}
+                  >
+                    {worker.name}
+                  </Badge>
+                ))}
+                {workers.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No workers available</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Add any notes about this time entry"
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowLogDialog(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleLogTime} disabled={saving}>
+              {saving ? 'Saving...' : 'Log Time'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
         <TabsList className="grid w-full grid-cols-4">
