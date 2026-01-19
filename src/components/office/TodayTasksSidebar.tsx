@@ -103,30 +103,36 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       setLoading(true);
 
       console.log('Loading tasks for today:', todayStr);
+      console.log('Today date parts:', todayStr.split('-'));
 
       // Load office and shop tasks only (exclude field tasks) - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
-          job:jobs(id, name, client_name, status)
+          job:jobs!inner(id, name, client_name, status),
+          assigned_user:assigned_to(id, username, email)
         `)
         .not('due_date', 'is', null)
         .lte('due_date', todayStr)
         .neq('status', 'completed')
         .neq('task_type', 'field')
+        .in('jobs.status', ['active', 'quoting', 'on hold'])
         .order('due_date', { ascending: true })
         .order('priority', { ascending: false });
 
-      if (tasksError) throw tasksError;
+      if (tasksError) {
+        console.error('Tasks query error:', tasksError);
+        throw tasksError;
+      }
 
       console.log('Raw tasks data:', tasksData);
       console.log('Number of tasks loaded:', tasksData?.length || 0);
+      if (tasksData && tasksData.length > 0) {
+        console.log('First task details:', JSON.stringify(tasksData[0], null, 2));
+      }
 
-      // Filter to only include tasks from active, quoting, or on hold jobs
-      const filteredTasks = (tasksData || []).filter(
-        task => task.job && ['active', 'quoting', 'on hold'].includes((task.job as any).status)
-      );
+      const filteredTasks = tasksData || [];
 
       console.log('Filtered tasks:', filteredTasks);
       console.log('Number of filtered tasks:', filteredTasks.length);
@@ -136,18 +142,19 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .from('calendar_events')
         .select(`
           *,
-          job:jobs(id, name, client_name, status)
+          job:jobs!inner(id, name, client_name, status)
         `)
         .eq('event_date', todayStr)
         .is('completed_at', null)
+        .in('jobs.status', ['active', 'quoting', 'on hold'])
         .order('start_time', { ascending: true });
 
-      if (eventsError) throw eventsError;
+      if (eventsError) {
+        console.error('Events query error:', eventsError);
+        throw eventsError;
+      }
 
-      // Filter to only include events from active, quoting, or on hold jobs
-      const filteredEvents = (eventsData || []).filter(
-        event => event.job && ['active', 'quoting', 'on hold'].includes((event.job as any).status)
-      );
+      const filteredEvents = eventsData || [];
 
       console.log('Final tasks to display:', filteredTasks.length);
       console.log('Final events to display:', filteredEvents.length);
@@ -630,13 +637,20 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             </Badge>
           </div>
           <p className="text-xs text-slate-300 font-medium">
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              month: 'short', 
-              day: 'numeric',
-              year: 'numeric',
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-            })}
+            {(() => {
+              // Use the same date string that's used for the query to ensure consistency
+              const parts = todayStr.split('-'); // todayStr is in YYYY-MM-DD format
+              const year = parseInt(parts[0]);
+              const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+              const day = parseInt(parts[2]);
+              const displayDate = new Date(year, month, day);
+              return displayDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'short', 
+                day: 'numeric',
+                year: 'numeric'
+              });
+            })()}
           </p>
           <p className="text-xs text-yellow-300 font-medium mt-1">
             Office & shop tasks due today or overdue
