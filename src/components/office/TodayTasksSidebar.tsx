@@ -619,19 +619,13 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             </Badge>
           </div>
           <p className="text-xs text-slate-300 font-medium">
-            {(() => {
-              const now = new Date();
-              const year = now.getFullYear();
-              const month = now.getMonth();
-              const day = now.getDate();
-              const localDate = new Date(year, month, day);
-              return localDate.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                month: 'short', 
-                day: 'numeric',
-                year: 'numeric'
-              });
-            })()}
+            {new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              month: 'short', 
+              day: 'numeric',
+              year: 'numeric',
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            })}
           </p>
           <p className="text-xs text-yellow-300 font-medium mt-1">
             Due today or overdue
@@ -684,19 +678,24 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     />
                     <div className="flex-1 min-w-0">
                       {/* Job Name - Prominent Display */}
-                      {task.job && (
+                      {task.job ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onJobSelect?.(task.job_id);
                           }}
-                          className={`flex items-center gap-1 mb-2 text-sm font-bold hover:underline ${
-                            isOverdue ? 'text-red-900 hover:text-red-700' : 'text-green-900 hover:text-green-700'
+                          className={`flex items-center gap-2 mb-2 text-base font-extrabold hover:underline ${
+                            isOverdue ? 'text-red-900 hover:text-red-700' : 'text-green-800 hover:text-green-600'
                           }`}
                         >
-                          <Briefcase className="w-4 h-4 flex-shrink-0" />
+                          <Briefcase className="w-5 h-5 flex-shrink-0" />
                           {task.job.name}
                         </button>
+                      ) : (
+                        <div className="flex items-center gap-2 mb-2 text-base font-extrabold text-slate-500">
+                          <Briefcase className="w-5 h-5 flex-shrink-0" />
+                          (No Job Linked)
+                        </div>
                       )}
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         {isOverdue && (
@@ -765,17 +764,22 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     />
                     <div className="flex-1 min-w-0">
                       {/* Job Name - Prominent Display */}
-                      {event.job && (
+                      {event.job ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onJobSelect?.(event.job_id);
                           }}
-                          className="flex items-center gap-1 mb-2 text-sm font-bold text-green-900 hover:text-green-700 hover:underline"
+                          className="flex items-center gap-2 mb-2 text-base font-extrabold text-yellow-800 hover:text-yellow-600 hover:underline"
                         >
-                          <Briefcase className="w-4 h-4 flex-shrink-0" />
+                          <Briefcase className="w-5 h-5 flex-shrink-0" />
                           {event.job.name}
                         </button>
+                      ) : (
+                        <div className="flex items-center gap-2 mb-2 text-base font-extrabold text-slate-500">
+                          <Briefcase className="w-5 h-5 flex-shrink-0" />
+                          (No Job Linked)
+                        </div>
                       )}
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant="secondary" className="text-xs">
