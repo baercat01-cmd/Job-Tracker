@@ -1244,8 +1244,113 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         </div>
 
         <TabsContent value="all" className="space-y-3">
-      {/* This section contains the full materials list which was truncated for readability */}
-      {/* The content remains the same as before */}
+          {/* Materials List - All Categories */}
+          {filteredCategories.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No materials found matching your filters</p>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredCategories.map(category => (
+              <Card key={category.id} className="overflow-hidden">
+                <CardHeader
+                  className="py-3 px-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                  onClick={() => toggleCategory(category.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold flex items-center gap-2">
+                      {expandedCategories.has(category.id) ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                      {category.name}
+                      <Badge variant="outline" className="ml-2">
+                        {category.materials.length}
+                      </Badge>
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                {expandedCategories.has(category.id) && (
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {(category.groupedMaterials || []).map(group => (
+                        <div key={group.groupKey} className="p-3">
+                          <div
+                            className="flex items-start justify-between cursor-pointer"
+                            onClick={() => toggleGroup(group.groupKey)}
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-baseline gap-2">
+                                <h4 className="font-medium text-sm">{group.name}</h4>
+                                {group.length && (
+                                  <span className="text-xs text-muted-foreground">{group.length}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-sm text-muted-foreground">
+                                  Total Qty: {group.totalQuantity}
+                                </span>
+                                <Badge
+                                  variant="outline"
+                                  className={getStatusConfig(group.primaryStatus).bgClass}
+                                >
+                                  {getStatusConfig(group.primaryStatus).label}
+                                </Badge>
+                                {group.materials.length > 1 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {group.materials.length} variants
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            {expandedGroups.has(group.groupKey) ? (
+                              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </div>
+
+                          {expandedGroups.has(group.groupKey) && (
+                            <div className="mt-3 space-y-2 pl-4 border-l-2 border-muted">
+                              {group.materials.map(material => (
+                                <div
+                                  key={material.id}
+                                  className="p-2 rounded-lg border bg-card hover:shadow-sm transition-shadow"
+                                  onClick={() => openMaterialDetail(material)}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">Qty: {material.quantity}</span>
+                                        <Badge
+                                          variant="outline"
+                                          className={getStatusConfig(material.status).bgClass}
+                                        >
+                                          {getStatusConfig(material.status).label}
+                                        </Badge>
+                                      </div>
+                                      {(material as any).use_case && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          {(material as any).use_case}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            ))
+          )}
         </TabsContent>
 
         <TabsContent value="ready">
