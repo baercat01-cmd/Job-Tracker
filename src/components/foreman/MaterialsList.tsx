@@ -272,6 +272,8 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
     try {
       setLoading(true);
       
+      console.log('🔍 Loading materials for job:', job.id);
+      
       // Load categories
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('materials_categories')
@@ -279,28 +281,44 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
         .eq('job_id', job.id)
         .order('order_index');
 
-      if (categoriesError) throw categoriesError;
+      if (categoriesError) {
+        console.error('❌ Error loading categories:', categoriesError);
+        throw categoriesError;
+      }
 
-      // Load materials
+      console.log('📁 Loaded categories:', categoriesData?.length || 0);
+
+      // Load ALL materials for this job (no status filter)
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
         .select('*')
         .eq('job_id', job.id)
         .order('name');
 
-      if (materialsError) throw materialsError;
+      if (materialsError) {
+        console.error('❌ Error loading materials:', materialsError);
+        throw materialsError;
+      }
+
+      console.log('📦 Loaded materials:', materialsData?.length || 0);
+      console.log('Materials data sample:', materialsData?.[0]);
 
       // Group materials by category, including all materials
-      const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
-        id: cat.id,
-        name: cat.name,
-        order_index: cat.order_index,
-        materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
-      }));
+      const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => {
+        const categoryMaterials = (materialsData || []).filter((m: any) => m.category_id === cat.id);
+        console.log(`📁 Category "${cat.name}" has ${categoryMaterials.length} materials`);
+        return {
+          id: cat.id,
+          name: cat.name,
+          order_index: cat.order_index,
+          materials: categoryMaterials,
+        };
+      });
 
+      console.log('✅ Setting categories with materials');
       setCategories(categoriesWithMaterials);
     } catch (error: any) {
-      console.error('Error loading materials:', error);
+      console.error('❌ Error loading materials:', error);
       toast.error('Failed to load materials');
     } finally {
       setLoading(false);
