@@ -8,6 +8,7 @@ import { Calendar as CalendarIcon, Users, ListTodo, Plus, CheckCircle2, Edit, Tr
 import { SubcontractorScheduling } from './SubcontractorScheduling';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { parseDateLocal } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -283,12 +284,14 @@ export function EnhancedScheduleView() {
           ) : (
             <div className="space-y-4">
               {sortedDates.map(dateStr => {
-                const date = new Date(dateStr + 'T00:00:00');
+                const date = parseDateLocal(dateStr);
                 const items = itemsByDate.get(dateStr)!;
                 const totalItems = items.tasks.length + items.events.length + items.schedules.length;
                 
-                const isToday = date.toDateString() === new Date().toDateString();
-                const isPast = date < new Date() && !isToday;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isToday = date.toDateString() === today.toDateString();
+                const isPast = date < today && !isToday;
 
                 return (
                   <Card key={dateStr} className={isToday ? 'border-primary border-2' : isPast ? 'opacity-60' : ''}>
