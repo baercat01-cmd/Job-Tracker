@@ -102,37 +102,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
-      console.log('Loading tasks for today:', todayStr);
-      console.log('Today date parts:', todayStr.split('-'));
-
-      // First, let's load ALL tasks to see what's in the database
-      const { data: allTasksData, error: allTasksError } = await supabase
-        .from('job_tasks')
-        .select(`
-          *,
-          job:jobs(id, name, client_name, status),
-          assigned_user:assigned_to(id, username, email)
-        `)
-        .not('due_date', 'is', null)
-        .order('due_date', { ascending: true });
-
-      if (allTasksError) {
-        console.error('All tasks query error:', allTasksError);
-      } else {
-        console.log('=== ALL TASKS IN DATABASE (with due_date) ===');
-        console.log('Total count:', allTasksData?.length || 0);
-        (allTasksData || []).forEach((task, idx) => {
-          console.log(`Task ${idx + 1}:`, {
-            title: task.title,
-            due_date: task.due_date,
-            status: task.status,
-            task_type: task.task_type,
-            job_name: task.job?.name,
-            job_status: task.job?.status,
-          });
-        });
-      }
-
       // Load office and shop tasks only (exclude field tasks) - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
@@ -149,28 +118,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .order('due_date', { ascending: true })
         .order('priority', { ascending: false });
 
-      if (tasksError) {
-        console.error('Tasks query error:', tasksError);
-        throw tasksError;
-      }
-
-      console.log('\n=== FILTERED TASKS (for today) ===');
-      console.log('Number of tasks loaded:', tasksData?.length || 0);
-      (tasksData || []).forEach((task, idx) => {
-        console.log(`Task ${idx + 1}:`, {
-          title: task.title,
-          due_date: task.due_date,
-          status: task.status,
-          task_type: task.task_type,
-          job_name: task.job?.name,
-          job_status: task.job?.status,
-        });
-      });
+      if (tasksError) throw tasksError;
 
       const filteredTasks = tasksData || [];
-
-      console.log('Filtered tasks:', filteredTasks);
-      console.log('Number of filtered tasks:', filteredTasks.length);
 
       // Load calendar events for today that are not completed from active/quoting/on hold jobs
       // Exclude 'task' type events since those are already shown from job_tasks table
@@ -186,15 +136,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .in('jobs.status', ['active', 'quoting', 'on hold'])
         .order('start_time', { ascending: true });
 
-      if (eventsError) {
-        console.error('Events query error:', eventsError);
-        throw eventsError;
-      }
+      if (eventsError) throw eventsError;
 
       const filteredEvents = eventsData || [];
-
-      console.log('Final tasks to display:', filteredTasks.length);
-      console.log('Final events to display:', filteredEvents.length);
 
       setTasks(filteredTasks);
       setEvents(filteredEvents);

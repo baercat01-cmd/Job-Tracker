@@ -140,10 +140,6 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       return;
     }
 
-    console.log('=== SAVING TASK ===');
-    console.log('Form due_date value:', formData.due_date);
-    console.log('Form due_date type:', typeof formData.due_date);
-
     try {
       const taskData = {
         job_id: job.id,
@@ -156,9 +152,6 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
         created_by: editingTask ? editingTask.created_by : userId,
         updated_at: new Date().toISOString(),
       };
-
-      console.log('Task data being sent to database:', taskData);
-      console.log('Specifically due_date:', taskData.due_date);
 
       if (editingTask) {
         const { error } = await supabase
