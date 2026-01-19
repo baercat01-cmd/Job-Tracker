@@ -714,7 +714,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             <>
               {/* Job Tasks */}
               {tasks.map((task) => {
-                const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+                const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
                 const isDueToday = task.due_date === todayStr;
                 
                 return (
@@ -1152,14 +1152,14 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                   <div className="flex items-center gap-2">
                     <CalendarIcon className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium">
-                      {new Date(selectedTask.due_date).toLocaleDateString('en-US', {
+                      {parseDateLocal(selectedTask.due_date).toLocaleDateString('en-US', {
                         weekday: 'long',
                         month: 'long',
                         day: 'numeric',
                         year: 'numeric'
                       })}
                     </span>
-                    {selectedTask.due_date && new Date(selectedTask.due_date) < new Date() && selectedTask.status !== 'completed' && (
+                    {selectedTask.due_date && parseDateLocal(selectedTask.due_date) < new Date() && selectedTask.status !== 'completed' && (
                       <Badge variant="destructive" className="ml-2">
                         <AlertCircle className="w-3 h-3 mr-1" />
                         OVERDUE
@@ -1179,15 +1179,15 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
               {/* Timestamps */}
               <div className="pt-4 border-t space-y-2 text-xs text-muted-foreground">
-                <p>Created: {new Date(selectedTask.created_at).toLocaleDateString('en-US', {
+                <p>Created: {new Date(selectedTask.created_at).toLocaleString('en-US', {
                   month: 'short',
                   day: 'numeric',
                   year: 'numeric',
                   hour: 'numeric',
                   minute: '2-digit'
                 })}</p>
-                {selectedTask.status === 'completed' && (
-                  <p>Completed: {new Date(selectedTask.created_at).toLocaleDateString('en-US', {
+                {selectedTask.status === 'completed' && selectedTask.completed_at && (
+                  <p>Completed: {new Date(selectedTask.completed_at).toLocaleString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',
@@ -1306,7 +1306,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                 <div className="flex items-center gap-2">
                   <CalendarIcon className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    {new Date(selectedEvent.event_date).toLocaleDateString('en-US', {
+                    {parseDateLocal(selectedEvent.event_date).toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric',
@@ -1319,7 +1319,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               {/* Timestamps */}
               <div className="pt-4 border-t space-y-2 text-xs text-muted-foreground">
                 {selectedEvent.completed_at && (
-                  <p>Completed: {new Date(selectedEvent.completed_at).toLocaleDateString('en-US', {
+                  <p>Completed: {new Date(selectedEvent.completed_at).toLocaleString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',

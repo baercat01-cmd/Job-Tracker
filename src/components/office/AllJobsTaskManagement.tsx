@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDateLocal } from '@/lib/date-utils';
+import { formatDateLocal, parseDateLocal } from '@/lib/date-utils';
 
 interface Job {
   id: string;
@@ -412,15 +412,15 @@ export function AllJobsTaskManagement() {
     return true;
   }).sort((a, b) => {
     // First, sort by overdue status (overdue tasks first)
-    const aOverdue = a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed';
-    const bOverdue = b.due_date && new Date(b.due_date) < new Date() && b.status !== 'completed';
+    const aOverdue = a.due_date && parseDateLocal(a.due_date) < new Date() && a.status !== 'completed';
+    const bOverdue = b.due_date && parseDateLocal(b.due_date) < new Date() && b.status !== 'completed';
     
     if (aOverdue && !bOverdue) return -1;
     if (!aOverdue && bOverdue) return 1;
     
     // Then by due date
     if (a.due_date && b.due_date) {
-      return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+      return parseDateLocal(a.due_date).getTime() - parseDateLocal(b.due_date).getTime();
     }
     
     // Finally by priority
@@ -536,7 +536,7 @@ export function AllJobsTaskManagement() {
       ) : (
         <div className="space-y-2">
           {filteredTasks.map((task) => {
-            const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+            const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
             
             return (
               <Card 
@@ -617,7 +617,7 @@ export function AllJobsTaskManagement() {
                           >
                             <CalendarIcon className="w-3 h-3" />
                             {isOverdue && <AlertCircle className="w-3 h-3" />}
-                            {new Date(task.due_date).toLocaleDateString('en-US', {
+                            {parseDateLocal(task.due_date).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',
                             })}

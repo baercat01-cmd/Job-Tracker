@@ -35,7 +35,7 @@ import {
 import { toast } from 'sonner';
 import type { Job, JobTask, UserProfile } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDateLocal } from '@/lib/date-utils';
+import { formatDateLocal, parseDateLocal } from '@/lib/date-utils';
 
 interface JobTasksManagementProps {
   job: Job;
@@ -444,7 +444,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       ) : (
         <div className="space-y-2">
           {filteredTasks.map((task) => {
-            const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+            const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
             
             return (
               <Card key={task.id} className={isOverdue ? 'border-destructive border-2' : ''}>
@@ -504,7 +504,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
                           >
                             <Calendar className="w-3 h-3" />
                             {isOverdue && <AlertCircle className="w-3 h-3" />}
-                            {new Date(task.due_date).toLocaleDateString('en-US', {
+                            {parseDateLocal(task.due_date).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',
                             })}
@@ -527,7 +527,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
 
                       {task.status === 'completed' && task.completed_at && (
                         <p className="text-xs text-muted-foreground">
-                          Completed {new Date(task.completed_at).toLocaleDateString('en-US', {
+                          Completed {new Date(task.completed_at).toLocaleString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             hour: 'numeric',
