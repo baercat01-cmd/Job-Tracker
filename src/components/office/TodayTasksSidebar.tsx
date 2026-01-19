@@ -96,12 +96,12 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
-      // Load tasks due today that are not completed
+      // Load tasks due today that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
-          jobs(id, name, client_name)
+          jobs(id, name, client_name, status)
         `)
         .eq('due_date', todayStr)
         .neq('status', 'completed')
@@ -109,12 +109,17 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (tasksError) throw tasksError;
 
-      // Load calendar events for today that are not completed
+      // Filter to only include tasks from active, quoting, or on hold jobs
+      const filteredTasks = (tasksData || []).filter(
+        task => task.jobs && ['active', 'quoting', 'on hold'].includes((task.jobs as any).status)
+      );
+
+      // Load calendar events for today that are not completed from active/quoting/on hold jobs
       const { data: eventsData, error: eventsError } = await supabase
         .from('calendar_events')
         .select(`
           *,
-          jobs(id, name, client_name)
+          jobs(id, name, client_name, status)
         `)
         .eq('event_date', todayStr)
         .is('completed_at', null)
@@ -122,8 +127,13 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (eventsError) throw eventsError;
 
-      setTasks(tasksData || []);
-      setEvents(eventsData || []);
+      // Filter to only include events from active, quoting, or on hold jobs
+      const filteredEvents = (eventsData || []).filter(
+        event => event.jobs && ['active', 'quoting', 'on hold'].includes((event.jobs as any).status)
+      );
+
+      setTasks(filteredTasks);
+      setEvents(filteredEvents);
     } catch (error) {
       console.error('Error loading today items:', error);
       toast.error('Failed to load today\'s tasks');
@@ -134,12 +144,12 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
   async function loadAllCalendarItems() {
     try {
-      // Load all upcoming tasks
+      // Load all upcoming tasks from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
-          jobs(id, name, client_name)
+          jobs(id, name, client_name, status)
         `)
         .not('due_date', 'is', null)
         .neq('status', 'completed')
@@ -148,12 +158,17 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (tasksError) throw tasksError;
 
-      // Load all upcoming events
+      // Filter to only include tasks from active, quoting, or on hold jobs
+      const filteredTasks = (tasksData || []).filter(
+        task => task.jobs && ['active', 'quoting', 'on hold'].includes((task.jobs as any).status)
+      );
+
+      // Load all upcoming events from active/quoting/on hold jobs
       const { data: eventsData, error: eventsError } = await supabase
         .from('calendar_events')
         .select(`
           *,
-          jobs(id, name, client_name)
+          jobs(id, name, client_name, status)
         `)
         .is('completed_at', null)
         .gte('event_date', todayStr)
@@ -161,8 +176,13 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (eventsError) throw eventsError;
 
-      setCalendarTasks(tasksData || []);
-      setCalendarEvents(eventsData || []);
+      // Filter to only include events from active, quoting, or on hold jobs
+      const filteredEvents = (eventsData || []).filter(
+        event => event.jobs && ['active', 'quoting', 'on hold'].includes((event.jobs as any).status)
+      );
+
+      setCalendarTasks(filteredTasks);
+      setCalendarEvents(filteredEvents);
     } catch (error) {
       console.error('Error loading calendar items:', error);
       toast.error('Failed to load calendar');
@@ -319,6 +339,16 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       className="mt-0.5"
                     />
                     <div className="flex-1 min-w-0">
+                      {/* Job Name - Prominent Display */}
+                      {task.job && (
+                        <button
+                          onClick={() => onJobSelect?.(task.job_id)}
+                          className="flex items-center gap-1 mb-2 text-sm font-bold text-green-900 hover:text-green-700 hover:underline"
+                        >
+                          <Briefcase className="w-4 h-4 flex-shrink-0" />
+                          {task.job.name}
+                        </button>
+                      )}
                       <div className="flex items-center gap-2 mb-1">
                         <Badge
                           variant="secondary"
@@ -335,15 +365,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                         <p className="text-xs text-muted-foreground line-clamp-1">
                           {task.description}
                         </p>
-                      )}
-                      {task.job && (
-                        <button
-                          onClick={() => onJobSelect?.(task.job_id)}
-                          className="flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-                        >
-                          <Briefcase className="w-3 h-3" />
-                          {task.job.name}
-                        </button>
                       )}
                     </div>
                   </div>
@@ -372,6 +393,16 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       className="mt-0.5"
                     />
                     <div className="flex-1 min-w-0">
+                      {/* Job Name - Prominent Display */}
+                      {event.job && (
+                        <button
+                          onClick={() => onJobSelect?.(event.job_id)}
+                          className="flex items-center gap-1 mb-2 text-sm font-bold text-green-900 hover:text-green-700 hover:underline"
+                        >
+                          <Briefcase className="w-4 h-4 flex-shrink-0" />
+                          {event.job.name}
+                        </button>
+                      )}
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant="secondary" className="text-xs">
                           {event.event_type}
@@ -382,15 +413,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                         <p className="text-xs text-muted-foreground line-clamp-1">
                           {event.description}
                         </p>
-                      )}
-                      {event.job && (
-                        <button
-                          onClick={() => onJobSelect?.(event.job_id)}
-                          className="flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-                        >
-                          <Briefcase className="w-3 h-3" />
-                          {event.job.name}
-                        </button>
                       )}
                     </div>
                   </div>
