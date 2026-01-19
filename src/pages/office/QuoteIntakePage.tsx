@@ -39,8 +39,6 @@ interface QuoteData {
   building_use: string;
   roof_color: string;
   trim_color: string;
-  side_color: string;
-  liner_package: boolean;
   wainscot_enabled: boolean;
   overhang_same_all: boolean;
   overhang_front: number;
@@ -83,8 +81,6 @@ export function QuoteIntakePage() {
     building_use: '',
     roof_color: '',
     trim_color: '',
-    side_color: '',
-    liner_package: false,
     wainscot_enabled: false,
     overhang_same_all: true,
     overhang_front: 12,
@@ -153,8 +149,6 @@ export function QuoteIntakePage() {
         building_use: data.building_use || '',
         roof_color: data.roof_color || '',
         trim_color: data.trim_color || '',
-        side_color: data.side_color || '',
-        liner_package: data.liner_package || false,
         wainscot_enabled: data.wainscot_enabled || false,
         overhang_same_all: data.overhang_same_all !== false,
         overhang_front: data.overhang_front || 12,
@@ -732,15 +726,6 @@ export function QuoteIntakePage() {
                               className="rounded-none h-7 text-xs"
                             />
                           </div>
-                          <div className="space-y-0.5">
-                            <Label className="text-[10px]">Side Color</Label>
-                            <Input
-                              value={formData.side_color}
-                              onChange={(e) => setFormData({ ...formData, side_color: e.target.value })}
-                              placeholder="Color"
-                              className="rounded-none h-7 text-xs"
-                            />
-                          </div>
                           <div className="flex items-center space-x-1.5">
                             <Checkbox
                               id="wainscot"
@@ -750,17 +735,6 @@ export function QuoteIntakePage() {
                             />
                             <Label htmlFor="wainscot" className="cursor-pointer text-[10px]">Include Wainscot</Label>
                           </div>
-                        </div>
-
-                        <div className="pt-1 border-t">
-                          <Button
-                            variant={formData.liner_package ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setFormData({ ...formData, liner_package: !formData.liner_package })}
-                            className="rounded-none w-full h-7 text-xs"
-                          >
-                            {formData.liner_package ? '✓ Liner' : 'Add Liner'}
-                          </Button>
                         </div>
                       </CardContent>
                     </CollapsibleContent>
