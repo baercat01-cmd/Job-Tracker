@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase } from 'lucide-react';
+import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Quote {
@@ -39,6 +39,7 @@ export function QuotesView() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | Quote['status']>('all');
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     loadQuotes();
@@ -77,7 +78,57 @@ export function QuotesView() {
     }
   }
 
+  async function markQuoteAsWon(quoteId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('quotes')
+        .update({ 
+          status: 'won',
+          converted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', quoteId);
+
+      if (error) throw error;
+      toast.success('Quote marked as won');
+      loadQuotes();
+    } catch (error: any) {
+      console.error('Error marking quote as won:', error);
+      toast.error('Failed to update quote');
+    }
+  }
+
+  async function markQuoteAsLost(quoteId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('quotes')
+        .update({ 
+          status: 'lost',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', quoteId);
+
+      if (error) throw error;
+      toast.success('Quote marked as lost and archived');
+      loadQuotes();
+    } catch (error: any) {
+      console.error('Error marking quote as lost:', error);
+      toast.error('Failed to update quote');
+    }
+  }
+
   const filteredQuotes = quotes.filter(quote => {
+    // Filter out lost quotes unless showing archived
+    if (!showArchived && quote.status === 'lost') {
+      return false;
+    }
+    // When showing archived, only show lost quotes
+    if (showArchived && quote.status !== 'lost') {
+      return false;
+    }
+    
     const matchesStatus = statusFilter === 'all' || quote.status === statusFilter;
     const matchesSearch = !searchTerm || 
       quote.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -88,7 +139,7 @@ export function QuotesView() {
   });
 
   const statusCounts = {
-    all: quotes.length,
+    all: quotes.filter(q => q.status !== 'lost').length, // Exclude lost from "all"
     draft: quotes.filter(q => q.status === 'draft').length,
     submitted: quotes.filter(q => q.status === 'submitted').length,
     estimated: quotes.filter(q => q.status === 'estimated').length,
@@ -111,13 +162,33 @@ export function QuotesView() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Quote Intake System</h2>
           <p className="text-muted-foreground">
-            Manage building quotes and convert them to active jobs
+            {showArchived ? 'Archived quotes (Lost)' : 'Manage building quotes and convert them to active jobs'}
           </p>
         </div>
-        <Button onClick={() => navigate('/office/quotes/new')} size="lg">
-          <Plus className="w-4 h-4 mr-2" />
-          New Quote
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowArchived(!showArchived)}
+          >
+            {showArchived ? (
+              <>
+                <ArchiveRestore className="w-4 h-4 mr-2" />
+                Show Active
+              </>
+            ) : (
+              <>
+                <Archive className="w-4 h-4 mr-2" />
+                Show Archived ({statusCounts.lost})
+              </>
+            )}
+          </Button>
+          {!showArchived && (
+            <Button onClick={() => navigate('/office/quotes/new')} size="lg">
+              <Plus className="w-4 h-4 mr-2" />
+              New Quote
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -225,6 +296,31 @@ export function QuotesView() {
                       Converted to Job
                     </div>
                   )}
+                  
+                  {/* Action buttons for estimated quotes */}
+                  {quote.status === 'estimated' && !quote.job_id && (
+                    <div className="flex gap-2 pt-2 border-t" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-green-600 border-green-600 hover:bg-green-50"
+                        onClick={(e) => markQuoteAsWon(quote.id, e)}
+                      >
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Won
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-red-600 border-red-600 hover:bg-red-50"
+                        onClick={(e) => markQuoteAsLost(quote.id, e)}
+                      >
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Lost
+                      </Button>
+                    </div>
+                  )}
+                  
                   <div className="text-xs text-muted-foreground pt-2 border-t">
                     Created {new Date(quote.created_at).toLocaleDateString()}
                   </div>

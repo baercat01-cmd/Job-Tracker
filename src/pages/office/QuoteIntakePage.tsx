@@ -325,11 +325,37 @@ export function QuoteIntakePage() {
 
       if (quoteError) throw quoteError;
 
-      toast.success('Quote converted to active job!');
+      toast.success('Quote marked as won and converted to active job!');
       navigate('/office?tab=jobs');
     } catch (error: any) {
       console.error('Error converting quote:', error);
       toast.error('Failed to convert quote to job');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleMarkAsLost() {
+    if (!quoteId) return;
+
+    try {
+      setSaving(true);
+
+      const { error } = await supabase
+        .from('quotes')
+        .update({
+          status: 'lost',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', quoteId);
+
+      if (error) throw error;
+
+      toast.success('Quote marked as lost and archived');
+      navigate('/office?tab=quotes');
+    } catch (error: any) {
+      console.error('Error marking quote as lost:', error);
+      toast.error('Failed to update quote');
     } finally {
       setSaving(false);
     }
@@ -394,14 +420,24 @@ export function QuoteIntakePage() {
                 </Button>
               )}
               {existingQuote && existingQuote.status === 'estimated' && !existingQuote.job_id && (
-                <Button
-                  onClick={handleConvertToJob}
-                  disabled={saving}
-                  className="rounded-none bg-blue-600 hover:bg-blue-700"
-                >
-                  <Briefcase className="w-4 h-4 mr-2" />
-                  Convert to Job
-                </Button>
+                <>
+                  <Button
+                    onClick={handleConvertToJob}
+                    disabled={saving}
+                    className="rounded-none bg-green-600 hover:bg-green-700"
+                  >
+                    <Briefcase className="w-4 h-4 mr-2" />
+                    Mark as Won & Convert to Job
+                  </Button>
+                  <Button
+                    onClick={handleMarkAsLost}
+                    disabled={saving}
+                    variant="outline"
+                    className="rounded-none border-red-600 text-red-600 hover:bg-red-50"
+                  >
+                    Mark as Lost
+                  </Button>
+                </>
               )}
             </div>
           </div>
