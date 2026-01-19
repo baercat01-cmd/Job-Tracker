@@ -145,9 +145,9 @@ export function OfficeDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-white border-b-4 border-yellow-500 shadow-lg">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+      {/* Header with Navigation */}
+      <header className="bg-white border-b-4 border-yellow-500 shadow-lg sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between border-b-2 border-slate-200">
           <div className="flex items-center gap-4">
             <img 
               src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
@@ -217,164 +217,200 @@ export function OfficeDashboard() {
             </Button>
           </div>
         </div>
+        
+        {/* Main Navigation Tabs in Header */}
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-5 bg-black border-2 border-yellow-500 rounded-none shadow-lg h-14">
+            <button
+              onClick={() => setActiveTab('jobs')}
+              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
+                activeTab === 'jobs' 
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
+                  : 'text-white hover:bg-yellow-600/20'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span className="hidden sm:inline">Jobs</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('quotes')}
+              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
+                activeTab === 'quotes' 
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
+                  : 'text-white hover:bg-yellow-600/20'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">Quotes</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('schedule')}
+              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
+                activeTab === 'schedule' 
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
+                  : 'text-white hover:bg-yellow-600/20'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Schedule</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('calendar')}
+              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
+                activeTab === 'calendar' 
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
+                  : 'text-white hover:bg-yellow-600/20'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Calendar</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center justify-center gap-2 rounded-none transition-colors h-full ${
+                activeTab === 'settings' 
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold' 
+                  : 'text-white hover:bg-yellow-600/20'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">Settings</span>
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-6 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
-            <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
-              <Briefcase className="w-4 h-4" />
-              <span className="hidden sm:inline">Jobs</span>
-            </TabsTrigger>
-            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Quotes</span>
-            </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
-              <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">Schedule</span>
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
-              <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">Calendar</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2 rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-yellow-600/20">
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="jobs">
-            <div className="space-y-6">
-              {/* Active Jobs Cards */}
-              <JobsView selectedJobId={selectedJobId} />
-              
-              {/* Master Calendar - Full Width Below Jobs */}
-              <MasterCalendar 
-                onJobSelect={(jobId) => {
-                  setSelectedJobId(jobId);
-                  // JobsView will auto-scroll to the selected job
-                }} 
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="quotes">
-            <QuotesView />
-          </TabsContent>
-
-          <TabsContent value="schedule">
-            <EnhancedScheduleView />
-          </TabsContent>
-
-          <TabsContent value="calendar">
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-                <h2 className="text-2xl font-bold tracking-tight">Project Timeline</h2>
-                <p className="text-yellow-400">Gantt chart view of all active projects</p>
-              </div>
-              <JobGanttChart onJobSelect={(jobId) => {
+        {activeTab === 'jobs' && (
+          <div className="space-y-6">
+            {/* Active Jobs Cards */}
+            <JobsView selectedJobId={selectedJobId} />
+            
+            {/* Master Calendar - Full Width Below Jobs */}
+            <MasterCalendar 
+              onJobSelect={(jobId) => {
                 setSelectedJobId(jobId);
-                setActiveTab('jobs');
-              }} />
+                // JobsView will auto-scroll to the selected job
+              }} 
+            />
+          </div>
+        )}
+
+        {activeTab === 'quotes' && (
+          <QuotesView />
+        )}
+
+        {activeTab === 'schedule' && (
+          <EnhancedScheduleView />
+        )}
+
+        {activeTab === 'calendar' && (
+          <div className="space-y-4">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-2xl font-bold tracking-tight">Project Timeline</h2>
+              <p className="text-yellow-400">Gantt chart view of all active projects</p>
             </div>
-          </TabsContent>
+            <JobGanttChart onJobSelect={(jobId) => {
+              setSelectedJobId(jobId);
+              setActiveTab('jobs');
+            }} />
+          </div>
+        )}
 
-          <TabsContent value="settings">
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-                <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
-                <p className="text-yellow-400">Manage system configuration, users, and data export</p>
-              </div>
-              
-              <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
-                  <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export
-                  </TabsTrigger>
-                  <TabsTrigger value="time" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Clock className="w-4 h-4 mr-2" />
-                    Time
-                  </TabsTrigger>
-                  <TabsTrigger value="photos" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Camera className="w-4 h-4 mr-2" />
-                    Photos
-                  </TabsTrigger>
-                  <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Settings className="w-4 h-4 mr-2" />
-                    Components
-                  </TabsTrigger>
-                  <TabsTrigger value="workers" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Users className="w-4 h-4 mr-2" />
-                    Workers
-                  </TabsTrigger>
-                  <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Users className="w-4 h-4 mr-2" />
-                    Subs
-                  </TabsTrigger>
-                  <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Briefcase className="w-4 h-4 mr-2" />
-                    Internal
-                  </TabsTrigger>
-                  <TabsTrigger value="users" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Users className="w-4 h-4 mr-2" />
-                    Users
-                  </TabsTrigger>
-                  <TabsTrigger value="archived" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <Archive className="w-4 h-4 mr-2" />
-                    Archived
-                  </TabsTrigger>
-                  <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                    <ListTodo className="w-4 h-4 mr-2" />
-                    Shop Tasks
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="export" className="mt-6">
-                  <DataExport />
-                </TabsContent>
-
-                <TabsContent value="time" className="mt-6">
-                  <TimeEntriesView />
-                </TabsContent>
-
-                <TabsContent value="photos" className="mt-6">
-                  <PhotosView />
-                </TabsContent>
-
-                <TabsContent value="components" className="mt-6">
-                  <ComponentsManagement />
-                </TabsContent>
-
-                <TabsContent value="workers" className="mt-6">
-                  <WorkerManagement />
-                </TabsContent>
-
-                <TabsContent value="subcontractors" className="mt-6">
-                  <SubcontractorManagement />
-                </TabsContent>
-
-                <TabsContent value="internal" className="mt-6">
-                  <InternalJobsManagement userId={profile?.id || ''} />
-                </TabsContent>
-
-                <TabsContent value="users" className="mt-6">
-                  <UserManagement />
-                </TabsContent>
-
-                <TabsContent value="archived" className="mt-6">
-                  <JobsView showArchived={true} />
-                </TabsContent>
-
-                <TabsContent value="shop-tasks" className="mt-6">
-                  <ShopTasksManagement userId={profile?.id || ''} />
-                </TabsContent>
-              </Tabs>
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+              <p className="text-yellow-400">Manage system configuration, users, and data export</p>
             </div>
-          </TabsContent>
-        </Tabs>
+            
+            <Tabs defaultValue="export" className="w-full">
+              <TabsList className="grid w-full grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
+                <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </TabsTrigger>
+                <TabsTrigger value="time" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Clock className="w-4 h-4 mr-2" />
+                  Time
+                </TabsTrigger>
+                <TabsTrigger value="photos" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Camera className="w-4 h-4 mr-2" />
+                  Photos
+                </TabsTrigger>
+                <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Components
+                </TabsTrigger>
+                <TabsTrigger value="workers" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Workers
+                </TabsTrigger>
+                <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Subs
+                </TabsTrigger>
+                <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Internal
+                </TabsTrigger>
+                <TabsTrigger value="users" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Users
+                </TabsTrigger>
+                <TabsTrigger value="archived" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Archive className="w-4 h-4 mr-2" />
+                  Archived
+                </TabsTrigger>
+                <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <ListTodo className="w-4 h-4 mr-2" />
+                  Shop Tasks
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="export" className="mt-6">
+                <DataExport />
+              </TabsContent>
+
+              <TabsContent value="time" className="mt-6">
+                <TimeEntriesView />
+              </TabsContent>
+
+              <TabsContent value="photos" className="mt-6">
+                <PhotosView />
+              </TabsContent>
+
+              <TabsContent value="components" className="mt-6">
+                <ComponentsManagement />
+              </TabsContent>
+
+              <TabsContent value="workers" className="mt-6">
+                <WorkerManagement />
+              </TabsContent>
+
+              <TabsContent value="subcontractors" className="mt-6">
+                <SubcontractorManagement />
+              </TabsContent>
+
+              <TabsContent value="internal" className="mt-6">
+                <InternalJobsManagement userId={profile?.id || ''} />
+              </TabsContent>
+
+              <TabsContent value="users" className="mt-6">
+                <UserManagement />
+              </TabsContent>
+
+              <TabsContent value="archived" className="mt-6">
+                <JobsView showArchived={true} />
+              </TabsContent>
+
+              <TabsContent value="shop-tasks" className="mt-6">
+                <ShopTasksManagement userId={profile?.id || ''} />
+              </TabsContent>
+            </Tabs>
+          </div>
+        )}
       </main>
     </div>
   );
