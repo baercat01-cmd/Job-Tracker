@@ -102,14 +102,13 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
-      // Load OFFICE tasks only - due today OR overdue that are not completed from active/quoting/on hold jobs
+      // Load ALL job tasks - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
           jobs(id, name, client_name, status)
         `)
-        .eq('task_type', 'office')
         .not('due_date', 'is', null)
         .lte('due_date', todayStr)
         .neq('status', 'completed')
@@ -612,7 +611,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-400" />
-              Daily Office Tasks
+              Daily Tasks
             </CardTitle>
             <Badge className="bg-yellow-500 text-black font-bold text-sm border-2 border-yellow-400">
               {totalItems}
@@ -628,7 +627,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             })}
           </p>
           <p className="text-xs text-yellow-300 font-medium mt-1">
-            Due today or overdue
+            All job tasks due today or overdue
           </p>
           <Button
             variant="outline"
