@@ -179,6 +179,8 @@ export function QuoteIntakePage() {
 
   async function handleSubmit() {
     await saveQuote('submitted');
+    // After submitting, create a job in quoting status
+    await createJobFromQuote();
   }
 
   async function saveQuote(status: string) {
@@ -232,6 +234,55 @@ export function QuoteIntakePage() {
       toast.error('Failed to save quote');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createJobFromQuote() {
+    if (!quoteId) return;
+
+    try {
+      // Check if job already exists for this quote
+      const { data: existingJobData } = await supabase
+        .from('quotes')
+        .select('job_id')
+        .eq('id', quoteId)
+        .single();
+
+      if (existingJobData?.job_id) {
+        // Job already exists, just navigate to it
+        navigate('/office?tab=jobs');
+        return;
+      }
+
+      // Create a new job with quoting status
+      const { data: jobData, error: jobError } = await supabase
+        .from('jobs')
+        .insert({
+          name: formData.project_name,
+          client_name: formData.customer_name,
+          address: formData.customer_address || '',
+          description: `Building: ${formData.width}' × ${formData.length}'\n${formData.site_notes || ''}`,
+          status: 'quoting',
+          created_by: profile?.id,
+        })
+        .select()
+        .single();
+
+      if (jobError) throw jobError;
+
+      // Link the quote to the job
+      const { error: quoteError } = await supabase
+        .from('quotes')
+        .update({ job_id: jobData.id })
+        .eq('id', quoteId);
+
+      if (quoteError) throw quoteError;
+
+      toast.success('Quote submitted for estimating and added to Jobs (Quoting status)');
+      navigate('/office?tab=jobs');
+    } catch (error: any) {
+      console.error('Error creating job from quote:', error);
+      toast.error('Quote saved but failed to create job record');
     }
   }
 
