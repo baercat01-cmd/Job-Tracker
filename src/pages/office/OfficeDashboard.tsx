@@ -146,7 +146,7 @@ export function OfficeDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-slate-900 via-black to-slate-900 border-b-4 border-yellow-500 shadow-lg">
+      <header className="bg-white border-b-4 border-yellow-500 shadow-lg">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <img 
@@ -154,21 +154,21 @@ export function OfficeDashboard() {
               alt="Martin Builder" 
               className="h-10 w-auto"
             />
-            <div className="border-l-2 border-yellow-500 pl-4">
-              <h1 className="text-lg font-bold text-white tracking-tight">FieldTrack Pro</h1>
-              <p className="text-xs text-yellow-400">Office Dashboard</p>
+            <div className="border-l-2 border-green-800 pl-4">
+              <h1 className="text-lg font-bold text-green-900 tracking-tight">FieldTrack Pro</h1>
+              <p className="text-xs text-slate-600">Office Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-none border-yellow-500 bg-black text-white hover:bg-yellow-500 hover:text-black font-semibold">
+                <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold">
                   <Eye className="w-4 h-4 mr-2" />
                   Office View
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="rounded-none border-yellow-500 bg-black text-white">
-                <DropdownMenuItem onClick={() => setViewMode('field')} className="rounded-none hover:bg-yellow-500 hover:text-black">
+              <DropdownMenuContent align="end" className="rounded-none border-green-800 bg-white">
+                <DropdownMenuItem onClick={() => setViewMode('field')} className="rounded-none hover:bg-green-800 hover:text-white">
                   Switch to Field View
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -208,10 +208,10 @@ export function OfficeDashboard() {
               onViewAll={() => setActiveTab('notifications')}
             />
             <div className="text-right">
-              <p className="text-sm font-bold text-white">{profile?.username || profile?.email}</p>
-              <p className="text-xs text-yellow-400 capitalize">{profile?.role}</p>
+              <p className="text-sm font-bold text-slate-900">{profile?.username || profile?.email}</p>
+              <p className="text-xs text-slate-600 capitalize">{profile?.role}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-white hover:bg-yellow-500 hover:text-black">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-slate-900 hover:bg-green-800 hover:text-white">
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </Button>
