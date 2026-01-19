@@ -105,6 +105,34 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       console.log('Loading tasks for today:', todayStr);
       console.log('Today date parts:', todayStr.split('-'));
 
+      // First, let's load ALL tasks to see what's in the database
+      const { data: allTasksData, error: allTasksError } = await supabase
+        .from('job_tasks')
+        .select(`
+          *,
+          job:jobs(id, name, client_name, status),
+          assigned_user:assigned_to(id, username, email)
+        `)
+        .not('due_date', 'is', null)
+        .order('due_date', { ascending: true });
+
+      if (allTasksError) {
+        console.error('All tasks query error:', allTasksError);
+      } else {
+        console.log('=== ALL TASKS IN DATABASE (with due_date) ===');
+        console.log('Total count:', allTasksData?.length || 0);
+        (allTasksData || []).forEach((task, idx) => {
+          console.log(`Task ${idx + 1}:`, {
+            title: task.title,
+            due_date: task.due_date,
+            status: task.status,
+            task_type: task.task_type,
+            job_name: task.job?.name,
+            job_status: task.job?.status,
+          });
+        });
+      }
+
       // Load office and shop tasks only (exclude field tasks) - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
@@ -126,11 +154,18 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         throw tasksError;
       }
 
-      console.log('Raw tasks data:', tasksData);
+      console.log('\n=== FILTERED TASKS (for today) ===');
       console.log('Number of tasks loaded:', tasksData?.length || 0);
-      if (tasksData && tasksData.length > 0) {
-        console.log('First task details:', JSON.stringify(tasksData[0], null, 2));
-      }
+      (tasksData || []).forEach((task, idx) => {
+        console.log(`Task ${idx + 1}:`, {
+          title: task.title,
+          due_date: task.due_date,
+          status: task.status,
+          task_type: task.task_type,
+          job_name: task.job?.name,
+          job_status: task.job?.status,
+        });
+      });
 
       const filteredTasks = tasksData || [];
 
