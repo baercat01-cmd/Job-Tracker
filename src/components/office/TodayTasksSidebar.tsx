@@ -15,7 +15,7 @@ import {
 import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDateLocal, getTodayString } from '@/lib/date-utils';
+import { formatDateLocal, getTodayString, parseDateLocal } from '@/lib/date-utils';
 
 interface Task {
   id: string;
@@ -303,58 +303,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
-  async function loadUsers() {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('username', { ascending: true });
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('job_tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-      toast.success('Task deleted');
-      setShowTaskDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast.error('Failed to delete task');
-    }
-  }
-
-  async function handleDeleteEvent(eventId: string) {
-    if (!confirm('Are you sure you want to delete this event?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('id', eventId);
-
-      if (error) throw error;
-      toast.success('Event deleted');
-      setShowEventDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
-    }
-  }
-
   async function handleCompleteTask(taskId: string) {
     try {
       const { error } = await supabase
@@ -375,58 +323,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
-  async function loadUsers() {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('username', { ascending: true });
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('job_tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-      toast.success('Task deleted');
-      setShowTaskDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast.error('Failed to delete task');
-    }
-  }
-
-  async function handleDeleteEvent(eventId: string) {
-    if (!confirm('Are you sure you want to delete this event?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('id', eventId);
-
-      if (error) throw error;
-      toast.success('Event deleted');
-      setShowEventDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
-    }
-  }
-
   async function handleCompleteEvent(eventId: string) {
     try {
       const { error } = await supabase
@@ -443,58 +339,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     } catch (error) {
       console.error('Error completing event:', error);
       toast.error('Failed to complete event');
-    }
-  }
-
-  async function loadUsers() {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('username', { ascending: true });
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('job_tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-      toast.success('Task deleted');
-      setShowTaskDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast.error('Failed to delete task');
-    }
-  }
-
-  async function handleDeleteEvent(eventId: string) {
-    if (!confirm('Are you sure you want to delete this event?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('id', eventId);
-
-      if (error) throw error;
-      toast.success('Event deleted');
-      setShowEventDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
     }
   }
 
@@ -530,58 +374,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     }
   }
 
-  async function loadUsers() {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('username', { ascending: true });
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('job_tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-      toast.success('Task deleted');
-      setShowTaskDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast.error('Failed to delete task');
-    }
-  }
-
-  async function handleDeleteEvent(eventId: string) {
-    if (!confirm('Are you sure you want to delete this event?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('id', eventId);
-
-      if (error) throw error;
-      toast.success('Event deleted');
-      setShowEventDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
-    }
-  }
-
   const totalItems = tasks.length + events.length;
 
   const getPriorityColor = (priority: string) => {
@@ -592,58 +384,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         return 'bg-yellow-500';
       default:
         return 'bg-blue-500';
-    }
-  }
-
-  async function loadUsers() {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('username', { ascending: true });
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error loading users:', error);
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('job_tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
-      toast.success('Task deleted');
-      setShowTaskDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      toast.error('Failed to delete task');
-    }
-  }
-
-  async function handleDeleteEvent(eventId: string) {
-    if (!confirm('Are you sure you want to delete this event?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('id', eventId);
-
-      if (error) throw error;
-      toast.success('Event deleted');
-      setShowEventDialog(false);
-      loadTodayItems();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
     }
   };
 
