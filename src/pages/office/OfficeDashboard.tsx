@@ -222,7 +222,7 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-6 bg-white border-2 border-slate-300 rounded-none">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-white border-2 border-slate-300 rounded-none">
             <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
@@ -230,6 +230,10 @@ export function OfficeDashboard() {
             <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">Quotes</span>
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
             <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Calendar className="w-4 h-4" />
@@ -260,6 +264,16 @@ export function OfficeDashboard() {
             <QuotesView />
           </TabsContent>
 
+          <TabsContent value="schedule">
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Subcontractor Schedule</h2>
+                <p className="text-black">Manage subcontractor schedules and assignments</p>
+              </div>
+              <SubcontractorScheduling />
+            </div>
+          </TabsContent>
+
           <TabsContent value="calendar">
             <div className="space-y-4">
               <div>
@@ -281,7 +295,7 @@ export function OfficeDashboard() {
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-11 bg-white border-2 border-slate-300 rounded-none">
+                <TabsList className="grid w-full grid-cols-10 bg-white border-2 border-slate-300 rounded-none">
                   <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Download className="w-4 h-4 mr-2" />
                     Export
@@ -305,10 +319,6 @@ export function OfficeDashboard() {
                   <TabsTrigger value="subcontractors" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Users className="w-4 h-4 mr-2" />
                     Subs
-                  </TabsTrigger>
-                  <TabsTrigger value="schedule" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Schedule
                   </TabsTrigger>
                   <TabsTrigger value="internal" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Briefcase className="w-4 h-4 mr-2" />
@@ -350,10 +360,6 @@ export function OfficeDashboard() {
 
                 <TabsContent value="subcontractors" className="mt-6">
                   <SubcontractorManagement />
-                </TabsContent>
-
-                <TabsContent value="schedule" className="mt-6">
-                  <SubcontractorScheduling />
                 </TabsContent>
 
                 <TabsContent value="internal" className="mt-6">
