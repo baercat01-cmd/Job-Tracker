@@ -96,15 +96,17 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
-      // Load tasks due today that are not completed from active/quoting/on hold jobs
+      // Load tasks due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
           jobs(id, name, client_name, status)
         `)
-        .eq('due_date', todayStr)
+        .not('due_date', 'is', null)
+        .lte('due_date', todayStr)
         .neq('status', 'completed')
+        .order('due_date', { ascending: true })
         .order('priority', { ascending: false });
 
       if (tasksError) throw tasksError;
@@ -291,7 +293,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-400" />
-              Today's Tasks
+              Daily Tasks
             </CardTitle>
             <Badge className="bg-yellow-500 text-black font-bold text-sm border-2 border-yellow-400">
               {totalItems}
@@ -303,6 +305,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               month: 'short', 
               day: 'numeric' 
             })}
+          </p>
+          <p className="text-xs text-yellow-300 font-medium mt-1">
+            Due today or overdue
           </p>
           <Button
             variant="outline"
@@ -322,15 +327,23 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             <div className="text-center py-8">
               <CheckCircle2 className="w-12 h-12 mx-auto text-green-500 mb-2" />
               <p className="text-sm font-medium">All caught up!</p>
-              <p className="text-xs text-muted-foreground">No tasks due today</p>
+              <p className="text-xs text-muted-foreground">No overdue or due tasks</p>
             </div>
           ) : (
             <>
               {/* Job Tasks */}
-              {tasks.map((task) => (
+              {tasks.map((task) => {
+                const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+                const isDueToday = task.due_date === todayStr;
+                
+                return (
                 <div
                   key={task.id}
-                  className="border-2 border-slate-200 rounded-lg p-3 space-y-2 hover:shadow-lg hover:border-yellow-500 transition-all bg-white"
+                  className={`border-2 rounded-lg p-3 space-y-2 hover:shadow-lg transition-all ${
+                    isOverdue 
+                      ? 'border-red-900 bg-red-50 hover:border-red-700' 
+                      : 'border-slate-200 bg-white hover:border-yellow-500'
+                  }`}
                 >
                   <div className="flex items-start gap-2">
                     <Checkbox
@@ -343,13 +356,27 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       {task.job && (
                         <button
                           onClick={() => onJobSelect?.(task.job_id)}
-                          className="flex items-center gap-1 mb-2 text-sm font-bold text-green-900 hover:text-green-700 hover:underline"
+                          className={`flex items-center gap-1 mb-2 text-sm font-bold hover:underline ${
+                            isOverdue ? 'text-red-900 hover:text-red-700' : 'text-green-900 hover:text-green-700'
+                          }`}
                         >
                           <Briefcase className="w-4 h-4 flex-shrink-0" />
                           {task.job.name}
                         </button>
                       )}
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        {isOverdue && (
+                          <Badge variant="destructive" className="bg-red-900 text-white font-bold border-2 border-red-950">
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            OVERDUE
+                          </Badge>
+                        )}
+                        {isDueToday && !isOverdue && (
+                          <Badge className="bg-yellow-500 text-black font-bold border-2 border-yellow-600">
+                            <Clock className="w-3 h-3 mr-1" />
+                            DUE TODAY
+                          </Badge>
+                        )}
                         <Badge
                           variant="secondary"
                           className={`${getPriorityColor(task.priority)} text-white text-xs`}
@@ -378,7 +405,8 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     Reschedule
                   </Button>
                 </div>
-              ))}
+              );
+              })}
 
               {/* Calendar Events */}
               {events.map((event) => (
