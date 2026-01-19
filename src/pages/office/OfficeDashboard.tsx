@@ -37,8 +37,8 @@ export function OfficeDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
-    // Default to 'jobs' tab for office users
-    return tabParam || localStorage.getItem('office-active-tab') || 'jobs';
+    // Always default to 'jobs' tab for office users (ignore localStorage on initial load)
+    return tabParam || 'jobs';
   });
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
