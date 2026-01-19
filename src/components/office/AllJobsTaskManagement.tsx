@@ -412,8 +412,10 @@ export function AllJobsTaskManagement() {
     return true;
   }).sort((a, b) => {
     // First, sort by overdue status (overdue tasks first)
-    const aOverdue = a.due_date && parseDateLocal(a.due_date) < new Date() && a.status !== 'completed';
-    const bOverdue = b.due_date && parseDateLocal(b.due_date) < new Date() && b.status !== 'completed';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const aOverdue = a.due_date && parseDateLocal(a.due_date) < today && a.status !== 'completed';
+    const bOverdue = b.due_date && parseDateLocal(b.due_date) < today && b.status !== 'completed';
     
     if (aOverdue && !bOverdue) return -1;
     if (!aOverdue && bOverdue) return 1;
@@ -536,7 +538,9 @@ export function AllJobsTaskManagement() {
       ) : (
         <div className="space-y-2">
           {filteredTasks.map((task) => {
-            const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const isOverdue = task.due_date && parseDateLocal(task.due_date) < today && task.status !== 'completed';
             
             return (
               <Card 

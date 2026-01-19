@@ -444,7 +444,9 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       ) : (
         <div className="space-y-2">
           {filteredTasks.map((task) => {
-            const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const isOverdue = task.due_date && parseDateLocal(task.due_date) < today && task.status !== 'completed';
             
             return (
               <Card key={task.id} className={isOverdue ? 'border-destructive border-2' : ''}>

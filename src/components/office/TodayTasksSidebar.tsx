@@ -454,7 +454,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
             <>
               {/* Job Tasks */}
               {tasks.map((task) => {
-                const isOverdue = task.due_date && parseDateLocal(task.due_date) < new Date() && task.status !== 'completed';
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isOverdue = task.due_date && parseDateLocal(task.due_date) < today && task.status !== 'completed';
                 const isDueToday = task.due_date === todayStr;
                 
                 return (
