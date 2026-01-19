@@ -389,24 +389,6 @@ export function EnhancedScheduleView() {
                               <p className="font-medium text-sm">
                                 {schedule.jobs.name}{schedule.work_description ? `: ${schedule.work_description}` : ''}
                               </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <p className="text-xs text-muted-foreground">
-                                  Subcontractor: {schedule.subcontractors.name}
-                                </p>
-                                {schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {schedule.subcontractors.trades.join(', ')}
-                                  </Badge>
-                                )}
-                                {schedule.end_date && schedule.end_date !== schedule.start_date && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Until {new Date(schedule.end_date + 'T00:00:00').toLocaleDateString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })}
-                                  </Badge>
-                                )}
-                              </div>
                             </div>
                           </div>
                         </div>
