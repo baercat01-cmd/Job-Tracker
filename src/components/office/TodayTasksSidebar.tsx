@@ -266,18 +266,18 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
   return (
     <>
-      <Card className="h-full flex flex-col">
-        <CardHeader className="pb-3">
+      <Card className="h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-50 border-2 border-slate-200 shadow-xl">
+        <CardHeader className="pb-3 bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-t-lg border-b-4 border-yellow-500">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="w-5 h-5" />
+              <Clock className="w-5 h-5 text-yellow-400" />
               Today's Tasks
             </CardTitle>
-            <Badge variant="secondary" className="text-sm">
+            <Badge className="bg-yellow-500 text-black font-bold text-sm border-2 border-yellow-400">
               {totalItems}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-slate-300 font-medium">
             {new Date().toLocaleDateString('en-US', { 
               weekday: 'long', 
               month: 'short', 
@@ -287,7 +287,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
           <Button
             variant="outline"
             size="sm"
-            className="w-full mt-2"
+            className="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-2 border-yellow-400 shadow-md"
             onClick={() => {
               loadAllCalendarItems();
               setShowCalendarView(true);
@@ -310,7 +310,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               {tasks.map((task) => (
                 <div
                   key={task.id}
-                  className="border rounded-lg p-3 space-y-2 hover:shadow-md transition-shadow bg-card"
+                  className="border-2 border-slate-200 rounded-lg p-3 space-y-2 hover:shadow-lg hover:border-yellow-500 transition-all bg-white"
                 >
                   <div className="flex items-start gap-2">
                     <Checkbox
@@ -363,7 +363,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               {events.map((event) => (
                 <div
                   key={event.id}
-                  className="border rounded-lg p-3 space-y-2 hover:shadow-md transition-shadow bg-card border-l-4 border-l-primary"
+                  className="border-2 border-slate-200 rounded-lg p-3 space-y-2 hover:shadow-lg hover:border-yellow-500 transition-all bg-white border-l-4 border-l-yellow-500"
                 >
                   <div className="flex items-start gap-2">
                     <Checkbox

@@ -214,25 +214,30 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
   }
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-12rem)]">
+    <div className="flex gap-6 h-[calc(100vh-12rem)]">
       {/* Left Sidebar - Today's Tasks */}
       {!showArchived && (
-        <div className="w-80 flex-shrink-0 overflow-hidden">
+        <div className="w-80 flex-shrink-0 overflow-hidden relative">
+          {/* Gold accent border on the right */}
+          <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-b from-yellow-500 via-yellow-600 to-yellow-700 opacity-80 rounded-full"></div>
           <TodayTasksSidebar onJobSelect={(jobId) => setSelectedJobId(jobId)} />
         </div>
       )}
 
       {/* Main Content */}
-      <div className="flex-1 space-y-4 overflow-y-auto pr-2">
-        <div className="flex items-center justify-between">
+      <div className="flex-1 space-y-4 overflow-y-auto pr-2 pl-2">
+        <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-lg p-4 shadow-lg border border-yellow-600/20">
           <div>
-            <h2 className="text-2xl font-bold">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-2xl font-bold tracking-tight">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
+            <p className="text-sm text-slate-300">
               {showArchived ? 'View and restore archived jobs' : 'Manage job sites, documents, and assignments'}
             </p>
           </div>
           {!showArchived && (
-            <Button onClick={() => setShowCreateDialog(true)} className="gradient-primary">
+            <Button 
+              onClick={() => setShowCreateDialog(true)} 
+              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
+            >
               <Plus className="w-4 h-4 mr-2" />
               New Job
             </Button>
