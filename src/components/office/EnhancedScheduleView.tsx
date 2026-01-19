@@ -1,9 +1,14 @@
+import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, ListTodo } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, ListTodo, UserPlus, Calendar } from 'lucide-react';
 import { SubcontractorScheduling } from './SubcontractorScheduling';
 import { AllJobsTaskManagement } from './AllJobsTaskManagement';
+import { SubcontractorManagement } from './SubcontractorManagement';
 
 export function EnhancedScheduleView() {
+  const [subcontractorView, setSubcontractorView] = useState<'list' | 'schedule'>('schedule');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -30,7 +35,34 @@ export function EnhancedScheduleView() {
         </TabsContent>
 
         <TabsContent value="subcontractors" className="mt-4">
-          <SubcontractorScheduling />
+          <div className="space-y-4">
+            {/* Toggle between List and Schedule views */}
+            <div className="flex gap-2 border-b pb-2">
+              <Button
+                variant={subcontractorView === 'list' ? 'default' : 'outline'}
+                onClick={() => setSubcontractorView('list')}
+                className="flex-1"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Manage Subcontractors
+              </Button>
+              <Button
+                variant={subcontractorView === 'schedule' ? 'default' : 'outline'}
+                onClick={() => setSubcontractorView('schedule')}
+                className="flex-1"
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                Schedule Work
+              </Button>
+            </div>
+
+            {/* Conditional rendering based on view */}
+            {subcontractorView === 'list' ? (
+              <SubcontractorManagement />
+            ) : (
+              <SubcontractorScheduling />
+            )}
+          </div>
         </TabsContent>
       </Tabs>
     </div>
