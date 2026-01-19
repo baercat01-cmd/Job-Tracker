@@ -40,9 +40,6 @@ export function OfficeDashboard() {
     // Default to 'jobs' tab for office users
     return tabParam || localStorage.getItem('office-active-tab') || 'jobs';
   });
-  const [calendarView, setCalendarView] = useState(() => {
-    return localStorage.getItem('office-calendar-view') || 'calendar';
-  });
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'office' | 'field'>(() => {
@@ -54,10 +51,6 @@ export function OfficeDashboard() {
     localStorage.setItem('office-active-tab', activeTab);
     setSearchParams({ tab: activeTab }, { replace: true });
   }, [activeTab]);
-
-  useEffect(() => {
-    localStorage.setItem('office-calendar-view', calendarView);
-  }, [calendarView]);
 
   useEffect(() => {
     localStorage.setItem('office-view-mode', viewMode);
@@ -229,36 +222,24 @@ export function OfficeDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6 mb-6 bg-white border-2 border-slate-300 rounded-none">
-            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Quotes</span>
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-4 mb-6 bg-white border-2 border-slate-300 rounded-none">
             <TabsTrigger value="jobs" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Jobs</span>
             </TabsTrigger>
+            <TabsTrigger value="quotes" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">Quotes</span>
+            </TabsTrigger>
             <TabsTrigger value="calendar" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Calendar</span>
-            </TabsTrigger>
-            <TabsTrigger value="time" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-              <Clock className="w-4 h-4" />
-              <span className="hidden sm:inline">Time</span>
-            </TabsTrigger>
-            <TabsTrigger value="photos" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-              <Camera className="w-4 h-4" />
-              <span className="hidden sm:inline">Photos</span>
             </TabsTrigger>
             <TabsTrigger value="settings" className="flex items-center gap-2 rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">Settings</span>
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="quotes">
-            <QuotesView />
-          </TabsContent>
 
           <TabsContent value="jobs">
             <div className="space-y-6">
@@ -275,41 +256,21 @@ export function OfficeDashboard() {
             </div>
           </TabsContent>
 
+          <TabsContent value="quotes">
+            <QuotesView />
+          </TabsContent>
+
           <TabsContent value="calendar">
-            <Tabs value={calendarView} onValueChange={setCalendarView} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6 bg-white border-2 border-slate-300 rounded-none">
-                <TabsTrigger value="calendar" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Calendar View
-                </TabsTrigger>
-                <TabsTrigger value="gantt" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
-                  <Briefcase className="w-4 h-4 mr-2" />
-                  Gantt Chart
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="calendar">
-                <JobsCalendar onJobSelect={(jobId) => {
-                  setSelectedJobId(jobId);
-                  setActiveTab('jobs');
-                }} />
-              </TabsContent>
-
-              <TabsContent value="gantt">
-                <JobGanttChart onJobSelect={(jobId) => {
-                  setSelectedJobId(jobId);
-                  setActiveTab('jobs');
-                }} />
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-
-          <TabsContent value="time">
-            <TimeEntriesView />
-          </TabsContent>
-
-          <TabsContent value="photos">
-            <PhotosView />
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold mb-2 text-green-900 tracking-tight">Project Timeline</h2>
+                <p className="text-black">Gantt chart view of all active projects</p>
+              </div>
+              <JobGanttChart onJobSelect={(jobId) => {
+                setSelectedJobId(jobId);
+                setActiveTab('jobs');
+              }} />
+            </div>
           </TabsContent>
 
           <TabsContent value="settings">
@@ -320,10 +281,18 @@ export function OfficeDashboard() {
               </div>
               
               <Tabs defaultValue="export" className="w-full">
-                <TabsList className="grid w-full grid-cols-9 bg-white border-2 border-slate-300 rounded-none">
+                <TabsList className="grid w-full grid-cols-11 bg-white border-2 border-slate-300 rounded-none">
                   <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Download className="w-4 h-4 mr-2" />
                     Export
+                  </TabsTrigger>
+                  <TabsTrigger value="time" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                    <Clock className="w-4 h-4 mr-2" />
+                    Time
+                  </TabsTrigger>
+                  <TabsTrigger value="photos" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
+                    <Camera className="w-4 h-4 mr-2" />
+                    Photos
                   </TabsTrigger>
                   <TabsTrigger value="components" className="rounded-none data-[state=active]:bg-green-900 data-[state=active]:text-white data-[state=active]:font-bold">
                     <Settings className="w-4 h-4 mr-2" />
@@ -361,6 +330,14 @@ export function OfficeDashboard() {
 
                 <TabsContent value="export" className="mt-6">
                   <DataExport />
+                </TabsContent>
+
+                <TabsContent value="time" className="mt-6">
+                  <TimeEntriesView />
+                </TabsContent>
+
+                <TabsContent value="photos" className="mt-6">
+                  <PhotosView />
                 </TabsContent>
 
                 <TabsContent value="components" className="mt-6">
