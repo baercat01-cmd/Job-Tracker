@@ -102,6 +102,8 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
+      console.log('Loading tasks for today:', todayStr);
+
       // Load office and shop tasks only (exclude field tasks) - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
@@ -118,10 +120,16 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (tasksError) throw tasksError;
 
+      console.log('Raw tasks data:', tasksData);
+      console.log('Number of tasks loaded:', tasksData?.length || 0);
+
       // Filter to only include tasks from active, quoting, or on hold jobs
       const filteredTasks = (tasksData || []).filter(
         task => task.jobs && ['active', 'quoting', 'on hold'].includes((task.jobs as any).status)
       );
+
+      console.log('Filtered tasks:', filteredTasks);
+      console.log('Number of filtered tasks:', filteredTasks.length);
 
       // Load calendar events for today that are not completed from active/quoting/on hold jobs
       const { data: eventsData, error: eventsError } = await supabase
@@ -140,6 +148,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       const filteredEvents = (eventsData || []).filter(
         event => event.jobs && ['active', 'quoting', 'on hold'].includes((event.jobs as any).status)
       );
+
+      console.log('Final tasks to display:', filteredTasks.length);
+      console.log('Final events to display:', filteredEvents.length);
 
       setTasks(filteredTasks);
       setEvents(filteredEvents);
