@@ -37,22 +37,23 @@ export function EnhancedScheduleView() {
         <TabsContent value="subcontractors" className="mt-4">
           <div className="space-y-4">
             {/* Toggle between List and Schedule views */}
-            <div className="flex gap-2 border-b pb-2">
-              <Button
-                variant={subcontractorView === 'list' ? 'default' : 'outline'}
-                onClick={() => setSubcontractorView('list')}
-                className="flex-1"
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Manage Subcontractors
-              </Button>
+            <div className="space-y-2 border-b pb-4">
               <Button
                 variant={subcontractorView === 'schedule' ? 'default' : 'outline'}
                 onClick={() => setSubcontractorView('schedule')}
-                className="flex-1"
+                className="w-full"
               >
                 <Calendar className="w-4 h-4 mr-2" />
                 Schedule Work
+              </Button>
+              <Button
+                variant={subcontractorView === 'list' ? 'secondary' : 'ghost'}
+                onClick={() => setSubcontractorView('list')}
+                size="sm"
+                className="w-full"
+              >
+                <UserPlus className="w-3 h-3 mr-2" />
+                Manage Subcontractors
               </Button>
             </div>
 
