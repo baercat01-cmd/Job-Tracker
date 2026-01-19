@@ -173,6 +173,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       console.log('Number of filtered tasks:', filteredTasks.length);
 
       // Load calendar events for today that are not completed from active/quoting/on hold jobs
+      // Exclude 'task' type events since those are already shown from job_tasks table
       const { data: eventsData, error: eventsError } = await supabase
         .from('calendar_events')
         .select(`
@@ -181,6 +182,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         `)
         .eq('event_date', todayStr)
         .is('completed_at', null)
+        .neq('event_type', 'task')
         .in('jobs.status', ['active', 'quoting', 'on hold'])
         .order('start_time', { ascending: true });
 
@@ -278,6 +280,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       );
 
       // Load all upcoming events from active/quoting/on hold jobs
+      // Exclude 'task' type events since those are already shown from job_tasks table
       const { data: eventsData, error: eventsError } = await supabase
         .from('calendar_events')
         .select(`
@@ -285,6 +288,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
           job:jobs(id, name, client_name, status)
         `)
         .is('completed_at', null)
+        .neq('event_type', 'task')
         .gte('event_date', todayStr)
         .order('event_date', { ascending: true });
 
