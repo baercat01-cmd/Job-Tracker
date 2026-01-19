@@ -43,9 +43,7 @@ export function OfficeDashboard() {
   });
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'office' | 'field'>(() => {
-    return (localStorage.getItem('office-view-mode') as 'office' | 'field') || 'field';
-  });
+  const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
 
   // Save view state to localStorage and update URL
   useEffect(() => {
