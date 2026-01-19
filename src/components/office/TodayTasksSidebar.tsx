@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Info, Edit, Trash2 } from 'lucide-react';
+import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateLocal, getTodayString } from '@/lib/date-utils';
@@ -102,13 +102,14 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
     try {
       setLoading(true);
 
-      // Load tasks due today OR overdue that are not completed from active/quoting/on hold jobs
+      // Load OFFICE tasks only - due today OR overdue that are not completed from active/quoting/on hold jobs
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
           *,
           jobs(id, name, client_name, status)
         `)
+        .eq('task_type', 'office')
         .not('due_date', 'is', null)
         .lte('due_date', todayStr)
         .neq('status', 'completed')
@@ -611,18 +612,26 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-400" />
-              Daily Tasks
+              Daily Office Tasks
             </CardTitle>
             <Badge className="bg-yellow-500 text-black font-bold text-sm border-2 border-yellow-400">
               {totalItems}
             </Badge>
           </div>
           <p className="text-xs text-slate-300 font-medium">
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              month: 'short', 
-              day: 'numeric' 
-            })}
+            {(() => {
+              const now = new Date();
+              const year = now.getFullYear();
+              const month = now.getMonth();
+              const day = now.getDate();
+              const localDate = new Date(year, month, day);
+              return localDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'short', 
+                day: 'numeric',
+                year: 'numeric'
+              });
+            })()}
           </p>
           <p className="text-xs text-yellow-300 font-medium mt-1">
             Due today or overdue
@@ -733,18 +742,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                       <CalendarIcon className="w-3 h-3 mr-1" />
                       Reschedule
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7 px-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedTask(task);
-                        setShowTaskDialog(true);
-                      }}
-                    >
-                      <Info className="w-3 h-3" />
-                    </Button>
                   </div>
                 </div>
               );
@@ -805,18 +802,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     >
                       <CalendarIcon className="w-3 h-3 mr-1" />
                       Reschedule
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7 px-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedEvent(event);
-                        setShowEventDialog(true);
-                      }}
-                    >
-                      <Info className="w-3 h-3" />
                     </Button>
                   </div>
                 </div>
