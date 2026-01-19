@@ -410,6 +410,22 @@ export function AllJobsTaskManagement() {
     if (filterStatus !== 'all' && task.status !== filterStatus) return false;
     if (filterJob !== 'all' && task.job_id !== filterJob) return false;
     return true;
+  }).sort((a, b) => {
+    // First, sort by overdue status (overdue tasks first)
+    const aOverdue = a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed';
+    const bOverdue = b.due_date && new Date(b.due_date) < new Date() && b.status !== 'completed';
+    
+    if (aOverdue && !bOverdue) return -1;
+    if (!aOverdue && bOverdue) return 1;
+    
+    // Then by due date
+    if (a.due_date && b.due_date) {
+      return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+    }
+    
+    // Finally by priority
+    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+    return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
 
   const tasksByStatus = {
@@ -523,7 +539,13 @@ export function AllJobsTaskManagement() {
             const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
             
             return (
-              <Card key={task.id} className={isOverdue ? 'border-destructive border-2' : ''}>
+              <Card 
+                key={task.id} 
+                className={isOverdue 
+                  ? 'border-[3px] border-red-900 bg-red-50 shadow-lg' 
+                  : 'border-slate-300'
+                }
+              >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="pt-0.5">
@@ -533,9 +555,24 @@ export function AllJobsTaskManagement() {
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium">{task.title}</h4>
+                          {/* Job Name - Prominent Display */}
+                          {task.job && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <Briefcase className={`w-4 h-4 flex-shrink-0 ${isOverdue ? 'text-red-900' : 'text-green-800'}`} />
+                              <span className={`font-bold text-sm ${isOverdue ? 'text-red-900' : 'text-green-900'}`}>
+                                {task.job.name}
+                              </span>
+                              {isOverdue && (
+                                <Badge variant="destructive" className="bg-red-900 text-white font-bold border-2 border-red-950">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  OVERDUE
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                          <h4 className={`font-medium ${isOverdue ? 'text-red-900' : ''}`}>{task.title}</h4>
                           {task.description && (
-                            <p className="text-sm text-muted-foreground mt-1">
+                            <p className={`text-sm mt-1 ${isOverdue ? 'text-red-800' : 'text-muted-foreground'}`}>
                               {task.description}
                             </p>
                           )}
@@ -564,12 +601,6 @@ export function AllJobsTaskManagement() {
                         <Badge variant="outline" className="capitalize">
                           {task.task_type}
                         </Badge>
-                        {task.job && (
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            <Briefcase className="w-3 h-3" />
-                            {task.job.name}
-                          </Badge>
-                        )}
                         {task.assigned_to && task.assigned_user && (
                           <Badge variant="outline" className="flex items-center gap-1">
                             <User className="w-3 h-3" />
@@ -579,7 +610,10 @@ export function AllJobsTaskManagement() {
                         {task.due_date && (
                           <Badge 
                             variant={isOverdue ? 'destructive' : 'outline'}
-                            className="flex items-center gap-1"
+                            className={isOverdue 
+                              ? "flex items-center gap-1 bg-red-900 text-white font-bold border-2 border-red-950" 
+                              : "flex items-center gap-1"
+                            }
                           >
                             <CalendarIcon className="w-3 h-3" />
                             {isOverdue && <AlertCircle className="w-3 h-3" />}
@@ -587,6 +621,7 @@ export function AllJobsTaskManagement() {
                               month: 'short',
                               day: 'numeric',
                             })}
+                            {isOverdue && ' - LATE'}
                           </Badge>
                         )}
                       </div>
