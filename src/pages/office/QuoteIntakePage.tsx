@@ -178,16 +178,18 @@ export function QuoteIntakePage() {
   }
 
   async function handleSubmit() {
-    await saveQuote('submitted');
-    // After submitting, create a job in quoting status
-    await createJobFromQuote();
+    const savedQuoteId = await saveQuote('submitted');
+    if (savedQuoteId) {
+      // After submitting, create a job in quoting status
+      await createJobFromQuote(savedQuoteId);
+    }
   }
 
-  async function saveQuote(status: string) {
+  async function saveQuote(status: string): Promise<string | null> {
     if (!formData.customer_name || !formData.project_name) {
       toast.error('Please fill in customer name and project name');
       setActiveTab('customer');
-      return;
+      return null;
     }
 
     setSaving(true);
@@ -211,6 +213,7 @@ export function QuoteIntakePage() {
 
         if (error) throw error;
         toast.success('Quote updated successfully');
+        return quoteId;
       } else {
         const { data, error } = await supabase
           .from('quotes')
@@ -227,29 +230,33 @@ export function QuoteIntakePage() {
           .eq('id', data.id);
 
         toast.success('Quote created successfully');
-        navigate(`/office/quotes/${data.id}`);
+        
+        // Return the ID instead of navigating immediately
+        return data.id;
       }
     } catch (error: any) {
       console.error('Error saving quote:', error);
       toast.error('Failed to save quote');
+      return null;
     } finally {
       setSaving(false);
     }
   }
 
-  async function createJobFromQuote() {
-    if (!quoteId) return;
+  async function createJobFromQuote(quoteIdToUse: string) {
+    if (!quoteIdToUse) return;
 
     try {
       // Check if job already exists for this quote
       const { data: existingJobData } = await supabase
         .from('quotes')
         .select('job_id')
-        .eq('id', quoteId)
+        .eq('id', quoteIdToUse)
         .single();
 
       if (existingJobData?.job_id) {
         // Job already exists, just navigate to it
+        toast.success('Quote submitted for estimating');
         navigate('/office?tab=jobs');
         return;
       }
@@ -274,7 +281,7 @@ export function QuoteIntakePage() {
       const { error: quoteError } = await supabase
         .from('quotes')
         .update({ job_id: jobData.id })
-        .eq('id', quoteId);
+        .eq('id', quoteIdToUse);
 
       if (quoteError) throw quoteError;
 
