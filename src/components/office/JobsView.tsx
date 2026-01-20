@@ -214,10 +214,10 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
   }
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-12rem)]">
+    <div className="flex flex-col lg:flex-row gap-3 sm:gap-6">
       {/* Left Sidebar - Today's Tasks */}
       {!showArchived && (
-        <div className="w-80 flex-shrink-0 overflow-hidden relative">
+        <div className="w-full lg:w-80 flex-shrink-0 overflow-hidden relative max-h-[400px] lg:max-h-[calc(100vh-12rem)]">
           {/* Gold accent border on the right */}
           <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-b from-yellow-500 via-yellow-600 to-yellow-700 opacity-80 rounded-full"></div>
           <TodayTasksSidebar onJobSelect={(jobId) => setSelectedJobId(jobId)} />
@@ -225,18 +225,19 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
       )}
 
       {/* Main Content */}
-      <div className="flex-1 space-y-4 overflow-y-auto pr-2 pl-2">
-        <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-lg p-4 shadow-lg border border-yellow-600/20">
+      <div className="flex-1 space-y-3 sm:space-y-4 overflow-y-auto pr-1 sm:pr-2 pl-1 sm:pl-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-lg p-3 sm:p-4 shadow-lg border border-yellow-600/20">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
-            <p className="text-sm text-slate-300">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{showArchived ? 'Archived Jobs' : 'Jobs'}</h2>
+            <p className="text-xs sm:text-sm text-slate-300">
               {showArchived ? 'View and restore archived jobs' : 'Manage job sites, documents, and assignments'}
             </p>
           </div>
           {!showArchived && (
             <Button 
               onClick={() => setShowCreateDialog(true)} 
-              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
+              size="sm"
+              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400 w-full sm:w-auto"
             >
               <Plus className="w-4 h-4 mr-2" />
               New Job
@@ -257,7 +258,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
             </CardContent>
           </Card>
         ) : showArchived ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {jobs
               .filter((job) => job.status === 'archived')
               .filter((job) => !job.is_internal)
@@ -471,18 +472,18 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
             })}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {/* Active Column */}
-            <div className="flex flex-col">
-              <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-200 rounded-lg p-3 mb-3">
-                <h3 className="text-lg font-bold text-green-900 flex items-center gap-2">
+            <div className="flex flex-col min-w-0">
+              <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-200 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3">
+                <h3 className="text-base sm:text-lg font-bold text-green-900 flex items-center gap-2">
                   Active
                   <Badge variant="secondary" className="bg-green-200 text-green-900">
                     {jobs.filter(j => j.status === 'active' && !j.is_internal).length}
                   </Badge>
                 </h3>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {jobs
                   .filter((job) => job.status === 'active' && !job.is_internal)
                   .map((job) => {
@@ -508,11 +509,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           isOverdue ? 'border-destructive border-2' : ''
                         }`}
                       >
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 cursor-pointer" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-lg">{job.name}</CardTitle>
-                              <p className="text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="p-3 sm:p-6">
+                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
+                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
+                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
+                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
                                 {job.client_name}
                               </p>
                               {/* Scheduling Status Badges */}
@@ -574,12 +575,12 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-sm">
+                            <div className="flex items-start text-xs sm:text-sm">
                               <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
@@ -628,7 +629,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+                          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 pt-2 border-t">
                             <div 
                               className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
                               onClick={() => {
@@ -673,7 +674,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                   </Badge>
                 </h3>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {jobs
                   .filter((job) => job.status === 'quoting' && !job.is_internal)
                   .map((job) => {
@@ -687,11 +688,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
                         }`}
                       >
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 cursor-pointer" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-lg">{job.name}</CardTitle>
-                              <p className="text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="p-3 sm:p-6">
+                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
+                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
+                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
+                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
                                 {job.client_name}
                               </p>
                             </div>
@@ -725,12 +726,12 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-sm">
+                            <div className="flex items-start text-xs sm:text-sm">
                               <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
@@ -765,7 +766,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                   </Badge>
                 </h3>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {jobs
                   .filter((job) => job.status === 'on_hold' && !job.is_internal)
                   .map((job) => {
@@ -779,11 +780,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
                         }`}
                       >
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 cursor-pointer" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-lg">{job.name}</CardTitle>
-                              <p className="text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="p-3 sm:p-6">
+                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
+                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
+                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
+                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
                                 {job.client_name}
                               </p>
                             </div>
@@ -817,12 +818,12 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-sm">
+                            <div className="flex items-start text-xs sm:text-sm">
                               <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
@@ -892,7 +893,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
           </DialogHeader>
           {selectedJob && (
             <div className="flex-1 overflow-y-auto px-6 py-4">
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 <div className="grid md:grid-cols-4 gap-3 text-sm">
                   <div>
                     <Label className="text-xs text-muted-foreground">Job Name</Label>

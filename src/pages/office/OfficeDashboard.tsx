@@ -146,21 +146,21 @@ export function OfficeDashboard() {
     <div className="min-h-screen bg-slate-50">
       {/* Header with Navigation */}
       <header className="bg-white border-b-4 border-yellow-500 shadow-lg sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
           {/* Logo */}
           <img 
             src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
             alt="Martin Builder" 
-            className="h-10 w-auto flex-shrink-0"
+            className="h-8 sm:h-10 w-auto flex-shrink-0"
           />
           
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-0.5 sm:gap-1 flex-1 overflow-x-auto scrollbar-hide">
             <Button
               variant={activeTab === 'jobs' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('jobs')}
-              className={`rounded-none h-9 ${
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
                 activeTab === 'jobs'
                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -173,7 +173,7 @@ export function OfficeDashboard() {
               variant={activeTab === 'quotes' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('quotes')}
-              className={`rounded-none h-9 ${
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
                 activeTab === 'quotes'
                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -186,7 +186,7 @@ export function OfficeDashboard() {
               variant={activeTab === 'schedule' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('schedule')}
-              className={`rounded-none h-9 ${
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
                 activeTab === 'schedule'
                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -199,7 +199,7 @@ export function OfficeDashboard() {
               variant={activeTab === 'calendar' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('calendar')}
-              className={`rounded-none h-9 ${
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
                 activeTab === 'calendar'
                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -212,7 +212,7 @@ export function OfficeDashboard() {
               variant={activeTab === 'settings' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab('settings')}
-              className={`rounded-none h-9 ${
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
                 activeTab === 'settings'
                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -224,9 +224,9 @@ export function OfficeDashboard() {
           </div>
 
           {/* Right Side Actions */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
             {/* Quick Time Clock for Office Users */}
-            <div className="w-28">
+            <div className="hidden sm:block w-28">
               <QuickTimeEntry 
                 userId={profile?.id || ''} 
                 onSuccess={() => {
@@ -237,7 +237,7 @@ export function OfficeDashboard() {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-9">
+                <Button variant="outline" size="sm" className="rounded-none border-green-800 bg-white text-green-900 hover:bg-green-800 hover:text-white font-semibold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm">
                   <Eye className="w-4 h-4 mr-1.5" />
                   <span className="hidden md:inline">Office View</span>
                 </Button>
@@ -289,7 +289,7 @@ export function OfficeDashboard() {
               <p className="text-xs text-slate-600 capitalize">{profile?.role}</p>
             </div>
             
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-slate-900 hover:bg-green-800 hover:text-white h-9">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="rounded-none text-slate-900 hover:bg-green-800 hover:text-white h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm">
               <LogOut className="w-4 h-4 mr-1.5" />
               <span className="hidden md:inline">Sign Out</span>
             </Button>
@@ -298,7 +298,7 @@ export function OfficeDashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
         {activeTab === 'jobs' && (
           <div className="space-y-6">
             {/* Active Jobs Cards */}
@@ -325,7 +325,7 @@ export function OfficeDashboard() {
         {activeTab === 'calendar' && (
           <div className="space-y-4">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <h2 className="text-2xl font-bold tracking-tight">Project Timeline</h2>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Project Timeline</h2>
               <p className="text-yellow-400">Gantt chart view of all active projects</p>
             </div>
             <JobGanttChart onJobSelect={(jobId) => {
@@ -338,12 +338,12 @@ export function OfficeDashboard() {
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Settings</h2>
               <p className="text-yellow-400">Manage system configuration, users, and data export</p>
             </div>
             
             <Tabs defaultValue="export" className="w-full">
-              <TabsList className="grid w-full grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
+              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
