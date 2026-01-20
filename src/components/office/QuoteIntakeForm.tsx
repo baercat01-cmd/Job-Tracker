@@ -726,12 +726,17 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Truss</Label>
-                  <Input
-                    value={formData.truss}
-                    onChange={(e) => setFormData({ ...formData, truss: e.target.value })}
-                    placeholder="Truss type"
-                  />
+                  <Label>Truss Type</Label>
+                  <Select value={formData.truss} onValueChange={(value) => setFormData({ ...formData, truss: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select truss type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(configOptions.truss_type || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </CardContent>
@@ -823,11 +828,16 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                 </div>
                 <div className="space-y-2">
                   <Label>Building Use</Label>
-                  <Input
-                    value={formData.building_use}
-                    onChange={(e) => setFormData({ ...formData, building_use: e.target.value })}
-                    placeholder="Storage, Garage, etc."
-                  />
+                  <Select value={formData.building_use} onValueChange={(value) => setFormData({ ...formData, building_use: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select use" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(configOptions.building_use || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </CardContent>
@@ -842,27 +852,42 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Roof Material</Label>
-                  <Input
-                    value={formData.roof_material}
-                    onChange={(e) => setFormData({ ...formData, roof_material: e.target.value })}
-                    placeholder="Steel, Shingles, etc."
-                  />
+                  <Select value={formData.roof_material} onValueChange={(value) => setFormData({ ...formData, roof_material: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select material" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(configOptions.roof_material || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Roof Color</Label>
-                  <Input
-                    value={formData.roof_color}
-                    onChange={(e) => setFormData({ ...formData, roof_color: e.target.value })}
-                    placeholder="Color name"
-                  />
+                  <Select value={formData.roof_color} onValueChange={(value) => setFormData({ ...formData, roof_color: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select color" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(configOptions.roof_color || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Trim Color</Label>
-                  <Input
-                    value={formData.trim_color}
-                    onChange={(e) => setFormData({ ...formData, trim_color: e.target.value })}
-                    placeholder="Color name"
-                  />
+                  <Select value={formData.trim_color} onValueChange={(value) => setFormData({ ...formData, trim_color: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select color" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(configOptions.trim_color || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center space-x-2 pt-6">
@@ -965,12 +990,16 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Insulation Type</Label>
-                <Textarea
-                  value={formData.insulation_type}
-                  onChange={(e) => setFormData({ ...formData, insulation_type: e.target.value })}
-                  placeholder="Interior partitions, ceiling, etc."
-                  rows={3}
-                />
+                <Select value={formData.insulation_type} onValueChange={(value) => setFormData({ ...formData, insulation_type: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select insulation type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(configOptions.insulation_type || []).map((option) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
