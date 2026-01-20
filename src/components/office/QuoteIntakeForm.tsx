@@ -91,6 +91,10 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   const [existingQuote, setExistingQuote] = useState<any>(null);
   const [currentQuoteId, setCurrentQuoteId] = useState<string | undefined>(quoteId);
   
+  // Config options from database
+  const [configOptions, setConfigOptions] = useState<Record<string, string[]>>({});
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  
   const [formData, setFormData] = useState<QuoteData>({
     customer_name: '',
     customer_email: '',
@@ -130,11 +134,41 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
   });
 
   useEffect(() => {
+    loadConfigOptions();
     if (quoteId) {
       setCurrentQuoteId(quoteId);
       loadQuote();
     }
   }, [quoteId]);
+
+  async function loadConfigOptions() {
+    try {
+      setLoadingOptions(true);
+      const { data, error } = await supabase
+        .from('quote_config_options')
+        .select('category, value')
+        .eq('active', true)
+        .order('order_index', { ascending: true });
+
+      if (error) throw error;
+
+      // Group options by category
+      const grouped: Record<string, string[]> = {};
+      (data || []).forEach((option: any) => {
+        if (!grouped[option.category]) {
+          grouped[option.category] = [];
+        }
+        grouped[option.category].push(option.value);
+      });
+
+      setConfigOptions(grouped);
+    } catch (error: any) {
+      console.error('Error loading config options:', error);
+      toast.error('Failed to load form options');
+    } finally {
+      setLoadingOptions(false);
+    }
+  }
 
   async function loadQuote() {
     if (!quoteId) return;
@@ -549,7 +583,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  if (loading) {
+  if (loading || loadingOptions) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-muted-foreground">Loading quote...</div>
@@ -685,14 +719,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                       <SelectValue placeholder="Select pitch" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="3/12">3/12</SelectItem>
-                      <SelectItem value="4/12">4/12</SelectItem>
-                      <SelectItem value="5/12">5/12</SelectItem>
-                      <SelectItem value="6/12">6/12</SelectItem>
-                      <SelectItem value="7/12">7/12</SelectItem>
-                      <SelectItem value="8/12">8/12</SelectItem>
-                      <SelectItem value="10/12">10/12</SelectItem>
-                      <SelectItem value="12/12">12/12</SelectItem>
+                      {(configOptions.pitch || []).map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -725,9 +754,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="concrete">Concrete</SelectItem>
-                      <SelectItem value="gravel">Gravel</SelectItem>
-                      <SelectItem value="pier">Pier</SelectItem>
+                      {(configOptions.foundation_type || []).map((option) => (
+                        <SelectItem key={option} value={option.toLowerCase()}>{option}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -741,9 +770,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                       <SelectValue placeholder="Select floor" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="concrete">Concrete</SelectItem>
-                      <SelectItem value="wood">Wood</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
+                      {(configOptions.floor_type || []).map((option) => (
+                        <SelectItem key={option} value={option.toLowerCase()}>{option}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -757,9 +786,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
                       <SelectValue placeholder="Select soffit" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="steel">Steel</SelectItem>
-                      <SelectItem value="vinyl">Vinyl</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
+                      {(configOptions.soffit_type || []).map((option) => (
+                        <SelectItem key={option} value={option.toLowerCase()}>{option}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

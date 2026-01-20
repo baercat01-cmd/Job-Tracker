@@ -24,6 +24,7 @@ import { EnhancedScheduleView } from '@/components/office/EnhancedScheduleView';
 import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
+import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import {
@@ -343,7 +344,7 @@ export function OfficeDashboard() {
             </div>
             
             <Tabs defaultValue="export" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-10 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
+              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-11 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -383,6 +384,10 @@ export function OfficeDashboard() {
                 <TabsTrigger value="shop-tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <ListTodo className="w-4 h-4 mr-2" />
                   Shop Tasks
+                </TabsTrigger>
+                <TabsTrigger value="quote-config" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Quote Config
                 </TabsTrigger>
               </TabsList>
 
@@ -424,6 +429,10 @@ export function OfficeDashboard() {
 
               <TabsContent value="shop-tasks" className="mt-6">
                 <ShopTasksManagement userId={profile?.id || ''} />
+              </TabsContent>
+
+              <TabsContent value="quote-config" className="mt-6">
+                <QuoteConfigManagement />
               </TabsContent>
             </Tabs>
           </div>
