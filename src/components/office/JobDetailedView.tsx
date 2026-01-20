@@ -760,9 +760,9 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Hours</p>
-                <p className="text-2xl font-bold">{totalDuration.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">Logged Time</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Clock-In Hours</p>
+                <p className="text-2xl font-bold">{totalClockInHours.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">Total Man-Hours</p>
               </div>
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Clock className="w-5 h-5 text-primary" />
@@ -775,9 +775,9 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Man-Hours</p>
-                <p className="text-2xl font-bold">{totalManHours.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">With Crew</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Component Hours</p>
+                <p className="text-2xl font-bold">{totalComponentHours.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">Task Breakdown</p>
               </div>
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Users className="w-5 h-5 text-primary" />
@@ -954,30 +954,37 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
       )}
 
       {/* Component Breakdown */}
-      {componentGroups.length > 0 && (
+      {componentGroups.filter(comp => comp.component_id !== null).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="w-5 h-5" />
               Component Breakdown
             </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Shows how component hours fit within total clock-in hours ({totalClockInHours.toFixed(2)} hrs)
+            </p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {componentGroups.slice(0, 5).map((comp) => {
-              const percentage = totalManHours > 0 ? (comp.total_man_hours / totalManHours) * 100 : 0;
-              return (
-                <div key={comp.component_id} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{comp.component_name}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-muted-foreground">{comp.total_man_hours.toFixed(2)} hrs</span>
-                      <span className="font-bold text-primary w-12 text-right">{percentage.toFixed(0)}%</span>
+            {componentGroups
+              .filter(comp => comp.component_id !== null)
+              .slice(0, 5)
+              .map((comp) => {
+                // Calculate percentage based on clock-in hours (100% baseline)
+                const percentage = totalClockInHours > 0 ? (comp.total_man_hours / totalClockInHours) * 100 : 0;
+                return (
+                  <div key={comp.component_id} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{comp.component_name}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-muted-foreground">{comp.total_man_hours.toFixed(2)} hrs</span>
+                        <span className="font-bold text-primary w-12 text-right">{percentage.toFixed(0)}%</span>
+                      </div>
                     </div>
+                    <Progress value={percentage} className="h-2" />
                   </div>
-                  <Progress value={percentage} className="h-2" />
-                </div>
-              );
-            })}
+                );
+              })}
           </CardContent>
         </Card>
       )}
