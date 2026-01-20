@@ -500,46 +500,46 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
-                                <CardTitle className="text-sm leading-tight flex-1">{job.name}</CardTitle>
+                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-5 px-1 text-[9px] flex-shrink-0"
+                                  className="h-6 px-1.5 text-xs flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedJob(job);
                                     setSelectedTab('photos');
                                   }}
                                 >
-                                  <Camera className="w-2.5 h-2.5 mr-0.5" />
+                                  <Camera className="w-3 h-3 mr-0.5" />
                                   {jobStats.photosCount || 0}
                                 </Button>
                               </div>
-                              <p className="text-[10px] font-medium text-muted-foreground mt-0.5">
+                              <p className="text-xs font-medium text-muted-foreground mt-0.5">
                                 {job.client_name}
                               </p>
                               {/* Scheduling Status Badges */}
                               {(startDate || endDate) && (
                                 <div className="flex flex-wrap gap-0.5 mt-1">
                                   {isNotStarted && (
-                                    <Badge variant="secondary" className="text-[9px] py-0 h-3.5 px-1">
-                                      <Calendar className="w-2 h-2 mr-0.5" />
+                                    <Badge variant="secondary" className="text-[10px] py-0 h-4 px-1.5">
+                                      <Calendar className="w-2.5 h-2.5 mr-0.5" />
                                       {startDate?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </Badge>
                                   )}
                                   {isInProgress && startDate && (
-                                    <Badge variant="default" className="text-[9px] py-0 h-3.5 px-1">
+                                    <Badge variant="default" className="text-[10px] py-0 h-4 px-1.5">
                                       In Progress
                                     </Badge>
                                   )}
                                   {isOverdue && (
-                                    <Badge variant="destructive" className="text-[9px] py-0 h-3.5 px-1">
-                                      <AlertTriangle className="w-2 h-2 mr-0.5" />
+                                    <Badge variant="destructive" className="text-[10px] py-0 h-4 px-1.5">
+                                      <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
                                       Overdue
                                     </Badge>
                                   )}
                                   {endDate && !isOverdue && (
-                                    <Badge variant="outline" className="text-[9px] py-0 h-3.5 px-1">
+                                    <Badge variant="outline" className="text-[10px] py-0 h-4 px-1.5">
                                       {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </Badge>
                                   )}
@@ -554,9 +554,9 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                   e.stopPropagation();
                                   setJobOnHold(job.id);
                                 }}
-                                className="h-5 px-1 text-[9px]"
+                                className="h-6 px-1.5 text-[10px]"
                               >
-                                <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
+                                <AlertTriangle className="w-3 h-3 mr-0.5" />
                                 Hold
                               </Button>
                               <Button
@@ -566,9 +566,9 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                   e.stopPropagation();
                                   toggleArchiveJob(job.id, job.status);
                                 }}
-                                className="h-5 px-1 text-[9px]"
+                                className="h-6 px-1.5 text-[10px]"
                               >
-                                <Archive className="w-2.5 h-2.5 mr-0.5" />
+                                <Archive className="w-3 h-3 mr-0.5" />
                                 Archive
                               </Button>
                             </div>
@@ -579,8 +579,8 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-[10px]">
-                              <MapPin className="w-2.5 h-2.5 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <div className="flex items-start text-xs">
+                              <MapPin className="w-3 h-3 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
                                 target="_blank"
@@ -596,13 +596,13 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           {/* Progress Bar - Clock-In Hours Only */}
                           {job.estimated_hours && job.estimated_hours > 0 && (
                             <div className="space-y-0.5">
-                              <div className="flex items-center justify-between text-[9px]">
+                              <div className="flex items-center justify-between text-[10px]">
                                 <span className="text-muted-foreground">Progress</span>
                                 <span className="font-bold">
                                   {((jobStats.totalClockInHours || 0) / job.estimated_hours * 100).toFixed(0)}%
                                 </span>
                               </div>
-                              <div className="h-1 bg-muted rounded-full overflow-hidden">
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div 
                                   className={`h-full transition-all duration-500 ${
                                     (jobStats.totalClockInHours || 0) > job.estimated_hours
@@ -614,7 +614,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                   }}
                                 />
                               </div>
-                              <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                                 <span>{jobStats.totalHours || '0'} / {job.estimated_hours} hrs</span>
                                 {(jobStats.totalClockInHours || 0) > job.estimated_hours && (
                                   <span className="text-destructive font-medium">Over</span>
