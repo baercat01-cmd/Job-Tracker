@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,14 +31,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { 
-  FileText, 
-  Upload, 
-  History, 
+import {
+  FileText,
+  Upload,
+  History,
   FileUp,
   Trash2,
   Clock,
-  User
+  User,
+  FolderPlus,
+  X,
+  Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -69,7 +73,7 @@ interface JobDocumentsProps {
   onUpdate: () => void;
 }
 
-const DOCUMENT_CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   'Drawings',
   'Specifications',
   'Materials',
@@ -82,43 +86,74 @@ const DOCUMENT_CATEGORIES = [
 export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
   const { profile } = useAuth();
   const isOffice = profile?.role === 'office';
-  
+
   const [documents, setDocuments] = useState<JobDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
+  // Category management
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
+
   // Upload mode
   const [uploadMode, setUploadMode] = useState<'new' | 'revision' | null>(null);
-  
+
   // New document state
   const [newDocName, setNewDocName] = useState('');
   const [newDocCategory, setNewDocCategory] = useState('');
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [newDocNotes, setNewDocNotes] = useState('');
-  
+
   // Revision state
   const [selectedDocForRevision, setSelectedDocForRevision] = useState('');
   const [revisionFile, setRevisionFile] = useState<File | null>(null);
   const [revisionDescription, setRevisionDescription] = useState('');
-  
+
   // Revision log
   const [showRevisionLog, setShowRevisionLog] = useState(false);
   const [revisionLogDocId, setRevisionLogDocId] = useState('');
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
-  
+
   // Delete
   const [deletingDoc, setDeletingDoc] = useState<JobDocument | null>(null);
-  
+
   // Upload loading
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     loadDocuments();
+    loadCategories();
   }, [job.id]);
+
+  async function loadCategories() {
+    try {
+      // Get unique categories from existing documents for this job
+      const { data, error } = await supabase
+        .from('job_documents')
+        .select('category')
+        .eq('job_id', job.id);
+
+      if (error) throw error;
+
+      // Extract unique categories
+      const uniqueCategories = new Set<string>(DEFAULT_CATEGORIES);
+      (data || []).forEach((doc: any) => {
+        if (doc.category) {
+          uniqueCategories.add(doc.category);
+        }
+      });
+
+      setCategories(Array.from(uniqueCategories).sort());
+    } catch (error: any) {
+      console.error('Error loading categories:', error);
+    }
+  }
 
   async function loadDocuments() {
     try {
       setLoading(true);
-      
+
       const { data, error } = await supabase
         .from('job_documents')
         .select('*')
@@ -147,7 +182,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
       // Get uploader names
       const uploaderIds = [...new Set(revisionsData?.map(r => r.uploaded_by).filter(Boolean))];
-      
+
       if (uploaderIds.length > 0) {
         const { data: profilesData } = await supabase
           .from('user_profiles')
@@ -207,6 +242,12 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       setUploading(true);
 
       // Upload file to storage
+      // It's safer to check if newDocFile exists before accessing its properties
+      // although the check above already covers this for the `if (!newDocFile)` case.
+      // TypeScript might still complain if not explicitly handled here.
+      if (!newDocFile) {
+          throw new Error("File not selected for upload.");
+      }
       const fileExt = newDocFile.name.split('.').pop();
       const timestamp = Date.now();
       const fileName = `${job.id}/documents/${timestamp}_${newDocFile.name}`;
@@ -282,6 +323,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       const newVersion = document.current_version + 1;
 
       // Upload file to storage
+      // Similar check for revisionFile as newDocFile
+      if (!revisionFile) {
+          throw new Error("File not selected for revision upload.");
+      }
       const fileExt = revisionFile.name.split('.').pop();
       const timestamp = Date.now();
       const fileName = `${job.id}/documents/${timestamp}_v${newVersion}_${revisionFile.name}`;
@@ -312,7 +357,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       // Update document's current version
       const { error: updateError } = await supabase
         .from('job_documents')
-        .update({ 
+        .update({
           current_version: newVersion,
           updated_at: new Date().toISOString(),
         })
@@ -346,11 +391,45 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       toast.success('Document deleted');
       setDeletingDoc(null);
       loadDocuments();
+      loadCategories(); // Refresh categories after deletion
       onUpdate();
     } catch (error: any) {
       toast.error('Failed to delete document');
       console.error(error);
     }
+  }
+
+  function addCategory() {
+    const trimmedName = newCategoryName.trim();
+
+    if (!trimmedName) {
+      toast.error('Category name cannot be empty');
+      return;
+    }
+
+    if (categories.includes(trimmedName)) {
+      toast.error('Category already exists');
+      return;
+    }
+
+    setCategories([...categories, trimmedName].sort());
+    setNewCategoryName('');
+    toast.success('Category added');
+  }
+
+  async function deleteCategory(categoryName: string) {
+    // Check if any documents are using this category
+    const docsWithCategory = documents.filter(doc => doc.category === categoryName);
+
+    if (docsWithCategory.length > 0) {
+      toast.error(`Cannot delete category "${categoryName}" - ${docsWithCategory.length} document(s) are using it`);
+      return;
+    }
+
+    // Remove from categories list
+    setCategories(categories.filter(cat => cat !== categoryName));
+    setDeletingCategory(null);
+    toast.success('Category deleted');
   }
 
   if (loading) {
@@ -365,14 +444,20 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     <div className="space-y-4">
       {/* Header Actions */}
       {isOffice && (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={openNewDocument} className="gradient-primary">
-            <FileUp className="w-4 h-4 mr-2" />
-            Upload New Document
-          </Button>
-          <Button onClick={openRevisionUpload} variant="outline">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Revision
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={openNewDocument} className="gradient-primary">
+              <FileUp className="w-4 h-4 mr-2" />
+              Upload New Document
+            </Button>
+            <Button onClick={openRevisionUpload} variant="outline">
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Revision
+            </Button>
+          </div>
+          <Button onClick={() => setShowCategoryDialog(true)} variant="outline" size="sm">
+            <FolderPlus className="w-4 h-4 mr-2" />
+            Manage Categories
           </Button>
         </div>
       )}
@@ -457,7 +542,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {DOCUMENT_CATEGORIES.map((cat) => (
+                  {categories.map((cat) => (
                     <SelectItem key={cat} value={cat}>
                       {cat}
                     </SelectItem>
@@ -496,8 +581,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
               <Button variant="outline" onClick={() => setUploadMode(null)}>
                 Cancel
               </Button>
-              <Button 
-                onClick={uploadNewDocument} 
+              <Button
+                onClick={uploadNewDocument}
                 disabled={uploading}
                 className="gradient-primary"
               >
@@ -517,8 +602,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           <div className="space-y-4">
             <div>
               <Label htmlFor="select-doc">Select Document to Update *</Label>
-              <Select 
-                value={selectedDocForRevision} 
+              <Select
+                value={selectedDocForRevision}
                 onValueChange={setSelectedDocForRevision}
               >
                 <SelectTrigger id="select-doc">
@@ -573,8 +658,8 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
               <Button variant="outline" onClick={() => setUploadMode(null)}>
                 Cancel
               </Button>
-              <Button 
-                onClick={uploadRevision} 
+              <Button
+                onClick={uploadRevision}
                 disabled={uploading}
                 className="gradient-primary"
               >
@@ -594,7 +679,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
               Revision History
             </DialogTitle>
           </DialogHeader>
-          
+
           {revisions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No revision history available
@@ -641,7 +726,116 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Category Management Dialog */}
+      <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderPlus className="w-5 h-5" />
+              Manage Document Categories
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Add New Category */}
+            <div className="space-y-2">
+              <Label htmlFor="new-category">Add New Category</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="new-category"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="e.g., Permits, Safety Plans"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCategory();
+                    }
+                  }}
+                />
+                <Button onClick={addCategory} size="sm">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Current Categories */}
+            <div className="space-y-2">
+              <Label>Current Categories ({categories.length})</Label>
+              <div className="border rounded-lg p-3 max-h-[300px] overflow-y-auto space-y-2">
+                {categories.map((category) => {
+                  const docCount = documents.filter(doc => doc.category === category).length;
+                  const isDefault = DEFAULT_CATEGORIES.includes(category);
+
+                  return (
+                    <div
+                      key={category}
+                      className="flex items-center justify-between p-2 bg-muted/50 rounded-md hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        <FileText className="w-4 h-4 text-muted-foreground" />
+                        <span className="font-medium">{category}</span>
+                        {docCount > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {docCount} {docCount === 1 ? 'doc' : 'docs'}
+                          </Badge>
+                        )} {/* This is where the syntax error was likely reported */}
+                        {isDefault && (
+                          <Badge variant="outline" className="text-xs">
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeletingCategory(category)}
+                        disabled={docCount > 0}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
+                        title={docCount > 0 ? `Cannot delete - ${docCount} document(s) using this category` : 'Delete category'}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                💡 Tip: Categories with documents cannot be deleted. Delete or recategorize documents first.
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={() => setShowCategoryDialog(false)}>
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category Confirmation */}
+      <AlertDialog open={!!deletingCategory} onOpenChange={() => setDeletingCategory(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Category</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the category "{deletingCategory}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletingCategory && deleteCategory(deletingCategory)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Document Confirmation */}
       <AlertDialog open={!!deletingDoc} onOpenChange={() => setDeletingDoc(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
