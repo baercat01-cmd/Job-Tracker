@@ -438,33 +438,20 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t">
-                      <div 
-                        className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
-                        onClick={() => {
-                          setSelectedJob(job);
-                          setSelectedTab('overview');
-                        }}
-                      >
-                        <div className="flex items-center justify-center text-primary mb-1">
-                          <Clock className="w-4 h-4" />
-                        </div>
-                        <p className="text-lg font-bold">{jobStats.totalHours || '0'}</p>
-                        <p className="text-xs text-muted-foreground">Clock-In Hrs</p>
-                      </div>
-                      <div 
-                        className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
-                        onClick={() => {
+                    <div className="flex justify-end pt-2 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSelectedJob(job);
                           setSelectedTab('photos');
                         }}
                       >
-                        <div className="flex items-center justify-center text-primary mb-1">
-                          <Camera className="w-4 h-4" />
-                        </div>
-                        <p className="text-lg font-bold">{jobStats.photosCount || 0}</p>
-                        <p className="text-xs text-muted-foreground">Photos</p>
-                      </div>
+                        <Camera className="w-3 h-3 mr-1" />
+                        {jobStats.photosCount || 0} Photos
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -629,33 +616,20 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 pt-2 border-t">
-                            <div 
-                              className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
-                              onClick={() => {
-                                setSelectedJob(job);
-                                setSelectedTab('overview');
-                              }}
-                            >
-                              <div className="flex items-center justify-center text-primary mb-1">
-                                <Clock className="w-4 h-4" />
-                              </div>
-                              <p className="text-lg font-bold">{jobStats.totalHours || '0'}</p>
-                              <p className="text-xs text-muted-foreground">Clock-In Hrs</p>
-                            </div>
-                            <div 
-                              className="text-center cursor-pointer hover:bg-muted/50 rounded-lg p-2 transition-colors"
-                              onClick={() => {
+                          <div className="flex justify-end pt-2 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setSelectedJob(job);
                                 setSelectedTab('photos');
                               }}
                             >
-                              <div className="flex items-center justify-center text-primary mb-1">
-                                <Camera className="w-4 h-4" />
-                              </div>
-                              <p className="text-lg font-bold">{jobStats.photosCount || 0}</p>
-                              <p className="text-xs text-muted-foreground">Photos</p>
-                            </div>
+                              <Camera className="w-3 h-3 mr-1" />
+                              {jobStats.photosCount || 0} Photos
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
