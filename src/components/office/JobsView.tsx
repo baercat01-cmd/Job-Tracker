@@ -499,7 +499,22 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                         <CardHeader className="pb-1.5 pt-2 px-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-sm leading-tight">{job.name}</CardTitle>
+                              <div className="flex items-center gap-1.5">
+                                <CardTitle className="text-sm leading-tight flex-1">{job.name}</CardTitle>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 px-1 text-[9px] flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJob(job);
+                                    setSelectedTab('photos');
+                                  }}
+                                >
+                                  <Camera className="w-2.5 h-2.5 mr-0.5" />
+                                  {jobStats.photosCount || 0}
+                                </Button>
+                              </div>
                               <p className="text-[10px] font-medium text-muted-foreground mt-0.5">
                                 {job.client_name}
                               </p>
@@ -608,21 +623,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           )}
 
-                          <div className="flex justify-end pt-0.5 border-t">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 px-1 text-[9px]"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setSelectedTab('photos');
-                              }}
-                            >
-                              <Camera className="w-2.5 h-2.5 mr-0.5" />
-                              {jobStats.photosCount || 0}
-                            </Button>
-                          </div>
+
                         </CardContent>
                       </Card>
                     );
