@@ -496,106 +496,98 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           isOverdue ? 'border-destructive border-2' : ''
                         }`}
                       >
-                        <CardHeader className="p-3 sm:p-6">
-                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
-                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
-                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="pb-1.5 pt-2 px-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                              <CardTitle className="text-sm leading-tight">{job.name}</CardTitle>
+                              <p className="text-[10px] font-medium text-muted-foreground mt-0.5">
                                 {job.client_name}
                               </p>
                               {/* Scheduling Status Badges */}
                               {(startDate || endDate) && (
-                                <div className="flex flex-wrap gap-1 mt-2">
+                                <div className="flex flex-wrap gap-0.5 mt-1">
                                   {isNotStarted && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      <Calendar className="w-3 h-3 mr-1" />
-                                      Starts {startDate?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    <Badge variant="secondary" className="text-[9px] py-0 h-3.5 px-1">
+                                      <Calendar className="w-2 h-2 mr-0.5" />
+                                      {startDate?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </Badge>
                                   )}
                                   {isInProgress && startDate && (
-                                    <Badge variant="default" className="text-xs">
-                                      <Calendar className="w-3 h-3 mr-1" />
+                                    <Badge variant="default" className="text-[9px] py-0 h-3.5 px-1">
                                       In Progress
                                     </Badge>
                                   )}
                                   {isOverdue && (
-                                    <Badge variant="destructive" className="text-xs">
-                                      <AlertTriangle className="w-3 h-3 mr-1" />
+                                    <Badge variant="destructive" className="text-[9px] py-0 h-3.5 px-1">
+                                      <AlertTriangle className="w-2 h-2 mr-0.5" />
                                       Overdue
                                     </Badge>
                                   )}
                                   {endDate && !isOverdue && (
-                                    <Badge variant="outline" className="text-xs">
-                                      Due {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    <Badge variant="outline" className="text-[9px] py-0 h-3.5 px-1">
+                                      {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </Badge>
                                   )}
                                 </div>
                               )}
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <div className="flex flex-col gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setJobOnHold(job.id);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <AlertTriangle className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Hold</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleArchiveJob(job.id, job.status);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <Archive className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Archive</span>
-                                </Button>
-                              </div>
+                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setJobOnHold(job.id);
+                                }}
+                                className="h-5 px-1 text-[9px]"
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
+                                Hold
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleArchiveJob(job.id, job.status);
+                                }}
+                                className="h-5 px-1 text-[9px]"
+                              >
+                                <Archive className="w-2.5 h-2.5 mr-0.5" />
+                                Archive
+                              </Button>
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
+                        <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-xs sm:text-sm">
-                              <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <div className="flex items-start text-[10px]">
+                              <MapPin className="w-2.5 h-2.5 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary hover:underline"
+                                className="text-primary hover:underline leading-tight"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {job.address}
                               </a>
                             </div>
-                            {job.description && (
-                              <p className="text-sm text-muted-foreground line-clamp-2">
-                                {job.description}
-                              </p>
-                            )}
                           </div>
 
                           {/* Progress Bar - Clock-In Hours Only */}
                           {job.estimated_hours && job.estimated_hours > 0 && (
-                            <div className="space-y-1.5 pt-2">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-muted-foreground">Progress (Clock-In)</span>
+                            <div className="space-y-0.5">
+                              <div className="flex items-center justify-between text-[9px]">
+                                <span className="text-muted-foreground">Progress</span>
                                 <span className="font-bold">
                                   {((jobStats.totalClockInHours || 0) / job.estimated_hours * 100).toFixed(0)}%
                                 </span>
                               </div>
-                              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div className="h-1 bg-muted rounded-full overflow-hidden">
                                 <div 
                                   className={`h-full transition-all duration-500 ${
                                     (jobStats.totalClockInHours || 0) > job.estimated_hours
@@ -607,28 +599,28 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                   }}
                                 />
                               </div>
-                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <div className="flex items-center justify-between text-[9px] text-muted-foreground">
                                 <span>{jobStats.totalHours || '0'} / {job.estimated_hours} hrs</span>
                                 {(jobStats.totalClockInHours || 0) > job.estimated_hours && (
-                                  <span className="text-destructive font-medium">Over Budget</span>
+                                  <span className="text-destructive font-medium">Over</span>
                                 )}
                               </div>
                             </div>
                           )}
 
-                          <div className="flex justify-end pt-2 border-t">
+                          <div className="flex justify-end pt-0.5 border-t">
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 px-2 text-xs"
+                              className="h-5 px-1 text-[9px]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
                                 setSelectedTab('photos');
                               }}
                             >
-                              <Camera className="w-3 h-3 mr-1" />
-                              {jobStats.photosCount || 0} Photos
+                              <Camera className="w-2.5 h-2.5 mr-0.5" />
+                              {jobStats.photosCount || 0}
                             </Button>
                           </div>
                         </CardContent>
