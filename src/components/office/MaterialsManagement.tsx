@@ -23,25 +23,12 @@ import {
   Plus,
   Edit,
   Trash2,
-  ChevronUp,
-  ChevronDown,
-  FileSpreadsheet,
-  Upload,
-  ChevronDownIcon,
   Search,
   X,
-  Image as ImageIcon,
-  CheckCircle2,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   ListChecks,
-  Calendar,
   ShoppingCart,
-  User,
-  Truck,
-  AlertCircle,
   PackagePlus,
+  GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -49,6 +36,23 @@ import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement } from '@/lib/utils';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 
 interface Material {
@@ -303,106 +307,82 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  async function moveCategoryUp(category: Category) {
-    const prevCategory = categories
-      .filter(c => c.order_index < category.order_index)
-      .sort((a, b) => b.order_index - a.order_index)[0];
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-    if (!prevCategory) return;
+  async function handleCategoryDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
 
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = filteredCategories.findIndex((cat) => cat.id === active.id);
+    const newIndex = filteredCategories.findIndex((cat) => cat.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedCategories = arrayMove(filteredCategories, oldIndex, newIndex);
+
+    // Update order_index for all affected categories
     try {
-      await supabase
-        .from('materials_categories')
-        .update({ order_index: prevCategory.order_index })
-        .eq('id', category.id);
+      const updates = reorderedCategories.map((cat, index) => ({
+        id: cat.id,
+        order_index: index,
+      }));
 
-      await supabase
-        .from('materials_categories')
-        .update({ order_index: category.order_index })
-        .eq('id', prevCategory.id);
+      for (const update of updates) {
+        await supabase
+          .from('materials_categories')
+          .update({ order_index: update.order_index })
+          .eq('id', update.id);
+      }
 
-      toast.success('Category moved up');
+      toast.success('Categories reordered');
       loadMaterials();
     } catch (error: any) {
-      toast.error('Failed to reorder');
+      toast.error('Failed to reorder categories');
       console.error(error);
     }
   }
 
-  async function moveCategoryDown(category: Category) {
-    const nextCategory = categories
-      .filter(c => c.order_index > category.order_index)
-      .sort((a, b) => a.order_index - b.order_index)[0];
+  async function handleMaterialDragEnd(event: DragEndEvent, categoryId: string) {
+    const { active, over } = event;
 
-    if (!nextCategory) return;
+    if (!over || active.id === over.id) return;
 
+    const category = categories.find((cat) => cat.id === categoryId);
+    if (!category) return;
+
+    const categoryMaterials = getFilteredAndSortedMaterials(category.materials);
+    const oldIndex = categoryMaterials.findIndex((mat) => mat.id === active.id);
+    const newIndex = categoryMaterials.findIndex((mat) => mat.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedMaterials = arrayMove(categoryMaterials, oldIndex, newIndex);
+
+    // Update order_index for all affected materials
     try {
-      await supabase
-        .from('materials_categories')
-        .update({ order_index: nextCategory.order_index })
-        .eq('id', category.id);
+      const updates = reorderedMaterials.map((mat, index) => ({
+        id: mat.id,
+        order_index: index,
+      }));
 
-      await supabase
-        .from('materials_categories')
-        .update({ order_index: category.order_index })
-        .eq('id', nextCategory.id);
+      for (const update of updates) {
+        await supabase
+          .from('materials')
+          .update({ order_index: update.order_index })
+          .eq('id', update.id);
+      }
 
-      toast.success('Category moved down');
+      toast.success('Materials reordered');
       loadMaterials();
     } catch (error: any) {
-      toast.error('Failed to reorder');
-      console.error(error);
-    }
-  }
-
-  async function moveMaterialUp(material: Material, categoryMaterials: Material[]) {
-    const prevMaterial = categoryMaterials
-      .filter(m => (m.order_index ?? 0) < (material.order_index ?? 0))
-      .sort((a, b) => (b.order_index ?? 0) - (a.order_index ?? 0))[0];
-
-    if (!prevMaterial) return;
-
-    try {
-      await supabase
-        .from('materials')
-        .update({ order_index: prevMaterial.order_index ?? 0 })
-        .eq('id', material.id);
-
-      await supabase
-        .from('materials')
-        .update({ order_index: material.order_index ?? 0 })
-        .eq('id', prevMaterial.id);
-
-      toast.success('Material moved up');
-      loadMaterials();
-    } catch (error: any) {
-      toast.error('Failed to reorder material');
-      console.error(error);
-    }
-  }
-
-  async function moveMaterialDown(material: Material, categoryMaterials: Material[]) {
-    const nextMaterial = categoryMaterials
-      .filter(m => (m.order_index ?? 0) > (material.order_index ?? 0))
-      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))[0];
-
-    if (!nextMaterial) return;
-
-    try {
-      await supabase
-        .from('materials')
-        .update({ order_index: nextMaterial.order_index ?? 0 })
-        .eq('id', material.id);
-
-      await supabase
-        .from('materials')
-        .update({ order_index: material.order_index ?? 0 })
-        .eq('id', nextMaterial.id);
-
-      toast.success('Material moved down');
-      loadMaterials();
-    } catch (error: any) {
-      toast.error('Failed to reorder material');
+      toast.error('Failed to reorder materials');
       console.error(error);
     }
   }
@@ -627,6 +607,54 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     return <div className="text-center py-8">Loading materials...</div>;
   }
 
+  // Sortable Category Component
+  function SortableCategory({ category, catIndex, children }: { category: Category; catIndex: number; children: React.ReactNode }) {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: category.id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+      <div ref={setNodeRef} style={style}>
+        {children}
+      </div>
+    );
+  }
+
+  // Sortable Material Row Component
+  function SortableMaterialRow({ material, categoryId, showColorColumn, children }: { material: Material; categoryId: string; showColorColumn: boolean; children: React.ReactNode }) {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: material.id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+      <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 transition-colors">
+        {children}
+      </tr>
+    );
+  }
+
   return (
     <>
       <div className="w-full max-w-[1600px] mx-auto">
@@ -702,58 +730,65 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-4">
-                {filteredCategories.map((category, catIndex) => {
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleCategoryDragEnd}
+              >
+                <SortableContext
+                  items={filteredCategories.map((cat) => cat.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-4">
+                    {filteredCategories.map((category, catIndex) => {
                   const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
                   const isColorCategory = /trim|metal|fastener/i.test(category.name);
                   const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
 
+                  const { attributes, listeners } = useSortable({ id: category.id });
+
                   return (
-                    <Card key={category.id} className="overflow-hidden">
-                      <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-col items-center gap-3"> {/* Changed flex-col to flex-col items-center */}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => moveCategoryUp(category)}
-                              disabled={catIndex === 0}
-                              className="h-5 w-6 p-0 hover:bg-primary/20"
-                              title="Move category up"
+                    <SortableCategory key={category.id} category={category} catIndex={catIndex}>
+                      <Card className="overflow-hidden">
+                        <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                          <div className="flex items-center justify-between gap-3">
+                            <div
+                              {...attributes}
+                              {...listeners}
+                              className="cursor-grab active:cursor-grabbing p-2 hover:bg-primary/20 rounded transition-colors"
+                              title="Drag to reorder category"
                             >
-                              <ChevronUp className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => moveCategoryDown(category)}
-                              disabled={catIndex === filteredCategories.length - 1}
-                              className="h-5 w-6 p-0 hover:bg-primary/20"
-                              title="Move category down"
-                            >
-                              <ChevronDown className="w-4 h-4" />
-                            </Button>
+                              <GripVertical className="w-5 h-5 text-muted-foreground" />
+                            </div>
+                            <CardTitle className="text-xl font-bold flex-1">{category.name}</CardTitle>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add Material
+                              </Button>
+                            </div>
                           </div>
-                          <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
-                              <Plus className="w-4 h-4 mr-2" />
-                              Add Material
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
+                        </CardHeader>
                       <CardContent className="p-0">
                         {filteredMaterials.length === 0 ? (
                           <div className="py-8 text-center text-muted-foreground">
                             No materials in this category
                           </div>
                         ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead className="bg-muted/50 border-b">
-                                <tr>
-                                  <th className="text-left p-3 w-[60px]">Order</th>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={(event) => handleMaterialDragEnd(event, category.id)}
+                          >
+                            <SortableContext
+                              items={filteredMaterials.map((mat) => mat.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="overflow-x-auto">
+                                <table className="w-full">
+                                  <thead className="bg-muted/50 border-b">
+                                    <tr>
+                                      <th className="text-left p-3 w-[60px]">Drag</th>
                                   <th className="text-left p-3">Material Name</th>
                                   <th className="text-left p-3">Use Case</th>
                                   <th className="text-center p-3 w-[100px]">Qty</th>
@@ -768,34 +803,28 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   <th className="text-center p-3 w-[180px]">Status</th>
                                   <th className="text-right p-3 w-[140px]">Actions</th>
                                 </tr>
-                              </thead>
-                              <tbody>
-                                {filteredMaterials.map((material, index) => (
-                                  <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                                    <td className="p-3 w-[60px]">
-                                      <div className="flex flex-col gap-1">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => moveMaterialUp(material, filteredMaterials)}
-                                          disabled={index === 0}
-                                          className="h-4 w-5 p-0"
-                                          title="Move up"
+                                  </thead>
+                                  <tbody>
+                                    {filteredMaterials.map((material, index) => {
+                                      const { attributes: matAttributes, listeners: matListeners } = useSortable({ id: material.id });
+
+                                      return (
+                                        <SortableMaterialRow
+                                          key={material.id}
+                                          material={material}
+                                          categoryId={category.id}
+                                          showColorColumn={showColorColumn}
                                         >
-                                          <ChevronUp className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => moveMaterialDown(material, filteredMaterials)}
-                                          disabled={index === filteredMaterials.length - 1}
-                                          className="h-4 w-5 p-0"
-                                          title="Move down"
-                                        >
-                                          <ChevronDown className="w-3 h-3" />
-                                        </Button>
-                                      </div>
-                                    </td>
+                                          <td className="p-3 w-[60px]">
+                                            <div
+                                              {...matAttributes}
+                                              {...matListeners}
+                                              className="cursor-grab active:cursor-grabbing p-2 hover:bg-muted rounded transition-colors inline-block"
+                                              title="Drag to reorder"
+                                            >
+                                              <GripVertical className="w-4 h-4 text-muted-foreground" />
+                                            </div>
+                                          </td>
                                     <td className="p-3">
                                       <div className="font-medium">{material.name}</div>
                                       {material.bundle_name && (
@@ -875,18 +904,24 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           <Trash2 className="w-4 h-4" />
                                         </Button>
                                       </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                                          </td>
+                                        </SortableMaterialRow>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </SortableContext>
+                          </DndContext>
                         )}
                       </CardContent>
-                    </Card>
+                      </Card>
+                    </SortableCategory>
                   );
-                })}
-              </div>
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </TabsContent>
 
