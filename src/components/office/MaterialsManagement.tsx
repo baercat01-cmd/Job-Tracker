@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -443,6 +443,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const scrollPositionRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -770,6 +772,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
     if (!over || active.id === over.id) return;
 
+    // Save scroll position before reload
+    if (containerRef.current) {
+      scrollPositionRef.current = containerRef.current.scrollTop || window.scrollY;
+    }
+
     const activeId = active.id as string;
     const overId = over.id as string;
 
@@ -842,6 +849,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           );
 
           toast.success('Material reordered');
+          
+          // Restore scroll position after a brief delay
+          setTimeout(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = scrollPositionRef.current;
+            } else {
+              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+            }
+          }, 100);
         } else {
           // Different category - move material to new category
           // Remove from source
@@ -880,6 +896,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           );
 
           toast.success('Material moved to new category');
+          
+          // Restore scroll position after a brief delay
+          setTimeout(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = scrollPositionRef.current;
+            } else {
+              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+            }
+          }, 100);
         }
 
         loadMaterials();
@@ -912,7 +937,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         );
 
         toast.success('Categories reordered');
-        loadMaterials();
+        
+        // Restore scroll position after reload
+        loadMaterials().then(() => {
+          setTimeout(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = scrollPositionRef.current;
+            } else {
+              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+            }
+          }, 100);
+        });
       } catch (error: any) {
         console.error('Error reordering categories:', error);
         toast.error('Failed to reorder categories');
@@ -1148,7 +1183,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <div className="w-full max-w-[2400px] mx-auto">
+      <div ref={containerRef} className="w-full max-w-[2400px] mx-auto">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
