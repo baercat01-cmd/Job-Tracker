@@ -504,8 +504,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         setCurrentQuoteId(data.id);
         setExistingQuote(data);
         
-        // Generate quote number for new quotes
-        const quoteNumber = `Q${new Date().getFullYear()}-${String(data.id).slice(0, 6).toUpperCase()}`;
+        // Generate sequential quote number for new quotes
+        const quoteNumber = await generateQuoteNumber();
         const { error: updateError } = await supabase
           .from('quotes')
           .update({ quote_number: quoteNumber })
@@ -536,6 +536,47 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       toast.error(`Error: ${error.message || 'Unknown error occurred'}`, { duration: 5000 });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function generateQuoteNumber(): Promise<string> {
+    try {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0].replace(/-/g, ''); // Format: YYYYMMDD
+      const datePrefix = `Q-${dateStr}-`;
+
+      // Get the highest quote number for today
+      const { data: quotes, error } = await supabase
+        .from('quotes')
+        .select('quote_number')
+        .like('quote_number', `${datePrefix}%`)
+        .order('quote_number', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('Error fetching quote numbers:', error);
+        // Fallback to simple format if query fails
+        return `${datePrefix}001`;
+      }
+
+      let nextNumber = 1;
+      if (quotes && quotes.length > 0) {
+        // Extract the sequence number from the last quote
+        const lastQuoteNumber = quotes[0].quote_number;
+        const lastSequence = lastQuoteNumber.split('-').pop();
+        if (lastSequence) {
+          nextNumber = parseInt(lastSequence, 10) + 1;
+        }
+      }
+
+      // Format with leading zeros (001, 002, etc.)
+      const sequenceStr = String(nextNumber).padStart(3, '0');
+      return `${datePrefix}${sequenceStr}`;
+    } catch (error) {
+      console.error('Error generating quote number:', error);
+      // Fallback format
+      const timestamp = Date.now().toString().slice(-6);
+      return `Q-${timestamp}`;
     }
   }
 
