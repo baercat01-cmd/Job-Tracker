@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatMeasurement } from '@/lib/utils';
 
 interface Quote {
   id: string;
@@ -283,7 +284,7 @@ export function QuotesView() {
                   )}
                   <div className="text-sm">
                     <span className="text-muted-foreground">Size:</span>{' '}
-                    <span className="font-medium">{quote.width}' × {quote.length}'</span>
+                    <span className="font-medium">{formatMeasurement(quote.width)} × {formatMeasurement(quote.length)}</span>
                   </div>
                   {quote.estimated_price && (
                     <div className="text-sm">

@@ -46,6 +46,7 @@ import * as XLSX from 'xlsx';
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatMeasurement } from '@/lib/utils';
 
 
 interface Material {
@@ -2419,7 +2420,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 {material.quantity}
                               </td>
                               <td className="p-3 text-center w-[100px]">
-                                {material.length || '-'}
+                                {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
                               </td>
                               {showColorColumn && (
                                 <td className="p-3 text-center w-[120px]">
