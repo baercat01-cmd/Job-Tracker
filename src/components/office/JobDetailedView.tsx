@@ -3,9 +3,10 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MaterialsManagement } from './MaterialsManagement';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -753,7 +754,117 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-[2400px] mx-auto space-y-4">
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsTrigger value="info">
+            <Building2 className="w-4 h-4 mr-2" />
+            Job Info
+          </TabsTrigger>
+          <TabsTrigger value="overview">
+            <Activity className="w-4 h-4 mr-2" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="time">
+            <Clock className="w-4 h-4 mr-2" />
+            Time Tracking
+          </TabsTrigger>
+          <TabsTrigger value="materials">
+            <Package className="w-4 h-4 mr-2" />
+            Materials
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Job Info Tab */}
+        <TabsContent value="info" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5" />
+                Job Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Job Name</p>
+                    <p className="text-xl font-bold mt-1">{job.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Client Name</p>
+                    <p className="text-lg mt-1">{job.client_name || 'Not specified'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Job Number</p>
+                    <p className="text-lg mt-1">{job.job_number || 'Not assigned'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Status</p>
+                    <Badge className="mt-1 capitalize">{job.status}</Badge>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Address</p>
+                    <p className="text-lg mt-1 flex items-start gap-2">
+                      <MapPin className="w-5 h-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      {job.address}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Projected Start Date</p>
+                    <p className="text-lg mt-1">{job.projected_start_date ? formatDate(job.projected_start_date) : 'Not set'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Projected End Date</p>
+                    <p className="text-lg mt-1">{job.projected_end_date ? formatDate(job.projected_end_date) : 'Not set'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              {job.description && (
+                <div className="pt-4 border-t">
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
+                  <p className="text-base whitespace-pre-wrap">{job.description}</p>
+                </div>
+              )}
+
+              {/* Notes */}
+              {job.notes && (
+                <div className="pt-4 border-t">
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Internal Notes</p>
+                  <p className="text-base whitespace-pre-wrap bg-muted/50 p-4 rounded-lg">{job.notes}</p>
+                </div>
+              )}
+
+              {/* Project Stats */}
+              <div className="grid grid-cols-4 gap-4 pt-4 border-t">
+                <div className="text-center p-4 bg-primary/5 rounded-lg">
+                  <p className="text-3xl font-bold text-primary">{photoCount}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Photos</p>
+                </div>
+                <div className="text-center p-4 bg-primary/5 rounded-lg">
+                  <p className="text-3xl font-bold text-primary">{materialCount}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Materials</p>
+                </div>
+                <div className="text-center p-4 bg-primary/5 rounded-lg">
+                  <p className="text-3xl font-bold text-primary">{componentGroups.length}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Components</p>
+                </div>
+                <div className="text-center p-4 bg-primary/5 rounded-lg">
+                  <p className="text-3xl font-bold text-primary">{crewMembers.length}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Crew Members</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-4">
       {/* Key Metrics Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
@@ -1020,22 +1131,11 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </Card>
       )}
 
-      {/* Materials Management */}
-      {user?.id && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              Materials Management
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MaterialsManagement job={job} userId={user.id} />
-          </CardContent>
-        </Card>
-      )}
+        </TabsContent>
 
-      {/* Component Work Details */}
+        {/* Time Tracking Tab */}
+        <TabsContent value="time" className="space-y-4">
+          {/* Component Work Details */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1403,9 +1503,22 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                 );
               })}
             </div>
-          )}
+          )}  
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* Materials Tab */}
+        <TabsContent value="materials" className="space-y-4">
+          {user?.id && (
+            <Card>
+              <CardContent className="pt-6">
+                <MaterialsManagement job={job} userId={user.id} />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
