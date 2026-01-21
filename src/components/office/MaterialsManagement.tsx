@@ -772,10 +772,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
     if (!over || active.id === over.id) return;
 
-    // Save scroll position before reload
-    if (containerRef.current) {
-      scrollPositionRef.current = containerRef.current.scrollTop || window.scrollY;
-    }
+    // Save scroll position before reload - use window scroll since container isn't scrollable
+    scrollPositionRef.current = window.scrollY;
 
     const activeId = active.id as string;
     const overId = over.id as string;
@@ -850,14 +848,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
           toast.success('Material reordered');
           
-          // Restore scroll position after a brief delay
-          setTimeout(() => {
-            if (containerRef.current) {
-              containerRef.current.scrollTop = scrollPositionRef.current;
-            } else {
-              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
-            }
-          }, 100);
+          // Restore scroll position after reload completes
+          await loadMaterials();
+          
+          // Use requestAnimationFrame to ensure DOM is fully rendered
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+          });
+          
+          return; // Early return to prevent duplicate loadMaterials call
         } else {
           // Different category - move material to new category
           // Remove from source
@@ -897,14 +896,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
           toast.success('Material moved to new category');
           
-          // Restore scroll position after a brief delay
-          setTimeout(() => {
-            if (containerRef.current) {
-              containerRef.current.scrollTop = scrollPositionRef.current;
-            } else {
-              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
-            }
-          }, 100);
+          // Restore scroll position after reload completes
+          await loadMaterials();
+          
+          // Use requestAnimationFrame to ensure DOM is fully rendered
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+          });
+          
+          return; // Early return to prevent duplicate loadMaterials call
         }
 
         loadMaterials();
@@ -912,9 +912,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         console.error('Error moving material:', error);
         toast.error('Failed to move material');
       }
+      return; // Exit early since we handled material drag
     }
     // Check if we're dragging a category
-    else if (activeId.startsWith('category-') && overId.startsWith('category-')) {
+    if (activeId.startsWith('category-') && overId.startsWith('category-')) {
       const activeCatId = activeId.replace('category-', '');
       const overCatId = overId.replace('category-', '');
 
@@ -938,22 +939,32 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
         toast.success('Categories reordered');
         
-        // Restore scroll position after reload
-        loadMaterials().then(() => {
-          setTimeout(() => {
-            if (containerRef.current) {
-              containerRef.current.scrollTop = scrollPositionRef.current;
-            } else {
-              window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
-            }
-          }, 100);
+        // Restore scroll position after reload completes
+        await loadMaterials();
+        
+        // Use requestAnimationFrame to ensure DOM is fully rendered
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
         });
+        
+        return; // Early return to prevent duplicate processing
       } catch (error: any) {
         console.error('Error reordering categories:', error);
         toast.error('Failed to reorder categories');
       }
     }
   }
+
+  // Restore scroll position after any material reload
+  useEffect(() => {
+    if (!loading && scrollPositionRef.current > 0) {
+      // Small delay to ensure rendering is complete
+      const timer = setTimeout(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, categories]);
 
   function openAddMaterial(categoryId: string) {
     setSelectedCategoryId(categoryId);
