@@ -1198,7 +1198,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-4 px-4">
+        <TabsContent value="materials" className="space-y-2 px-1">
           {profile?.id && (
             <MaterialsManagement job={job} userId={profile.id} />
           )}

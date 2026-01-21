@@ -166,23 +166,23 @@ function SortableMaterialRow({
 
   return (
     <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 transition-colors">
-      <td className="p-2">
+      <td className="p-1">
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded flex items-center justify-center"
+          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded flex items-center justify-center"
         >
-          <GripVertical className="w-4 h-4 text-muted-foreground" />
+          <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
         </div>
       </td>
-      <td className="p-2">
-        <div className="flex flex-col gap-1">
+      <td className="p-1">
+        <div className="flex flex-col gap-0.5">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => onMoveUp(material.id, categoryId)}
             disabled={index === 0}
-            className="h-5 w-full p-0"
+            className="h-4 w-full p-0"
           >
             <ChevronUp className="w-3 h-3" />
           </Button>
@@ -191,7 +191,7 @@ function SortableMaterialRow({
             variant="ghost"
             onClick={() => onMoveDown(material.id, categoryId)}
             disabled={index === totalMaterials - 1}
-            className="h-5 w-full p-0"
+            className="h-4 w-full p-0"
           >
             <ChevronDown className="w-3 h-3" />
           </Button>
@@ -391,8 +391,8 @@ function SortableCategoryCard({
             <table className="w-full table-fixed">
               <thead className="bg-muted/50 border-b">
                 <tr>
-                  <th className="text-left p-2 w-12">Drag</th>
-                  <th className="text-left p-2 w-16">Order</th>
+                  <th className="text-left p-1 w-8 text-xs">Drag</th>
+                  <th className="text-left p-1 w-10 text-xs">Move</th>
                   <th className="text-left p-2 w-1/5">Material Name</th>
                   <th className="text-left p-2 w-1/6">Use Case</th>
                   <th className="text-center p-2 w-16">Qty</th>
@@ -1186,8 +1186,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <div ref={containerRef} className="w-full">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
+      <div ref={containerRef} className="w-full -mx-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
               <ListChecks className="w-4 h-4" />
@@ -1199,7 +1199,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="manage" className="space-y-4">
+          <TabsContent value="manage" className="space-y-2">
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -1208,8 +1208,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             >
               {/* Search & Filter Bar */}
               <Card>
-                <CardContent className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <CardContent className="pt-3 pb-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
@@ -1264,12 +1264,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               >
                 {filteredCategories.length === 0 ? (
                   <Card>
-                    <CardContent className="py-12 text-center">
+                    <CardContent className="py-8 text-center">
                       <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-2">
                     {filteredCategories.map((category, catIndex) => (
                       <SortableCategoryCard
                         key={category.id}
@@ -1305,9 +1305,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             </DndContext>
           </TabsContent>
 
-          <TabsContent value="bundles" className="space-y-4">
+          <TabsContent value="bundles" className="space-y-2">
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5" />
                   Material Bundles
@@ -1316,7 +1316,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   Create and manage material bundles by grouping related materials together.
                 </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-3">
                 <MaterialsList
                   job={job}
                   userId={userId}
