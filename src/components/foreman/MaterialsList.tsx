@@ -1103,23 +1103,26 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
     });
   }
 
-  function getFilteredCategories() {
+  function getFilteredCategories(skipFilters = false) {
     return categories.map(cat => {
       let filteredMaterials = cat.materials;
 
-      // Apply status filter
-      if (statusFilter !== 'all') {
-        filteredMaterials = filteredMaterials.filter(m => m.status === statusFilter);
-      }
+      // Skip filters when in selection mode for bundles
+      if (!skipFilters) {
+        // Apply status filter
+        if (statusFilter !== 'all') {
+          filteredMaterials = filteredMaterials.filter(m => m.status === statusFilter);
+        }
 
-      // Apply search filter (searches name, use_case, and length)
-      if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        filteredMaterials = filteredMaterials.filter(m => 
-          m.name.toLowerCase().includes(search) ||
-          ((m as any).use_case && (m as any).use_case.toLowerCase().includes(search)) ||
-          (m.length && m.length.toLowerCase().includes(search))
-        );
+        // Apply search filter (searches name, use_case, and length)
+        if (searchTerm) {
+          const search = searchTerm.toLowerCase();
+          filteredMaterials = filteredMaterials.filter(m => 
+            m.name.toLowerCase().includes(search) ||
+            ((m as any).use_case && (m as any).use_case.toLowerCase().includes(search)) ||
+            (m.length && m.length.toLowerCase().includes(search))
+          );
+        }
       }
 
       // Sort materials
@@ -1153,7 +1156,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
     }).filter(cat => cat.materials.length > 0);
   }
 
-  const filteredCategories = getFilteredCategories();
+  const filteredCategories = getFilteredCategories(false);
 
   if (loading) {
     return (
@@ -1586,7 +1589,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                 </CardHeader>
               </Card>
 
-              {filteredCategories.map((category) => (
+              {getFilteredCategories(true).filter(cat => cat.materials.length > 0).map((category) => (
                 <Card key={category.id} className="overflow-hidden">
                   <CardHeader
                     className="py-3 px-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
