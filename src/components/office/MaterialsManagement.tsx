@@ -389,7 +389,7 @@ function SortableCategoryCard({
               items={filteredMaterials.map(m => `material-${m.id}`)}
               strategy={verticalListSortingStrategy}
             >
-              <table className="w-full min-w-[1600px]">
+              <table className="w-full">
                 <thead className="bg-muted/50 border-b">
                   <tr>
                     <th className="text-left p-3 w-[50px]">Drag</th>
@@ -1211,7 +1211,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <div ref={containerRef} className="w-full">
+      <div ref={containerRef} className="w-full px-4">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
