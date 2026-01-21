@@ -1,4 +1,4 @@
-
+// Dependencies: @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
