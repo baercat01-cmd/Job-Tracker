@@ -756,29 +756,38 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   return (
     <div className="w-full">
       <Tabs defaultValue="overview" className="w-full">
-        <div className="bg-background border-b shadow-sm pb-4 mb-4">
-          <TabsList className="grid w-full max-w-3xl grid-cols-4">
-            <TabsTrigger value="info">
-              <FileCheck className="w-4 h-4 mr-2" />
-              Job Info
-            </TabsTrigger>
-            <TabsTrigger value="overview">
-              <Activity className="w-4 h-4 mr-2" />
+        {/* Main Navigation Tabs - Prominent at Top */}
+        <div className="sticky top-0 z-50 bg-background border-b-2 border-primary/20 shadow-md mb-6">
+          <TabsList className="grid w-full grid-cols-6 h-14 rounded-none bg-gradient-to-r from-primary/10 to-primary/5">
+            <TabsTrigger value="overview" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Activity className="w-5 h-5 mr-2" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="time">
-              <Clock className="w-4 h-4 mr-2" />
-              Time Tracking
+            <TabsTrigger value="components" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Target className="w-5 h-5 mr-2" />
+              Components
             </TabsTrigger>
-            <TabsTrigger value="materials">
-              <Package className="w-4 h-4 mr-2" />
+            <TabsTrigger value="schedule" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Calendar className="w-5 h-5 mr-2" />
+              Schedule
+            </TabsTrigger>
+            <TabsTrigger value="documents" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <FileText className="w-5 h-5 mr-2" />
+              Documents
+            </TabsTrigger>
+            <TabsTrigger value="materials" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Package className="w-5 h-5 mr-2" />
               Materials
+            </TabsTrigger>
+            <TabsTrigger value="photos" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Camera className="w-5 h-5 mr-2" />
+              Photos
             </TabsTrigger>
           </TabsList>
         </div>
 
-        {/* Job Info Tab */}
-        <TabsContent value="info" className="space-y-4 px-4">
+        {/* Overview Tab - Includes Job Info */}
+        <TabsContent value="overview" className="space-y-4 px-4">
           <Card>
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
               <CardTitle className="text-xl font-bold flex items-center gap-2">
@@ -894,10 +903,8 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4 px-4">
+      
+      {/* Key Metrics Dashboard */}
       {/* Key Metrics Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
@@ -1166,8 +1173,35 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
         </TabsContent>
 
-        {/* Time Tracking Tab */}
-        <TabsContent value="time" className="space-y-4 pt-4 px-4">
+        {/* Components Tab - Placeholder */}
+        <TabsContent value="components" className="space-y-4 px-4">
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Target className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-base">Component tracking coming soon</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Schedule Tab - Placeholder */}
+        <TabsContent value="schedule" className="space-y-4 px-4">
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-base">Schedule view coming soon</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Documents Tab - Placeholder */}
+        <TabsContent value="documents" className="space-y-4 px-4">
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-base">Documents view coming soon</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
           {/* Component Work Details */}
       <Card>
         <CardHeader>
@@ -1541,8 +1575,18 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
       </Card>
         </TabsContent>
 
+        {/* Photos Tab - Placeholder */}
+        <TabsContent value="photos" className="space-y-4 px-4">
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Camera className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-base">Photos gallery coming soon</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-4 pt-4">
+        <TabsContent value="materials" className="space-y-4 px-4">
           {user?.id && (
             <MaterialsManagement job={job} userId={user.id} />
           )}
