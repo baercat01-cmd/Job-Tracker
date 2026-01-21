@@ -229,18 +229,21 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  async function handleSaveDraft(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleSaveDraft(e: React.MouseEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
+    e.preventDefault();
+    e.stopPropagation();
     await saveQuote('draft');
   }
 
-  async function handleSubmit(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleSubmit(e: React.MouseEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
+    e.preventDefault();
+    e.stopPropagation();
     await saveQuote('submitted');
   }
 
   async function saveQuote(status: string) {
-    // Prevent default form behavior
     console.log('🔷 saveQuote called with status:', status);
     console.log('🔷 Current formData:', formData);
     console.log('🔷 Current quoteId:', currentQuoteId);
@@ -503,10 +506,6 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       console.log('✅ Quote saved successfully:', data);
       console.log('✅ Returned quote ID:', data.id);
 
-      // Optimistic update: Update local state immediately
-      setExistingQuote(data);
-      setFormData(prev => ({ ...prev, status: data.status }));
-
       // CRITICAL: Update currentQuoteId IMMEDIATELY after first save
       // This ensures subsequent saves UPDATE instead of INSERT
       if (!currentQuoteId && data.id) {
@@ -525,21 +524,39 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         } else {
           console.log('✅ Quote number generated:', quoteNumber);
         }
+
+        // Optimistic update: Update local state immediately BEFORE showing toast
+        setExistingQuote({ ...data, quote_number: quoteNumber });
+        setFormData(prev => ({ ...prev, status: data.status }));
         
-        toast.success(`Draft saved - Quote #${quoteNumber}`);
+        // Restore scroll position BEFORE toast
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        
+        toast.success(`Draft saved - Quote #${quoteNumber}`, {
+          duration: 2000,
+          position: 'bottom-right'
+        });
       } else {
         console.log('📝 Update existing quote:', currentQuoteId);
-        toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
+        
+        // Optimistic update: Update local state immediately BEFORE showing toast
+        setExistingQuote(prev => ({ ...prev, ...data }));
+        setFormData(prev => ({ ...prev, status: data.status }));
+        
+        // Restore scroll position BEFORE toast
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        
+        toast.success(status === 'draft' ? 'Draft saved' : 'Quote updated', {
+          duration: 2000,
+          position: 'bottom-right'
+        });
       }
 
-      // Restore scroll position after state updates
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
-      });
-
       // Only call onSuccess if we're submitting (not just saving draft)
+      // This prevents navigation for draft saves
       if (status !== 'draft') {
-        onSuccess();
+        // Wait a moment for the user to see the toast before navigating
+        setTimeout(() => onSuccess(), 500);
       }
     } catch (error: any) {
       console.error('❌ CATCH ERROR:', error);
@@ -592,8 +609,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  async function handleConvertToJob(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleConvertToJob(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!quoteId) return;
 
     // Save scroll position

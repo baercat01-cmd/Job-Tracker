@@ -173,13 +173,17 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleSaveDraft(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleSaveDraft(e: React.MouseEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
+    e.preventDefault();
+    e.stopPropagation();
     await saveQuote('draft');
   }
 
-  async function handleSubmit(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleSubmit(e: React.MouseEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
+    e.preventDefault();
+    e.stopPropagation();
     const savedQuoteId = await saveQuote('submitted');
     if (savedQuoteId) {
       // After submitting, create a job in quoting status
@@ -221,11 +225,12 @@ export function QuoteIntakePage() {
         // Optimistic update: Update local state
         setExistingQuote(prev => ({ ...prev, ...quoteData }));
         
-        toast.success('Quote updated successfully');
+        // Restore scroll position BEFORE toast
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
         
-        // Restore scroll position
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        toast.success('Quote updated successfully', {
+          duration: 2000,
+          position: 'bottom-right'
         });
         
         return quoteId;
@@ -247,11 +252,12 @@ export function QuoteIntakePage() {
         // Optimistic update: Set existing quote
         setExistingQuote({ ...data, quote_number: quoteNumber });
 
-        toast.success('Quote created successfully');
-        
-        // Restore scroll position
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        // Restore scroll position BEFORE toast
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+
+        toast.success('Quote created successfully', {
+          duration: 2000,
+          position: 'bottom-right'
         });
         
         // Return the ID instead of navigating immediately
@@ -316,8 +322,9 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleConvertToJob(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleConvertToJob(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!quoteId) return;
 
     // Save scroll position
@@ -372,8 +379,9 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleMarkAsLost(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+  async function handleMarkAsLost(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!quoteId) return;
 
     // Save scroll position

@@ -57,7 +57,9 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
   }, [job]);
 
   async function handleSubmit(e: React.FormEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
+    e.stopPropagation();
     
     if (!job) return;
 
@@ -99,11 +101,12 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
         throw new Error(error.message || 'Failed to update job');
       }
 
-      toast.success('Job updated successfully');
-      
-      // Restore scroll position after update
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      // Restore scroll position BEFORE toast
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+
+      toast.success('Job updated successfully', {
+        duration: 2000,
+        position: 'bottom-right'
       });
       
       onSuccess();

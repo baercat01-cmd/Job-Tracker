@@ -36,7 +36,9 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
   });
 
   async function handleSubmit(e: React.FormEvent) {
+    // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
+    e.stopPropagation();
     
     // Office role validation
     if (profile?.role !== 'office') {
@@ -74,7 +76,13 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         throw new Error(error.message || 'Failed to create job');
       }
 
-      toast.success(`Job "${formData.name}" created as ${formData.status === 'quoting' ? 'Quote' : 'Active'}`);
+      // Restore scroll position BEFORE toast
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+
+      toast.success(`Job "${formData.name}" created as ${formData.status === 'quoting' ? 'Quote' : 'Active'}`, {
+        duration: 2000,
+        position: 'bottom-right'
+      });
       
       // Reset form
       setFormData({
@@ -88,12 +96,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         projected_end_date: '',
       });
       
-      // Restore scroll position after creation
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
-      });
-      
-      // Close dialog and refresh
+      // Close dialog and refresh (scroll position already restored above)
       onSuccess();
     } catch (error: any) {
       console.error('Job creation failed:', error);
