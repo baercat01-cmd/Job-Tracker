@@ -760,38 +760,59 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   return (
     <div className="w-full">
       <Tabs defaultValue="overview" className="w-full">
-        {/* Main Navigation Tabs - Prominent at Top */}
-        <div className="sticky top-0 z-50 bg-background border-b-2 border-primary/20 shadow-md mb-6">
-          <TabsList className="grid w-full grid-cols-6 h-14 rounded-none bg-gradient-to-r from-primary/10 to-primary/5">
-            <TabsTrigger value="overview" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+        {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
+        <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
+          <TabsList className="grid w-full grid-cols-6 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+            <TabsTrigger 
+              value="overview" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <Activity className="w-5 h-5 mr-2" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="components" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger 
+              value="components" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <Target className="w-5 h-5 mr-2" />
               Components
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger 
+              value="schedule" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <Calendar className="w-5 h-5 mr-2" />
               Schedule
             </TabsTrigger>
-            <TabsTrigger value="documents" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger 
+              value="documents" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <FileText className="w-5 h-5 mr-2" />
               Documents
             </TabsTrigger>
-            <TabsTrigger value="materials" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger 
+              value="materials" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <Package className="w-5 h-5 mr-2" />
               Materials
             </TabsTrigger>
-            <TabsTrigger value="photos" className="font-bold text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger 
+              value="photos" 
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
               <Camera className="w-5 h-5 mr-2" />
               Photos
             </TabsTrigger>
           </TabsList>
         </div>
+        
+        {/* Add spacer to prevent content from hiding under fixed header */}
+        <div className="h-16" />
 
         {/* Overview Tab - Includes Job Info */}
-        <TabsContent value="overview" className="space-y-4 px-4">
+        <TabsContent value="overview" className="space-y-4 px-4 pt-4">
           <Card>
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
               <CardTitle className="text-xl font-bold flex items-center gap-2">
@@ -1178,27 +1199,27 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Components Tab */}
-        <TabsContent value="components" className="space-y-4 px-4">
+        <TabsContent value="components" className="space-y-4 px-4 pt-4">
           <JobComponents job={job} />
         </TabsContent>
 
         {/* Schedule Tab */}
-        <TabsContent value="schedule" className="space-y-4 px-4">
+        <TabsContent value="schedule" className="space-y-4 px-4 pt-4">
           <JobSchedule job={job} />
         </TabsContent>
 
         {/* Documents Tab */}
-        <TabsContent value="documents" className="space-y-4 px-4">
+        <TabsContent value="documents" className="space-y-4 px-4 pt-4">
           <JobDocuments job={job} />
         </TabsContent>
 
         {/* Photos Tab */}
-        <TabsContent value="photos" className="space-y-4 px-4">
+        <TabsContent value="photos" className="space-y-4 px-4 pt-4">
           <JobPhotosView job={job} />
         </TabsContent>
 
         {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-2 px-1">
+        <TabsContent value="materials" className="space-y-2 px-1 pt-4">
           {profile?.id && (
             <MaterialsManagement job={job} userId={profile.id} />
           )}
