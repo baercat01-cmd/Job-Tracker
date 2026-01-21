@@ -2403,7 +2403,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           {filteredMaterials.map((material) => (
                             <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
                               <td className="p-3">
-                                <div className="font-medium">{material.name}</div>
+                                <div className="font-medium">
+                                  {material.name}
+                                  {material.color && (
+                                    <Badge variant="outline" className="ml-2 text-xs font-medium">
+                                      {material.color}
+                                    </Badge>
+                                  )}
+                                </div>
                                 {material.import_source && material.import_source !== 'manual' && (
                                   <Badge variant="outline" className="mt-1 text-xs">
                                     {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
@@ -2421,11 +2428,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               </td>
                               {showColorColumn && (
                                 <td className="p-3 text-center w-[120px]">
-                                  {material.color ? (
-                                    <Badge variant="outline" className="font-medium">
-                                      {material.color}
-                                    </Badge>
-                                  ) : ('-')}
+                                  {material.color || '-'}
                                 </td>
                               )}
                               <td className="p-3 w-[180px]">
