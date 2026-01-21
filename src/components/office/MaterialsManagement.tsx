@@ -71,6 +71,7 @@ interface Material {
   pickup_date?: string | null;
   actual_pickup_date?: string | null;
   delivery_method?: 'pickup' | 'delivery' | null;
+  bundle_name?: string;
 }
 
 interface Category {
@@ -187,11 +188,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }>({ category: '', name: '', useCase: '', quantity: '', length: '', color: '' });
   const [importStep, setImportStep] = useState<'columns' | 'categories'>('columns');
   const [fileExtension, setFileExtension] = useState<string>('');
+  
+  // Material bundles
+  const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
 
   useEffect(() => {
     loadMaterials();
     loadUsers();
     loadAllJobs();
+    loadBundles();
 
     // Subscribe to real-time material changes
     const materialsChannel = supabase
@@ -324,13 +329,22 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (materialsError) throw materialsError;
 
+      // Enrich materials with bundle information
+      const enrichedMaterials = (materialsData || []).map((material: any) => {
+        const bundleInfo = materialBundleMap.get(material.id);
+        return {
+          ...material,
+          bundle_name: bundleInfo?.bundleName,
+        };
+      });
+
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => ({
         id: cat.id,
         name: cat.name,
         parent_id: (cat as any).parent_id,
         order_index: cat.order_index,
         sheet_image_url: (cat as any).sheet_image_url,
-        materials: (materialsData || []).filter((m: any) => m.category_id === cat.id),
+        materials: enrichedMaterials.filter((m: any) => m.category_id === cat.id),
       }));
 
       setCategories(categoriesWithMaterials);
@@ -339,6 +353,48 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       toast.error('Failed to load materials');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadBundles() {
+    try {
+      // Load bundles
+      const { data: bundlesData, error: bundlesError } = await supabase
+        .from('material_bundles')
+        .select('*')
+        .eq('job_id', job.id);
+
+      if (bundlesError) throw bundlesError;
+
+      // Load bundle items
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('material_bundle_items')
+        .select('*')
+        .in('bundle_id', (bundlesData || []).map(b => b.id));
+
+      if (itemsError) throw itemsError;
+
+      // Create a map of material ID to bundle info
+      const bundleMap = new Map<string, { bundleId: string; bundleName: string }>();
+      
+      (bundlesData || []).forEach((bundle: any) => {
+        const bundleItems = (itemsData || []).filter((item: any) => item.bundle_id === bundle.id);
+        bundleItems.forEach((item: any) => {
+          bundleMap.set(item.material_id, { 
+            bundleId: bundle.id, 
+            bundleName: bundle.name 
+          });
+        });
+      });
+
+      setMaterialBundleMap(bundleMap);
+      
+      // Reload materials to show bundle info
+      if (bundleMap.size > 0) {
+        loadMaterials();
+      }
+    } catch (error: any) {
+      console.error('Error loading bundles:', error);
     }
   }
 
@@ -2414,9 +2470,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <div className="font-medium">
                                   {material.name}
                                 </div>
-                                {material.import_source && material.import_source !== 'manual' && (
-                                  <Badge variant="outline" className="mt-1 text-xs">
-                                    {material.import_source === 'csv_import' ? 'CSV' : 'Excel'}
+                                {material.bundle_name && (
+                                  <Badge variant="secondary" className="mt-1 text-xs">
+                                    Bundle: {material.bundle_name}
                                   </Badge>
                                 )}
                               </td>
