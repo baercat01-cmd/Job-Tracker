@@ -8,6 +8,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MaterialsManagement } from './MaterialsManagement';
+import { JobComponents } from './JobComponents';
+import { JobSchedule } from './JobSchedule';
+import { JobDocuments } from './JobDocuments';
+import { JobPhotosView } from './JobPhotosView';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -1173,44 +1177,24 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
         </TabsContent>
 
-        {/* Components Tab - Placeholder */}
+        {/* Components Tab */}
         <TabsContent value="components" className="space-y-4 px-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Target className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-base">Component tracking coming soon</p>
-            </CardContent>
-          </Card>
+          <JobComponents job={job} />
         </TabsContent>
 
-        {/* Schedule Tab - Placeholder */}
+        {/* Schedule Tab */}
         <TabsContent value="schedule" className="space-y-4 px-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-base">Schedule view coming soon</p>
-            </CardContent>
-          </Card>
+          <JobSchedule job={job} />
         </TabsContent>
 
-        {/* Documents Tab - Placeholder */}
+        {/* Documents Tab */}
         <TabsContent value="documents" className="space-y-4 px-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-base">Documents view coming soon</p>
-            </CardContent>
-          </Card>
+          <JobDocuments job={job} />
         </TabsContent>
 
-        {/* Photos Tab - Placeholder */}
+        {/* Photos Tab */}
         <TabsContent value="photos" className="space-y-4 px-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Camera className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-base">Photos gallery coming soon</p>
-            </CardContent>
-          </Card>
+          <JobPhotosView job={job} />
         </TabsContent>
 
         {/* Materials Tab */}
