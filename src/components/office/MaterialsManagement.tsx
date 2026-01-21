@@ -657,7 +657,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <div className="w-full max-w-[1600px] mx-auto">
+      <div className="w-full max-w-[2000px] mx-auto">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
@@ -789,7 +789,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                   <thead className="bg-muted/50 border-b">
                                     <tr>
                                       <th className="text-left p-3 w-[60px]">Drag</th>
-                                  <th className="text-left p-3">Material Name</th>
+                                  <th className="text-left p-3 min-w-[300px]">Material Name</th>
                                   <th className="text-left p-3">Use Case</th>
                                   <th className="text-center p-3 w-[100px]">Qty</th>
                                   <th className="text-center p-3 w-[100px]">Length</th>
@@ -825,8 +825,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                               <GripVertical className="w-4 h-4 text-muted-foreground" />
                                             </div>
                                           </td>
-                                    <td className="p-3">
-                                      <div className="font-medium">{material.name}</div>
+                                    <td className="p-3 min-w-[300px]">
+                                      <div className="font-medium whitespace-nowrap">{material.name}</div>
                                       {material.bundle_name && (
                                         <Badge variant="secondary" className="mt-1 text-xs">
                                           📦 {material.bundle_name}

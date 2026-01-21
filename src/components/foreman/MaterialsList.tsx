@@ -1182,7 +1182,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
   return (
     <div 
-      className="space-y-3 w-full max-w-[1600px] mx-auto"
+      className="space-y-3 w-full max-w-[2000px] mx-auto"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
