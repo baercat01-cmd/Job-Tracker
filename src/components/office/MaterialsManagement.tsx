@@ -2257,7 +2257,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           
           {filteredCategories.map((category) => {
             const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-            const showColorColumn = filteredMaterials.some(m => m.color);
+            // Always show color column for trim, metal, and fasteners categories
+            const isColorCategory = /trim|metal|fastener/i.test(category.name);
+            const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
             
             return (
               <Card key={category.id} className={`overflow-hidden ${isViewingParent ? 'ml-6 border-l-4 border-l-primary' : ''}`}>
