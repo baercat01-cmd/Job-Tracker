@@ -757,7 +757,11 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
     <div className="w-full mx-auto">
       <Tabs defaultValue="overview" className="w-full">
         <div className="bg-background border-b shadow-sm pb-4 mb-4">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+            <TabsTrigger value="info">
+              <FileCheck className="w-4 h-4 mr-2" />
+              Job Info
+            </TabsTrigger>
             <TabsTrigger value="overview">
               <Activity className="w-4 h-4 mr-2" />
               Overview
@@ -772,6 +776,125 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
             </TabsTrigger>
           </TabsList>
         </div>
+
+        {/* Job Info Tab */}
+        <TabsContent value="info" className="space-y-4">
+          <Card>
+            <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Building2 className="w-6 h-6" />
+                {job.name}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Basic Information</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Job Number</label>
+                        <p className="font-medium">{job.job_number || 'Not assigned'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Client Name</label>
+                        <p className="font-medium">{job.client_name}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Status</label>
+                        <Badge className="mt-1" variant={job.status === 'active' ? 'default' : 'secondary'}>
+                          {job.status}
+                        </Badge>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Internal Job</label>
+                        <p className="font-medium">{job.is_internal ? 'Yes' : 'No'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Location</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          Address
+                        </label>
+                        <p className="font-medium">{job.address}</p>
+                      </div>
+                      {job.gps_lat && job.gps_lng && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">GPS Coordinates</label>
+                          <p className="font-mono text-sm">{job.gps_lat}, {job.gps_lng}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Project Timeline</h3>
+                    <div className="space-y-3">
+                      {job.projected_start_date && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Projected Start Date</label>
+                          <p className="font-medium">{new Date(job.projected_start_date).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {job.projected_end_date && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Projected End Date</label>
+                          <p className="font-medium">{new Date(job.projected_end_date).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {firstWorkDate && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">First Work Date</label>
+                          <p className="font-medium">{new Date(firstWorkDate).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {lastWorkDate && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Last Work Date</label>
+                          <p className="font-medium">{new Date(lastWorkDate).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Estimated Hours</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Budget</label>
+                        <p className="text-2xl font-bold text-primary">{estimatedHours.toFixed(2)} hrs</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {job.description && (
+                  <div className="md:col-span-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Description</h3>
+                    <p className="text-sm whitespace-pre-wrap bg-muted/30 rounded-lg p-4">{job.description}</p>
+                  </div>
+                )}
+                {job.notes && (
+                  <div className="md:col-span-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Notes</h3>
+                    <p className="text-sm whitespace-pre-wrap bg-muted/30 rounded-lg p-4">{job.notes}</p>
+                  </div>
+                )}
+                <div className="md:col-span-2 pt-4 border-t">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Created: {new Date(job.created_at).toLocaleString()}</span>
+                    {job.updated_at && job.updated_at !== job.created_at && (
+                      <span>Last Updated: {new Date(job.updated_at).toLocaleString()}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
