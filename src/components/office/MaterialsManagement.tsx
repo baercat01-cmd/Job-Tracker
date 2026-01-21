@@ -183,7 +183,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     useCase: string;
     quantity: string;
     length: string;
-  }>({ category: '', name: '', useCase: '', quantity: '', length: '' });
+    color: string;
+  }>({ category: '', name: '', useCase: '', quantity: '', length: '', color: '' });
   const [importStep, setImportStep] = useState<'columns' | 'categories'>('columns');
   const [fileExtension, setFileExtension] = useState<string>('');
 
@@ -1252,6 +1253,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             useCase: commonHeaders.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
             quantity: commonHeaders.find(c => /quantity|qty|amount|count/i.test(c)) || '',
             length: commonHeaders.find(c => /length|size|dimension/i.test(c)) || '',
+            color: commonHeaders.find(c => /color|colour/i.test(c)) || '',
           };
           
           setColumnMapping(autoMapping);
@@ -1296,6 +1298,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             useCase: headers.find(c => /use.case|usage|use|purpose|application/i.test(c)) || '',
             quantity: headers.find(c => /quantity|qty|amount|count/i.test(c)) || '',
             length: headers.find(c => /length|size|dimension/i.test(c)) || '',
+            color: headers.find(c => /color|colour/i.test(c)) || '',
           };
           
           setColumnMapping(autoMapping);
@@ -1481,6 +1484,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         const quantity = parseFloat(quantityStr) || 0;
         const length = columnMapping.length ? String(row[columnMapping.length] || '').trim() : '';
         const useCase = columnMapping.useCase ? String(row[columnMapping.useCase] || '').trim() : '';
+        const color = columnMapping.color ? String(row[columnMapping.color] || '').trim() : '';
 
         if (!category || !name || quantity === 0) {
           skipped++;
@@ -1520,6 +1524,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           name,
           quantity,
           length: length || null,
+          color: color || null,
           use_case: useCase || null,
           status: 'not_ordered',
           created_by: userId,
@@ -2887,6 +2892,21 @@ Hardware"
                   <Select value={columnMapping.length} onValueChange={(v) => setColumnMapping({ ...columnMapping, length: v === '__NONE__' ? '' : v })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select column for length" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__NONE__">None</SelectItem>
+                      {csvColumns.map(col => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Color Column (Optional)</Label>
+                  <Select value={columnMapping.color} onValueChange={(v) => setColumnMapping({ ...columnMapping, color: v === '__NONE__' ? '' : v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column for color" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">None</SelectItem>
