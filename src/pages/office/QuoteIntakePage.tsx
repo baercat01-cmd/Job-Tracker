@@ -173,11 +173,13 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleSaveDraft() {
+  async function handleSaveDraft(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     await saveQuote('draft');
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     const savedQuoteId = await saveQuote('submitted');
     if (savedQuoteId) {
       // After submitting, create a job in quoting status
@@ -191,6 +193,9 @@ export function QuoteIntakePage() {
       setActiveTab('customer');
       return null;
     }
+
+    // Save scroll position before any operations
+    const scrollY = window.scrollY;
 
     setSaving(true);
 
@@ -212,7 +217,17 @@ export function QuoteIntakePage() {
           .eq('id', quoteId);
 
         if (error) throw error;
+        
+        // Optimistic update: Update local state
+        setExistingQuote(prev => ({ ...prev, ...quoteData }));
+        
         toast.success('Quote updated successfully');
+        
+        // Restore scroll position
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        });
+        
         return quoteId;
       } else {
         const { data, error } = await supabase
@@ -229,7 +244,15 @@ export function QuoteIntakePage() {
           .update({ quote_number: quoteNumber })
           .eq('id', data.id);
 
+        // Optimistic update: Set existing quote
+        setExistingQuote({ ...data, quote_number: quoteNumber });
+
         toast.success('Quote created successfully');
+        
+        // Restore scroll position
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        });
         
         // Return the ID instead of navigating immediately
         return data.id;
@@ -293,8 +316,12 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleConvertToJob() {
+  async function handleConvertToJob(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     if (!quoteId) return;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
 
     try {
       setSaving(true);
@@ -325,7 +352,17 @@ export function QuoteIntakePage() {
 
       if (quoteError) throw quoteError;
 
+      // Optimistic update
+      setExistingQuote(prev => ({ ...prev, status: 'won', job_id: jobData.id }));
+      setFormData(prev => ({ ...prev, status: 'won' }));
+
       toast.success('Quote marked as won and converted to active job!');
+      
+      // Restore scroll position before navigation
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
+      
       navigate('/office?tab=jobs');
     } catch (error: any) {
       console.error('Error converting quote:', error);
@@ -335,8 +372,12 @@ export function QuoteIntakePage() {
     }
   }
 
-  async function handleMarkAsLost() {
+  async function handleMarkAsLost(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     if (!quoteId) return;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
 
     try {
       setSaving(true);
@@ -351,7 +392,17 @@ export function QuoteIntakePage() {
 
       if (error) throw error;
 
+      // Optimistic update
+      setExistingQuote(prev => ({ ...prev, status: 'lost' }));
+      setFormData(prev => ({ ...prev, status: 'lost' }));
+
       toast.success('Quote marked as lost and archived');
+      
+      // Restore scroll position before navigation
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
+      
       navigate('/office?tab=quotes');
     } catch (error: any) {
       console.error('Error marking quote as lost:', error);

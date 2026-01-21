@@ -229,19 +229,25 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  async function handleSaveDraft() {
+  async function handleSaveDraft(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     await saveQuote('draft');
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     await saveQuote('submitted');
   }
 
   async function saveQuote(status: string) {
+    // Prevent default form behavior
     console.log('🔷 saveQuote called with status:', status);
     console.log('🔷 Current formData:', formData);
     console.log('🔷 Current quoteId:', currentQuoteId);
     console.log('🔷 Current profile:', profile);
+    
+    // Save scroll position before any state changes
+    const scrollY = window.scrollY;
     
     // Validate user session FIRST
     if (!profile?.id) {
@@ -497,12 +503,15 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       console.log('✅ Quote saved successfully:', data);
       console.log('✅ Returned quote ID:', data.id);
 
+      // Optimistic update: Update local state immediately
+      setExistingQuote(data);
+      setFormData(prev => ({ ...prev, status: data.status }));
+
       // CRITICAL: Update currentQuoteId IMMEDIATELY after first save
       // This ensures subsequent saves UPDATE instead of INSERT
       if (!currentQuoteId && data.id) {
         console.log('🆕 First save detected - setting currentQuoteId to:', data.id);
         setCurrentQuoteId(data.id);
-        setExistingQuote(data);
         
         // Generate sequential quote number for new quotes
         const quoteNumber = await generateQuoteNumber();
@@ -520,10 +529,13 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         toast.success(`Draft saved - Quote #${quoteNumber}`);
       } else {
         console.log('📝 Update existing quote:', currentQuoteId);
-        // Update the existing quote data
-        setExistingQuote(data);
         toast.success(status === 'draft' ? 'Draft saved successfully' : 'Quote updated successfully');
       }
+
+      // Restore scroll position after state updates
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
 
       // Only call onSuccess if we're submitting (not just saving draft)
       if (status !== 'draft') {
@@ -580,8 +592,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  async function handleConvertToJob() {
+  async function handleConvertToJob(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
     if (!quoteId) return;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
 
     try {
       setSaving(true);
@@ -614,7 +630,17 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
 
       if (quoteError) throw quoteError;
 
+      // Optimistic update
+      setExistingQuote(prev => ({ ...prev, status: 'won', job_id: jobData.id }));
+      setFormData(prev => ({ ...prev, status: 'won' }));
+
       toast.success('Quote converted to active job!');
+      
+      // Restore scroll position before navigation
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
+      
       onSuccess();
     } catch (error: any) {
       console.error('Error converting quote:', error);

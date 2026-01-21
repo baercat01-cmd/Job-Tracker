@@ -67,6 +67,9 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
       return;
     }
 
+    // Save scroll position before updates
+    const scrollY = window.scrollY;
+
     setLoading(true);
 
     try {
@@ -97,6 +100,12 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
       }
 
       toast.success('Job updated successfully');
+      
+      // Restore scroll position after update
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
+      
       onSuccess();
     } catch (error: any) {
       console.error('Job update failed:', error);

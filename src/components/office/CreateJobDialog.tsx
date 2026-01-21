@@ -44,6 +44,9 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       return;
     }
 
+    // Save scroll position before creating job
+    const scrollY = window.scrollY;
+
     setLoading(true);
 
     try {
@@ -83,6 +86,11 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         status: 'quoting',
         projected_start_date: '',
         projected_end_date: '',
+      });
+      
+      // Restore scroll position after creation
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
       });
       
       // Close dialog and refresh
