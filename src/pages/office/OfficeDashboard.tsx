@@ -48,10 +48,12 @@ export function OfficeDashboard() {
 
   // Save view state to localStorage and update URL
   // CRITICAL: Use replace: true to prevent scroll reset on URL changes
+  // Background state sync - never causes page reload
   useEffect(() => {
     localStorage.setItem('office-active-tab', activeTab);
+    // Silent URL update without triggering navigation/reload
     setSearchParams({ tab: activeTab }, { replace: true });
-  }, [activeTab]);
+  }, [activeTab, setSearchParams]);
 
   useEffect(() => {
     localStorage.setItem('office-view-mode', viewMode);

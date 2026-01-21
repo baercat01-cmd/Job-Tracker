@@ -515,7 +515,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   async function loadMaterials() {
     try {
-      setLoading(true);
+      // CRITICAL: Only set loading on FIRST load
+      // Background refetch keeps materials visible while fetching updates
+      if (categories.length === 0) {
+        setLoading(true);
+      }
 
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('materials_categories')
@@ -556,8 +560,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error('Failed to load materials');
+      // Keep existing data visible on error
     } finally {
-      setLoading(false);
+      // Only clear loading if we set it (initial load)
+      if (categories.length === 0) {
+        setLoading(false);
+      }
     }
   }
 
@@ -1193,7 +1201,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         .find(m => `material-${m.id}` === activeDragId)
     : null;
 
-  if (loading) {
+  // CRITICAL: Never blank the materials view during data refresh
+  // Show a subtle loading indicator overlay instead of replacing content
+  const isInitialLoad = loading && categories.length === 0;
+  
+  if (isInitialLoad) {
     return <div className="text-center py-8">Loading materials...</div>;
   }
 

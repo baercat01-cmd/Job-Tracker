@@ -122,7 +122,11 @@ export function QuoteIntakePage() {
     if (!quoteId) return;
 
     try {
-      setLoading(true);
+      // CRITICAL: Only set loading on FIRST load
+      // Background refetch keeps old data visible while fetching new data
+      if (!existingQuote) {
+        setLoading(true);
+      }
       const { data, error } = await supabase
         .from('quotes')
         .select('*')
@@ -167,9 +171,15 @@ export function QuoteIntakePage() {
     } catch (error: any) {
       console.error('Error loading quote:', error);
       toast.error('Failed to load quote');
-      navigate('/office?tab=quotes');
+      // Only navigate on error if this is the initial load
+      if (!existingQuote) {
+        navigate('/office?tab=quotes');
+      }
     } finally {
-      setLoading(false);
+      // Only clear loading if we set it (initial load)
+      if (!existingQuote) {
+        setLoading(false);
+      }
     }
   }
 
@@ -444,7 +454,11 @@ export function QuoteIntakePage() {
     }
   }
 
-  if (loading) {
+  // CRITICAL: Never blank the page during data refresh
+  // Only show loading spinner on FIRST load when existingQuote is null
+  const isInitialLoad = loading && !existingQuote;
+  
+  if (isInitialLoad) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-muted-foreground">Loading quote...</div>

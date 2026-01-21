@@ -55,6 +55,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Prevent browser scroll adjustments during dynamic content changes */
+    overflow-anchor: none;
+  }
+  
+  /* Prevent scroll position jumps in main containers */
+  main, .main-container {
+    overflow-anchor: none;
   }
 }
 

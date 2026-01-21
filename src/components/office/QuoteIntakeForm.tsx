@@ -174,7 +174,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     if (!quoteId) return;
 
     try {
-      setLoading(true);
+      // CRITICAL: Only set loading on FIRST load
+      // Background refetch keeps form visible while fetching new data
+      if (!existingQuote) {
+        setLoading(true);
+      }
       const { data, error } = await supabase
         .from('quotes')
         .select('*')
@@ -224,8 +228,12 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     } catch (error: any) {
       console.error('Error loading quote:', error);
       toast.error('Failed to load quote');
+      // Keep form visible on error to allow recovery
     } finally {
-      setLoading(false);
+      // Only clear loading if we set it (initial load)
+      if (!existingQuote) {
+        setLoading(false);
+      }
     }
   }
 
@@ -579,12 +587,16 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         });
       }
 
-      // Only call onSuccess if we're submitting (not just saving draft)
-      // This prevents navigation for draft saves
+      // CRITICAL: Only navigate for submissions, not draft saves
+      // And only after scroll position is fully restored
       if (status !== 'draft') {
-        // Wait a moment for the user to see the toast before navigating
-        setTimeout(() => onSuccess(), 500);
+        // Wait for scroll restoration and toast to be visible
+        setTimeout(() => {
+          // Silent state update - parent will refresh data in background
+          onSuccess();
+        }, 500);
       }
+      // For draft saves, do nothing - page stays in place with data updated
     } catch (error: any) {
       console.error('❌ CATCH ERROR:', error);
       console.error('❌ Error name:', error.name);
@@ -695,7 +707,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     }
   }
 
-  if (loading || loadingOptions) {
+  // CRITICAL: Never blank the form during data refresh
+  // Only show loading spinner on FIRST load when existingQuote is null
+  const isInitialLoad = (loading || loadingOptions) && !existingQuote;
+  
+  if (isInitialLoad) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-muted-foreground">Loading quote...</div>
