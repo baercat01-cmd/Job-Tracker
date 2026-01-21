@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,6 +17,7 @@ import type { Job } from '@/types';
 
 interface JobDetailedViewProps {
   job: Job;
+  onBack?: () => void;
 }
 
 interface ComponentWorkEntry {
@@ -95,7 +96,7 @@ interface DailyLog {
   created_at: string;
 }
 
-export function JobDetailedView({ job }: JobDetailedViewProps) {
+export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
@@ -762,6 +763,19 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
       <Tabs defaultValue="overview" className="w-full">
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
+          <div className="flex items-center gap-2 px-4">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                className="text-yellow-100 hover:text-yellow-400 hover:bg-green-900/50"
+              >
+                <ArrowLeft className="w-5 h-5 mr-2" />
+                Back to Jobs
+              </Button>
+            )}
+          </div>
           <TabsList className="grid w-full grid-cols-6 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 

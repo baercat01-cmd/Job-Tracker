@@ -860,7 +860,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
           </DialogHeader>
           {selectedJob && (
             <div className="flex-1 overflow-y-auto px-6 py-4">
-              <JobDetailedView job={selectedJob} />
+              <JobDetailedView job={selectedJob} onBack={() => setSelectedJob(null)} />
             </div>
           )}
         </DialogContent>
