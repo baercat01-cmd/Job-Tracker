@@ -851,18 +851,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 .eq('id', material.id)
             )
           );
-
-          // Silent success - material reordered
-          
-          // Restore scroll position after reload completes
-          await loadMaterials();
-          
-          // Use requestAnimationFrame to ensure DOM is fully rendered
-          requestAnimationFrame(() => {
-            window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
-          });
-          
-          return; // Early return to prevent duplicate loadMaterials call
         } else {
           // Different category - move material to new category
           // Remove from source
@@ -899,26 +887,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 .eq('id', material.id)
             )
           );
-
-          // Silent success - material moved to new category
-          
-          // Restore scroll position after reload completes
-          await loadMaterials();
-          
-          // Use requestAnimationFrame to ensure DOM is fully rendered
-          requestAnimationFrame(() => {
-            window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
-          });
-          
-          return; // Early return to prevent duplicate loadMaterials call
         }
 
-        loadMaterials();
+        // Reload materials and restore scroll position
+        await loadMaterials();
+        
+        // Use requestAnimationFrame to ensure DOM is fully rendered
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+        });
       } catch (error: any) {
         console.error('Error moving material:', error);
         toast.error('Failed to move material');
       }
-      return; // Exit early since we handled material drag
     }
     // Check if we're dragging a category
     if (activeId.startsWith('category-') && overId.startsWith('category-')) {
@@ -943,17 +924,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           )
         );
 
-        // Silent success - categories reordered
-        
-        // Restore scroll position after reload completes
+        // Reload materials and restore scroll position
         await loadMaterials();
         
         // Use requestAnimationFrame to ensure DOM is fully rendered
         requestAnimationFrame(() => {
           window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
         });
-        
-        return; // Early return to prevent duplicate processing
       } catch (error: any) {
         console.error('Error reordering categories:', error);
         toast.error('Failed to reorder categories');
