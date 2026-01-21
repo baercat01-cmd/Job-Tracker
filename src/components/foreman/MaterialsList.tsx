@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle, ChevronLeft, ChevronRight as ChevronRightIcon, Truck, Clock, Trash2, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import { getLocalDateString } from '@/lib/utils';
@@ -61,7 +61,7 @@ interface MaterialBundle {
   job_id: string;
   name: string;
   description: string | null;
-  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
+  status: 'pending' | 'preparing' | 'ready' | 'picked_up' | 'delivered';
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -87,8 +87,9 @@ type StatusFilter = 'all' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pu
 interface MaterialsListProps {
   job: Job;
   userId: string;
+  userRole?: 'office' | 'foreman' | 'shop' | 'crew';
   allowBundleCreation?: boolean;
-  defaultTab?: 'all' | 'ready' | 'pull';
+  defaultTab?: 'all' | 'ready' | 'pull' | 'bundles';
 }
 
 const STATUS_CONFIG = {
@@ -101,17 +102,29 @@ const STATUS_CONFIG = {
   missing: { label: 'Missing', color: 'bg-red-500', bgClass: 'bg-red-50 text-red-800 border-red-200' },
 };
 
+const BUNDLE_STATUS_CONFIG = {
+  pending: { label: 'Pending Prep', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-300', icon: Clock },
+  preparing: { label: 'Preparing', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-300', icon: Package },
+  ready: { label: 'Ready to Take', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-300', icon: CheckCircle },
+  picked_up: { label: 'Picked Up', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-300', icon: Truck },
+  delivered: { label: 'Delivered', color: 'bg-slate-700', bgClass: 'bg-slate-100 text-slate-800 border-slate-300', icon: CheckCircle },
+};
+
 // Helper function to get status config with fallback
 function getStatusConfig(status: string) {
   return STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.not_ordered;
 }
 
-export function MaterialsList({ job, userId, allowBundleCreation = false, defaultTab = 'all' }: MaterialsListProps) {
+function getBundleStatusConfig(status: string) {
+  return BUNDLE_STATUS_CONFIG[status as keyof typeof BUNDLE_STATUS_CONFIG] || BUNDLE_STATUS_CONFIG.pending;
+}
+
+export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCreation = false, defaultTab = 'all' }: MaterialsListProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull' | 'bundles'>(defaultTab);
   const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
   const [pullFromShopCount, setPullFromShopCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -736,7 +749,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
           name: bundleName.trim(),
           description: bundleDescription.trim() || null,
           created_by: userId,
-          status: 'not_ordered',
+          status: 'pending', // Pending shop preparation
         })
         .select()
         .single();
@@ -1209,7 +1222,7 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
       {/* Tab Switcher with Swipe Navigation Hints */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull')} className="w-full">
         <div className="relative mb-4">
-          <TabsList className={`grid w-full ${pullFromShopCount > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="all" className="flex items-center gap-2">
               <Layers className="w-4 h-4" />
               All Materials
@@ -1228,6 +1241,13 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
                 <Badge variant="secondary" className="ml-1">{pullFromShopCount}</Badge>
               </TabsTrigger>
             )}
+            <TabsTrigger value="bundles" className="flex items-center gap-2">
+              <PackagePlus className="w-4 h-4" />
+              Bundles
+              {bundles.length > 0 && (
+                <Badge variant="secondary" className="ml-1">{bundles.length}</Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Swipe Navigation Arrows - Visual Hint */}
@@ -1359,6 +1379,284 @@ export function MaterialsList({ job, userId, allowBundleCreation = false, defaul
 
         <TabsContent value="pull">
           <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="ready_to_pull" />
+        </TabsContent>
+
+        <TabsContent value="bundles" className="space-y-4">
+          {/* Bundle Creation Controls (Office/Admin Only) */}
+          {(userRole === 'office' || allowBundleCreation) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Material Bundles</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Group materials together for shop preparation and crew pickup
+                </p>
+              </CardHeader>
+              <CardContent>
+                {selectionMode ? (
+                  <div className="flex items-center gap-2">
+                    <Button onClick={openCreateBundleDialog} disabled={selectedMaterialIds.size === 0}>
+                      <PackagePlus className="w-4 h-4 mr-2" />
+                      Create Bundle ({selectedMaterialIds.size} selected)
+                    </Button>
+                    <Button variant="outline" onClick={toggleSelectionMode}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button onClick={toggleSelectionMode} variant="outline">
+                    <PackagePlus className="w-4 h-4 mr-2" />
+                    Select Materials to Bundle
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Bundle List */}
+          {bundles.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <PackagePlus className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p className="text-base">No material bundles yet</p>
+                {(userRole === 'office' || allowBundleCreation) && (
+                  <p className="text-sm mt-2">Create bundles to organize materials for shop and crew</p>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {bundles.map((bundle) => {
+                const statusConfig = getBundleStatusConfig(bundle.status);
+                const StatusIcon = statusConfig.icon;
+                const isExpanded = expandedBundles.has(bundle.id);
+
+                return (
+                  <Card key={bundle.id} className="overflow-hidden border-2">
+                    <CardHeader
+                      className="py-3 px-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => toggleBundle(bundle.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4" />
+                            )}
+                            <h3 className="text-base font-semibold">{bundle.name}</h3>
+                            <Badge className={statusConfig.bgClass}>
+                              <StatusIcon className="w-3 h-3 mr-1" />
+                              {statusConfig.label}
+                            </Badge>
+                          </div>
+                          {bundle.description && (
+                            <p className="text-sm text-muted-foreground mt-1 ml-6">
+                              {bundle.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2 ml-6 text-sm text-muted-foreground">
+                            <span>{bundle.materials.length} items</span>
+                            <span>•</span>
+                            <span>Created {new Date(bundle.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    {isExpanded && (
+                      <CardContent className="pt-0 pb-4 px-4">
+                        {/* Bundle Status Workflow */}
+                        <div className="mb-4 pb-4 border-b">
+                          <h4 className="text-sm font-semibold mb-3">Bundle Status</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {userRole === 'shop' && bundle.status === 'pending' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'preparing')}
+                                variant="outline"
+                                className="bg-blue-50 hover:bg-blue-100 border-blue-300"
+                              >
+                                <Package className="w-4 h-4 mr-2" />
+                                Start Preparing
+                              </Button>
+                            )}
+                            {userRole === 'shop' && bundle.status === 'preparing' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'ready')}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Ready
+                              </Button>
+                            )}
+                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'ready' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'picked_up')}
+                                className="bg-purple-600 hover:bg-purple-700"
+                              >
+                                <Truck className="w-4 h-4 mr-2" />
+                                Mark Picked Up
+                              </Button>
+                            )}
+                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'picked_up' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'delivered')}
+                                variant="outline"
+                                className="bg-slate-50 hover:bg-slate-100"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Delivered
+                              </Button>
+                            )}
+                            {(userRole === 'office' || allowBundleCreation) && (
+                              <Button
+                                onClick={() => deleteBundle(bundle.id)}
+                                variant="outline"
+                                className="text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Bundle
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Materials in Bundle */}
+                        <div>
+                          <h4 className="text-sm font-semibold mb-3">Materials in Bundle</h4>
+                          <div className="space-y-2">
+                            {bundle.materials.map((material) => {
+                              const matStatusConfig = getStatusConfig(material.status);
+                              return (
+                                <div
+                                  key={material.id}
+                                  className="p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow"
+                                  onClick={() => openMaterialDetail(material)}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-baseline gap-2">
+                                        <h5 className="font-medium text-sm">{material.name}</h5>
+                                        {material.length && (
+                                          <span className="text-xs text-muted-foreground">
+                                            {material.length}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-sm text-muted-foreground">
+                                          Qty: {material.quantity}
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className={matStatusConfig.bgClass}
+                                        >
+                                          {matStatusConfig.label}
+                                        </Badge>
+                                      </div>
+                                      {(material as any).use_case && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          {(material as any).use_case}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Selection Mode - Material List for Bundling */}
+          {selectionMode && (
+            <div className="space-y-3">
+              <Card className="border-2 border-primary">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Select Materials</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Click materials to add them to the new bundle ({selectedMaterialIds.size} selected)
+                  </p>
+                </CardHeader>
+              </Card>
+
+              {filteredCategories.map((category) => (
+                <Card key={category.id} className="overflow-hidden">
+                  <CardHeader
+                    className="py-3 px-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                    onClick={() => toggleCategory(category.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base font-semibold flex items-center gap-2">
+                        {expandedCategories.has(category.id) ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                        {category.name}
+                        <Badge variant="outline" className="ml-2">
+                          {category.materials.length}
+                        </Badge>
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  {expandedCategories.has(category.id) && (
+                    <CardContent className="p-3">
+                      <div className="space-y-2">
+                        {category.materials.map((material) => {
+                          const isInBundle = materialBundleMap.has(material.id);
+                          const isSelected = selectedMaterialIds.has(material.id);
+                          const bundleInfo = materialBundleMap.get(material.id);
+
+                          return (
+                            <div
+                              key={material.id}
+                              className={`p-3 rounded-lg border ${isSelected ? 'border-primary border-2 bg-primary/5' : 'bg-card'} ${isInBundle ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-sm'} transition-all`}
+                              onClick={() => !isInBundle && toggleMaterialSelection(material.id)}
+                            >
+                              <div className="flex items-start gap-3">
+                                <Checkbox
+                                  checked={isSelected}
+                                  disabled={isInBundle}
+                                  className="mt-1"
+                                />
+                                <div className="flex-1">
+                                  <div className="flex items-baseline gap-2">
+                                    <h5 className="font-medium text-sm">{material.name}</h5>
+                                    {material.length && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {material.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-sm text-muted-foreground">
+                                      Qty: {material.quantity}
+                                    </span>
+                                    {isInBundle && bundleInfo && (
+                                      <Badge variant="outline" className="text-xs">
+                                        In bundle: {bundleInfo.bundleName}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

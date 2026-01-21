@@ -3081,9 +3081,10 @@ Hardware"
           <CardContent>
             <MaterialsList 
               job={job} 
-              userId={userId} 
+              userId={userId}
+              userRole="office" 
               allowBundleCreation={true}
-              defaultTab="all"
+              defaultTab="bundles"
             />
           </CardContent>
         </Card>
