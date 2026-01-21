@@ -47,6 +47,7 @@ export function OfficeDashboard() {
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
 
   // Save view state to localStorage and update URL
+  // CRITICAL: Use replace: true to prevent scroll reset on URL changes
   useEffect(() => {
     localStorage.setItem('office-active-tab', activeTab);
     setSearchParams({ tab: activeTab }, { replace: true });

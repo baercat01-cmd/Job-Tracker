@@ -177,15 +177,32 @@ export function QuoteIntakePage() {
     // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
     e.stopPropagation();
+    
+    // Manual scroll anchor - save position at the very start
+    const savedScrollPosition = window.scrollY;
+    
     await saveQuote('draft');
+    
+    // Restore scroll position after save completes
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+    });
   }
 
   async function handleSubmit(e: React.MouseEvent) {
     // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
     e.stopPropagation();
+    
+    // Manual scroll anchor - save position at the very start
+    const savedScrollPosition = window.scrollY;
+    
     const savedQuoteId = await saveQuote('submitted');
     if (savedQuoteId) {
+      // Restore scroll before creating job
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+      });
       // After submitting, create a job in quoting status
       await createJobFromQuote(savedQuoteId);
     }
@@ -198,8 +215,9 @@ export function QuoteIntakePage() {
       return null;
     }
 
-    // Save scroll position before any operations
-    const scrollY = window.scrollY;
+    // Manual scroll anchor - record EXACT scroll position at the very start
+    const savedScrollPosition = window.scrollY;
+    console.log('💾 Saved scroll position:', savedScrollPosition);
 
     setSaving(true);
 
@@ -225,8 +243,11 @@ export function QuoteIntakePage() {
         // Optimistic update: Update local state
         setExistingQuote(prev => ({ ...prev, ...quoteData }));
         
-        // Restore scroll position BEFORE toast
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        // Restore scroll position AFTER state updates but BEFORE toast
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+          console.log('📍 Scroll restored to:', savedScrollPosition);
+        });
         
         toast.success('Quote updated successfully', {
           duration: 2000,
@@ -252,8 +273,11 @@ export function QuoteIntakePage() {
         // Optimistic update: Set existing quote
         setExistingQuote({ ...data, quote_number: quoteNumber });
 
-        // Restore scroll position BEFORE toast
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        // Restore scroll position AFTER state updates but BEFORE toast
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+          console.log('📍 Scroll restored to:', savedScrollPosition);
+        });
 
         toast.success('Quote created successfully', {
           duration: 2000,

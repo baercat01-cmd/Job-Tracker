@@ -233,14 +233,34 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
     e.stopPropagation();
+    
+    // Manual scroll anchor - save position at the very start
+    const savedScrollPosition = window.scrollY;
+    
     await saveQuote('draft');
+    
+    // Restore scroll position after save completes
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+    });
   }
 
   async function handleSubmit(e: React.MouseEvent) {
     // CRITICAL: Prevent default FIRST to block page reload
     e.preventDefault();
     e.stopPropagation();
+    
+    // Manual scroll anchor - save position at the very start
+    const savedScrollPosition = window.scrollY;
+    
     await saveQuote('submitted');
+    
+    // Restore scroll position after save completes (if not navigating)
+    if (formData.status === 'draft') {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+      });
+    }
   }
 
   async function saveQuote(status: string) {
@@ -249,8 +269,9 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     console.log('🔷 Current quoteId:', currentQuoteId);
     console.log('🔷 Current profile:', profile);
     
-    // Save scroll position before any state changes
-    const scrollY = window.scrollY;
+    // Manual scroll anchor - record EXACT scroll position at the very start
+    const savedScrollPosition = window.scrollY;
+    console.log('💾 Saved scroll position:', savedScrollPosition);
     
     // Validate user session FIRST
     if (!profile?.id) {
@@ -529,8 +550,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         setExistingQuote({ ...data, quote_number: quoteNumber });
         setFormData(prev => ({ ...prev, status: data.status }));
         
-        // Restore scroll position BEFORE toast
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        // Restore scroll position AFTER state updates but BEFORE toast
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+          console.log('📍 Scroll restored to:', savedScrollPosition);
+        });
         
         toast.success(`Draft saved - Quote #${quoteNumber}`, {
           duration: 2000,
@@ -543,8 +567,11 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         setExistingQuote(prev => ({ ...prev, ...data }));
         setFormData(prev => ({ ...prev, status: data.status }));
         
-        // Restore scroll position BEFORE toast
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        // Restore scroll position AFTER state updates but BEFORE toast
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+          console.log('📍 Scroll restored to:', savedScrollPosition);
+        });
         
         toast.success(status === 'draft' ? 'Draft saved' : 'Quote updated', {
           duration: 2000,

@@ -46,8 +46,9 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       return;
     }
 
-    // Save scroll position before creating job
-    const scrollY = window.scrollY;
+    // Manual scroll anchor - record EXACT scroll position at the very start
+    const savedScrollPosition = window.scrollY;
+    console.log('💾 Saved scroll position:', savedScrollPosition);
 
     setLoading(true);
 
@@ -76,8 +77,11 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         throw new Error(error.message || 'Failed to create job');
       }
 
-      // Restore scroll position BEFORE toast
-      window.scrollTo({ top: scrollY, behavior: 'instant' });
+      // Restore scroll position AFTER updates but BEFORE toast
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+        console.log('📍 Scroll restored to:', savedScrollPosition);
+      });
 
       toast.success(`Job "${formData.name}" created as ${formData.status === 'quoting' ? 'Quote' : 'Active'}`, {
         duration: 2000,
