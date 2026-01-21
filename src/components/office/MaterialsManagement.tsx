@@ -777,52 +777,115 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (activeId.startsWith('material-')) {
       const materialId = activeId.replace('material-', '');
       
-      // Find which category the material is being dropped into
+      // Find source category and material
+      let sourceCategoryId: string | null = null;
+      let sourceMaterial: Material | null = null;
+      for (const cat of categories) {
+        const material = cat.materials.find(m => m.id === materialId);
+        if (material) {
+          sourceCategoryId = cat.id;
+          sourceMaterial = material;
+          break;
+        }
+      }
+
+      if (!sourceCategoryId || !sourceMaterial) return;
+
+      // Find target category and position
       let targetCategoryId: string | null = null;
-      let targetIndex = 0;
+      let targetMaterialId: string | null = null;
 
       // Check if dropped on another material
       if (overId.startsWith('material-')) {
-        const targetMaterialId = overId.replace('material-', '');
+        targetMaterialId = overId.replace('material-', '');
         for (const cat of categories) {
-          const materialIndex = cat.materials.findIndex(m => m.id === targetMaterialId);
-          if (materialIndex !== -1) {
+          if (cat.materials.find(m => m.id === targetMaterialId)) {
             targetCategoryId = cat.id;
-            targetIndex = cat.materials[materialIndex].order_index || 0;
             break;
           }
         }
       }
-      // Check if dropped on a category
+      // Check if dropped on a category header
       else if (overId.startsWith('category-')) {
         targetCategoryId = overId.replace('category-', '');
-        // Get max order_index in target category
-        const targetCat = categories.find(c => c.id === targetCategoryId);
-        if (targetCat && targetCat.materials.length > 0) {
-          targetIndex = Math.max(...targetCat.materials.map(m => m.order_index || 0)) + 1;
-        }
       }
 
-      if (targetCategoryId) {
-        try {
-          // Move material to new category with new order index
-          const { error } = await supabase
-            .from('materials')
-            .update({
-              category_id: targetCategoryId,
-              order_index: targetIndex,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', materialId);
+      if (!targetCategoryId) return;
 
-          if (error) throw error;
+      try {
+        const sourceCategory = categories.find(c => c.id === sourceCategoryId)!;
+        const targetCategory = categories.find(c => c.id === targetCategoryId)!;
+
+        // Get sorted materials from both categories
+        const sourceMaterials = [...sourceCategory.materials].sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+        const targetMaterials = [...targetCategory.materials].sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+
+        if (sourceCategoryId === targetCategoryId) {
+          // Same category - reorder within category
+          const oldIndex = sourceMaterials.findIndex(m => m.id === materialId);
+          const newIndex = targetMaterialId 
+            ? sourceMaterials.findIndex(m => m.id === targetMaterialId)
+            : sourceMaterials.length - 1;
+
+          if (oldIndex === newIndex) return;
+
+          const reorderedMaterials = arrayMove(sourceMaterials, oldIndex, newIndex);
+
+          // Update order_index for all materials in this category
+          await Promise.all(
+            reorderedMaterials.map((material, index) =>
+              supabase
+                .from('materials')
+                .update({ order_index: index, updated_at: new Date().toISOString() })
+                .eq('id', material.id)
+            )
+          );
+
+          toast.success('Material reordered');
+        } else {
+          // Different category - move material to new category
+          // Remove from source
+          const updatedSourceMaterials = sourceMaterials.filter(m => m.id !== materialId);
+          
+          // Add to target at appropriate position
+          const targetIndex = targetMaterialId 
+            ? targetMaterials.findIndex(m => m.id === targetMaterialId)
+            : targetMaterials.length;
+          
+          const updatedTargetMaterials = [...targetMaterials];
+          updatedTargetMaterials.splice(targetIndex, 0, sourceMaterial);
+
+          // Update source category materials
+          await Promise.all(
+            updatedSourceMaterials.map((material, index) =>
+              supabase
+                .from('materials')
+                .update({ order_index: index, updated_at: new Date().toISOString() })
+                .eq('id', material.id)
+            )
+          );
+
+          // Update target category materials (including the moved one)
+          await Promise.all(
+            updatedTargetMaterials.map((material, index) =>
+              supabase
+                .from('materials')
+                .update({
+                  category_id: targetCategoryId,
+                  order_index: index,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', material.id)
+            )
+          );
 
           toast.success('Material moved to new category');
-          loadMaterials();
-        } catch (error: any) {
-          console.error('Error moving material:', error);
-          toast.error('Failed to move material');
         }
+
+        loadMaterials();
+      } catch (error: any) {
+        console.error('Error moving material:', error);
+        toast.error('Failed to move material');
       }
     }
     // Check if we're dragging a category
@@ -833,26 +896,26 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       const oldIndex = filteredCategories.findIndex(cat => cat.id === activeCatId);
       const newIndex = filteredCategories.findIndex(cat => cat.id === overCatId);
 
-      if (oldIndex !== newIndex) {
-        const reorderedCategories = arrayMove(filteredCategories, oldIndex, newIndex);
-        
-        try {
-          // Update order_index for all affected categories
-          await Promise.all(
-            reorderedCategories.map((cat, index) =>
-              supabase
-                .from('materials_categories')
-                .update({ order_index: index })
-                .eq('id', cat.id)
-            )
-          );
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
-          toast.success('Categories reordered');
-          loadMaterials();
-        } catch (error: any) {
-          console.error('Error reordering categories:', error);
-          toast.error('Failed to reorder categories');
-        }
+      const reorderedCategories = arrayMove(filteredCategories, oldIndex, newIndex);
+      
+      try {
+        // Update order_index for all affected categories
+        await Promise.all(
+          reorderedCategories.map((cat, index) =>
+            supabase
+              .from('materials_categories')
+              .update({ order_index: index })
+              .eq('id', cat.id)
+          )
+        );
+
+        toast.success('Categories reordered');
+        loadMaterials();
+      } catch (error: any) {
+        console.error('Error reordering categories:', error);
+        toast.error('Failed to reorder categories');
       }
     }
   }
