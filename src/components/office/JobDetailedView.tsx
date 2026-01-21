@@ -96,7 +96,7 @@ interface DailyLog {
 }
 
 export function JobDetailedView({ job }: JobDetailedViewProps) {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
   const [componentGroups, setComponentGroups] = useState<ComponentGroup[]>([]);
@@ -1199,8 +1199,8 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
         {/* Materials Tab */}
         <TabsContent value="materials" className="space-y-4 px-4">
-          {user?.id && (
-            <MaterialsManagement job={job} userId={user.id} />
+          {profile?.id && (
+            <MaterialsManagement job={job} userId={profile.id} />
           )}
         </TabsContent>
       </Tabs>
