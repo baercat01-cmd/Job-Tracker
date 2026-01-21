@@ -2251,7 +2251,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           
           {filteredCategories.map((category) => {
             const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-            const showColorColumn = /metal|trim/i.test(category.name);
+            const showColorColumn = filteredMaterials.some(m => m.color);
             
             return (
               <Card key={category.id} className={`overflow-hidden ${isViewingParent ? 'ml-6 border-l-4 border-l-primary' : ''}`}>
@@ -2405,11 +2405,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               <td className="p-3">
                                 <div className="font-medium">
                                   {material.name}
-                                  {material.color && (
-                                    <Badge variant="outline" className="ml-2 text-xs font-medium">
-                                      {material.color}
-                                    </Badge>
-                                  )}
                                 </div>
                                 {material.import_source && material.import_source !== 'manual' && (
                                   <Badge variant="outline" className="mt-1 text-xs">
