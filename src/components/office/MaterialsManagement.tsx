@@ -212,7 +212,7 @@ function SortableMaterialRow({
         {material.quantity}
       </td>
       <td className="p-2 text-center">
-        {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
+        {material.length || '-'}
       </td>
       {showColorColumn && (
         <td className="p-2 text-center truncate">
@@ -1387,14 +1387,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="material-length">Length (ft)</Label>
+                <Label htmlFor="material-length">Length</Label>
                 <Input
                   id="material-length"
-                  type="number"
+                  type="text"
                   value={materialLength}
                   onChange={(e) => setMaterialLength(e.target.value)}
-                  placeholder="e.g., 96"
+                  placeholder="e.g., 8ft, 12ft, 16ft"
                 />
+                <p className="text-xs text-muted-foreground mt-1">Enter as shown in your material sheets (e.g., 8ft, 10', 12ft)</p>
               </div>
             </div>
 
