@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,12 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
-  Plus, 
-  Edit, 
-  Trash2, 
-  ChevronUp, 
-  ChevronDown, 
+import {
+  Plus,
+  Edit,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
   FileSpreadsheet,
   Upload,
   ChevronDownIcon,
@@ -111,16 +112,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
-  
+
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
-  
+
   // Sorting
   const [sortBy, setSortBy] = useState<'name' | 'useCase' | 'quantity' | 'length' | 'color'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  
+
   // Category modal
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -131,7 +132,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [selectedChildCategories, setSelectedChildCategories] = useState<string[]>([]);
   const [isCreatingParent, setIsCreatingParent] = useState(false);
   const [newChildCategories, setNewChildCategories] = useState('');
-  
+
   // Material modal
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
@@ -142,7 +143,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialColor, setMaterialColor] = useState('');
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
-  
+
   // Status change dialog with dates
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [statusChangeMaterial, setStatusChangeMaterial] = useState<Material | null>(null);
@@ -160,18 +161,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [pickupVendor, setPickupVendor] = useState('');
   const [hasDeliveryMethod, setHasDeliveryMethod] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-  
+
   // Bulk status change
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
   const [bulkStatusTarget, setBulkStatusTarget] = useState('not_ordered');
   const [bulkStatusUpdating, setBulkStatusUpdating] = useState(false);
-  
+
   // Copy categories from another job
   const [showCopyCategoriesDialog, setShowCopyCategoriesDialog] = useState(false);
   const [allJobs, setAllJobs] = useState<Job[]>([]);
   const [sourceJobId, setSourceJobId] = useState('');
   const [copyingCategories, setCopyingCategories] = useState(false);
-  
+
   // CSV upload
   const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [csvData, setCsvData] = useState<any[]>([]);
@@ -189,7 +190,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }>({ category: '', name: '', useCase: '', quantity: '', length: '', color: '' });
   const [importStep, setImportStep] = useState<'columns' | 'categories'>('columns');
   const [fileExtension, setFileExtension] = useState<string>('');
-  
+
   // Material bundles
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [bundles, setBundles] = useState<any[]>([]);
@@ -302,7 +303,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       console.log(`Auto-copied ${templateCategories.length} categories from ${templateJob.name}`);
       toast.success(`Categories set up from ${templateJob.name}`);
-      
+
       // Reload materials to show new categories
       loadMaterials();
     } catch (error: any) {
@@ -314,7 +315,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function loadMaterials() {
     try {
       setLoading(true);
-      
+
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('materials_categories')
         .select('*')
@@ -381,19 +382,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       // Create a map of material ID to bundle info
       const bundleMap = new Map<string, { bundleId: string; bundleName: string }>();
-      
+
       (bundlesData || []).forEach((bundle: any) => {
         const bundleItems = (itemsData || []).filter((item: any) => item.bundle_id === bundle.id);
         bundleItems.forEach((item: any) => {
-          bundleMap.set(item.material_id, { 
-            bundleId: bundle.id, 
-            bundleName: bundle.name 
+          bundleMap.set(item.material_id, {
+            bundleId: bundle.id,
+            bundleName: bundle.name
           });
         });
       });
 
       setMaterialBundleMap(bundleMap);
-      
+
       // Reload materials to show bundle info
       if (bundleMap.size > 0) {
         loadMaterials();
@@ -461,15 +462,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setParentCategoryId(category.parent_id || '');
     setCategorySheetImage(null);
     setCategorySheetPreview(category.sheet_image_url || null);
-    
+
     // Find all child categories of this category
     const childCats = categories.filter(c => c.parent_id === category.id).map(c => c.id);
     setSelectedChildCategories(childCats);
-    
+
     // Determine if this is a parent category (has no parent)
     setIsCreatingParent(!category.parent_id);
     setNewChildCategories('');
-    
+
     setShowCategoryModal(true);
   }
 
@@ -525,7 +526,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (editingCategory) {
         // Update existing
-        const updateData: any = { 
+        const updateData: any = {
           name: categoryName.trim(),
           parent_id: parentCategoryId || null,
         };
@@ -539,12 +540,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', editingCategory.id);
 
         if (error) throw error;
-        
+
         // Update child categories: assign selected ones, unassign others
         const currentChildren = categories.filter(c => c.parent_id === editingCategory.id).map(c => c.id);
         const toAssign = selectedChildCategories.filter(id => !currentChildren.includes(id));
         const toUnassign = currentChildren.filter(id => !selectedChildCategories.includes(id));
-        
+
         // Assign new children
         if (toAssign.length > 0) {
           const { error: assignError } = await supabase
@@ -553,7 +554,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             .in('id', toAssign);
           if (assignError) throw assignError;
         }
-        
+
         // Unassign removed children
         if (toUnassign.length > 0) {
           const { error: unassignError } = await supabase
@@ -562,12 +563,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             .in('id', toUnassign);
           if (unassignError) throw unassignError;
         }
-        
+
         toast.success('Category updated');
       } else {
         // Create new
         const maxOrder = Math.max(...categories.map(c => c.order_index), -1);
-        
+
         // First create the parent category
         const { data: newParent, error: parentError } = await supabase
           .from('materials_categories')
@@ -583,14 +584,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .single();
 
         if (parentError) throw parentError;
-        
+
         // If creating a parent category with new child categories, create them
         if (isCreatingParent && newChildCategories.trim()) {
           const childNames = newChildCategories
             .split('\n')
             .map(name => name.trim())
             .filter(name => name.length > 0);
-          
+
           if (childNames.length > 0) {
             const childCategoriesToInsert = childNames.map((name, index) => ({
               job_id: job.id,
@@ -599,13 +600,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               order_index: maxOrder + 2 + index,
               created_by: userId,
             }));
-            
+
             const { error: childError } = await supabase
               .from('materials_categories')
               .insert(childCategoriesToInsert);
-            
+
             if (childError) throw childError;
-            
+
             toast.success(`Created parent category "${categoryName}" with ${childNames.length} subcategories`);
           } else {
             toast.success('Category created');
@@ -613,14 +614,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         } else {
           toast.success('Category created');
         }
-        
+
         // Also assign existing categories as children if selected
         if (selectedChildCategories.length > 0) {
           const { error: assignError } = await supabase
             .from('materials_categories')
             .update({ parent_id: newParent.id })
             .in('id', selectedChildCategories);
-          
+
           if (assignError) throw assignError;
         }
       }
@@ -729,14 +730,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     try {
       const { error } = await supabase
         .from('materials')
-        .update({ 
+        .update({
           category_id: newCategoryId,
-          updated_at: new Date().toISOString() 
+          updated_at: new Date().toISOString()
         })
         .eq('id', materialId);
 
       if (error) throw error;
-      
+
       const newCategory = categories.find(c => c.id === newCategoryId);
       toast.success(`Moved to ${newCategory?.name}`);
       loadMaterials();
@@ -826,11 +827,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   async function handleQuickStatusChange(materialId: string, newStatusValue: string) {
     try {
       // Optimistically update local state first
-      setCategories(prevCategories => 
+      setCategories(prevCategories =>
         prevCategories.map(category => ({
           ...category,
-          materials: category.materials.map(material => 
-            material.id === materialId 
+          materials: category.materials.map(material =>
+            material.id === materialId
               ? { ...material, status: newStatusValue }
               : material
           )
@@ -839,16 +840,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       const { error } = await supabase
         .from('materials')
-        .update({ 
-          status: newStatusValue, 
-          updated_at: new Date().toISOString() 
+        .update({
+          status: newStatusValue,
+          updated_at: new Date().toISOString()
         })
         .eq('id', materialId);
 
       if (error) throw error;
 
       toast.success(`Status updated to ${getStatusLabel(newStatusValue)}`);
-      
+
       // Reload to ensure data consistency
       await loadMaterials();
     } catch (error: any) {
@@ -862,7 +863,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function handleStatusChange(material: Material, newStatusValue: string) {
     setStatusChangeMaterial(material);
     setNewStatus(newStatusValue);
-    
+
     // Pre-populate existing data (except order by date which should be blank)
     setOrderByDate(''); // Always blank by default
     setPullByDate(material.pull_by_date || '');
@@ -873,7 +874,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setDeliveryVendor((material as any).delivery_vendor || '');
     setPickupVendor((material as any).pickup_vendor || '');
     setDateNotes('');
-    
+
     // Set delivery method if exists
     if (material.delivery_method) {
       setDeliveryMethod(material.delivery_method);
@@ -882,7 +883,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       setDeliveryMethod('delivery');
       setHasDeliveryMethod(false);
     }
-    
+
     setShowStatusDialog(true);
   }
 
@@ -896,13 +897,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   // Helper functions
   function getFilteredAndSortedMaterials(categoryMaterials: Material[]) {
     let filtered = categoryMaterials.filter(material => {
-      const matchesSearch = searchTerm === '' || 
+      const matchesSearch = searchTerm === '' ||
         material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (material.use_case && material.use_case.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (material.length && material.length.toLowerCase().includes(searchTerm.toLowerCase()));
-      
+
       const matchesStatus = filterStatus === 'all' || material.status === filterStatus;
-      
+
       return matchesSearch && matchesStatus;
     });
 
@@ -956,7 +957,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (sortBy !== column) {
       return <ArrowUpDown className="w-4 h-4 opacity-40" />;
     }
-    return sortDirection === 'asc' 
+    return sortDirection === 'asc'
       ? <ArrowUp className="w-4 h-4 text-primary" />
       : <ArrowDown className="w-4 h-4 text-primary" />;
   }
@@ -965,18 +966,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (filterCategory === 'all') {
       return categories;
     }
-    
+
     const selectedCategory = categories.find(cat => cat.id === filterCategory);
     if (!selectedCategory) return [];
-    
+
     const isParent = categories.some(cat => cat.parent_id === selectedCategory.id);
     if (isParent) {
       return categories.filter(cat => cat.parent_id === selectedCategory.id);
     }
-    
+
     return [selectedCategory];
   };
-  
+
   const filteredCategories = getDisplayCategories();
   const selectedCategory = categories.find(cat => cat.id === filterCategory);
   const isViewingParent = selectedCategory && categories.some(cat => cat.parent_id === selectedCategory.id);
@@ -986,249 +987,369 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
-      <TabsList className="grid w-full max-w-md grid-cols-2">
-        <TabsTrigger value="manage" className="flex items-center gap-2">
-          <ListChecks className="w-4 h-4" />
-          Manage Materials
-        </TabsTrigger>
-        <TabsTrigger value="bundles" className="flex items-center gap-2">
-          <ShoppingCart className="w-4 h-4" />
-          Material Bundles
-        </TabsTrigger>
-      </TabsList>
+    <>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="manage" className="flex items-center gap-2">
+            <ListChecks className="w-4 h-4" />
+            Manage Materials
+          </TabsTrigger>
+          <TabsTrigger value="bundles" className="flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4" />
+            Material Bundles
+          </TabsTrigger>
+        </TabsList>
 
-      <TabsContent value="manage" className="space-y-4">
-        {/* Search & Filter Bar */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search materials, usage, or length..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 pr-9"
-                />
-                {searchTerm && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
+        <TabsContent value="manage" className="space-y-4">
+          {/* Search & Filter Bar */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search materials, usage, or length..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 pr-9"
+                  />
+                  {searchTerm && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {STATUS_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </CardContent>
+          </Card>
 
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Categories" />
+          {/* Header Actions */}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={openAddCategory} className="gradient-primary">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Category
+            </Button>
+          </div>
+
+          {/* Materials Table */}
+          {filteredCategories.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {filteredCategories.map((category) => {
+                const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+                const isColorCategory = /trim|metal|fastener/i.test(category.name);
+                const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
+
+                return (
+                  <Card key={category.id} className="overflow-hidden">
+                    <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Material
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {filteredMaterials.length === 0 ? (
+                        <div className="py-8 text-center text-muted-foreground">
+                          No materials in this category
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-muted/50 border-b">
+                              <tr>
+                                <th className="text-left p-3">Material Name</th>
+                                <th className="text-left p-3">Use Case</th>
+                                <th className="text-center p-3 w-[100px]">Qty</th>
+                                <th className="text-center p-3 w-[100px]">Length</th>
+                                {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
+                                <th className="text-center p-3 font-semibold w-[140px]">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <PackagePlus className="w-4 h-4" />
+                                    Bundle
+                                  </div>
+                                </th>
+                                <th className="text-center p-3 w-[180px]">Status</th>
+                                <th className="text-right p-3 w-[140px]">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredMaterials.map((material) => (
+                                <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                                  <td className="p-3">
+                                    <div className="font-medium">{material.name}</div>
+                                    {material.bundle_name && (
+                                      <Badge variant="secondary" className="mt-1 text-xs">
+                                        📦 {material.bundle_name}
+                                      </Badge>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-sm text-muted-foreground">
+                                    {material.use_case || '-'}
+                                  </td>
+                                  <td className="p-3 text-center font-semibold">
+                                    {material.quantity}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
+                                  </td>
+                                  {showColorColumn && (
+                                    <td className="p-3 text-center">
+                                      {material.color || '-'}
+                                    </td>
+                                  )}
+                                  <td className="p-3 w-[140px]">
+                                    <div className="flex justify-center">
+                                      <Select
+                                        value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
+                                        onValueChange={(bundleId) => assignMaterialToBundle(material.id, bundleId)}
+                                      >
+                                        <SelectTrigger className="w-full h-9 text-xs">
+                                          <SelectValue placeholder="None" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="NONE">
+                                            <span className="text-muted-foreground text-xs">No bundle</span>
+                                          </SelectItem>
+                                          {bundles.map(bundle => (
+                                            <SelectItem key={bundle.id} value={bundle.id}>
+                                              <span className="text-xs">{bundle.name}</span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </td>
+                                  <td className="p-3 w-[180px]">
+                                    <div className="flex justify-center">
+                                      <Select
+                                        value={material.status}
+                                        onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                      >
+                                        <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {STATUS_OPTIONS.map(opt => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                                                {opt.label}
+                                              </span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </td>
+                                  <td className="p-3 w-[140px]">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <Button size="sm" variant="ghost" onClick={() => openEditMaterial(material)}>
+                                        <Edit className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => deleteMaterial(material.id)}
+                                        className="text-destructive"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="bundles" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5" />
+                Material Bundles
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">
+                Create and manage material bundles by grouping related materials together.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MaterialsList
+                job={job}
+                userId={userId}
+                userRole="office"
+                allowBundleCreation={true}
+                defaultTab="bundles"
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Material Edit/Add Dialog */}
+      <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {editingMaterial ? (
+                <>
+                  <Edit className="w-5 h-5" />Edit Material
+                </>
+              ) : (
+                <>
+                  <Plus className="w-5 h-5" />Add Material
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="material-category">Category *</Label>
+              <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                <SelectTrigger id="material-category">
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
                   {categories.map(cat => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
 
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Statuses" />
+            <div className="space-y-2">
+              <Label htmlFor="material-name">Material Name *</Label>
+              <Input
+                id="material-name"
+                value={materialName}
+                onChange={(e) => setMaterialName(e.target.value)}
+                placeholder="e.g., 2x4 Lumber"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="material-quantity">Quantity *</Label>
+                <Input
+                  id="material-quantity"
+                  type="number"
+                  value={materialQuantity}
+                  onChange={(e) => setMaterialQuantity(e.target.value)}
+                  placeholder="0"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="material-length">Length (inches)</Label>
+                <Input
+                  id="material-length"
+                  type="number"
+                  value={materialLength}
+                  onChange={(e) => setMaterialLength(e.target.value)}
+                  placeholder="e.g., 96"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="material-color">Color</Label>
+              <Input
+                id="material-color"
+                value={materialColor}
+                onChange={(e) => setMaterialColor(e.target.value)}
+                placeholder="e.g., Galvalume"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="material-use-case">Use Case / Location</Label>
+              <Input
+                id="material-use-case"
+                value={materialUseCase}
+                onChange={(e) => setMaterialUseCase(e.target.value)}
+                placeholder="e.g., Wall framing, Roof panels"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="material-status">Status</Label>
+              <Select value={materialStatus} onValueChange={setMaterialStatus}>
+                <SelectTrigger id="material-status">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
                   {STATUS_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                        {opt.label}
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Header Actions */}
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={openAddCategory} className="gradient-primary">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Category
-          </Button>
-        </div>
-
-        {/* Materials Table */}
-        {filteredCategories.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredCategories.map((category) => {
-              const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-              const isColorCategory = /trim|metal|fastener/i.test(category.name);
-              const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
-              
-              return (
-                <Card key={category.id} className="overflow-hidden">
-                  <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add Material
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {filteredMaterials.length === 0 ? (
-                      <div className="py-8 text-center text-muted-foreground">
-                        No materials in this category
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-muted/50 border-b">
-                            <tr>
-                              <th className="text-left p-3">Material Name</th>
-                              <th className="text-left p-3">Use Case</th>
-                              <th className="text-center p-3 w-[100px]">Qty</th>
-                              <th className="text-center p-3 w-[100px]">Length</th>
-                              {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
-                              <th className="text-center p-3 font-semibold w-[140px]">
-                                <div className="flex items-center justify-center gap-1">
-                                  <PackagePlus className="w-4 h-4" />
-                                  Bundle
-                                </div>
-                              </th>
-                              <th className="text-center p-3 w-[180px]">Status</th>
-                              <th className="text-right p-3 w-[140px]">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredMaterials.map((material) => (
-                              <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                                <td className="p-3">
-                                  <div className="font-medium">{material.name}</div>
-                                  {material.bundle_name && (
-                                    <Badge variant="secondary" className="mt-1 text-xs">
-                                      📦 {material.bundle_name}
-                                    </Badge>
-                                  )}
-                                </td>
-                                <td className="p-3 text-sm text-muted-foreground">
-                                  {material.use_case || '-'}
-                                </td>
-                                <td className="p-3 text-center font-semibold">
-                                  {material.quantity}
-                                </td>
-                                <td className="p-3 text-center">
-                                  {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
-                                </td>
-                                {showColorColumn && (
-                                  <td className="p-3 text-center">
-                                    {material.color || '-'}
-                                  </td>
-                                )}
-                                <td className="p-3 w-[140px]">
-                                  <div className="flex justify-center">
-                                    <Select
-                                      value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
-                                      onValueChange={(bundleId) => assignMaterialToBundle(material.id, bundleId)}
-                                    >
-                                      <SelectTrigger className="w-full h-9 text-xs">
-                                        <SelectValue placeholder="None" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="NONE">
-                                          <span className="text-muted-foreground text-xs">No bundle</span>
-                                        </SelectItem>
-                                        {bundles.map(bundle => (
-                                          <SelectItem key={bundle.id} value={bundle.id}>
-                                            <span className="text-xs">{bundle.name}</span>
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </td>
-                                <td className="p-3 w-[180px]">
-                                  <div className="flex justify-center">
-                                    <Select
-                                      value={material.status}
-                                      onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
-                                    >
-                                      <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {STATUS_OPTIONS.map(opt => (
-                                          <SelectItem key={opt.value} value={opt.value}>
-                                            <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
-                                              {opt.label}
-                                            </span>
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </td>
-                                <td className="p-3 w-[140px]">
-                                  <div className="flex items-center justify-end gap-1">
-                                    <Button size="sm" variant="ghost" onClick={() => openEditMaterial(material)}>
-                                      <Edit className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => deleteMaterial(material.id)}
-                                      className="text-destructive"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={saveMaterial} className="flex-1 gradient-primary">
+                {editingMaterial ? 'Update Material' : 'Add Material'}
+              </Button>
+              <Button variant="outline" onClick={() => setShowMaterialModal(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-        )}
-      </TabsContent>
-
-      <TabsContent value="bundles" className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" />
-              Material Bundles
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-2">
-              Create and manage material bundles by grouping related materials together.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <MaterialsList 
-              job={job} 
-              userId={userId}
-              userRole="office" 
-              allowBundleCreation={true}
-              defaultTab="bundles"
-            />
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
