@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Package, Search, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
-import { cleanMaterialLength } from '@/lib/utils';
+import { cleanMaterialValue } from '@/lib/utils';
 
 interface Material {
   id: string;
@@ -203,9 +203,9 @@ export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'at_
                             {/* Material Info - Compact Single Row */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline gap-2 flex-wrap">
-                                <h3 className="font-semibold text-sm leading-tight truncate">{material.name}</h3>
+                                <h3 className="font-semibold text-sm leading-tight truncate">{cleanMaterialValue(material.name)}</h3>
                                 {material.length && (
-                                  <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{cleanMaterialLength(material.length)}</span></span>
+                                  <span className="text-xs text-muted-foreground">Len: <span className="font-medium text-foreground">{cleanMaterialValue(material.length)}</span></span>
                                 )}
                                 {showColorInCategory && material.color && (
                                   <Badge variant="outline" className="text-xs font-medium">

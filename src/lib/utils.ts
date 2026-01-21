@@ -40,12 +40,12 @@ export function formatShortDate(dateString: string): string {
 }
 
 /**
- * Clean material length string by removing outer quotation marks
- * Preserves feet (') and inch (") symbols within the measurement
- * @param value - Length string like "8ft" or 8ft or "10'" or 10'
- * @returns Cleaned string like 8ft or 10'
+ * Clean material value (name, length, etc.) by removing outer quotation marks from spreadsheet imports
+ * Preserves feet (') and inch (") symbols within measurements
+ * @param value - Value string like "8ft" or "2x4 Lumber" from CSV/Excel import
+ * @returns Cleaned string like 8ft or 2x4 Lumber
  */
-export function cleanMaterialLength(value: string | null | undefined): string {
+export function cleanMaterialValue(value: string | null | undefined): string {
   if (!value) return '';
   
   // Trim whitespace
