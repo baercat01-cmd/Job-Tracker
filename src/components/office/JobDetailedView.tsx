@@ -754,7 +754,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-full max-w-[2400px] mx-auto">
+    <div className="w-full max-w-[3200px] mx-auto px-4">
       <Tabs defaultValue="overview" className="w-full">
         <div className="sticky top-0 z-10 bg-background border-b shadow-sm pb-4">
           <TabsList className="grid w-full max-w-xl grid-cols-3">
@@ -776,7 +776,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4 pt-4">
       {/* Key Metrics Dashboard */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
@@ -900,7 +900,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
       {/* Project Progress */}
       {estimatedHours > 0 && (
-        <Card className="border-2 border-primary/20">
+        <Card className="border-2 border-primary/20 max-w-[1800px] mx-auto">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Target className="w-5 h-5 text-primary" />
@@ -908,7 +908,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-3 gap-6 text-center">
               <div className="p-4 bg-primary/5 rounded-lg border">
                 <div className="text-3xl font-bold text-primary">{estimatedHours.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Estimated Hours</p>
@@ -954,7 +954,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-3 pt-2 border-t">
+            <div className="grid grid-cols-3 gap-6 pt-2 border-t">
               <div className="text-sm">
                 <p className="text-muted-foreground">Days Logged</p>
                 <p className="font-bold text-lg">{dateGroups.length}</p>
@@ -976,7 +976,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
       {/* Component Breakdown */}
       {componentGroups.filter(comp => comp.component_id !== null).length > 0 && (
-        <Card>
+        <Card className="max-w-[1800px] mx-auto">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="w-5 h-5" />
@@ -1012,7 +1012,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
 
       {/* Recent Activity */}
       {recentActivity.length > 0 && (
-        <Card>
+        <Card className="max-w-[1800px] mx-auto">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="w-5 h-5" />
@@ -1046,7 +1046,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         {/* Time Tracking Tab */}
         <TabsContent value="time" className="space-y-4 pt-4">
           {/* Component Work Details */}
-      <Card>
+      <Card className="max-w-[2800px] mx-auto">
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-4">
@@ -1129,7 +1129,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                     <div className="border-2 rounded-xl overflow-hidden shadow-md" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                       <CollapsibleTrigger asChild>
                         <button className="w-full hover:opacity-90 transition-all">
-                          <div className="flex items-center justify-between p-5 bg-gradient-to-r from-primary/10 to-primary/5 border-b-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+                          <div className="flex items-center justify-between p-6 bg-gradient-to-r from-primary/10 to-primary/5 border-b-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                             <div className="flex items-center gap-4">
                               {isDateExpanded ? (
                                 <ChevronDown className="w-7 h-7 text-primary flex-shrink-0" />
@@ -1153,7 +1153,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                 </div>
                               </div>
                             </div>
-                            <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border-2" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
+                            <div className="text-right bg-white dark:bg-gray-800 rounded-lg px-6 py-4 border-2 min-w-[180px]" style={{ borderColor: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                               <p className="text-4xl font-bold" style={{ color: index % 2 === 0 ? '#2d5f3f' : '#4a7c59' }}>
                                 {dateGroup.total_man_hours.toFixed(2)}
                               </p>
@@ -1164,7 +1164,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                       </CollapsibleTrigger>
 
                       <CollapsibleContent>
-                        <div className="p-4 space-y-3 bg-gradient-to-b from-muted/10 to-muted/5">
+                        <div className="p-6 space-y-4 bg-gradient-to-b from-muted/10 to-muted/5">
                           {dateGroup.components.map((component) => {
                             const componentKey = `${dateGroup.date}-${component.component_id}`;
                             const isComponentExpanded = expandedComponents.has(componentKey);
@@ -1202,7 +1202,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                   </CollapsibleTrigger>
 
                                   <CollapsibleContent>
-                                    <div className="p-3 space-y-2 bg-card">
+                                    <div className="p-4 space-y-3 bg-card">
                                       {component.entries.map(renderWorkEntry)}
                                     </div>
                                   </CollapsibleContent>
@@ -1255,7 +1255,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                       </CollapsibleTrigger>
 
                       <CollapsibleContent>
-                        <div className="p-4 space-y-3 bg-gradient-to-b from-muted/10 to-muted/5">
+                        <div className="p-6 space-y-4 bg-gradient-to-b from-muted/10 to-muted/5">
                           {componentGroup.dates.map((dateSummary) => {
                             const dateKey = `comp-${componentGroup.component_id}-${dateSummary.date}`;
                             const isDateExpanded = expandedComponents.has(dateKey);
@@ -1293,7 +1293,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                   </CollapsibleTrigger>
 
                                   <CollapsibleContent>
-                                    <div className="p-3 space-y-2 bg-card">
+                                    <div className="p-4 space-y-3 bg-card">
                                       {dateSummary.entries.map(renderWorkEntry)}
                                     </div>
                                   </CollapsibleContent>
@@ -1360,7 +1360,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                       </CollapsibleTrigger>
 
                       <CollapsibleContent>
-                        <div className="p-4 space-y-3 bg-gradient-to-b from-muted/10 to-muted/5">
+                        <div className="p-6 space-y-4 bg-gradient-to-b from-muted/10 to-muted/5">
                           {personGroup.dates.map((dateSummary) => {
                             const dateKey = `person-${personGroup.user_name}-${dateSummary.date}`;
                             const isDateExpanded = expandedComponents.has(dateKey);
@@ -1398,7 +1398,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
                                   </CollapsibleTrigger>
 
                                   <CollapsibleContent>
-                                    <div className="p-3 space-y-2 bg-card">
+                                    <div className="p-4 space-y-3 bg-card">
                                       {dateSummary.entries.map(renderWorkEntry)}
                                     </div>
                                   </CollapsibleContent>
