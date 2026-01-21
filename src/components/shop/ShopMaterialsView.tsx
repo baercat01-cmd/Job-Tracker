@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Search, X, CheckCircle2, Package } from 'lucide-react';
 import { toast } from 'sonner';
+import { cleanMaterialLength } from '@/lib/utils';
 
 interface Material {
   id: string;
@@ -331,7 +332,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                             {material.quantity}
                           </td>
                           <td className="p-3 text-center">
-                            {material.length || '-'}
+                            {cleanMaterialLength(material.length) || '-'}
                           </td>
                           <td className="p-3">
                             <div className="flex justify-center">

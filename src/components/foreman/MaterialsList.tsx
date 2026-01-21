@@ -23,7 +23,7 @@ import {
 import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle, ChevronLeft, ChevronRight as ChevronRightIcon, Truck, Clock, Trash2, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
-import { getLocalDateString } from '@/lib/utils';
+import { getLocalDateString, cleanMaterialLength } from '@/lib/utils';
 import type { Job } from '@/types';
 import { ReadyForJobMaterials } from './ReadyForJobMaterials';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1370,7 +1370,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                 <div className="flex items-baseline gap-2">
                                   <h4 className="font-medium text-sm">{group.name}</h4>
                                   {group.length && (
-                                    <span className="text-xs text-muted-foreground">{group.length}</span>
+                                    <span className="text-xs text-muted-foreground">{cleanMaterialLength(group.length)}</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
@@ -1680,7 +1680,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                         <h5 className="font-medium text-sm">{material.name}</h5>
                                         {material.length && (
                                           <span className="text-xs text-muted-foreground">
-                                            {material.length}
+                                            {cleanMaterialLength(material.length)}
                                           </span>
                                         )}
                                       </div>
@@ -1772,7 +1772,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                     <h5 className="font-medium text-sm">{material.name}</h5>
                                     {material.length && (
                                       <span className="text-xs text-muted-foreground">
-                                        {material.length}
+                                        {cleanMaterialLength(material.length)}
                                       </span>
                                     )}
                                   </div>

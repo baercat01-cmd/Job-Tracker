@@ -37,7 +37,7 @@ import * as XLSX from 'xlsx';
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatMeasurement } from '@/lib/utils';
+import { formatMeasurement, cleanMaterialLength } from '@/lib/utils';
 import {
   DndContext,
   DragOverlay,
@@ -212,7 +212,7 @@ function SortableMaterialRow({
         {material.quantity}
       </td>
       <td className="p-2 text-center">
-        {material.length || '-'}
+        {cleanMaterialLength(material.length) || '-'}
       </td>
       {showColorColumn && (
         <td className="p-2 text-center truncate">

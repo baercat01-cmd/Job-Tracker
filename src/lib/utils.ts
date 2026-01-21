@@ -40,6 +40,28 @@ export function formatShortDate(dateString: string): string {
 }
 
 /**
+ * Clean material length string by removing outer quotation marks
+ * Preserves feet (') and inch (") symbols within the measurement
+ * @param value - Length string like "8ft" or 8ft or "10'" or 10'
+ * @returns Cleaned string like 8ft or 10'
+ */
+export function cleanMaterialLength(value: string | null | undefined): string {
+  if (!value) return '';
+  
+  // Trim whitespace
+  let cleaned = value.trim();
+  
+  // Remove outer quotation marks (" or ') if they exist on both sides
+  // But preserve feet (') and inch (") symbols that are part of the measurement
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 2 && !cleaned.includes('ft'))) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  
+  return cleaned;
+}
+
+/**
  * Format measurements to display as feet and inches (e.g., "10'" or "10' 2"")
  * @param value - Number representing total measurement in feet or inches
  * @param unit - 'feet' or 'inches' - what unit the input value is in
