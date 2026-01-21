@@ -463,7 +463,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [filterCategory, setFilterCategory] = useState('all');
 
   // Sorting
-  const [sortBy, setSortBy] = useState<'name' | 'useCase' | 'quantity' | 'length' | 'color'>('name');
+  const [sortBy, setSortBy] = useState<'order' | 'name' | 'useCase' | 'quantity' | 'length' | 'color'>('order');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Category modal
@@ -1132,6 +1132,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       let compareB: any;
 
       switch (sortBy) {
+        case 'order':
+          // Sort by order_index (default/manual order)
+          compareA = a.order_index ?? 0;
+          compareB = b.order_index ?? 0;
+          break;
         case 'name':
           compareA = a.name.toLowerCase();
           compareB = b.name.toLowerCase();
