@@ -754,10 +754,10 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-full mx-auto">
+    <div className="w-full">
       <Tabs defaultValue="overview" className="w-full">
         <div className="bg-background border-b shadow-sm pb-4 mb-4">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsList className="grid w-full max-w-3xl grid-cols-4">
             <TabsTrigger value="info">
               <FileCheck className="w-4 h-4 mr-2" />
               Job Info
@@ -897,7 +897,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4">
+        <TabsContent value="overview" className="space-y-4 max-w-[2800px] mx-auto">
       {/* Key Metrics Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
@@ -1167,7 +1167,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Time Tracking Tab */}
-        <TabsContent value="time" className="space-y-4 pt-4">
+        <TabsContent value="time" className="space-y-4 pt-4 max-w-[2800px] mx-auto">
           {/* Component Work Details */}
       <Card>
         <CardHeader>
@@ -1544,11 +1544,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         {/* Materials Tab */}
         <TabsContent value="materials" className="space-y-4 pt-4">
           {user?.id && (
-            <Card>
-              <CardContent className="pt-6">
-                <MaterialsManagement job={job} userId={user.id} />
-              </CardContent>
-            </Card>
+            <MaterialsManagement job={job} userId={user.id} />
           )}
         </TabsContent>
       </Tabs>
