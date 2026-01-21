@@ -30,6 +30,7 @@ import {
   PackagePlus,
   ChevronUp,
   ChevronDown,
+  GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -37,6 +38,25 @@ import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement } from '@/lib/utils';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 
 interface Material {
@@ -97,10 +117,343 @@ function getStatusLabel(status: string) {
   return STATUS_OPTIONS.find(s => s.value === status)?.label || status;
 }
 
+// Sortable Material Row Component
+interface SortableMaterialRowProps {
+  material: Material;
+  index: number;
+  totalMaterials: number;
+  categoryId: string;
+  showColorColumn: boolean;
+  onEdit: (material: Material) => void;
+  onDelete: (materialId: string) => void;
+  onStatusChange: (materialId: string, status: string) => void;
+  onBundleAssign: (materialId: string, bundleId: string) => void;
+  onMoveUp: (materialId: string, categoryId: string) => void;
+  onMoveDown: (materialId: string, categoryId: string) => void;
+  bundles: any[];
+  materialBundleMap: Map<string, { bundleId: string; bundleName: string }>;
+}
+
+function SortableMaterialRow({
+  material,
+  index,
+  totalMaterials,
+  categoryId,
+  showColorColumn,
+  onEdit,
+  onDelete,
+  onStatusChange,
+  onBundleAssign,
+  onMoveUp,
+  onMoveDown,
+  bundles,
+  materialBundleMap,
+}: SortableMaterialRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `material-${material.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 transition-colors">
+      <td className="p-3 w-[50px]">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded flex items-center justify-center"
+        >
+          <GripVertical className="w-4 h-4 text-muted-foreground" />
+        </div>
+      </td>
+      <td className="p-3 w-[70px]">
+        <div className="flex flex-col gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onMoveUp(material.id, categoryId)}
+            disabled={index === 0}
+            className="h-5 w-full p-0"
+          >
+            <ChevronUp className="w-3 h-3" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onMoveDown(material.id, categoryId)}
+            disabled={index === totalMaterials - 1}
+            className="h-5 w-full p-0"
+          >
+            <ChevronDown className="w-3 h-3" />
+          </Button>
+        </div>
+      </td>
+      <td className="p-3 min-w-[300px]">
+        <div className="font-medium whitespace-nowrap">{material.name}</div>
+        {material.bundle_name && (
+          <Badge variant="secondary" className="mt-1 text-xs">
+            📦 {material.bundle_name}
+          </Badge>
+        )}
+      </td>
+      <td className="p-3 text-sm text-muted-foreground">
+        {material.use_case || '-'}
+      </td>
+      <td className="p-3 text-center font-semibold">
+        {material.quantity}
+      </td>
+      <td className="p-3 text-center">
+        {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
+      </td>
+      {showColorColumn && (
+        <td className="p-3 text-center">
+          {material.color || '-'}
+        </td>
+      )}
+      <td className="p-3 w-[140px]">
+        <div className="flex justify-center">
+          <Select
+            value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
+            onValueChange={(bundleId) => onBundleAssign(material.id, bundleId)}
+          >
+            <SelectTrigger className="w-full h-9 text-xs">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="NONE">
+                <span className="text-muted-foreground text-xs">No bundle</span>
+              </SelectItem>
+              {bundles.map(bundle => (
+                <SelectItem key={bundle.id} value={bundle.id}>
+                  <span className="text-xs">{bundle.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </td>
+      <td className="p-3 w-[200px]">
+        <div className="flex justify-center">
+          <Select
+            value={material.status}
+            onValueChange={(newStatus) => onStatusChange(material.id, newStatus)}
+          >
+            <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
+                    {opt.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </td>
+      <td className="p-3 w-[140px]">
+        <div className="flex items-center justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => onEdit(material)}>
+            <Edit className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onDelete(material.id)}
+            className="text-destructive"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// Sortable Category Card Component
+interface SortableCategoryCardProps {
+  category: Category;
+  catIndex: number;
+  totalCategories: number;
+  onAddMaterial: (categoryId: string) => void;
+  onEditMaterial: (material: Material) => void;
+  onDeleteMaterial: (materialId: string) => void;
+  onStatusChange: (materialId: string, status: string) => void;
+  onBundleAssign: (materialId: string, bundleId: string) => void;
+  onMoveMaterialUp: (materialId: string, categoryId: string) => void;
+  onMoveMaterialDown: (materialId: string, categoryId: string) => void;
+  onMoveCategoryUp: (categoryId: string) => void;
+  onMoveCategoryDown: (categoryId: string) => void;
+  bundles: any[];
+  materialBundleMap: Map<string, { bundleId: string; bundleName: string }>;
+  getFilteredAndSortedMaterials: (materials: Material[]) => Material[];
+}
+
+function SortableCategoryCard({
+  category,
+  catIndex,
+  totalCategories,
+  onAddMaterial,
+  onEditMaterial,
+  onDeleteMaterial,
+  onStatusChange,
+  onBundleAssign,
+  onMoveMaterialUp,
+  onMoveMaterialDown,
+  onMoveCategoryUp,
+  onMoveCategoryDown,
+  bundles,
+  materialBundleMap,
+  getFilteredAndSortedMaterials,
+}: SortableCategoryCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setCategoryRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `category-${category.id}` });
+
+  const categoryStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+  const isColorCategory = /trim|metal|fastener/i.test(category.name);
+  const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
+
+  return (
+    <Card ref={setCategoryRef} style={categoryStyle} className="overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div
+              {...attributes}
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing p-1 hover:bg-primary/10 rounded"
+            >
+              <GripVertical className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onMoveCategoryUp(category.id)}
+                disabled={catIndex === 0}
+                className="h-5 w-7 p-0"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onMoveCategoryDown(category.id)}
+                disabled={catIndex === totalCategories - 1}
+                className="h-5 w-7 p-0"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </div>
+            <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => onAddMaterial(category.id)} className="gradient-primary">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Material
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {filteredMaterials.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground">
+            No materials in this category
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <SortableContext
+              items={filteredMaterials.map(m => `material-${m.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <table className="w-full">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left p-3 w-[50px]">Drag</th>
+                    <th className="text-left p-3 w-[70px]">Order</th>
+                    <th className="text-left p-3 min-w-[300px]">Material Name</th>
+                    <th className="text-left p-3">Use Case</th>
+                    <th className="text-center p-3 w-[100px]">Qty</th>
+                    <th className="text-center p-3 w-[100px]">Length</th>
+                    {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
+                    <th className="text-center p-3 font-semibold w-[140px]">
+                      <div className="flex items-center justify-center gap-1">
+                        <PackagePlus className="w-4 h-4" />
+                        Bundle
+                      </div>
+                    </th>
+                    <th className="text-center p-3 w-[200px]">Status</th>
+                    <th className="text-right p-3 w-[140px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMaterials.map((material, index) => (
+                    <SortableMaterialRow
+                      key={material.id}
+                      material={material}
+                      index={index}
+                      totalMaterials={filteredMaterials.length}
+                      categoryId={category.id}
+                      showColorColumn={showColorColumn}
+                      onEdit={onEditMaterial}
+                      onDelete={onDeleteMaterial}
+                      onStatusChange={onStatusChange}
+                      onBundleAssign={onBundleAssign}
+                      onMoveUp={onMoveMaterialUp}
+                      onMoveDown={onMoveMaterialDown}
+                      bundles={bundles}
+                      materialBundleMap={materialBundleMap}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </SortableContext>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -407,6 +760,103 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(event.active.id as string);
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveDragId(null);
+
+    if (!over || active.id === over.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Check if we're dragging a material
+    if (activeId.startsWith('material-')) {
+      const materialId = activeId.replace('material-', '');
+      
+      // Find which category the material is being dropped into
+      let targetCategoryId: string | null = null;
+      let targetIndex = 0;
+
+      // Check if dropped on another material
+      if (overId.startsWith('material-')) {
+        const targetMaterialId = overId.replace('material-', '');
+        for (const cat of categories) {
+          const materialIndex = cat.materials.findIndex(m => m.id === targetMaterialId);
+          if (materialIndex !== -1) {
+            targetCategoryId = cat.id;
+            targetIndex = cat.materials[materialIndex].order_index || 0;
+            break;
+          }
+        }
+      }
+      // Check if dropped on a category
+      else if (overId.startsWith('category-')) {
+        targetCategoryId = overId.replace('category-', '');
+        // Get max order_index in target category
+        const targetCat = categories.find(c => c.id === targetCategoryId);
+        if (targetCat && targetCat.materials.length > 0) {
+          targetIndex = Math.max(...targetCat.materials.map(m => m.order_index || 0)) + 1;
+        }
+      }
+
+      if (targetCategoryId) {
+        try {
+          // Move material to new category with new order index
+          const { error } = await supabase
+            .from('materials')
+            .update({
+              category_id: targetCategoryId,
+              order_index: targetIndex,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', materialId);
+
+          if (error) throw error;
+
+          toast.success('Material moved to new category');
+          loadMaterials();
+        } catch (error: any) {
+          console.error('Error moving material:', error);
+          toast.error('Failed to move material');
+        }
+      }
+    }
+    // Check if we're dragging a category
+    else if (activeId.startsWith('category-') && overId.startsWith('category-')) {
+      const activeCatId = activeId.replace('category-', '');
+      const overCatId = overId.replace('category-', '');
+
+      const oldIndex = filteredCategories.findIndex(cat => cat.id === activeCatId);
+      const newIndex = filteredCategories.findIndex(cat => cat.id === overCatId);
+
+      if (oldIndex !== newIndex) {
+        const reorderedCategories = arrayMove(filteredCategories, oldIndex, newIndex);
+        
+        try {
+          // Update order_index for all affected categories
+          await Promise.all(
+            reorderedCategories.map((cat, index) =>
+              supabase
+                .from('materials_categories')
+                .update({ order_index: index })
+                .eq('id', cat.id)
+            )
+          );
+
+          toast.success('Categories reordered');
+          loadMaterials();
+        } catch (error: any) {
+          console.error('Error reordering categories:', error);
+          toast.error('Failed to reorder categories');
+        }
+      }
+    }
+  }
+
   function openAddMaterial(categoryId: string) {
     setSelectedCategoryId(categoryId);
     setEditingMaterial(null);
@@ -623,13 +1073,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   const filteredCategories = getDisplayCategories();
 
+  const activeDragItem = activeDragId
+    ? categories
+        .flatMap(cat => cat.materials)
+        .find(m => `material-${m.id}` === activeDragId)
+    : null;
+
   if (loading) {
     return <div className="text-center py-8">Loading materials...</div>;
   }
 
   return (
     <>
-      <div className="w-full max-w-[2000px] mx-auto">
+      <div className="w-full max-w-[2400px] mx-auto">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
@@ -643,249 +1099,109 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </TabsList>
 
           <TabsContent value="manage" className="space-y-4">
-            {/* Search & Filter Bar */}
-            <Card>
-              <CardContent className="pt-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search materials, usage, or length..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9 pr-9"
-                    />
-                    {searchTerm && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSearchTerm('')}
-                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-
-                  <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {categories.map(cat => (
-                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {STATUS_OPTIONS.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Materials Table */}
-            {filteredCategories.length === 0 ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              {/* Search & Filter Bar */}
               <Card>
-                <CardContent className="py-12 text-center">
-                  <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search materials, usage, or length..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 pr-9"
+                      />
+                      {searchTerm && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSearchTerm('')}
+                          className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+
+                    <Select value={filterCategory} onValueChange={setFilterCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Statuses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        {STATUS_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="space-y-4">
-                {filteredCategories.map((category, catIndex) => {
-                  const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-                  const isColorCategory = /trim|metal|fastener/i.test(category.name);
-                  const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
 
-                  return (
-                    <Card key={category.id} className="overflow-hidden">
-                      <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex flex-col gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => moveCategoryUp(category.id)}
-                                disabled={catIndex === 0}
-                                className="h-5 w-7 p-0"
-                              >
-                                <ChevronUp className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => moveCategoryDown(category.id)}
-                                disabled={catIndex === filteredCategories.length - 1}
-                                className="h-5 w-7 p-0"
-                              >
-                                <ChevronDown className="w-4 h-4" />
-                              </Button>
-                            </div>
-                            <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
-                              <Plus className="w-4 h-4 mr-2" />
-                              Add Material
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="p-0">
-                        {filteredMaterials.length === 0 ? (
-                          <div className="py-8 text-center text-muted-foreground">
-                            No materials in this category
-                          </div>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead className="bg-muted/50 border-b">
-                                <tr>
-                                  <th className="text-left p-3 w-[70px]">Order</th>
-                                  <th className="text-left p-3 min-w-[300px]">Material Name</th>
-                                  <th className="text-left p-3">Use Case</th>
-                                  <th className="text-center p-3 w-[100px]">Qty</th>
-                                  <th className="text-center p-3 w-[100px]">Length</th>
-                                  {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
-                                  <th className="text-center p-3 font-semibold w-[140px]">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <PackagePlus className="w-4 h-4" />
-                                      Bundle
-                                    </div>
-                                  </th>
-                                  <th className="text-center p-3 w-[180px]">Status</th>
-                                  <th className="text-right p-3 w-[140px]">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {filteredMaterials.map((material, index) => (
-                                  <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                                    <td className="p-3 w-[70px]">
-                                      <div className="flex flex-col gap-1">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => moveMaterialUp(material.id, category.id)}
-                                          disabled={index === 0}
-                                          className="h-5 w-full p-0"
-                                        >
-                                          <ChevronUp className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => moveMaterialDown(material.id, category.id)}
-                                          disabled={index === filteredMaterials.length - 1}
-                                          className="h-5 w-full p-0"
-                                        >
-                                          <ChevronDown className="w-3 h-3" />
-                                        </Button>
-                                      </div>
-                                    </td>
-                                    <td className="p-3 min-w-[300px]">
-                                      <div className="font-medium whitespace-nowrap">{material.name}</div>
-                                      {material.bundle_name && (
-                                        <Badge variant="secondary" className="mt-1 text-xs">
-                                          📦 {material.bundle_name}
-                                        </Badge>
-                                      )}
-                                    </td>
-                                    <td className="p-3 text-sm text-muted-foreground">
-                                      {material.use_case || '-'}
-                                    </td>
-                                    <td className="p-3 text-center font-semibold">
-                                      {material.quantity}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
-                                    </td>
-                                    {showColorColumn && (
-                                      <td className="p-3 text-center">
-                                        {material.color || '-'}
-                                      </td>
-                                    )}
-                                    <td className="p-3 w-[140px]">
-                                      <div className="flex justify-center">
-                                        <Select
-                                          value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
-                                          onValueChange={(bundleId) => assignMaterialToBundle(material.id, bundleId)}
-                                        >
-                                          <SelectTrigger className="w-full h-9 text-xs">
-                                            <SelectValue placeholder="None" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="NONE">
-                                              <span className="text-muted-foreground text-xs">No bundle</span>
-                                            </SelectItem>
-                                            {bundles.map(bundle => (
-                                              <SelectItem key={bundle.id} value={bundle.id}>
-                                                <span className="text-xs">{bundle.name}</span>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    </td>
-                                    <td className="p-3 w-[180px]">
-                                      <div className="flex justify-center">
-                                        <Select
-                                          value={material.status}
-                                          onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
-                                        >
-                                          <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {STATUS_OPTIONS.map(opt => (
-                                              <SelectItem key={opt.value} value={opt.value}>
-                                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
-                                                  {opt.label}
-                                                </span>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    </td>
-                                    <td className="p-3 w-[140px]">
-                                      <div className="flex items-center justify-end gap-1">
-                                        <Button size="sm" variant="ghost" onClick={() => openEditMaterial(material)}>
-                                          <Edit className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => deleteMaterial(material.id)}
-                                          className="text-destructive"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+              {/* Materials Table */}
+              <SortableContext
+                items={filteredCategories.map(cat => `category-${cat.id}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                {filteredCategories.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredCategories.map((category, catIndex) => (
+                      <SortableCategoryCard
+                        key={category.id}
+                        category={category}
+                        catIndex={catIndex}
+                        totalCategories={filteredCategories.length}
+                        onAddMaterial={openAddMaterial}
+                        onEditMaterial={openEditMaterial}
+                        onDeleteMaterial={deleteMaterial}
+                        onStatusChange={handleQuickStatusChange}
+                        onBundleAssign={assignMaterialToBundle}
+                        onMoveMaterialUp={moveMaterialUp}
+                        onMoveMaterialDown={moveMaterialDown}
+                        onMoveCategoryUp={moveCategoryUp}
+                        onMoveCategoryDown={moveCategoryDown}
+                        bundles={bundles}
+                        materialBundleMap={materialBundleMap}
+                        getFilteredAndSortedMaterials={getFilteredAndSortedMaterials}
+                      />
+                    ))}
+                  </div>
+                )}
+              </SortableContext>
+
+              <DragOverlay>
+                {activeDragItem ? (
+                  <div className="bg-white border-2 border-primary shadow-xl rounded-lg p-3 opacity-90">
+                    <div className="font-medium">{activeDragItem.name}</div>
+                    <div className="text-sm text-muted-foreground">Qty: {activeDragItem.quantity}</div>
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           </TabsContent>
 
           <TabsContent value="bundles" className="space-y-4">
