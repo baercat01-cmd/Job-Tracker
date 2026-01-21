@@ -640,9 +640,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         if (insertError) throw insertError;
 
         const bundle = bundles.find(b => b.id === bundleId);
-        toast.success(`Added to bundle: ${bundle?.name}`);
+        // Silent success - bundle assignment updated
       } else if (currentBundleInfo) {
-        toast.success('Removed from bundle');
+        // Silent success - bundle removal completed
       }
 
       // Reload bundles and materials
@@ -673,7 +673,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', above.id)
       ]);
 
-      toast.success('Category moved up');
+      // Silent success - category reordered
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to reorder categories');
@@ -700,7 +700,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', below.id)
       ]);
 
-      toast.success('Category moved down');
+      // Silent success - category reordered
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to reorder categories');
@@ -731,7 +731,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', above.id)
       ]);
 
-      toast.success('Material moved up');
+      // Silent success - material reordered
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to reorder materials');
@@ -762,7 +762,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', below.id)
       ]);
 
-      toast.success('Material moved down');
+      // Silent success - material reordered
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to reorder materials');
@@ -854,7 +854,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             )
           );
 
-          toast.success('Material reordered');
+          // Silent success - material reordered
           
           // Restore scroll position after reload completes
           await loadMaterials();
@@ -902,7 +902,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             )
           );
 
-          toast.success('Material moved to new category');
+          // Silent success - material moved to new category
           
           // Restore scroll position after reload completes
           await loadMaterials();
@@ -945,7 +945,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           )
         );
 
-        toast.success('Categories reordered');
+        // Silent success - categories reordered
         
         // Restore scroll position after reload completes
         await loadMaterials();
@@ -1110,7 +1110,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
 
-      toast.success(`Status updated to ${getStatusLabel(newStatusValue)}`);
+      // Silent success - status updated
 
       // Reload to ensure data consistency
       await loadMaterials();

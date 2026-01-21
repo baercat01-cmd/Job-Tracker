@@ -534,7 +534,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         .eq('id', materialId);
       
       if (error) throw error;
-      toast.success('Status updated');
+      // Silent success - status updated
       
       // Check and sync bundle status
       await checkAndSyncBundleStatus(materialId, status);
@@ -555,7 +555,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         .in('id', materialIds);
       
       if (error) throw error;
-      toast.success(`All ${materialIds.length} variants updated to ${getStatusConfig(status).label}`);
+      // Silent success - all variants updated
       loadMaterials();
     } catch (error: any) {
       toast.error('Failed to update status');
@@ -630,7 +630,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         await checkAndSyncBundleStatus(statusChangeMaterial.id, newStatus);
       }
 
-      toast.success(`Status updated to ${getStatusConfig(newStatus).label}`);
+      // Silent success - status updated
       setStatusChangeMaterial(null);
       setStatusChangeMaterialGroup(null);
       loadMaterials();
@@ -701,7 +701,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success('Dates updated');
+      // Silent success - dates updated
       setEditDatesMaterial(null);
       setEditDatesGroup(null);
       loadMaterials();
@@ -768,7 +768,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (itemsError) throw itemsError;
 
-      toast.success(`Bundle "${bundleName}" created with ${selectedMaterialIds.size} materials`);
+      // Silent success - bundle created
       
       // Reload data
       await loadMaterials();
@@ -813,7 +813,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         if (materialsError) throw materialsError;
       }
 
-      toast.success(`Bundle "${bundles.find(b => b.id === bundleId)?.name}" and all materials updated to ${getStatusConfig(status).label}`);
+      // Silent success - bundle and materials updated
       await Promise.all([loadMaterials(), loadBundles()]);
     } catch (error: any) {
       console.error('Error updating bundle status:', error);
@@ -854,9 +854,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
         if (!error) {
           const bundle = bundles.find(b => b.id === bundleItem.bundle_id);
-          toast.success(`Bundle "${bundle?.name}" auto-synced to ${getStatusConfig(newStatus).label}`, {
-            description: 'All materials in bundle are now at the same status',
-          });
+          // Silent success - bundle auto-synced (removed toast)
         }
       }
     } catch (error: any) {
@@ -874,7 +872,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success('Bundle deleted');
+      // Silent success - bundle deleted
       await loadMaterials();
       await loadBundles();
     } catch (error: any) {
@@ -899,7 +897,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success(`Status updated to ${getStatusConfig(status).label}`);
+      // Silent success - status updated
       setSelectedMaterial({ ...selectedMaterial, status });
       
       // Check and sync bundle status
@@ -948,7 +946,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success('Quantity updated');
+      // Silent success - quantity updated
       setSelectedMaterial({ ...selectedMaterial, quantity: editQuantity });
       loadMaterials();
     } catch (error: any) {
@@ -982,7 +980,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success('Material details updated');
+      // Silent success - material details updated
       setSelectedMaterial({ 
         ...selectedMaterial, 
         name: editName.trim(),
@@ -1011,7 +1009,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (error) throw error;
 
-      toast.success('Notes saved');
+      // Silent success - notes saved
       setSelectedMaterial({ ...selectedMaterial, notes: materialNotes });
       loadMaterials();
     } catch (error: any) {
@@ -1055,7 +1053,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (dbError) throw dbError;
 
-      toast.success('Photo uploaded');
+      // Silent success - photo uploaded
       loadMaterialPhotos(selectedMaterial.id);
     } catch (error: any) {
       toast.error('Failed to upload photo');
