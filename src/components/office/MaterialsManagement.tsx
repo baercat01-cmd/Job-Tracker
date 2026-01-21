@@ -1387,7 +1387,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="material-length">Length (inches)</Label>
+                <Label htmlFor="material-length">Length (ft)</Label>
                 <Input
                   id="material-length"
                   type="number"
