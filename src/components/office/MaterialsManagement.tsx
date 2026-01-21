@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -526,7 +527,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           ...category,
           materials: category.materials.map(material =>
             material.id === materialId
-              ? { ...material, status: newStatusValue }
+              ? { ...material, status: newStatusValue as Material['status'] } // Type assertion here
               : material
           )
         }))
@@ -628,90 +629,90 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="manage" className="flex items-center gap-2">
-            <ListChecks className="w-4 h-4" />
-            Manage Materials
-          </TabsTrigger>
-          <TabsTrigger value="bundles" className="flex items-center gap-2">
-            <ShoppingCart className="w-4 h-4" />
-            Material Bundles
-          </TabsTrigger>
-        </TabsList>
+      <div className="w-full max-w-[1600px] mx-auto">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="manage" className="flex items-center gap-2">
+              <ListChecks className="w-4 h-4" />
+              Manage Materials
+            </TabsTrigger>
+            <TabsTrigger value="bundles" className="flex items-center gap-2">
+              <ShoppingCart className="w-4 h-4" />
+              Material Bundles
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="manage" className="space-y-4">
-          {/* Search & Filter Bar */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search materials, usage, or length..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 pr-9"
-                  />
-                  {searchTerm && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {STATUS_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Materials Table */}
-          {filteredCategories.length === 0 ? (
+          <TabsContent value="manage" className="space-y-4">
+            {/* Search & Filter Bar */}
             <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search materials, usage, or length..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9 pr-9"
+                    />
+                    {searchTerm && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+
+                  <Select value={filterCategory} onValueChange={setFilterCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categories.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      {STATUS_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            <div className="space-y-4">
-              {filteredCategories.map((category, catIndex) => {
-                const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
-                const isColorCategory = /trim|metal|fastener/i.test(category.name);
-                const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
 
-                return (
-                  <Card key={category.id} className="overflow-hidden">
-                    <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex flex-col gap-1">
+            {/* Materials Table */}
+            {filteredCategories.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">No categories yet. Create a category to get started.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {filteredCategories.map((category, catIndex) => {
+                  const filteredMaterials = getFilteredAndSortedMaterials(category.materials);
+                  const isColorCategory = /trim|metal|fastener/i.test(category.name);
+                  const showColorColumn = isColorCategory || filteredMaterials.some(m => m.color);
+
+                  return (
+                    <Card key={category.id} className="overflow-hidden">
+                      <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b-2 border-primary/20">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-col items-center gap-3"> {/* Changed flex-col to flex-col items-center */}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -734,185 +735,185 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             </Button>
                           </div>
                           <CardTitle className="text-xl font-bold">{category.name}</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add Material
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" onClick={() => openAddMaterial(category.id)} className="gradient-primary">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Material
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      {filteredMaterials.length === 0 ? (
-                        <div className="py-8 text-center text-muted-foreground">
-                          No materials in this category
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead className="bg-muted/50 border-b">
-                              <tr>
-                                <th className="text-left p-3 w-[60px]">Order</th>
-                                <th className="text-left p-3">Material Name</th>
-                                <th className="text-left p-3">Use Case</th>
-                                <th className="text-center p-3 w-[100px]">Qty</th>
-                                <th className="text-center p-3 w-[100px]">Length</th>
-                                {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
-                                <th className="text-center p-3 font-semibold w-[140px]">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <PackagePlus className="w-4 h-4" />
-                                    Bundle
-                                  </div>
-                                </th>
-                                <th className="text-center p-3 w-[180px]">Status</th>
-                                <th className="text-right p-3 w-[140px]">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredMaterials.map((material, index) => (
-                                <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
-                                  <td className="p-3 w-[60px]">
-                                    <div className="flex flex-col gap-1">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => moveMaterialUp(material, filteredMaterials)}
-                                        disabled={index === 0}
-                                        className="h-4 w-5 p-0"
-                                        title="Move up"
-                                      >
-                                        <ChevronUp className="w-3 h-3" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => moveMaterialDown(material, filteredMaterials)}
-                                        disabled={index === filteredMaterials.length - 1}
-                                        className="h-4 w-5 p-0"
-                                        title="Move down"
-                                      >
-                                        <ChevronDown className="w-3 h-3" />
-                                      </Button>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        {filteredMaterials.length === 0 ? (
+                          <div className="py-8 text-center text-muted-foreground">
+                            No materials in this category
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full">
+                              <thead className="bg-muted/50 border-b">
+                                <tr>
+                                  <th className="text-left p-3 w-[60px]">Order</th>
+                                  <th className="text-left p-3">Material Name</th>
+                                  <th className="text-left p-3">Use Case</th>
+                                  <th className="text-center p-3 w-[100px]">Qty</th>
+                                  <th className="text-center p-3 w-[100px]">Length</th>
+                                  {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
+                                  <th className="text-center p-3 font-semibold w-[140px]">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <PackagePlus className="w-4 h-4" />
+                                      Bundle
                                     </div>
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="font-medium">{material.name}</div>
-                                    {material.bundle_name && (
-                                      <Badge variant="secondary" className="mt-1 text-xs">
-                                        📦 {material.bundle_name}
-                                      </Badge>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-sm text-muted-foreground">
-                                    {material.use_case || '-'}
-                                  </td>
-                                  <td className="p-3 text-center font-semibold">
-                                    {material.quantity}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
-                                  </td>
-                                  {showColorColumn && (
-                                    <td className="p-3 text-center">
-                                      {material.color || '-'}
-                                    </td>
-                                  )}
-                                  <td className="p-3 w-[140px]">
-                                    <div className="flex justify-center">
-                                      <Select
-                                        value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
-                                        onValueChange={(bundleId) => assignMaterialToBundle(material.id, bundleId)}
-                                      >
-                                        <SelectTrigger className="w-full h-9 text-xs">
-                                          <SelectValue placeholder="None" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="NONE">
-                                            <span className="text-muted-foreground text-xs">No bundle</span>
-                                          </SelectItem>
-                                          {bundles.map(bundle => (
-                                            <SelectItem key={bundle.id} value={bundle.id}>
-                                              <span className="text-xs">{bundle.name}</span>
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  </td>
-                                  <td className="p-3 w-[180px]">
-                                    <div className="flex justify-center">
-                                      <Select
-                                        value={material.status}
-                                        onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
-                                      >
-                                        <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {STATUS_OPTIONS.map(opt => (
-                                            <SelectItem key={opt.value} value={opt.value}>
-                                              <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
-                                                {opt.label}
-                                              </span>
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  </td>
-                                  <td className="p-3 w-[140px]">
-                                    <div className="flex items-center justify-end gap-1">
-                                      <Button size="sm" variant="ghost" onClick={() => openEditMaterial(material)}>
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => deleteMaterial(material.id)}
-                                        className="text-destructive"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </td>
+                                  </th>
+                                  <th className="text-center p-3 w-[180px]">Status</th>
+                                  <th className="text-right p-3 w-[140px]">Actions</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
+                              </thead>
+                              <tbody>
+                                {filteredMaterials.map((material, index) => (
+                                  <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                                    <td className="p-3 w-[60px]">
+                                      <div className="flex flex-col gap-1">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => moveMaterialUp(material, filteredMaterials)}
+                                          disabled={index === 0}
+                                          className="h-4 w-5 p-0"
+                                          title="Move up"
+                                        >
+                                          <ChevronUp className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => moveMaterialDown(material, filteredMaterials)}
+                                          disabled={index === filteredMaterials.length - 1}
+                                          className="h-4 w-5 p-0"
+                                          title="Move down"
+                                        >
+                                          <ChevronDown className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="font-medium">{material.name}</div>
+                                      {material.bundle_name && (
+                                        <Badge variant="secondary" className="mt-1 text-xs">
+                                          📦 {material.bundle_name}
+                                        </Badge>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-sm text-muted-foreground">
+                                      {material.use_case || '-'}
+                                    </td>
+                                    <td className="p-3 text-center font-semibold">
+                                      {material.quantity}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
+                                    </td>
+                                    {showColorColumn && (
+                                      <td className="p-3 text-center">
+                                        {material.color || '-'}
+                                      </td>
+                                    )}
+                                    <td className="p-3 w-[140px]">
+                                      <div className="flex justify-center">
+                                        <Select
+                                          value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
+                                          onValueChange={(bundleId) => assignMaterialToBundle(material.id, bundleId)}
+                                        >
+                                          <SelectTrigger className="w-full h-9 text-xs">
+                                            <SelectValue placeholder="None" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="NONE">
+                                              <span className="text-muted-foreground text-xs">No bundle</span>
+                                            </SelectItem>
+                                            {bundles.map(bundle => (
+                                              <SelectItem key={bundle.id} value={bundle.id}>
+                                                <span className="text-xs">{bundle.name}</span>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 w-[180px]">
+                                      <div className="flex justify-center">
+                                        <Select
+                                          value={material.status}
+                                          onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                        >
+                                          <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {STATUS_OPTIONS.map(opt => (
+                                              <SelectItem key={opt.value} value={opt.value}>
+                                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                                                  {opt.label}
+                                                </span>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 w-[140px]">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button size="sm" variant="ghost" onClick={() => openEditMaterial(material)}>
+                                          <Edit className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => deleteMaterial(material.id)}
+                                          className="text-destructive"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
 
-        <TabsContent value="bundles" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5" />
-                Material Bundles
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-2">
-                Create and manage material bundles by grouping related materials together.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <MaterialsList
-                job={job}
-                userId={userId}
-                userRole="office"
-                allowBundleCreation={true}
-                defaultTab="bundles"
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="bundles" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5" />
+                  Material Bundles
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Create and manage material bundles by grouping related materials together.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <MaterialsList
+                  job={job}
+                  userId={userId}
+                  userRole="office"
+                  allowBundleCreation={true}
+                  defaultTab="bundles"
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
 
       {/* Material Edit/Add Dialog */}
       <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
