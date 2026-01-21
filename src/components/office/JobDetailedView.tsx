@@ -754,7 +754,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-full px-4">
+    <div className="w-full px-2">
       <Tabs defaultValue="overview" className="w-full">
         <div className="bg-background border-b shadow-sm pb-4 mb-4">
           <TabsList className="grid w-full max-w-3xl grid-cols-4">
