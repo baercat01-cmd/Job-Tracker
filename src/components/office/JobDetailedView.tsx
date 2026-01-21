@@ -1202,8 +1202,27 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
             </CardContent>
           </Card>
         </TabsContent>
-          {/* Component Work Details */}
-      <Card>
+
+        {/* Photos Tab - Placeholder */}
+        <TabsContent value="photos" className="space-y-4 px-4">
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Camera className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-base">Photos gallery coming soon</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Materials Tab */}
+        <TabsContent value="materials" className="space-y-4 px-4">
+          {user?.id && (
+            <MaterialsManagement job={job} userId={user.id} />
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-4">
@@ -1573,25 +1592,3 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
           )}  
         </CardContent>
       </Card>
-        </TabsContent>
-
-        {/* Photos Tab - Placeholder */}
-        <TabsContent value="photos" className="space-y-4 px-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Camera className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-base">Photos gallery coming soon</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-4 px-4">
-          {user?.id && (
-            <MaterialsManagement job={job} userId={user.id} />
-          )}
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
