@@ -754,7 +754,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-full">
+    <div className="w-full px-4">
       <Tabs defaultValue="overview" className="w-full">
         <div className="bg-background border-b shadow-sm pb-4 mb-4">
           <TabsList className="grid w-full max-w-3xl grid-cols-4">
@@ -897,7 +897,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4 max-w-[2800px] mx-auto">
+        <TabsContent value="overview" className="space-y-4">
       {/* Key Metrics Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
@@ -1167,7 +1167,7 @@ export function JobDetailedView({ job }: JobDetailedViewProps) {
         </TabsContent>
 
         {/* Time Tracking Tab */}
-        <TabsContent value="time" className="space-y-4 pt-4 max-w-[2800px] mx-auto">
+        <TabsContent value="time" className="space-y-4 pt-4">
           {/* Component Work Details */}
       <Card>
         <CardHeader>

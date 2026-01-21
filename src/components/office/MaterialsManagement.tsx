@@ -1211,7 +1211,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   return (
     <>
-      <div ref={containerRef} className="w-full">
+      <div ref={containerRef} className="w-full px-4">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-4">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="manage" className="flex items-center gap-2">
