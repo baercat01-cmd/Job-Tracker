@@ -554,36 +554,26 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           console.log('✅ Quote number generated:', quoteNumber);
         }
 
-        // Optimistic update: Update local state immediately BEFORE showing toast
+        // Optimistic update: Update local state immediately
         setExistingQuote({ ...data, quote_number: quoteNumber });
         setFormData(prev => ({ ...prev, status: data.status }));
         
-        // Restore scroll position AFTER state updates but BEFORE toast
+        // Restore scroll position AFTER state updates
         requestAnimationFrame(() => {
           window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
           console.log('📍 Scroll restored to:', savedScrollPosition);
-        });
-        
-        toast.success(`Draft saved - Quote #${quoteNumber}`, {
-          duration: 2000,
-          position: 'bottom-right'
         });
       } else {
         console.log('📝 Update existing quote:', currentQuoteId);
         
-        // Optimistic update: Update local state immediately BEFORE showing toast
+        // Optimistic update: Update local state immediately
         setExistingQuote(prev => ({ ...prev, ...data }));
         setFormData(prev => ({ ...prev, status: data.status }));
         
-        // Restore scroll position AFTER state updates but BEFORE toast
+        // Restore scroll position AFTER state updates
         requestAnimationFrame(() => {
           window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
           console.log('📍 Scroll restored to:', savedScrollPosition);
-        });
-        
-        toast.success(status === 'draft' ? 'Draft saved' : 'Quote updated', {
-          duration: 2000,
-          position: 'bottom-right'
         });
       }
 
@@ -691,8 +681,6 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       setExistingQuote(prev => ({ ...prev, status: 'won', job_id: jobData.id }));
       setFormData(prev => ({ ...prev, status: 'won' }));
 
-      toast.success('Quote converted to active job!');
-      
       // Restore scroll position before navigation
       requestAnimationFrame(() => {
         window.scrollTo({ top: scrollY, behavior: 'instant' });

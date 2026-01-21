@@ -94,7 +94,6 @@ export function OfficeDashboard() {
 
   const handleSignOut = () => {
     clearUser();
-    toast.success('Signed out successfully');
   };
 
   // If in field view mode, render the foreman dashboard
