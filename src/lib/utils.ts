@@ -58,10 +58,10 @@ export function cleanMaterialValue(value: string | null | undefined): string {
     cleaned = cleaned.slice(1, -1);
   }
   
-  // Remove duplicate " at the end (e.g., 8ft"" -> 8ft")
-  // Keep replacing "" with " until there are no more doubles
-  while (cleaned.endsWith('""')) {
-    cleaned = cleaned.slice(0, -1);
+  // Remove all duplicate " throughout the string (e.g., 2""x4"" -> 2"x4")
+  // Keep replacing "" with " until there are no more doubles anywhere in the string
+  while (cleaned.includes('""')) {
+    cleaned = cleaned.replace('""', '"');
   }
   
   return cleaned;
