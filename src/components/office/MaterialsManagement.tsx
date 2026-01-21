@@ -166,7 +166,7 @@ function SortableMaterialRow({
 
   return (
     <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 transition-colors">
-      <td className="p-3 w-[50px]">
+      <td className="p-2">
         <div
           {...attributes}
           {...listeners}
@@ -175,7 +175,7 @@ function SortableMaterialRow({
           <GripVertical className="w-4 h-4 text-muted-foreground" />
         </div>
       </td>
-      <td className="p-3 w-[70px]">
+      <td className="p-2">
         <div className="flex flex-col gap-1">
           <Button
             size="sm"
@@ -197,35 +197,35 @@ function SortableMaterialRow({
           </Button>
         </div>
       </td>
-      <td className="p-3 min-w-[300px]">
-        <div className="font-medium whitespace-nowrap">{material.name}</div>
+      <td className="p-2">
+        <div className="font-medium truncate">{material.name}</div>
         {material.bundle_name && (
           <Badge variant="secondary" className="mt-1 text-xs">
             📦 {material.bundle_name}
           </Badge>
         )}
       </td>
-      <td className="p-3 text-sm text-muted-foreground">
+      <td className="p-2 text-sm text-muted-foreground truncate">
         {material.use_case || '-'}
       </td>
-      <td className="p-3 text-center font-semibold">
+      <td className="p-2 text-center font-semibold">
         {material.quantity}
       </td>
-      <td className="p-3 text-center">
+      <td className="p-2 text-center">
         {material.length ? formatMeasurement(parseFloat(material.length) || 0, 'inches') : '-'}
       </td>
       {showColorColumn && (
-        <td className="p-3 text-center">
+        <td className="p-2 text-center truncate">
           {material.color || '-'}
         </td>
       )}
-      <td className="p-3 w-[140px]">
+      <td className="p-2">
         <div className="flex justify-center">
           <Select
             value={materialBundleMap.get(material.id)?.bundleId || 'NONE'}
             onValueChange={(bundleId) => onBundleAssign(material.id, bundleId)}
           >
-            <SelectTrigger className="w-full h-9 text-xs">
+            <SelectTrigger className="w-full h-8 text-xs">
               <SelectValue placeholder="None" />
             </SelectTrigger>
             <SelectContent>
@@ -241,13 +241,13 @@ function SortableMaterialRow({
           </Select>
         </div>
       </td>
-      <td className="p-3 w-[200px]">
+      <td className="p-2">
         <div className="flex justify-center">
           <Select
             value={material.status}
             onValueChange={(newStatus) => onStatusChange(material.id, newStatus)}
           >
-            <SelectTrigger className={`w-full h-9 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
+            <SelectTrigger className={`w-full h-8 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -262,7 +262,7 @@ function SortableMaterialRow({
           </Select>
         </div>
       </td>
-      <td className="p-3 w-[140px]">
+      <td className="p-2">
         <div className="flex items-center justify-end gap-1">
           <Button size="sm" variant="ghost" onClick={() => onEdit(material)}>
             <Edit className="w-4 h-4" />
@@ -384,54 +384,52 @@ function SortableCategoryCard({
             No materials in this category
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <SortableContext
-              items={filteredMaterials.map(m => `material-${m.id}`)}
-              strategy={verticalListSortingStrategy}
-            >
-              <table className="w-full">
-                <thead className="bg-muted/50 border-b">
-                  <tr>
-                    <th className="text-left p-3 w-[50px]">Drag</th>
-                    <th className="text-left p-3 w-[70px]">Order</th>
-                    <th className="text-left p-3 min-w-[300px]">Material Name</th>
-                    <th className="text-left p-3">Use Case</th>
-                    <th className="text-center p-3 w-[100px]">Qty</th>
-                    <th className="text-center p-3 w-[100px]">Length</th>
-                    {showColorColumn && <th className="text-center p-3 w-[120px]">Color</th>}
-                    <th className="text-center p-3 font-semibold w-[140px]">
-                      <div className="flex items-center justify-center gap-1">
-                        <PackagePlus className="w-4 h-4" />
-                        Bundle
-                      </div>
-                    </th>
-                    <th className="text-center p-3 w-[200px]">Status</th>
-                    <th className="text-right p-3 w-[140px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMaterials.map((material, index) => (
-                    <SortableMaterialRow
-                      key={material.id}
-                      material={material}
-                      index={index}
-                      totalMaterials={filteredMaterials.length}
-                      categoryId={category.id}
-                      showColorColumn={showColorColumn}
-                      onEdit={onEditMaterial}
-                      onDelete={onDeleteMaterial}
-                      onStatusChange={onStatusChange}
-                      onBundleAssign={onBundleAssign}
-                      onMoveUp={onMoveMaterialUp}
-                      onMoveDown={onMoveMaterialDown}
-                      bundles={bundles}
-                      materialBundleMap={materialBundleMap}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </SortableContext>
-          </div>
+          <SortableContext
+            items={filteredMaterials.map(m => `material-${m.id}`)}
+            strategy={verticalListSortingStrategy}
+          >
+            <table className="w-full table-fixed">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  <th className="text-left p-2 w-12">Drag</th>
+                  <th className="text-left p-2 w-16">Order</th>
+                  <th className="text-left p-2 w-1/5">Material Name</th>
+                  <th className="text-left p-2 w-1/6">Use Case</th>
+                  <th className="text-center p-2 w-16">Qty</th>
+                  <th className="text-center p-2 w-20">Length</th>
+                  {showColorColumn && <th className="text-center p-2 w-24">Color</th>}
+                  <th className="text-center p-2 font-semibold w-32">
+                    <div className="flex items-center justify-center gap-1">
+                      <PackagePlus className="w-4 h-4" />
+                      Bundle
+                    </div>
+                  </th>
+                  <th className="text-center p-2 w-36">Status</th>
+                  <th className="text-right p-2 w-24">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMaterials.map((material, index) => (
+                  <SortableMaterialRow
+                    key={material.id}
+                    material={material}
+                    index={index}
+                    totalMaterials={filteredMaterials.length}
+                    categoryId={category.id}
+                    showColorColumn={showColorColumn}
+                    onEdit={onEditMaterial}
+                    onDelete={onDeleteMaterial}
+                    onStatusChange={onStatusChange}
+                    onBundleAssign={onBundleAssign}
+                    onMoveUp={onMoveMaterialUp}
+                    onMoveDown={onMoveMaterialDown}
+                    bundles={bundles}
+                    materialBundleMap={materialBundleMap}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </SortableContext>
         )}
       </CardContent>
     </Card>
