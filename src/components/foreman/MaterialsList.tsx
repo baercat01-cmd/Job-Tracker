@@ -1267,6 +1267,48 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
 
         <TabsContent value="all" className="space-y-3">
+          {/* Bundle Creation Button (when in selection mode) */}
+          {selectionMode && selectedMaterialIds.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+              <div className="bg-primary text-primary-foreground rounded-full shadow-2xl border-4 border-background">
+                <Button
+                  onClick={openCreateBundleDialog}
+                  size="lg"
+                  className="rounded-full h-16 px-8 text-lg font-bold"
+                >
+                  <PackagePlus className="w-6 h-6 mr-3" />
+                  Create Bundle ({selectedMaterialIds.size} selected)
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Selection Mode Controls */}
+          {(userRole === 'office' || allowBundleCreation) && (
+            <Card className={`${selectionMode ? 'border-2 border-primary' : ''}`}>
+              <CardContent className="py-3">
+                {selectionMode ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-primary" />
+                      <span className="font-semibold">Selection Mode Active</span>
+                      <Badge variant="secondary">{selectedMaterialIds.size} selected</Badge>
+                    </div>
+                    <Button variant="outline" onClick={toggleSelectionMode} size="sm">
+                      <X className="w-4 h-4 mr-2" />
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button onClick={toggleSelectionMode} variant="outline" className="w-full">
+                    <PackagePlus className="w-4 h-4 mr-2" />
+                    Select Materials for Bundle
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Materials List - All Categories */}
           {filteredCategories.length === 0 ? (
             <Card>
@@ -1303,40 +1345,68 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                         <div key={group.groupKey} className="p-3">
                           <div
                             className="flex items-start justify-between cursor-pointer"
-                            onClick={() => toggleGroup(group.groupKey)}
+                            onClick={(e) => {
+                              // If in selection mode and clicking on the material itself, toggle selection
+                              if (selectionMode && group.materials.length === 1) {
+                                e.stopPropagation();
+                                toggleMaterialSelection(group.materials[0].id);
+                              } else {
+                                toggleGroup(group.groupKey);
+                              }
+                            }}
                           >
-                            <div className="flex-1">
-                              <div className="flex items-baseline gap-2">
-                                <h4 className="font-medium text-sm">{group.name}</h4>
-                                {group.length && (
-                                  <span className="text-xs text-muted-foreground">{group.length}</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-sm text-muted-foreground">
-                                  Total Qty: {group.totalQuantity}
-                                </span>
-                                <Badge
-                                  variant="outline"
-                                  className={getStatusConfig(group.primaryStatus).bgClass}
-                                >
-                                  {getStatusConfig(group.primaryStatus).label}
-                                </Badge>
-                                {group.materials.length > 1 && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    {group.materials.length} variants
+                            <div className="flex-1 flex items-start gap-3">
+                              {/* Selection Checkbox (in selection mode) */}
+                              {selectionMode && group.materials.length === 1 && (
+                                <Checkbox
+                                  checked={selectedMaterialIds.has(group.materials[0].id)}
+                                  disabled={materialBundleMap.has(group.materials[0].id)}
+                                  className="mt-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleMaterialSelection(group.materials[0].id);
+                                  }}
+                                />
+                              )}
+                              <div className="flex-1">
+                                <div className="flex items-baseline gap-2">
+                                  <h4 className="font-medium text-sm">{group.name}</h4>
+                                  {group.length && (
+                                    <span className="text-xs text-muted-foreground">{group.length}</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-sm text-muted-foreground">
+                                    Total Qty: {group.totalQuantity}
+                                  </span>
+                                  <Badge
+                                    variant="outline"
+                                    className={getStatusConfig(group.primaryStatus).bgClass}
+                                  >
+                                    {getStatusConfig(group.primaryStatus).label}
                                   </Badge>
-                                )}
+                                  {group.materials.length > 1 && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      {group.materials.length} variants
+                                    </Badge>
+                                  )}
+                                  {/* Bundle indicator */}
+                                  {selectionMode && group.materials.length === 1 && materialBundleMap.has(group.materials[0].id) && (
+                                    <Badge variant="outline" className="text-xs">
+                                      In {materialBundleMap.get(group.materials[0].id)?.bundleName}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            {expandedGroups.has(group.groupKey) ? (
+                            {!selectionMode && (expandedGroups.has(group.groupKey) ? (
                               <ChevronDown className="w-4 h-4 text-muted-foreground" />
                             ) : (
                               <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                            )}
+                            ))}
                           </div>
 
-                          {expandedGroups.has(group.groupKey) && (
+                          {!selectionMode && expandedGroups.has(group.groupKey) && (
                             <div className="mt-3 space-y-2 pl-4 border-l-2 border-muted">
                               {group.materials.map(material => (
                                 <div
@@ -1375,6 +1445,76 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
             ))
           )}
         </TabsContent>
+
+        {/* Create Bundle Dialog */}
+        <Dialog open={showCreateBundle} onOpenChange={setShowCreateBundle}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PackagePlus className="w-5 h-5" />
+                Create Material Bundle
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                <p className="text-sm text-muted-foreground">
+                  You're creating a bundle with <strong>{selectedMaterialIds.size}</strong> material{selectedMaterialIds.size > 1 ? 's' : ''}.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bundle-name">Bundle Name *</Label>
+                <Input
+                  id="bundle-name"
+                  value={bundleName}
+                  onChange={(e) => setBundleName(e.target.value)}
+                  placeholder="e.g., Main Building Materials, Roof Package"
+                  className="h-12"
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bundle-description">Description (Optional)</Label>
+                <Textarea
+                  id="bundle-description"
+                  value={bundleDescription}
+                  onChange={(e) => setBundleDescription(e.target.value)}
+                  placeholder="Add notes about this bundle..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4 border-t">
+                <Button
+                  onClick={createBundle}
+                  disabled={creatingBundle || !bundleName.trim()}
+                  className="h-12 gradient-primary"
+                >
+                  {creatingBundle ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Creating Bundle...
+                    </>
+                  ) : (
+                    <>
+                      <PackagePlus className="w-5 h-5 mr-2" />
+                      Create Bundle
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={closeCreateBundleDialog}
+                  disabled={creatingBundle}
+                  className="h-12"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <TabsContent value="ready">
           <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="at_shop" />
