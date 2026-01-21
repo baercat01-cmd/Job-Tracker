@@ -58,6 +58,12 @@ export function cleanMaterialLength(value: string | null | undefined): string {
     cleaned = cleaned.slice(1, -1);
   }
   
+  // Remove duplicate " at the end (e.g., 8ft"" -> 8ft")
+  // Keep replacing "" with " until there are no more doubles
+  while (cleaned.endsWith('""')) {
+    cleaned = cleaned.slice(0, -1);
+  }
+  
   return cleaned;
 }
 
