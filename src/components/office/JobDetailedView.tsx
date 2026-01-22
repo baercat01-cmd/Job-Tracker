@@ -767,7 +767,7 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
         <div className="sticky top-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
           {/* Back Button Row with Edit Button */}
           {onBack && (
-            <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-green-900 via-black to-green-900">
+            <div className="flex items-center justify-between px-4 py-1 bg-gradient-to-r from-green-900 via-black to-green-900">
               <Button
                 variant="ghost"
                 size="sm"
