@@ -38,7 +38,7 @@ interface ShopMaterialsViewProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'pull_from_shop', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
+  { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
   { value: 'at_shop', label: 'Ready for Job', color: 'bg-blue-100 text-blue-700 border-blue-300' },
 ];
 
@@ -96,9 +96,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading materials with pull_from_shop status from ALL jobs...');
+      console.log('🔍 Loading materials with ready_to_pull status from ALL jobs...');
       
-      // Get all materials with status "pull_from_shop" from ALL job statuses (active, quoting, on_hold, etc.)
+      // Get all materials with status "ready_to_pull" from ALL job statuses (active, quoting, on_hold, etc.)
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
         .select(`
@@ -113,7 +113,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             name
           )
         `)
-        .eq('status', 'pull_from_shop')
+        .eq('status', 'ready_to_pull')
         .order('name'); // Order by material name
 
       if (materialsError) {
@@ -121,7 +121,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         throw materialsError;
       }
 
-      console.log(`✅ Found ${materialsData?.length || 0} materials with pull_from_shop status from all job statuses`);
+      console.log(`✅ Found ${materialsData?.length || 0} materials with ready_to_pull status from all job statuses`);
       if (materialsData && materialsData.length > 0) {
         console.log('📦 Materials:', materialsData);
       }
