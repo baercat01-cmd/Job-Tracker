@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,6 +12,7 @@ import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
 import { JobPhotosView } from './JobPhotosView';
+import { EditJobDialog } from './EditJobDialog';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -99,6 +100,7 @@ interface DailyLog {
 export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
   const [componentGroups, setComponentGroups] = useState<ComponentGroup[]>([]);
   const [personGroups, setPersonGroups] = useState<PersonGroup[]>([]);
@@ -763,9 +765,9 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
       <Tabs defaultValue="overview" className="w-full">
         {/* Main Navigation Tabs with Back Button - Black, Gold, Dark Green Theme */}
         <div className="sticky top-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
-          {/* Back Button Row */}
+          {/* Back Button Row with Edit Button */}
           {onBack && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-900 via-black to-green-900">
+            <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-green-900 via-black to-green-900">
               <Button
                 variant="ghost"
                 size="sm"
@@ -775,6 +777,18 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
                 <ArrowLeft className="w-5 h-5 mr-2" />
                 Back to Jobs
               </Button>
+              
+              {profile?.role === 'office' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowEditDialog(true)}
+                  className="text-yellow-100 hover:text-yellow-400 hover:bg-green-900/50"
+                >
+                  <Edit className="w-5 h-5 mr-2" />
+                  Edit Job
+                </Button>
+              )}
             </div>
           )}
           
@@ -1239,6 +1253,17 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Edit Job Dialog */}
+      <EditJobDialog
+        open={showEditDialog}
+        job={job}
+        onClose={() => setShowEditDialog(false)}
+        onSuccess={() => {
+          setShowEditDialog(false);
+          loadData(); // Reload job data
+        }}
+      />
     </div>
   );
 }
