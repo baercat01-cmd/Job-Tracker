@@ -761,10 +761,11 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
   return (
     <div className="w-full">
       <Tabs defaultValue="overview" className="w-full">
-        {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
-        <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
-          <div className="flex items-center gap-2 px-4">
-            {onBack && (
+        {/* Main Navigation Tabs with Back Button - Black, Gold, Dark Green Theme */}
+        <div className="sticky top-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
+          {/* Back Button Row */}
+          {onBack && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-900 via-black to-green-900">
               <Button
                 variant="ghost"
                 size="sm"
@@ -774,8 +775,10 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
                 <ArrowLeft className="w-5 h-5 mr-2" />
                 Back to Jobs
               </Button>
-            )}
-          </div>
+            </div>
+          )}
+          
+          {/* Tab Navigation */}
           <TabsList className="grid w-full grid-cols-6 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
@@ -821,9 +824,6 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
             </TabsTrigger>
           </TabsList>
         </div>
-        
-        {/* Add spacer to prevent content from hiding under fixed header */}
-        <div className="h-16" />
 
         {/* Overview Tab - Includes Job Info */}
         <TabsContent value="overview" className="space-y-4 px-4 pt-4">
