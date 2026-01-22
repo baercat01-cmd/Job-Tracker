@@ -114,7 +114,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .lte('due_date', todayStr)
         .neq('status', 'completed')
         .neq('task_type', 'field')
-        .in('jobs.status', ['active', 'quoting', 'on hold'])
+        .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold'])
         .order('due_date', { ascending: true })
         .order('priority', { ascending: false });
 
@@ -133,7 +133,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         .eq('event_date', todayStr)
         .is('completed_at', null)
         .neq('event_type', 'task')
-        .in('jobs.status', ['active', 'quoting', 'on hold'])
+        .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold'])
         .order('start_time', { ascending: true });
 
       if (eventsError) throw eventsError;
@@ -218,9 +218,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (tasksError) throw tasksError;
 
-      // Filter to only include tasks from active, quoting, or on hold jobs
+      // Filter to only include tasks from active, prepping, quoting, or on hold jobs
       const filteredTasks = (tasksData || []).filter(
-        task => task.job && ['active', 'quoting', 'on hold'].includes((task.job as any).status)
+        task => task.job && ['active', 'prepping', 'quoting', 'on_hold'].includes((task.job as any).status)
       );
 
       // Load all upcoming events from active/quoting/on hold jobs
@@ -238,9 +238,9 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
       if (eventsError) throw eventsError;
 
-      // Filter to only include events from active, quoting, or on hold jobs
+      // Filter to only include events from active, prepping, quoting, or on hold jobs
       const filteredEvents = (eventsData || []).filter(
-        event => event.job && ['active', 'quoting', 'on hold'].includes((event.job as any).status)
+        event => event.job && ['active', 'prepping', 'quoting', 'on_hold'].includes((event.job as any).status)
       );
 
       setCalendarTasks(filteredTasks);

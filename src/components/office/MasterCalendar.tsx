@@ -136,7 +136,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       const { data, error } = await supabase
         .from('jobs')
         .select('id, name, client_name')
-        .eq('status', 'active')
+        .in('status', ['active', 'prepping'])
         .order('name');
 
       if (error) throw error;
@@ -200,7 +200,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       setLoading(true);
       const events: CalendarEvent[] = [];
 
-      // Load material events for all active jobs
+      // Load material events for all active and prepping jobs
       let materialsQuery = supabase
         .from('materials')
         .select(`
@@ -214,7 +214,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           status,
           jobs!inner(id, name, client_name)
         `)
-        .eq('jobs.status', 'active')
+        .in('jobs.status', ['active', 'prepping'])
         .or('order_by_date.not.is.null,delivery_date.not.is.null,pull_by_date.not.is.null');
 
       // If viewing a specific job, filter to that job only
@@ -302,7 +302,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           subcontractors!inner(id, name, phone, trades),
           jobs!inner(id, name, client_name, status)
         `)
-        .eq('jobs.status', 'active');
+        .in('jobs.status', ['active', 'prepping']);
 
       if (filterJob !== 'all') {
         subcontractorQuery = subcontractorQuery.eq('job_id', filterJob);
@@ -360,7 +360,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           job_id,
           jobs!inner(id, name, client_name, status)
         `)
-        .eq('jobs.status', 'active')
+        .in('jobs.status', ['active', 'prepping'])
         .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder']);
 
       // If viewing a specific job, filter to that job
@@ -419,7 +419,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           assigned_user:assigned_to(id, username, email),
           jobs!inner(id, name, client_name, status)
         `)
-        .eq('jobs.status', 'active')
+        .in('jobs.status', ['active', 'prepping'])
         .neq('status', 'completed')
         .not('due_date', 'is', null);
 
