@@ -150,6 +150,23 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
     }
   }
 
+  async function setJobPrepping(jobId: string) {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'prepping', updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job set to prepping - hidden from crew');
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error setting job to prepping:', error);
+      toast.error('Failed to update job status');
+    }
+  }
+
   async function activateJob(jobId: string) {
     try {
       const { error } = await supabase
@@ -459,7 +476,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
             })}
           </div>
         ) : (
-          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             {/* Active Column */}
             <div className="flex flex-col min-w-0">
               <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-200 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3">
@@ -631,10 +648,122 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
               </div>
             </div>
 
+            {/* Prepping Column */}
+            <div className="flex flex-col min-w-0">
+              <div className="bg-gradient-to-r from-blue-100 to-blue-50 border-2 border-blue-200 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3">
+                <h3 className="text-base sm:text-lg font-bold text-blue-900 flex items-center gap-2">
+                  Prepping
+                  <Badge variant="secondary" className="bg-blue-200 text-blue-900">
+                    {jobs.filter(j => j.status === 'prepping' && !j.is_internal).length}
+                  </Badge>
+                </h3>
+              </div>
+              <div className="space-y-2 sm:space-y-3">
+                {jobs
+                  .filter((job) => job.status === 'prepping' && !job.is_internal)
+                  .map((job) => {
+                    const jobStats = stats[job.id] || {};
+                    
+                    return (
+                      <Card
+                        id={`job-${job.id}`}
+                        key={job.id}
+                        className={`hover:shadow-md transition-all ${
+                          selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
+                        }`}
+                      >
+                        <CardHeader className="pb-1.5 pt-2 px-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                              <div className="flex items-center gap-1.5">
+                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1.5 text-xs flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJob(job);
+                                    setSelectedTab('photos');
+                                  }}
+                                >
+                                  <Camera className="w-3 h-3 mr-0.5" />
+                                  {jobStats.photosCount || 0}
+                                </Button>
+                              </div>
+                              <p className="text-xs font-medium text-muted-foreground mt-0.5">
+                                {job.client_name}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  activateJob(job.id);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <FileCheck className="w-3 h-3 mr-0.5" />
+                                Activate
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setJobOnHold(job.id);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <AlertTriangle className="w-3 h-3 mr-0.5" />
+                                Hold
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleArchiveJob(job.id, job.status);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <Archive className="w-3 h-3 mr-0.5" />
+                                Archive
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
+                          <div className="cursor-pointer" onClick={() => {
+                            setSelectedJob(job);
+                            setSelectedTab('overview');
+                          }}>
+                            <div className="flex items-start text-xs">
+                              <MapPin className="w-3 h-3 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline leading-tight"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {job.address}
+                              </a>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            </div>
+
             {/* Quoting Column */}
-            <div className="flex flex-col">
-              <div className="bg-gradient-to-r from-yellow-100 to-yellow-50 border-2 border-yellow-200 rounded-lg p-3 mb-3">
-                <h3 className="text-lg font-bold text-yellow-900 flex items-center gap-2">
+            <div className="flex flex-col min-w-0">
+              <div className="bg-gradient-to-r from-yellow-100 to-yellow-50 border-2 border-yellow-200 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3">
+                <h3 className="text-base sm:text-lg font-bold text-yellow-900 flex items-center gap-2">
                   Quoting
                   <Badge variant="secondary" className="bg-yellow-200 text-yellow-900">
                     {jobs.filter(j => j.status === 'quoting' && !j.is_internal).length}
@@ -655,66 +784,75 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
                         }`}
                       >
-                        <CardHeader className="p-3 sm:p-6">
-                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
-                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
-                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="pb-1.5 pt-2 px-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                              <div className="flex items-center gap-1.5">
+                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1.5 text-xs flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJob(job);
+                                    setSelectedTab('photos');
+                                  }}
+                                >
+                                  <Camera className="w-3 h-3 mr-0.5" />
+                                  {jobStats.photosCount || 0}
+                                </Button>
+                              </div>
+                              <p className="text-xs font-medium text-muted-foreground mt-0.5">
                                 {job.client_name}
                               </p>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <div className="flex flex-col gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    activateJob(job.id);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <FileCheck className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Activate</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleArchiveJob(job.id, job.status);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <Archive className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Archive</span>
-                                </Button>
-                              </div>
+                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setJobPrepping(job.id);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <FileCheck className="w-3 h-3 mr-0.5" />
+                                Prep
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleArchiveJob(job.id, job.status);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <Archive className="w-3 h-3 mr-0.5" />
+                                Archive
+                              </Button>
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
+                        <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-xs sm:text-sm">
-                              <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <div className="flex items-start text-xs">
+                              <MapPin className="w-3 h-3 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary hover:underline"
+                                className="text-primary hover:underline leading-tight"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {job.address}
                               </a>
                             </div>
-                            {job.description && (
-                              <p className="text-sm text-muted-foreground line-clamp-2">
-                                {job.description}
-                              </p>
-                            )}
+
                           </div>
                         </CardContent>
                       </Card>
@@ -724,9 +862,9 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
             </div>
 
             {/* On Hold Column */}
-            <div className="flex flex-col">
-              <div className="bg-gradient-to-r from-orange-100 to-orange-50 border-2 border-orange-200 rounded-lg p-3 mb-3">
-                <h3 className="text-lg font-bold text-orange-900 flex items-center gap-2">
+            <div className="flex flex-col min-w-0">
+              <div className="bg-gradient-to-r from-orange-100 to-orange-50 border-2 border-orange-200 rounded-lg p-2 sm:p-3 mb-2 sm:mb-3">
+                <h3 className="text-base sm:text-lg font-bold text-orange-900 flex items-center gap-2">
                   On Hold
                   <Badge variant="secondary" className="bg-orange-200 text-orange-900">
                     {jobs.filter(j => j.status === 'on_hold' && !j.is_internal).length}
@@ -747,66 +885,75 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                           selectedJobId === job.id ? 'ring-2 ring-primary shadow-lg' : ''
                         }`}
                       >
-                        <CardHeader className="p-3 sm:p-6">
-                          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-0">
-                            <div className="flex-1 cursor-pointer w-full sm:w-auto" onClick={() => setSelectedJob(job)}>
-                              <CardTitle className="text-base sm:text-lg">{job.name}</CardTitle>
-                              <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                        <CardHeader className="pb-1.5 pt-2 px-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
+                              <div className="flex items-center gap-1.5">
+                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1.5 text-xs flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJob(job);
+                                    setSelectedTab('photos');
+                                  }}
+                                >
+                                  <Camera className="w-3 h-3 mr-0.5" />
+                                  {jobStats.photosCount || 0}
+                                </Button>
+                              </div>
+                              <p className="text-xs font-medium text-muted-foreground mt-0.5">
                                 {job.client_name}
                               </p>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <div className="flex flex-col gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    activateJob(job.id);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <FileCheck className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Activate</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleArchiveJob(job.id, job.status);
-                                  }}
-                                  className="h-7 px-2 justify-start"
-                                >
-                                  <Archive className="w-3 h-3 mr-1" />
-                                  <span className="text-xs">Archive</span>
-                                </Button>
-                              </div>
+                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setJobPrepping(job.id);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <FileCheck className="w-3 h-3 mr-0.5" />
+                                Prep
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleArchiveJob(job.id, job.status);
+                                }}
+                                className="h-6 px-1.5 text-[10px]"
+                              >
+                                <Archive className="w-3 h-3 mr-0.5" />
+                                Archive
+                              </Button>
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-3 sm:p-6 space-y-2 sm:space-y-3">
+                        <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
                           <div className="cursor-pointer" onClick={() => {
                             setSelectedJob(job);
                             setSelectedTab('overview');
                           }}>
-                            <div className="flex items-start text-xs sm:text-sm">
-                              <MapPin className="w-4 h-4 mr-2 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <div className="flex items-start text-xs">
+                              <MapPin className="w-3 h-3 mr-1 mt-0.5 text-muted-foreground flex-shrink-0" />
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary hover:underline"
+                                className="text-primary hover:underline leading-tight"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {job.address}
                               </a>
                             </div>
-                            {job.description && (
-                              <p className="text-sm text-muted-foreground line-clamp-2">
-                                {job.description}
-                              </p>
-                            )}
+
                           </div>
                         </CardContent>
                       </Card>
