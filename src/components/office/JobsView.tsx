@@ -9,7 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -563,32 +570,39 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                 </div>
                               )}
                             </div>
-                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setJobOnHold(job.id);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <AlertTriangle className="w-3 h-3 mr-0.5" />
-                                Hold
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleArchiveJob(job.id, job.status);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <Archive className="w-3 h-3 mr-0.5" />
-                                Archive
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setJobOnHold(job.id);
+                                  }}
+                                >
+                                  <AlertTriangle className="w-4 h-4 mr-2" />
+                                  Put On Hold
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleArchiveJob(job.id, job.status);
+                                  }}
+                                >
+                                  <Archive className="w-4 h-4 mr-2" />
+                                  Archive
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
@@ -695,44 +709,48 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                 {job.client_name}
                               </p>
                             </div>
-                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  activateJob(job.id);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <FileCheck className="w-3 h-3 mr-0.5" />
-                                Activate
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setJobOnHold(job.id);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <AlertTriangle className="w-3 h-3 mr-0.5" />
-                                Hold
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleArchiveJob(job.id, job.status);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <Archive className="w-3 h-3 mr-0.5" />
-                                Archive
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    activateJob(job.id);
+                                  }}
+                                >
+                                  <FileCheck className="w-4 h-4 mr-2" />
+                                  Activate
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setJobOnHold(job.id);
+                                  }}
+                                >
+                                  <AlertTriangle className="w-4 h-4 mr-2" />
+                                  Put On Hold
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleArchiveJob(job.id, job.status);
+                                  }}
+                                >
+                                  <Archive className="w-4 h-4 mr-2" />
+                                  Archive
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
@@ -807,32 +825,39 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                 {job.client_name}
                               </p>
                             </div>
-                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setJobPrepping(job.id);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <FileCheck className="w-3 h-3 mr-0.5" />
-                                Prep
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleArchiveJob(job.id, job.status);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <Archive className="w-3 h-3 mr-0.5" />
-                                Archive
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setJobPrepping(job.id);
+                                  }}
+                                >
+                                  <FileCheck className="w-4 h-4 mr-2" />
+                                  Set to Prepping
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleArchiveJob(job.id, job.status);
+                                  }}
+                                >
+                                  <Archive className="w-4 h-4 mr-2" />
+                                  Archive
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
@@ -908,32 +933,39 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                                 {job.client_name}
                               </p>
                             </div>
-                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setJobPrepping(job.id);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <FileCheck className="w-3 h-3 mr-0.5" />
-                                Prep
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleArchiveJob(job.id, job.status);
-                                }}
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                <Archive className="w-3 h-3 mr-0.5" />
-                                Archive
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setJobPrepping(job.id);
+                                  }}
+                                >
+                                  <FileCheck className="w-4 h-4 mr-2" />
+                                  Set to Prepping
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleArchiveJob(job.id, job.status);
+                                  }}
+                                >
+                                  <Archive className="w-4 h-4 mr-2" />
+                                  Archive
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-1.5 px-3 pb-2 space-y-1.5">
