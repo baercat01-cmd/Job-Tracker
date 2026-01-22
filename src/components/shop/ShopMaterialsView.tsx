@@ -30,6 +30,7 @@ interface MaterialWithJob extends Material {
   job_name: string;
   client_name: string;
   category_name: string;
+  job_status: string;
 }
 
 interface ShopMaterialsViewProps {
@@ -78,10 +79,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
 
   async function loadJobs() {
     try {
+      // Load ALL jobs (not just active) so shop can see materials from all job statuses
       const { data, error } = await supabase
         .from('jobs')
-        .select('id, name, client_name')
-        .eq('status', 'active')
+        .select('id, name, client_name, status')
         .order('name');
 
       if (error) throw error;
@@ -95,9 +96,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading materials with pull_from_shop status...');
+      console.log('🔍 Loading materials with pull_from_shop status from ALL jobs...');
       
-      // Get all materials with status "pull_from_shop" from active jobs
+      // Get all materials with status "pull_from_shop" from ALL job statuses (active, quoting, on_hold, etc.)
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
         .select(`
@@ -113,15 +114,14 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           )
         `)
         .eq('status', 'pull_from_shop')
-        .eq('jobs.status', 'active')
-        .order('name'); // Order by material name instead
+        .order('name'); // Order by material name
 
       if (materialsError) {
         console.error('❌ Error loading materials:', materialsError);
         throw materialsError;
       }
 
-      console.log(`✅ Found ${materialsData?.length || 0} materials with pull_from_shop status`);
+      console.log(`✅ Found ${materialsData?.length || 0} materials with pull_from_shop status from all job statuses`);
       if (materialsData && materialsData.length > 0) {
         console.log('📦 Materials:', materialsData);
       }
@@ -138,6 +138,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         job_name: m.jobs.name,
         client_name: m.jobs.client_name,
         category_name: m.materials_categories.name,
+        job_status: m.jobs.status,
       }));
 
       setMaterials(materialsWithJob);
@@ -195,12 +196,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         job_id: material.job_id,
         job_name: material.job_name,
         client_name: material.client_name,
+        job_status: material.job_status,
         materials: [],
       };
     }
     acc[jobKey].materials.push(material);
     return acc;
-  }, {} as Record<string, { job_id: string; job_name: string; client_name: string; materials: MaterialWithJob[] }>);
+  }, {} as Record<string, { job_id: string; job_name: string; client_name: string; job_status: string; materials: MaterialWithJob[] }>);
 
   const jobGroups = Object.values(materialsByJob);
 
@@ -295,7 +297,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               <CardHeader className="bg-gradient-to-r from-purple-500/10 to-purple-500/5 border-b-2 border-purple-500/20">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-xl font-bold">{group.job_name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-xl font-bold">{group.job_name}</CardTitle>
+                      <Badge variant={group.materials[0]?.job_status === 'active' ? 'default' : 'secondary'} className="text-xs">
+                        {group.materials[0]?.job_status || 'unknown'}
+                      </Badge>
+                    </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       Client: {group.client_name}
                     </p>
