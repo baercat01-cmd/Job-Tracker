@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -18,6 +18,7 @@ import type { Job } from '@/types';
 interface JobDetailedViewProps {
   job: Job;
   onBack?: () => void;
+  onEdit?: () => void;
 }
 
 interface ComponentWorkEntry {
@@ -96,7 +97,7 @@ interface DailyLog {
   created_at: string;
 }
 
-export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
+export function JobDetailedView({ job, onBack, onEdit }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
@@ -829,10 +830,23 @@ export function JobDetailedView({ job, onBack }: JobDetailedViewProps) {
         <TabsContent value="overview" className="space-y-4 px-4 pt-4">
           <Card>
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <Building2 className="w-6 h-6" />
-                {job.name}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl font-bold flex items-center gap-2">
+                  <Building2 className="w-6 h-6" />
+                  {job.name}
+                </CardTitle>
+                {onEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onEdit}
+                    className="flex items-center gap-2"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit Job Info
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="pt-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
