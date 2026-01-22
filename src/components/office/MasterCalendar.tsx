@@ -403,7 +403,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         });
       }
 
-      // Load tasks with due dates (excluding completed tasks)
+      // Load tasks with due dates (including completed tasks)
       let tasksQuery = supabase
         .from('job_tasks')
         .select(`
@@ -416,11 +416,11 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           task_type,
           job_id,
           assigned_to,
+          completed_at,
           assigned_user:assigned_to(id, username, email),
           jobs!inner(id, name, client_name, status)
         `)
         .in('jobs.status', ['active', 'prepping'])
-        .neq('status', 'completed')
         .not('due_date', 'is', null);
 
       if (filterJob !== 'all') {
@@ -439,7 +439,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           
           events.push({
             id: `task-${task.id}`,
-            type: 'task_deadline',
+            type: task.status === 'completed' ? 'task_completed' : 'task_deadline',
             date: task.due_date,
             jobId: job.id,
             jobName: job.name,
@@ -447,7 +447,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             title: task.title,
             description: task.description || `${task.task_type} task`,
             status: task.status,
-            priority: isPastDue(task.due_date) ? 'high' : isUpcoming(task.due_date) ? 'medium' : 'low',
+            priority: task.status === 'completed' ? 'low' : (isPastDue(task.due_date) ? 'high' : isUpcoming(task.due_date) ? 'medium' : 'low'),
             assignedUserName,
           });
         });
@@ -662,12 +662,18 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                       const isMaterialEvent = event.type.startsWith('material_');
                       const eventIsPast = isPastDue(event.date);
                       const eventIsToday = isToday(event.date);
+                      const isCompleted = event.type === 'task_completed';
                       
                       let bgClass = '';
                       let textClass = '';
                       let fontWeight = '';
                       
-                      if (eventIsPast) {
+                      if (isCompleted) {
+                        // Completed tasks always show in dull gray
+                        bgClass = 'bg-gray-200/60';
+                        textClass = 'text-gray-500';
+                        fontWeight = '';
+                      } else if (eventIsPast) {
                         bgClass = 'bg-muted/40';
                         textClass = 'text-muted-foreground/60';
                         fontWeight = '';
@@ -1128,9 +1134,10 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                     >
                       <Card
                         className={`border-l-4 ${
+                          event.type === 'task_completed' ? 'bg-gray-100/50 opacity-75' :
                           event.priority === 'high' ? 'border-destructive bg-destructive/5' : ''
                         }`}
-                        style={{ borderLeftColor: event.jobColor }}
+                        style={{ borderLeftColor: event.type === 'task_completed' ? '#9ca3af' : event.jobColor }}
                       >
                         <CollapsibleTrigger asChild>
                           <div className="cursor-pointer hover:bg-muted/50 transition-colors">
@@ -1141,8 +1148,16 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                                 </div>
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
-                                    <p className="font-bold">{event.title}</p>
-                                    {event.priority === 'high' && (
+                                    <p className={`font-bold ${event.type === 'task_completed' ? 'line-through text-gray-500' : ''}`}>
+                                      {event.title}
+                                    </p>
+                                    {event.type === 'task_completed' && (
+                                      <Badge variant="secondary" className="text-xs bg-gray-200 text-gray-600">
+                                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                                        Completed
+                                      </Badge>
+                                    )}
+                                    {event.priority === 'high' && event.type !== 'task_completed' && (
                                       <Badge variant="destructive" className="text-xs">Overdue</Badge>
                                     )}
                                   </div>
@@ -1233,11 +1248,12 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
 
                               {/* Action Buttons */}
                               <div className="flex gap-2 pt-2 flex-wrap">
-                                {/* Check Off / Mark Complete Button */}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
+                                {/* Check Off / Mark Complete Button - hide if already completed */}
+                                {event.type !== 'task_completed' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
                                     setCompletingEvent(true);
                                     try {
                                       // Handle completion based on event type
@@ -1287,8 +1303,9 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                                   ) : (
                                     <CheckCircle2 className="w-4 h-4" />
                                   )}
-                                  {completingEvent ? 'Marking...' : 'Check Off'}
-                                </Button>
+                                    {completingEvent ? 'Marking...' : 'Check Off'}
+                                  </Button>
+                                )}
 
                                 {/* Change Date Button */}
                                 <Button
