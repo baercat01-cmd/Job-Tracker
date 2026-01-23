@@ -34,6 +34,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 
+// ⚠️ CRITICAL: ALL TIMES MUST DISPLAY IN EASTERN TIME (EST/EDT)
+// This ensures payroll times match when employees actually clocked in/out
+// DO NOT CHANGE THIS TIMEZONE - it must remain 'America/New_York'
+const PAYROLL_TIMEZONE = 'America/New_York';
+
 interface TimeEntryData {
   id: string;
   job_id: string;
@@ -485,13 +490,13 @@ export function PayrollDashboard() {
                   startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: 'America/New_York',
+                    timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
                   }),
                   endTime: isTimeOff ? '-' : (entry.endTime 
                     ? new Date(entry.endTime).toLocaleTimeString('en-US', {
                         hour: '2-digit',
                         minute: '2-digit',
-                        timeZone: 'America/New_York',
+                        timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
                       })
                     : '-'),
                   hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
@@ -912,7 +917,7 @@ export function PayrollDashboard() {
                                           {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
                                             hour: '2-digit',
                                             minute: '2-digit',
-                                            timeZone: 'America/New_York',
+                                            timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
                                           })}
                                         </td>
                                         <td className="p-2 font-mono text-xs">
@@ -920,7 +925,7 @@ export function PayrollDashboard() {
                                             ? new Date(entry.endTime).toLocaleTimeString('en-US', {
                                                 hour: '2-digit',
                                                 minute: '2-digit',
-                                                timeZone: 'America/New_York',
+                                                timeZone: PAYROLL_TIMEZONE, // ⚠️ LOCKED to EST - DO NOT CHANGE
                                               })
                                             : '-')}
                                         </td>
