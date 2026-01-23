@@ -482,14 +482,16 @@ export function PayrollDashboard() {
                 return {
                   jobName: entry.jobName,
                   clientName: entry.clientName,
-                  startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
+                  startTime: isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit',
+                    timeZone: 'America/New_York',
                   }),
                   endTime: isTimeOff ? '-' : (entry.endTime 
-                    ? new Date(entry.endTime).toLocaleTimeString([], {
+                    ? new Date(entry.endTime).toLocaleTimeString('en-US', {
                         hour: '2-digit',
                         minute: '2-digit',
+                        timeZone: 'America/New_York',
                       })
                     : '-'),
                   hours: isTimeOff ? '-' : entry.totalHours.toFixed(2),
@@ -907,16 +909,18 @@ export function PayrollDashboard() {
                                           </div>
                                         </td>
                                         <td className="p-2 font-mono text-xs">
-                                          {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString([], {
+                                          {isTimeOff ? '-' : new Date(entry.startTime).toLocaleTimeString('en-US', {
                                             hour: '2-digit',
                                             minute: '2-digit',
+                                            timeZone: 'America/New_York',
                                           })}
                                         </td>
                                         <td className="p-2 font-mono text-xs">
                                           {isTimeOff ? '-' : (entry.endTime 
-                                            ? new Date(entry.endTime).toLocaleTimeString([], {
+                                            ? new Date(entry.endTime).toLocaleTimeString('en-US', {
                                                 hour: '2-digit',
                                                 minute: '2-digit',
+                                                timeZone: 'America/New_York',
                                               })
                                             : '-')}
                                         </td>
