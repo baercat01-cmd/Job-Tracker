@@ -1188,16 +1188,24 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <>
       <div ref={containerRef} className="w-full -mx-2">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="manage" className="flex items-center gap-2">
-              <ListChecks className="w-4 h-4" />
-              Manage Materials
-            </TabsTrigger>
-            <TabsTrigger value="bundles" className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4" />
-              Material Bundles
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
+            <TabsList className="grid w-full grid-cols-2 h-14 bg-white shadow-sm">
+              <TabsTrigger 
+                value="manage" 
+                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
+              >
+                <ListChecks className="w-5 h-5" />
+                <span className="text-xs sm:text-base">Manage Materials</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="bundles" 
+                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-purple-600 data-[state=active]:to-purple-500 data-[state=active]:text-white transition-all shadow-sm"
+              >
+                <ShoppingCart className="w-5 h-5" />
+                <span className="text-xs sm:text-base">Material Bundles</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="manage" className="space-y-2">
             <DndContext

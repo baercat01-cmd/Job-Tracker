@@ -640,8 +640,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       </main>
 
       {/* Bottom Navigation - 7 tabs for job features */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-x-auto scrollbar-hide">
-        <div className="container mx-auto px-0 py-0 grid grid-cols-7 min-w-max sm:min-w-0">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-x-hidden">
+        <div className="container mx-auto px-0 py-0 grid grid-cols-7">
           <Button
             variant="ghost"
             className={`flex-col h-auto py-2 sm:py-3 touch-target relative border-r border-slate-300 rounded-none px-1 sm:px-2 min-w-[60px] sm:min-w-0 ${
