@@ -345,7 +345,10 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
   };
 
   const filteredTasks = tasks.filter(task => {
-    if (filterStatus === 'all') return true;
+    if (filterStatus === 'all') {
+      // When showing 'all', exclude completed tasks
+      return task.status !== 'completed';
+    }
     return task.status === filterStatus;
   });
 
@@ -391,7 +394,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
           size="sm"
           onClick={() => setFilterStatus('all')}
         >
-          All ({tasks.length})
+          Active ({tasks.length - tasksByStatus.completed.length})
         </Button>
         <Button
           variant={filterStatus === 'pending' ? 'default' : 'outline'}
@@ -407,13 +410,6 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
         >
           In Progress ({tasksByStatus.in_progress.length})
         </Button>
-        <Button
-          variant={filterStatus === 'completed' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilterStatus('completed')}
-        >
-          Completed ({tasksByStatus.completed.length})
-        </Button>
         {tasksByStatus.blocked.length > 0 && (
           <Button
             variant={filterStatus === 'blocked' ? 'default' : 'outline'}
@@ -423,6 +419,13 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
             Blocked ({tasksByStatus.blocked.length})
           </Button>
         )}
+        <Button
+          variant={filterStatus === 'completed' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('completed')}
+        >
+          Completed ({tasksByStatus.completed.length})
+        </Button>
       </div>
 
       {/* Tasks List */}
