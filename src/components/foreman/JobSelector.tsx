@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package } from 'lucide-react';
+import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package, ListTodo } from 'lucide-react';
 import type { Job } from '@/types';
 
 interface JobSelectorProps {
@@ -16,6 +16,7 @@ interface JobSelectorProps {
   onShowJobCalendar?: (job: Job) => void;
   onSelectJobForMaterials?: (job: Job) => void;
   onSelectJobForPullMaterials?: (job: Job) => void;
+  onSelectJobForSchedule?: (job: Job) => void;
 }
 
 interface JobWithProgress extends Job {
@@ -27,7 +28,7 @@ interface JobWithProgress extends Job {
   pull_from_shop_count?: number;
 }
 
-export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, onSelectJobForMaterials, onSelectJobForPullMaterials }: JobSelectorProps) {
+export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, onSelectJobForMaterials, onSelectJobForPullMaterials, onSelectJobForSchedule }: JobSelectorProps) {
   const [jobs, setJobs] = useState<JobWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
@@ -269,7 +270,7 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
               </div>
               
               {/* Separate button for address link - requires deliberate action */}
-              <CardContent className="pt-0 pb-3 border-t border-slate-300 bg-slate-50">
+              <CardContent className="pt-0 pb-3 border-t border-slate-300 bg-slate-50 space-y-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -288,6 +289,34 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                     <ExternalLink className="w-3 h-3 flex-shrink-0 text-green-900" />
                   </a>
                 </Button>
+                
+                {/* Quick Action Buttons */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 rounded-none border-slate-300 hover:bg-green-900 hover:text-white hover:border-green-900 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectJobForMaterials?.(job);
+                    }}
+                  >
+                    <Package className="w-3 h-3 mr-1" />
+                    <span className="text-xs font-semibold">Materials</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 rounded-none border-slate-300 hover:bg-green-900 hover:text-white hover:border-green-900 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectJobForSchedule?.(job);
+                    }}
+                  >
+                    <ListTodo className="w-3 h-3 mr-1" />
+                    <span className="text-xs font-semibold">Schedule</span>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

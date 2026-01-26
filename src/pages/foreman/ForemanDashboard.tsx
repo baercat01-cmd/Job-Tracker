@@ -125,6 +125,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     handleJobSelectForMaterials(job, 'pull');
   };
 
+  const handleJobSelectForSchedule = (job: Job) => {
+    setSelectedJob(job);
+    setActiveTab('schedule'); // Open directly to schedule tab
+  };
+
   const handleBackToJobs = () => {
     setSelectedJob(null);
     setActiveTab('timer');
@@ -457,6 +462,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
                 }}
                 onSelectJobForMaterials={handleJobSelectForMaterials}
                 onSelectJobForPullMaterials={handleJobSelectForPullMaterials}
+                onSelectJobForSchedule={handleJobSelectForSchedule}
               />
             </div>
           </div>
