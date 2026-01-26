@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -36,7 +36,7 @@ type VehicleType = 'truck' | 'heavy_equipment' | 'small_engine' | 'trailer';
 type VehicleStatus = 'All' | 'Active' | 'Maintenance' | 'Out of Service' | 'Sold';
 
 export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleManagementProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<VehicleType>('truck');
   const [statusFilter, setStatusFilter] = useState<VehicleStatus>('All');
   const [showAddDialog, setShowAddDialog] = useState(false);
