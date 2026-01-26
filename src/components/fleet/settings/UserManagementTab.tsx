@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,7 @@ interface User {
 }
 
 export function UserManagementTab() {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [newUsername, setNewUsername] = useState('');
@@ -60,7 +60,7 @@ export function UserManagementTab() {
       const { data, error } = await supabase.rpc('create_app_user', {
         p_username: newUsername,
         p_password: newPassword,
-        p_created_by: user?.username || 'unknown',
+        p_created_by: profile?.username || 'unknown',
       });
 
       if (error) {

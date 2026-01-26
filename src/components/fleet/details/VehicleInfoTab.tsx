@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +21,7 @@ interface VehicleInfoTabProps {
 }
 
 export function VehicleInfoTab({ vehicle, onVehicleUpdated }: VehicleInfoTabProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({

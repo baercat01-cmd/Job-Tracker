@@ -170,11 +170,7 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <Routes>
-          {/* Fleet Management System - Standalone Routes */}
-          <Route path="/fleet/login" element={<FleetLoginPage />} />
-          <Route path="/fleet" element={<FleetDashboard />} />
-          
-          {/* Main FieldTrack App */}
+          {/* All routes use main app authentication */}
           <Route path="/*" element={
             <AuthProvider>
               <AppContent />

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Building2, Settings, ArrowLeft } from 'lucide-react';
@@ -16,21 +15,20 @@ interface Company {
   location_tags: any[];
 }
 
-export function FleetDashboard() {
-  const navigate = useNavigate();
-  const { user, logout } = useFleetAuth();
+interface FleetDashboardProps {
+  hideHeader?: boolean;
+}
+
+export function FleetDashboard({ hideHeader = false }: FleetDashboardProps) {
+  const { profile } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) {
-      navigate('/fleet/login');
-      return;
-    }
     loadCompanies();
-  }, [user, navigate]);
+  }, []);
 
   async function loadCompanies() {
     try {
@@ -50,9 +48,9 @@ export function FleetDashboard() {
   }
 
   function handleLogout() {
-    logout();
-    navigate('/fleet/login');
-    toast.success('Logged out successfully');
+    // Logout handled by main app
+    setShowSettings(false);
+    setSelectedCompany(null);
   }
 
   if (loading) {
@@ -69,22 +67,24 @@ export function FleetDashboard() {
   // Settings view
   if (showSettings) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600">
-          <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSettings(false)}
-              className="text-white hover:text-yellow-400"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Back
-            </Button>
-            <h1 className="text-lg font-bold">Fleet Settings</h1>
-            <div className="w-20" /> {/* Spacer */}
+      <div className={hideHeader ? '' : 'min-h-screen bg-slate-50'}>
+        {!hideHeader && (
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600">
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSettings(false)}
+                className="text-white hover:text-yellow-400"
+              >
+                <ArrowLeft className="w-5 h-5 mr-2" />
+                Back
+              </Button>
+              <h1 className="text-lg font-bold">Fleet Settings</h1>
+              <div className="w-20" /> {/* Spacer */}
+            </div>
           </div>
-        </div>
+        )}
         <FleetSettings onClose={() => setShowSettings(false)} onLogout={handleLogout} />
       </div>
     );
@@ -103,24 +103,26 @@ export function FleetDashboard() {
 
   // Company selection view
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className={hideHeader ? '' : 'min-h-screen bg-gradient-to-br from-slate-100 to-slate-200'}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600 shadow-lg">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold">Fleet Management</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-300">Welcome, {user?.username}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSettings(true)}
-              className="text-white hover:text-yellow-400"
-            >
-              <Settings className="w-5 h-5" />
-            </Button>
+      {!hideHeader && (
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-3 py-2 border-b-4 border-yellow-600 shadow-lg">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-bold">Fleet Management</h1>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-300">Welcome, {profile?.username}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSettings(true)}
+                className="text-white hover:text-yellow-400"
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Company Selection */}
       <div className="p-4">

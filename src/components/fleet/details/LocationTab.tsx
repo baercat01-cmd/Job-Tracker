@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ interface LocationTabProps {
 }
 
 export function LocationTab({ vehicle, onVehicleUpdated }: LocationTabProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     location_name: vehicle.location_name || '',
@@ -51,7 +51,7 @@ export function LocationTab({ vehicle, onVehicleUpdated }: LocationTabProps) {
           address: formData.address || null,
           notes: formData.notes || null,
           mileage_hours: formData.mileage_hours ? parseFloat(formData.mileage_hours) : null,
-          updated_by: user?.username || 'unknown',
+          updated_by: profile?.username || 'unknown',
         });
 
         if (historyError) throw historyError;

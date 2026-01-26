@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,7 @@ export function AddVehicleDialog({
   defaultType,
   onSuccess,
 }: AddVehicleDialogProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     vehicle_name: '',
@@ -71,7 +71,7 @@ export function AddVehicleDialog({
         license_plate: formData.license_plate || null,
         status: 'Active',
         archived: false,
-        created_by: user?.username || 'unknown',
+        created_by: profile?.username || 'unknown',
       });
 
       if (error) throw error;

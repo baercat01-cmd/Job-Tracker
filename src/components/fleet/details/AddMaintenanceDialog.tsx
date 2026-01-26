@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,7 @@ export function AddMaintenanceDialog({
   vehicleType,
   onSuccess,
 }: AddMaintenanceDialogProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     type: 'service',
@@ -69,7 +69,7 @@ export function AddMaintenanceDialog({
         description: formData.description || null,
         part_numbers: formData.part_numbers || null,
         part_cost: formData.part_cost ? parseFloat(formData.part_cost) : null,
-        created_by: user?.username || 'unknown',
+        created_by: profile?.username || 'unknown',
       });
 
       if (error) throw error;

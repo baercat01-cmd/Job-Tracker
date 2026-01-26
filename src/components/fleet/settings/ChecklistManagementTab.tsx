@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,7 +15,7 @@ interface ChecklistItem {
 }
 
 export function ChecklistManagementTab() {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newItem, setNewItem] = useState({ name: '', part_info: '', category: '' });
@@ -54,7 +54,7 @@ export function ChecklistManagementTab() {
         name: newItem.name,
         part_info: newItem.part_info || null,
         category: newItem.category || null,
-        created_by: user?.username || 'unknown',
+        created_by: profile?.username || 'unknown',
       });
 
       if (error) throw error;

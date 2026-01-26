@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { FileText, Upload, Download, Trash2, Plus } from 'lucide-react';
@@ -21,7 +21,7 @@ interface DocumentsTabProps {
 }
 
 export function DocumentsTab({ vehicleId }: DocumentsTabProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -78,7 +78,7 @@ export function DocumentsTab({ vehicleId }: DocumentsTabProps) {
         file_path: publicUrl,
         file_size: file.size,
         file_type: file.type,
-        uploaded_by: user?.username || 'unknown',
+        uploaded_by: profile?.username || 'unknown',
       });
 
       if (dbError) throw dbError;

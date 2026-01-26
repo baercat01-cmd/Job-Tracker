@@ -25,8 +25,8 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
-import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
+import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import {
   DropdownMenu,
@@ -37,7 +37,6 @@ import {
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
@@ -227,10 +226,14 @@ export function OfficeDashboard() {
               <span className="hidden sm:inline">Settings</span>
             </Button>
             <Button
-              variant="ghost"
+              variant={activeTab === 'fleet' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => navigate('/fleet')}
-              className="rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 text-slate-700 hover:bg-slate-100"
+              onClick={() => setActiveTab('fleet')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'fleet'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
             >
               <Truck className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Fleet</span>
@@ -346,6 +349,16 @@ export function OfficeDashboard() {
               setSelectedJobId(jobId);
               setActiveTab('jobs');
             }} />
+          </div>
+        )}
+
+        {activeTab === 'fleet' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Fleet Management</h2>
+              <p className="text-yellow-400">Manage vehicles, maintenance, and equipment tracking</p>
+            </div>
+            <FleetDashboard hideHeader={true} />
           </div>
         )}
 

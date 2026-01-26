@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +19,7 @@ interface Vendor {
 }
 
 export function VendorManagementTab() {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -71,7 +71,7 @@ export function VendorManagementTab() {
         city: formData.city || null,
         state: formData.state || null,
         contact_person: formData.contact_person || null,
-        created_by: user?.username || 'unknown',
+        created_by: profile?.username || 'unknown',
       });
 
       if (error) {
