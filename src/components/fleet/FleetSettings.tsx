@@ -1,4 +1,4 @@
-import { useFleetAuth } from '@/stores/fleetAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, Building2, Wrench, Archive } from 'lucide-react';
 import { UserManagementTab } from './settings/UserManagementTab';
@@ -13,7 +13,7 @@ interface FleetSettingsProps {
 }
 
 export function FleetSettings({ onClose, onLogout }: FleetSettingsProps) {
-  const { user } = useFleetAuth();
+  const { profile } = useAuth();
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
