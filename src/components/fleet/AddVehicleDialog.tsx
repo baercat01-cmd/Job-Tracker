@@ -59,7 +59,11 @@ export function AddVehicleDialog({
     setLoading(true);
 
     try {
-      const { error } = await supabase.from('vehicles').insert({
+      // Get the username to use for created_by
+      const createdBy = profile?.username || profile?.email || 'unknown';
+      console.log('Creating vehicle with created_by:', createdBy, 'Profile:', profile);
+
+      const vehicleData = {
         company_id: companyId,
         vehicle_name: formData.vehicle_name,
         year: formData.year ? parseInt(formData.year) : null,
@@ -71,16 +75,24 @@ export function AddVehicleDialog({
         license_plate: formData.license_plate || null,
         status: 'Active',
         archived: false,
-        created_by: profile?.username || 'unknown',
-      });
+        created_by: createdBy,
+      };
 
-      if (error) throw error;
+      console.log('Inserting vehicle data:', vehicleData);
 
-      toast.success('Vehicle added successfully');
+      const { data, error } = await supabase.from('vehicles').insert(vehicleData).select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Vehicle created successfully:', data);
+      toast.success(`Vehicle added by ${createdBy}`);
       onSuccess();
     } catch (error: any) {
       console.error('Error adding vehicle:', error);
-      toast.error('Failed to add vehicle');
+      toast.error(error.message || 'Failed to add vehicle');
     } finally {
       setLoading(false);
     }
