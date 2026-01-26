@@ -19,6 +19,7 @@ interface JobDetailedViewProps {
   job: Job;
   onBack?: () => void;
   onEdit?: () => void;
+  initialTab?: string;
 }
 
 interface ComponentWorkEntry {
@@ -97,7 +98,7 @@ interface DailyLog {
   created_at: string;
 }
 
-export function JobDetailedView({ job, onBack, onEdit }: JobDetailedViewProps) {
+export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
@@ -761,7 +762,7 @@ export function JobDetailedView({ job, onBack, onEdit }: JobDetailedViewProps) {
 
   return (
     <div className="w-full">
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs defaultValue={initialTab} className="w-full">
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
           <div className="flex items-center gap-2 px-4">

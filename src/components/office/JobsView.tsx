@@ -1192,6 +1192,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                 onEdit={() => {
                   setShowEditDialog(true);
                 }}
+                initialTab={selectedTab}
               />
             </div>
           )}
