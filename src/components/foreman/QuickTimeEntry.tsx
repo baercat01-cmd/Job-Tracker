@@ -27,6 +27,7 @@ import {
   MapPin,
   FileText,
   Package,
+  CalendarIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job, Component } from '@/types';
@@ -79,17 +80,20 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
   };
 
   return (
-    <div className="space-y-2">
-      <Label className="text-base font-semibold text-blue-700">{label}</Label>
-      <div className="flex items-center gap-1">
+    <div className="space-y-3">
+      <Label className="text-lg font-bold text-primary flex items-center gap-2">
+        <Clock className="w-5 h-5" />
+        {label}
+      </Label>
+      <div className="flex items-center gap-2">
         <div className="flex-1">
           <Select value={hour12.toString()} onValueChange={handleHourChange}>
-            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
+            <SelectTrigger className="h-16 text-2xl font-mono font-bold border-2 border-primary/30 bg-gradient-to-br from-white to-slate-50 shadow-md hover:border-primary hover:shadow-lg transition-all">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {hours.map((h) => (
-                <SelectItem key={h} value={h} className="text-lg font-mono">
+                <SelectItem key={h} value={h} className="text-xl font-mono py-3">
                   {h}
                 </SelectItem>
               ))}
@@ -97,16 +101,16 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
           </Select>
         </div>
 
-        <div className="text-2xl font-bold text-blue-600 pb-1">:</div>
+        <div className="text-3xl font-bold text-primary">:</div>
 
         <div className="flex-1">
           <Select value={minute} onValueChange={handleMinuteChange}>
-            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
+            <SelectTrigger className="h-16 text-2xl font-mono font-bold border-2 border-primary/30 bg-gradient-to-br from-white to-slate-50 shadow-md hover:border-primary hover:shadow-lg transition-all">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {minutes.map((m) => (
-                <SelectItem key={m} value={m} className="text-lg font-mono">
+                <SelectItem key={m} value={m} className="text-xl font-mono py-3">
                   {m}
                 </SelectItem>
               ))}
@@ -114,14 +118,14 @@ function TimeDropdownPicker({ value, onChange, label }: TimeDropdownPickerProps)
           </Select>
         </div>
 
-        <div className="w-20 ml-1">
+        <div className="w-24">
           <Select value={period} onValueChange={handlePeriodChange}>
-            <SelectTrigger className="h-14 text-xl font-mono font-bold border-2 border-blue-300 bg-white shadow-sm hover:border-blue-500 transition-colors">
+            <SelectTrigger className="h-16 text-2xl font-mono font-bold border-2 border-primary/30 bg-gradient-to-br from-white to-slate-50 shadow-md hover:border-primary hover:shadow-lg transition-all">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="AM" className="text-lg font-mono">AM</SelectItem>
-              <SelectItem value="PM" className="text-lg font-mono">PM</SelectItem>
+              <SelectItem value="AM" className="text-xl font-mono py-3">AM</SelectItem>
+              <SelectItem value="PM" className="text-xl font-mono py-3">PM</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -730,9 +734,9 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     <>
       <Button
         onClick={() => setShowDialog(true)}
-        className="w-full h-10 gradient-primary text-sm"
+        className="w-full h-12 gradient-primary text-base font-bold shadow-lg hover:shadow-xl transition-all"
       >
-        <Clock className="w-4 h-4 mr-2" />
+        <Clock className="w-5 h-5 mr-2" />
         Time Clock
       </Button>
 
@@ -765,70 +769,83 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-primary" />
-                Time Clock
-              </DialogTitle>
-            </div>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Clock className="w-6 h-6 text-primary" />
+              Time Clock
+            </DialogTitle>
           </DialogHeader>
 
           {/* Job Type Selection */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
+          <div className="grid grid-cols-2 gap-2 p-2 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border-2 border-slate-200">
             <Button
-              variant={jobType === 'existing' ? 'secondary' : 'ghost'}
+              variant={jobType === 'existing' ? 'default' : 'ghost'}
               onClick={() => setJobType('existing')}
-              size="sm"
-              className="h-8 text-xs"
+              className={`h-12 text-sm font-bold transition-all ${
+                jobType === 'existing' 
+                  ? 'gradient-primary shadow-md' 
+                  : 'hover:bg-white hover:shadow-sm'
+              }`}
             >
-              <Briefcase className="w-3 h-3 mr-1.5" />
+              <Briefcase className="w-4 h-4 mr-2" />
               Existing Job
             </Button>
             <Button
-              variant={jobType === 'misc' ? 'secondary' : 'ghost'}
+              variant={jobType === 'misc' ? 'default' : 'ghost'}
               onClick={() => setJobType('misc')}
-              size="sm"
-              className="h-8 text-xs"
+              className={`h-12 text-sm font-bold transition-all ${
+                jobType === 'misc' 
+                  ? 'gradient-primary shadow-md' 
+                  : 'hover:bg-white hover:shadow-sm'
+              }`}
             >
-              <FileText className="w-3 h-3 mr-1.5" />
+              <FileText className="w-4 h-4 mr-2" />
               Misc Job
             </Button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* Existing Job Flow */}
             {jobType === 'existing' && (
               <>
                 {/* Mode Toggle */}
-                <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted/50 rounded-md">
+                <div className="grid grid-cols-2 gap-2 p-2 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border-2 border-slate-200">
                   <Button
-                    variant={mode === 'manual' ? 'secondary' : 'ghost'}
+                    variant={mode === 'manual' ? 'default' : 'ghost'}
                     onClick={() => setMode('manual')}
-                    size="sm"
-                    className="h-8 text-xs"
+                    className={`h-12 text-sm font-bold transition-all ${
+                      mode === 'manual' 
+                        ? 'gradient-primary shadow-md' 
+                        : 'hover:bg-white hover:shadow-sm'
+                    }`}
                   >
-                    <Edit3 className="w-3 h-3 mr-1.5" />
+                    <Edit3 className="w-4 h-4 mr-2" />
                     Manual Entry
                   </Button>
                   <Button
-                    variant={mode === 'timer' ? 'secondary' : 'ghost'}
+                    variant={mode === 'timer' ? 'default' : 'ghost'}
                     onClick={() => setMode('timer')}
-                    size="sm"
-                    className="h-8 text-xs"
+                    className={`h-12 text-sm font-bold transition-all ${
+                      mode === 'timer' 
+                        ? 'gradient-primary shadow-md' 
+                        : 'hover:bg-white hover:shadow-sm'
+                    }`}
                   >
-                    <Timer className="w-3 h-3 mr-1.5" />
+                    <Timer className="w-4 h-4 mr-2" />
                     Timer
                   </Button>
                 </div>
 
                 {/* Date Field - Show above job selection in manual mode */}
                 {mode === 'manual' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="dialog-date" className="text-base font-semibold">Date *</Label>
+                  <div className="space-y-3">
+                    <Label htmlFor="dialog-date" className="text-lg font-bold text-primary flex items-center gap-2">
+                      <CalendarIcon className="w-5 h-5" />
+                      Date *
+                    </Label>
                     <Input
                       id="dialog-date"
                       type="date"
-                      className="h-12"
+                      className="h-14 text-base font-semibold border-2 border-primary/30 shadow-sm hover:border-primary transition-colors"
                       value={manualData.date}
                       onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
                       max={new Date().toISOString().split('T')[0]}
@@ -837,21 +854,21 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                 )}
 
                 {/* Job Selection - Highlighted */}
-                <div className="space-y-2 p-4 border-2 border-primary/50 rounded-lg bg-primary/5">
-                  <Label htmlFor="dialog-job" className="text-lg font-bold text-primary flex items-center gap-2">
-                    <Briefcase className="w-5 h-5" />
+                <div className="space-y-3 p-5 border-2 border-primary rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 shadow-md">
+                  <Label htmlFor="dialog-job" className="text-xl font-bold text-primary flex items-center gap-2">
+                    <Briefcase className="w-6 h-6" />
                     Select Job *
                   </Label>
                   <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                    <SelectTrigger id="dialog-job" className="h-14 text-base font-semibold border-2 border-primary/30 bg-background shadow-sm hover:border-primary transition-colors">
+                    <SelectTrigger id="dialog-job" className="h-16 text-lg font-bold border-2 border-primary/40 bg-white shadow-md hover:border-primary hover:shadow-lg transition-all">
                       <SelectValue placeholder="Choose a job..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[300px]">
                       {jobs.map((job) => (
-                        <SelectItem key={job.id} value={job.id}>
+                        <SelectItem key={job.id} value={job.id} className="py-3">
                           <div className="flex flex-col">
-                            <span className="font-medium">{job.name}</span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="font-bold text-base">{job.name}</span>
+                            <span className="text-sm text-muted-foreground">
                               {job.client_name}
                             </span>
                           </div>
@@ -863,43 +880,46 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
                 {/* Manual Entry Fields */}
                 {mode === 'manual' && (
-                  <>
-
-                    <div className="p-4 border-2 border-blue-500/50 rounded-lg bg-blue-50/50 space-y-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-5 h-5 text-blue-600" />
-                        <span className="text-lg font-bold text-blue-700">Time Entry *</span>
-                      </div>
-                      <TimeDropdownPicker
-                        label="Clock In Time"
-                        value={manualData.startTime}
-                        onChange={(time) => setManualData({ ...manualData, startTime: time })}
-                      />
-
-                      <TimeDropdownPicker
-                        label="Clock Out Time"
-                        value={manualData.endTime}
-                        onChange={(time) => setManualData({ ...manualData, endTime: time })}
-                      />
+                  <div className="p-5 border-2 border-primary rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 shadow-md space-y-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="w-6 h-6 text-primary" />
+                      <span className="text-xl font-bold text-primary">Time Entry *</span>
                     </div>
-                  </>
+                    <TimeDropdownPicker
+                      label="Clock In Time"
+                      value={manualData.startTime}
+                      onChange={(time) => setManualData({ ...manualData, startTime: time })}
+                    />
+
+                    <TimeDropdownPicker
+                      label="Clock Out Time"
+                      value={manualData.endTime}
+                      onChange={(time) => setManualData({ ...manualData, endTime: time })}
+                    />
+                  </div>
                 )}
 
                 {/* Timer Mode Info */}
                 {mode === 'timer' && (
-                  <div className="p-4 bg-muted/30 rounded-lg border">
-                    <p className="text-sm text-muted-foreground">
-                      Start a live timer to track your time on this job. You'll be able to clock out when you're done.
-                    </p>
+                  <div className="p-5 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border-2 border-green-300 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <Timer className="w-6 h-6 text-green-700 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-green-900 mb-1">Live Timer Mode</p>
+                        <p className="text-sm text-green-700">
+                          Start a live timer to track your time on this job. You'll be able to clock out when you're done.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Component Time (Optional) - Only show in manual mode */}
                 {mode === 'manual' && selectedJobId && components.length > 0 && (
-                  <div className="space-y-3 pt-4 border-t">
+                  <div className="space-y-3 pt-4 border-t-2">
                     <div className="space-y-3">
                         {jobComponents.map((comp, index) => (
-                          <div key={index} className="space-y-2 p-3 border rounded-lg bg-card">
+                          <div key={index} className="space-y-2 p-3 border-2 rounded-lg bg-card shadow-sm">
                             <div className="flex items-center justify-between">
                               <Label className="text-xs font-medium">Component {index + 1}</Label>
                               <Button
@@ -1024,7 +1044,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t">
+                <div className="flex gap-3 pt-6 border-t-2">
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -1037,25 +1057,25 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                       setJobComponents([]);
                       onBack?.();
                     }}                    
-                    className="flex-1 h-12"
+                    className="flex-1 h-14 text-base font-semibold border-2 hover:bg-slate-100 transition-all"
                     disabled={loading}
                   >
-                    <X className="w-4 h-4 mr-2" />
+                    <X className="w-5 h-5 mr-2" />
                     Cancel
                   </Button>
                   <Button
                     onClick={mode === 'manual' ? handleManualEntry : handleTimerClockIn}
                     disabled={loading || !selectedJobId}
-                    className="flex-1 h-12 gradient-primary"
+                    className="flex-1 h-14 gradient-primary text-base font-bold shadow-lg hover:shadow-xl transition-all"
                   >
                     {mode === 'manual' ? (
                       <>
-                        <Clock className="w-4 h-4 mr-2" />
+                        <Clock className="w-5 h-5 mr-2" />
                         {loading ? 'Logging...' : 'Log Time'}
                       </>
                     ) : (
                       <>
-                        <LogIn className="w-4 h-4 mr-2" />
+                        <LogIn className="w-5 h-5 mr-2" />
                         {loading ? 'Starting...' : 'Start Timer'}
                       </>
                     )}
@@ -1067,53 +1087,65 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
             {/* Misc Job Flow */}
             {jobType === 'misc' && (
               <>
-                <div className="bg-warning/10 border border-warning/30 rounded-lg p-3">
-                  <p className="text-sm text-warning-foreground">
-                    Use this for odd jobs not in the system. All details will be visible in payroll.
-                  </p>
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <FileText className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-amber-900 mb-1">Misc Job Entry</p>
+                      <p className="text-sm text-amber-700">
+                        Use this for odd jobs not in the system. All details will be visible in payroll.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="misc-job-name" className="text-base font-semibold">Job Name *</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="misc-job-name" className="text-lg font-bold text-primary flex items-center gap-2">
+                    <Briefcase className="w-5 h-5" />
+                    Job Name *
+                  </Label>
                   <Input
                     id="misc-job-name"
                     placeholder="Enter job name..."
-                    className="h-12"
+                    className="h-14 text-base font-semibold border-2 border-primary/30 shadow-sm hover:border-primary transition-colors"
                     value={miscJobData.name}
                     onChange={(e) => setMiscJobData({ ...miscJobData, name: e.target.value })}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="misc-job-address" className="text-base font-semibold flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
+                <div className="space-y-3">
+                  <Label htmlFor="misc-job-address" className="text-lg font-bold text-primary flex items-center gap-2">
+                    <MapPin className="w-5 h-5" />
                     Address *
                   </Label>
                   <Input
                     id="misc-job-address"
                     placeholder="Enter job address..."
-                    className="h-12"
+                    className="h-14 text-base font-semibold border-2 border-primary/30 shadow-sm hover:border-primary transition-colors"
                     value={miscJobData.address}
                     onChange={(e) => setMiscJobData({ ...miscJobData, address: e.target.value })}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="misc-date" className="text-base font-semibold">Date *</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="misc-date" className="text-lg font-bold text-primary flex items-center gap-2">
+                    <CalendarIcon className="w-5 h-5" />
+                    Date *
+                  </Label>
                   <Input
                     id="misc-date"
                     type="date"
-                    className="h-12"
+                    className="h-14 text-base font-semibold border-2 border-primary/30 shadow-sm hover:border-primary transition-colors"
                     value={miscJobData.date}
                     onChange={(e) => setMiscJobData({ ...miscJobData, date: e.target.value })}
                     max={new Date().toISOString().split('T')[0]}
                   />
                 </div>
 
-                <div className="p-4 border-2 border-blue-500/50 rounded-lg bg-blue-50/50 space-y-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-5 h-5 text-blue-600" />
-                    <span className="text-lg font-bold text-blue-700">Time Entry *</span>
+                <div className="p-5 border-2 border-primary rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 shadow-md space-y-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Clock className="w-6 h-6 text-primary" />
+                    <span className="text-xl font-bold text-primary">Time Entry *</span>
                   </div>
                   <TimeDropdownPicker
                     label="Clock In Time"
@@ -1128,12 +1160,12 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="misc-notes" className="text-base font-semibold">Notes (Optional)</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="misc-notes" className="text-base font-semibold text-muted-foreground">Notes (Optional)</Label>
                   <Textarea
                     id="misc-notes"
                     placeholder="Additional notes..."
-                    className="resize-none"
+                    className="resize-none border-2 border-slate-200 hover:border-primary/30 transition-colors"
                     rows={3}
                     value={miscJobData.notes}
                     onChange={(e) => setMiscJobData({ ...miscJobData, notes: e.target.value })}
@@ -1141,7 +1173,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t">
+                <div className="flex gap-3 pt-6 border-t-2">
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -1156,18 +1188,18 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                       });
                       onBack?.();
                     }}
-                    className="flex-1 h-12"
+                    className="flex-1 h-14 text-base font-semibold border-2 hover:bg-slate-100 transition-all"
                     disabled={loading}
                   >
-                    <X className="w-4 h-4 mr-2" />
+                    <X className="w-5 h-5 mr-2" />
                     Cancel
                   </Button>
                   <Button
                     onClick={handleMiscJobEntry}
                     disabled={loading || !miscJobData.name.trim() || !miscJobData.address.trim()}
-                    className="flex-1 h-12 gradient-primary"
+                    className="flex-1 h-14 gradient-primary text-base font-bold shadow-lg hover:shadow-xl transition-all"
                   >
-                    <Clock className="w-4 h-4 mr-2" />
+                    <Clock className="w-5 h-5 mr-2" />
                     {loading ? 'Logging...' : 'Log Time'}
                   </Button>
                 </div>
