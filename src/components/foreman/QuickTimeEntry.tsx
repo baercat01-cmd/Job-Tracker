@@ -678,7 +678,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
   // If clocked in, show clocked in status
   if (clockedInEntry) {
     return (
-      <Card className="border-2 border-yellow-600 shadow-lg rounded-none bg-yellow-50">
+      <Card className="border-2 border-yellow-600 shadow-lg rounded-none bg-gray-100">
         <CardHeader className="pb-2 bg-black border-b-2 border-yellow-600">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base font-bold text-white">
