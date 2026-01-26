@@ -462,7 +462,35 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                       </div>
                     )}
 
-                    <div className="flex justify-end pt-2 border-t">
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJob(job);
+                            setSelectedTab('materials');
+                          }}
+                        >
+                          <Package className="w-3 h-3 mr-1" />
+                          Materials
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJob(job);
+                            setSelectedTab('schedule');
+                          }}
+                        >
+                          <CalendarIcon className="w-3 h-3 mr-1" />
+                          Schedule
+                        </Button>
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -474,7 +502,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                         }}
                       >
                         <Camera className="w-3 h-3 mr-1" />
-                        {jobStats.photosCount || 0} Photos
+                        {jobStats.photosCount || 0}
                       </Button>
                     </div>
                   </CardContent>
@@ -654,6 +682,35 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
                           )}
 
+                          {/* Quick Action Buttons */}
+                          <div className="flex gap-0.5 pt-1 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('materials');
+                              }}
+                            >
+                              <Package className="w-2.5 h-2.5 mr-0.5" />
+                              Materials
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('schedule');
+                              }}
+                            >
+                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
+                              Schedule
+                            </Button>
+                          </div>
 
                         </CardContent>
                       </Card>
@@ -771,6 +828,36 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                               </a>
                             </div>
                           </div>
+
+                          {/* Quick Action Buttons */}
+                          <div className="flex gap-0.5 pt-1 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('materials');
+                              }}
+                            >
+                              <Package className="w-2.5 h-2.5 mr-0.5" />
+                              Materials
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('schedule');
+                              }}
+                            >
+                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
+                              Schedule
+                            </Button>
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -879,6 +966,36 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             </div>
 
                           </div>
+
+                          {/* Quick Action Buttons */}
+                          <div className="flex gap-0.5 pt-1 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('materials');
+                              }}
+                            >
+                              <Package className="w-2.5 h-2.5 mr-0.5" />
+                              Materials
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('schedule');
+                              }}
+                            >
+                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
+                              Schedule
+                            </Button>
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -986,6 +1103,36 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                               </a>
                             </div>
 
+                          </div>
+
+                          {/* Quick Action Buttons */}
+                          <div className="flex gap-0.5 pt-1 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('materials');
+                              }}
+                            >
+                              <Package className="w-2.5 h-2.5 mr-0.5" />
+                              Materials
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('schedule');
+                              }}
+                            >
+                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
+                              Schedule
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
