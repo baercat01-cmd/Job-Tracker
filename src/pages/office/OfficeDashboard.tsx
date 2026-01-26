@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -25,6 +25,7 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
+import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import {
@@ -36,6 +37,7 @@ import {
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
@@ -223,6 +225,15 @@ export function OfficeDashboard() {
             >
               <Settings className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Settings</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/fleet')}
+              className="rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 text-slate-700 hover:bg-slate-100"
+            >
+              <Truck className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Fleet</span>
             </Button>
           </div>
 
