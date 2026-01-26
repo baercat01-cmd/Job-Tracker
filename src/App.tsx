@@ -9,6 +9,8 @@ import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
+import { FleetLoginPage } from '@/pages/fleet/FleetLoginPage';
+import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -167,11 +169,19 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <AuthProvider>
-          <AppContent />
-
-          <Toaster position="top-center" richColors />
-        </AuthProvider>
+        <Routes>
+          {/* Fleet Management System - Standalone Routes */}
+          <Route path="/fleet/login" element={<FleetLoginPage />} />
+          <Route path="/fleet" element={<FleetDashboard />} />
+          
+          {/* Main FieldTrack App */}
+          <Route path="/*" element={
+            <AuthProvider>
+              <AppContent />
+              <Toaster position="top-center" richColors />
+            </AuthProvider>
+          } />
+        </Routes>
       </BrowserRouter>
     </ErrorBoundary>
   );
