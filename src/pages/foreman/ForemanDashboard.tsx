@@ -524,25 +524,25 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
   // Job selected - show tabbed interface
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
       {/* Header */}
       {!hideHeader && (
       <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="w-full max-w-full px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <img 
               src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
               alt="Martin Builder" 
-              className="h-8 w-auto"
+              className="h-6 sm:h-8 w-auto flex-shrink-0"
             />
-            <div className="border-l border-slate-300 pl-3">
-              <p className="text-xs text-black font-semibold">
+            <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+              <p className="text-xs text-black font-semibold truncate">
                 {profile?.username} • Crew
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
@@ -552,14 +552,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
       {/* Active Timers Alert */}
       {activeTimers.length > 0 && (
-        <div className="bg-orange-500 text-white p-3 text-center text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
+        <div className="bg-orange-500 text-white p-2 sm:p-3 text-center text-xs sm:text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
           {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
         </div>
       )}
 
       {/* Job Header */}
       <div className="bg-white border-b-2 border-slate-300">
-        <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-4">
+        <div className="w-full max-w-full px-2 sm:px-4 py-2 sm:py-4">
           <div className="flex items-center gap-2 sm:gap-3">
             <Button variant="ghost" size="sm" onClick={handleBackToJobs} className="rounded-none hover:bg-slate-100 h-8 sm:h-9 px-2 sm:px-3 flex-shrink-0">
               <ArrowLeft className="w-4 h-4 text-black" />
@@ -583,7 +583,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       </div>
 
       {/* Main Content - Tabbed Interface */}
-      <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-8 pb-20 sm:pb-24">
+      <main className="w-full max-w-full px-2 sm:px-4 py-3 sm:py-8 pb-20 sm:pb-24 overflow-x-hidden">
         {activeTab === 'timer' && (
           <TimeTracker
             job={selectedJob}
@@ -640,11 +640,11 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       </main>
 
       {/* Bottom Navigation - 7 tabs for job features */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-x-hidden">
-        <div className="container mx-auto px-0 py-0 grid grid-cols-7">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-hidden">
+        <div className="w-full max-w-full flex">
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-2 sm:py-3 touch-target relative border-r border-slate-300 rounded-none px-1 sm:px-2 min-w-[60px] sm:min-w-0 ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 relative border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'timer' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('timer')}
@@ -652,68 +652,68 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             {activeTimers.length > 0 && (
               <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
             )}
-            <Clock className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold">Timer</span>
+            <Clock className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Timer</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'photos' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('photos')}
           >
-            <Camera className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold">Photos</span>
+            <Camera className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Photos</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'documents' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('documents')}
           >
-            <Briefcase className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold truncate max-w-full px-0.5">Docs</span>
+            <Briefcase className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Docs</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'materials' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('materials')}
           >
-            <Package className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold truncate max-w-full px-0.5">Materials</span>
+            <Package className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight text-center">Matl</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'history' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('history')}
           >
-            <History className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold">History</span>
+            <History className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">History</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target border-r border-slate-300 rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('schedule')}
           >
-            <CalendarIcon className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold truncate max-w-full px-0.5">Schedule</span>
+            <CalendarIcon className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight text-center">Sched</span>
           </Button>
           <Button
             variant="ghost"
-            className={`flex-col h-auto py-3 touch-target rounded-none ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'components' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('components')}
           >
-            <Package className="w-5 sm:w-6 h-5 sm:h-6 mb-0.5 sm:mb-1" />
-            <span className="text-[10px] sm:text-xs font-bold truncate max-w-full px-0.5">Comp</span>
+            <ListTodo className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Tasks</span>
           </Button>
         </div>
       </nav>
