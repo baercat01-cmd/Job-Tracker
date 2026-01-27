@@ -14,6 +14,7 @@ import {
 import { MapPin, Clock, Gauge, Plus, FileText, Wrench, Image } from 'lucide-react';
 import { toast } from 'sonner';
 import { VehicleDetailsDialog } from './VehicleDetailsDialog';
+import { AddMaintenanceDialog } from './details/AddMaintenanceDialog';
 
 interface Vehicle {
   id: string;
@@ -50,6 +51,8 @@ export function VehicleList({
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [serviceVehicleId, setServiceVehicleId] = useState<string | null>(null);
+  const [serviceVehicleType, setServiceVehicleType] = useState<string>('');
 
   useEffect(() => {
     loadVehicles();
@@ -245,6 +248,20 @@ export function VehicleList({
                   </div>
                 </div>
               )}
+
+              {/* Service Button */}
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setServiceVehicleId(vehicle.id);
+                  setServiceVehicleType(vehicle.type);
+                }}
+                className="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-semibold"
+                size="sm"
+              >
+                <Wrench className="w-4 h-4 mr-2" />
+                Add Service/Repair
+              </Button>
             </CardContent>
           </Card>
         ))}
@@ -257,6 +274,25 @@ export function VehicleList({
           onVehicleUpdated={() => {
             loadVehicles();
             onVehicleUpdated();
+          }}
+        />
+      )}
+
+      {serviceVehicleId && (
+        <AddMaintenanceDialog
+          open={true}
+          onClose={() => {
+            setServiceVehicleId(null);
+            setServiceVehicleType('');
+          }}
+          vehicleId={serviceVehicleId}
+          vehicleType={serviceVehicleType}
+          onSuccess={() => {
+            setServiceVehicleId(null);
+            setServiceVehicleType('');
+            loadVehicles();
+            onVehicleUpdated();
+            toast.success('Maintenance log added successfully');
           }}
         />
       )}
