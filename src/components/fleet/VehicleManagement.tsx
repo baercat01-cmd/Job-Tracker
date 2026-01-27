@@ -147,67 +147,160 @@ export function VehicleManagement({ company, onBack, onOpenSettings }: VehicleMa
             ))}
           </div>
 
-          {/* Vehicle Type Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as VehicleType)}>
-            <TabsList className="grid w-full grid-cols-4 h-12 bg-slate-200 mb-3">
-              <TabsTrigger
-                value="truck"
-                className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
-              >
-                <Truck className="w-4 h-4 mr-1" />
-                Trucks
-                <Badge variant="secondary" className="ml-1 bg-white text-xs">
+          {/* Mobile: Vehicle Type Tabs */}
+          <div className="md:hidden">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as VehicleType)}>
+              <TabsList className="grid w-full grid-cols-4 h-12 bg-slate-200 mb-3">
+                <TabsTrigger
+                  value="truck"
+                  className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
+                >
+                  <Truck className="w-4 h-4 mr-1" />
+                  Trucks
+                  <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                    {vehicleCounts.truck}
+                  </Badge>
+                </TabsTrigger>
+                {showAllCategories && (
+                  <>
+                    <TabsTrigger
+                      value="heavy_equipment"
+                      className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
+                    >
+                      <Construction className="w-4 h-4 mr-1" />
+                      Heavy Eq.
+                      <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                        {vehicleCounts.heavy_equipment}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="small_engine"
+                      className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
+                    >
+                      <Wrench className="w-4 h-4 mr-1" />
+                      Small Eng.
+                      <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                        {vehicleCounts.small_engine}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="trailer"
+                      className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
+                    >
+                      <Box className="w-4 h-4 mr-1" />
+                      Trailers
+                      <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                        {vehicleCounts.trailer}
+                      </Badge>
+                    </TabsTrigger>
+                  </>
+                )}
+              </TabsList>
+
+              {(['truck', 'heavy_equipment', 'small_engine', 'trailer'] as VehicleType[]).map((type) => (
+                <TabsContent key={type} value={type} className="mt-0">
+                  <VehicleList
+                    companyId={company.id}
+                    vehicleType={type}
+                    statusFilter={statusFilter}
+                    onAddVehicle={() => setShowAddDialog(true)}
+                    onVehicleUpdated={loadVehicleCounts}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
+          </div>
+
+          {/* Desktop: All Categories in Columns */}
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Trucks Column */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
+                <Truck className="w-5 h-5" />
+                <span>Trucks</span>
+                <Badge variant="secondary" className="ml-auto bg-white text-xs">
                   {vehicleCounts.truck}
                 </Badge>
-              </TabsTrigger>
-              {showAllCategories && (
-                <>
-                  <TabsTrigger
-                    value="heavy_equipment"
-                    className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
-                  >
-                    <Construction className="w-4 h-4 mr-1" />
-                    Heavy Eq.
-                    <Badge variant="secondary" className="ml-1 bg-white text-xs">
+              </div>
+              <VehicleList
+                companyId={company.id}
+                vehicleType="truck"
+                statusFilter={statusFilter}
+                onAddVehicle={() => {
+                  setActiveTab('truck');
+                  setShowAddDialog(true);
+                }}
+                onVehicleUpdated={loadVehicleCounts}
+              />
+            </div>
+
+            {showAllCategories && (
+              <>
+                {/* Heavy Equipment Column */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
+                    <Construction className="w-5 h-5" />
+                    <span>Heavy Equipment</span>
+                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
                       {vehicleCounts.heavy_equipment}
                     </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="small_engine"
-                    className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
-                  >
-                    <Wrench className="w-4 h-4 mr-1" />
-                    Small Eng.
-                    <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                  </div>
+                  <VehicleList
+                    companyId={company.id}
+                    vehicleType="heavy_equipment"
+                    statusFilter={statusFilter}
+                    onAddVehicle={() => {
+                      setActiveTab('heavy_equipment');
+                      setShowAddDialog(true);
+                    }}
+                    onVehicleUpdated={loadVehicleCounts}
+                  />
+                </div>
+
+                {/* Small Engines Column */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
+                    <Wrench className="w-5 h-5" />
+                    <span>Small Engines</span>
+                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
                       {vehicleCounts.small_engine}
                     </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="trailer"
-                    className="font-bold data-[state=active]:bg-yellow-600 data-[state=active]:text-black"
-                  >
-                    <Box className="w-4 h-4 mr-1" />
-                    Trailers
-                    <Badge variant="secondary" className="ml-1 bg-white text-xs">
+                  </div>
+                  <VehicleList
+                    companyId={company.id}
+                    vehicleType="small_engine"
+                    statusFilter={statusFilter}
+                    onAddVehicle={() => {
+                      setActiveTab('small_engine');
+                      setShowAddDialog(true);
+                    }}
+                    onVehicleUpdated={loadVehicleCounts}
+                  />
+                </div>
+
+                {/* Trailers Column */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 p-3 bg-yellow-600 text-black rounded-lg font-bold">
+                    <Box className="w-5 h-5" />
+                    <span>Trailers</span>
+                    <Badge variant="secondary" className="ml-auto bg-white text-xs">
                       {vehicleCounts.trailer}
                     </Badge>
-                  </TabsTrigger>
-                </>
-              )}
-            </TabsList>
-
-            {(['truck', 'heavy_equipment', 'small_engine', 'trailer'] as VehicleType[]).map((type) => (
-              <TabsContent key={type} value={type} className="mt-0">
-                <VehicleList
-                  companyId={company.id}
-                  vehicleType={type}
-                  statusFilter={statusFilter}
-                  onAddVehicle={() => setShowAddDialog(true)}
-                  onVehicleUpdated={loadVehicleCounts}
-                />
-              </TabsContent>
-            ))}
-          </Tabs>
+                  </div>
+                  <VehicleList
+                    companyId={company.id}
+                    vehicleType="trailer"
+                    statusFilter={statusFilter}
+                    onAddVehicle={() => {
+                      setActiveTab('trailer');
+                      setShowAddDialog(true);
+                    }}
+                    onVehicleUpdated={loadVehicleCounts}
+                  />
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Add Vehicle FAB */}
           <Button
