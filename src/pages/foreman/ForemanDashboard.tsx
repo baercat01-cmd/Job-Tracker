@@ -167,7 +167,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
         )}
 
         <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
-          <FleetDashboard hideHeader={true} />
+          <FleetDashboard hideHeader={true} defaultCompany="Martin Builder" />
         </main>
       </div>
     );

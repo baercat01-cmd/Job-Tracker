@@ -17,9 +17,10 @@ interface Company {
 
 interface FleetDashboardProps {
   hideHeader?: boolean;
+  defaultCompany?: string; // Company name to auto-select (e.g., "Martin Builder")
 }
 
-export function FleetDashboard({ hideHeader = false }: FleetDashboardProps) {
+export function FleetDashboard({ hideHeader = false, defaultCompany }: FleetDashboardProps) {
   const { profile } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
@@ -29,6 +30,16 @@ export function FleetDashboard({ hideHeader = false }: FleetDashboardProps) {
   useEffect(() => {
     loadCompanies();
   }, []);
+
+  // Auto-select default company when companies are loaded
+  useEffect(() => {
+    if (defaultCompany && companies.length > 0 && !selectedCompany) {
+      const company = companies.find(c => c.name.toLowerCase().includes(defaultCompany.toLowerCase()));
+      if (company) {
+        setSelectedCompany(company);
+      }
+    }
+  }, [companies, defaultCompany, selectedCompany]);
 
   async function loadCompanies() {
     try {
