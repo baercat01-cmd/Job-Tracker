@@ -321,26 +321,30 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             ? ` (${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
             : '';
 
-          // Add event for each day in the range
+          // Add event for each day in the range (skip weekends)
           const currentDate = new Date(startDate);
           while (currentDate <= endDate) {
+            const dayOfWeek = currentDate.getDay();
             const dateStr = currentDate.toISOString().split('T')[0];
             
-            events.push({
-              id: `sub-${schedule.id}-${dateStr}`,
-              type: 'subcontractor',
-              date: dateStr,
-              jobId: schedule.jobs.id,
-              jobName: schedule.jobs.name,
-              jobColor,
-              title: `${schedule.subcontractors.name}${dateRangeStr}`,
-              description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
-              subcontractorTrades: schedule.subcontractors.trades,
-              subcontractorName: schedule.subcontractors.name,
-              subcontractorPhone: schedule.subcontractors.phone,
-              status: schedule.status,
-              priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-            });
+            // Only add event if it's not a weekend (0 = Sunday, 6 = Saturday)
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+              events.push({
+                id: `sub-${schedule.id}-${dateStr}`,
+                type: 'subcontractor',
+                date: dateStr,
+                jobId: schedule.jobs.id,
+                jobName: schedule.jobs.name,
+                jobColor,
+                title: `${schedule.subcontractors.name}${dateRangeStr}`,
+                description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
+                subcontractorTrades: schedule.subcontractors.trades,
+                subcontractorName: schedule.subcontractors.name,
+                subcontractorPhone: schedule.subcontractors.phone,
+                status: schedule.status,
+                priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
+              });
+            }
             
             // Move to next day
             currentDate.setDate(currentDate.getDate() + 1);
