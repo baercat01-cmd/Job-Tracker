@@ -344,15 +344,17 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
     );
   };
 
-  const filteredTasks = tasks.filter(task => {
+  // Filter out completed tasks entirely
+  const activeTasks = tasks.filter(task => task.status !== 'completed');
+  
+  const filteredTasks = activeTasks.filter(task => {
     return task.status === filterStatus;
   });
 
   const tasksByStatus = {
-    pending: filteredTasks.filter(t => t.status === 'pending'),
-    in_progress: filteredTasks.filter(t => t.status === 'in_progress'),
-    completed: filteredTasks.filter(t => t.status === 'completed'),
-    blocked: filteredTasks.filter(t => t.status === 'blocked'),
+    pending: activeTasks.filter(t => t.status === 'pending'),
+    in_progress: activeTasks.filter(t => t.status === 'in_progress'),
+    blocked: activeTasks.filter(t => t.status === 'blocked'),
   };
 
   if (loading) {
@@ -401,13 +403,6 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
             Blocked ({tasksByStatus.blocked.length})
           </Button>
         )}
-        <Button
-          variant={filterStatus === 'completed' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilterStatus('completed')}
-        >
-          Completed ({tasksByStatus.completed.length})
-        </Button>
       </div>
 
       {/* Tasks List */}
