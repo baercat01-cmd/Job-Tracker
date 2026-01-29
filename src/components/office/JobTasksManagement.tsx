@@ -345,10 +345,6 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
   };
 
   const filteredTasks = tasks.filter(task => {
-    if (filterStatus === 'all') {
-      // When showing 'all', exclude completed tasks
-      return task.status !== 'completed';
-    }
     return task.status === filterStatus;
   });
 
