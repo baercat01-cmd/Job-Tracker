@@ -320,22 +320,10 @@ export function JobSchedule({ job }: JobScheduleProps) {
 
   return (
     <Tabs defaultValue="tasks" className="w-full">
-      <div className="flex items-center justify-between mb-4">
-        <TabsList className="grid grid-cols-2 w-auto">
-          <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
-        </TabsList>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => setShowAddDialog(true)} variant="default">
-            <Plus className="w-4 h-4 mr-2" />
-            Schedule Work
-          </Button>
-          <Button onClick={() => setShowAddSubDialog(true)} variant="outline">
-            <Plus className="w-4 h-4 mr-2" />
-            Manage Subcontractors
-          </Button>
-        </div>
-      </div>
+      <TabsList className="grid grid-cols-2 w-auto mb-4">
+        <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
+        <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
+      </TabsList>
 
       <TabsContent value="schedule" className="space-y-6 mt-0">
 
