@@ -319,7 +319,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
   }
 
   return (
-    <Tabs defaultValue="schedule" className="w-full">
+    <Tabs defaultValue="tasks" className="w-full">
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
         <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
