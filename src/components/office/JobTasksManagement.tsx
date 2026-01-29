@@ -50,7 +50,7 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<JobTask | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('pending');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -390,25 +390,11 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
       {/* Filter Tabs */}
       <div className="flex gap-2 flex-wrap">
         <Button
-          variant={filterStatus === 'all' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilterStatus('all')}
-        >
-          Active ({tasks.length - tasksByStatus.completed.length})
-        </Button>
-        <Button
           variant={filterStatus === 'pending' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setFilterStatus('pending')}
         >
           Pending ({tasksByStatus.pending.length})
-        </Button>
-        <Button
-          variant={filterStatus === 'in_progress' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilterStatus('in_progress')}
-        >
-          In Progress ({tasksByStatus.in_progress.length})
         </Button>
         {tasksByStatus.blocked.length > 0 && (
           <Button
