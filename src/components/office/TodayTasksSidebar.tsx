@@ -204,7 +204,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
 
   async function loadAllCalendarItems() {
     try {
-      // Load all upcoming pending tasks from active/quoting/on hold jobs (exclude completed)
+      // Load all upcoming tasks from active/quoting/on hold jobs (including completed)
       const { data: tasksData, error: tasksError } = await supabase
         .from('job_tasks')
         .select(`
@@ -213,7 +213,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
         `)
         .not('due_date', 'is', null)
         .gte('due_date', todayStr)
-        .neq('status', 'completed')
         .order('due_date', { ascending: true });
 
       if (tasksError) throw tasksError;
@@ -656,25 +655,34 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                     return (
                       <div className="space-y-2 max-h-96 overflow-y-auto">
                         {/* Tasks */}
-                        {dayTasks.map(task => (
+                        {dayTasks.map(task => {
+                          const isCompleted = task.status === 'completed';
+                          return (
                           <Card 
                             key={task.id} 
-                            className="border-l-4 border-l-blue-500"
+                            className={`border-l-4 ${isCompleted ? 'border-l-gray-400 bg-gray-100/50 opacity-75' : 'border-l-blue-500'}`}
                           >
                             <CardContent className="p-3">
                               <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className={`text-xs ${isCompleted ? 'bg-gray-200 text-gray-600' : ''}`}>
                                   Task
                                 </Badge>
-                                <Badge className={getPriorityColor(task.priority) + ' text-xs'}>
-                                  {task.priority}
-                                </Badge>
+                                {isCompleted ? (
+                                  <Badge variant="secondary" className="text-xs bg-gray-200 text-gray-600">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    Completed
+                                  </Badge>
+                                ) : (
+                                  <Badge className={getPriorityColor(task.priority) + ' text-xs'}>
+                                    {task.priority}
+                                  </Badge>
+                                )}
                               </div>
-                              <p className="font-medium text-sm">
+                              <p className={`font-medium text-sm ${isCompleted ? 'line-through text-gray-500' : ''}`}>
                                 {task.title}
                               </p>
                               {task.description && (
-                                <p className="text-xs mt-1 text-muted-foreground">
+                                <p className={`text-xs mt-1 ${isCompleted ? 'text-gray-400' : 'text-muted-foreground'}`}>
                                   {task.description}
                                 </p>
                               )}
@@ -684,7 +692,7 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                                     onJobSelect?.(task.job_id);
                                     setShowCalendarView(false);
                                   }}
-                                  className="flex items-center gap-1 text-xs hover:underline mt-2 text-primary"
+                                  className={`flex items-center gap-1 text-xs hover:underline mt-2 ${isCompleted ? 'text-gray-400' : 'text-primary'}`}
                                 >
                                   <Briefcase className="w-3 h-3" />
                                   {task.job.name}
@@ -692,7 +700,8 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                               )}
                             </CardContent>
                           </Card>
-                        ))}
+                        );
+                        })}
 
                         {/* Events */}
                         {dayEvents.map(event => {
