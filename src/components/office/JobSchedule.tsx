@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { JobTasksManagement } from './JobTasksManagement';
-import { SubcontractorManagement } from './SubcontractorManagement';
 import {
   Dialog,
   DialogContent,
@@ -34,8 +33,7 @@ import {
   Edit,
   Trash2,
   Phone,
-  AlertCircle,
-  Users
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -74,8 +72,6 @@ export function JobSchedule({ job }: JobScheduleProps) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('tasks');
-  const [subcontractorView, setSubcontractorView] = useState<'schedule' | 'list'>('schedule');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [formData, setFormData] = useState({
@@ -323,344 +319,315 @@ export function JobSchedule({ job }: JobScheduleProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header with conditional buttons */}
+    <Tabs defaultValue="tasks" className="w-full">
+      <TabsList className="grid w-full grid-cols-2">
+        <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
+        <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="schedule" className="space-y-6 mt-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Job Schedule</h2>
           <p className="text-muted-foreground">{job.name}</p>
         </div>
-        <div className="flex gap-2">
-          {activeTab === 'schedule' && (
-            <>
-              <Button 
-                onClick={() => setShowAddDialog(true)}
-                className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Schedule Work
-              </Button>
-              <Button
-                variant={subcontractorView === 'list' ? 'default' : 'outline'}
-                onClick={() => setSubcontractorView(subcontractorView === 'list' ? 'schedule' : 'list')}
-                className={subcontractorView === 'list' ? "bg-black text-white hover:bg-slate-900 border-2 border-yellow-500" : "border-2 border-green-800 text-green-900 hover:bg-green-50"}
-              >
-                <Users className="w-4 h-4 mr-2" />
-                {subcontractorView === 'list' ? 'View Schedule' : 'Manage Subcontractors'}
-              </Button>
-            </>
-          )}
-        </div>
+        <Button onClick={() => setShowAddDialog(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Schedule Work
+        </Button>
       </div>
 
-      <Tabs defaultValue="tasks" className="w-full" onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="schedule">Subcontractor Schedule</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks & Work Items</TabsTrigger>
-        </TabsList>
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="py-4">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-primary">{upcomingSchedules.length}</p>
+              <p className="text-sm text-muted-foreground">Upcoming</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-green-600">
+                {schedules.filter(s => s.status === 'completed').length}
+              </p>
+              <p className="text-sm text-muted-foreground">Completed</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-muted-foreground">
+                {schedules.filter(s => s.status === 'cancelled').length}
+              </p>
+              <p className="text-sm text-muted-foreground">Cancelled</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        <TabsContent value="schedule" className="space-y-6 mt-6">
-          {/* Conditional Content Based on View */}
-          {subcontractorView === 'schedule' && (
-            <>
-              {/* Quick Stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <Card>
-                  <CardContent className="py-4">
-                    <div className="text-center">
-                      <p className="text-3xl font-bold text-primary">{upcomingSchedules.length}</p>
-                      <p className="text-sm text-muted-foreground">Upcoming</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="py-4">
-                    <div className="text-center">
-                      <p className="text-3xl font-bold text-green-600">
-                        {schedules.filter(s => s.status === 'completed').length}
-                      </p>
-                      <p className="text-sm text-muted-foreground">Completed</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="py-4">
-                    <div className="text-center">
-                      <p className="text-3xl font-bold text-muted-foreground">
-                        {schedules.filter(s => s.status === 'cancelled').length}
-                      </p>
-                      <p className="text-sm text-muted-foreground">Cancelled</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+      {/* Upcoming Work */}
+      {upcomingSchedules.length > 0 && (
+        <div>
+          <h3 className="text-xl font-bold mb-4">Upcoming Work</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            {upcomingSchedules.map(schedule => (
+              <ScheduleCard
+                key={schedule.id}
+                schedule={schedule}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onUpdateStatus={updateStatus}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
-              {/* Upcoming Work */}
-              {upcomingSchedules.length > 0 && (
-                <div>
-                  <h3 className="text-xl font-bold mb-4">Upcoming Work</h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {upcomingSchedules.map(schedule => (
-                      <ScheduleCard
-                        key={schedule.id}
-                        schedule={schedule}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onUpdateStatus={updateStatus}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
+      {/* Past Work */}
+      {pastSchedules.length > 0 && (
+        <div>
+          <h3 className="text-xl font-bold mb-4">Past & Completed</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            {pastSchedules.map(schedule => (
+              <ScheduleCard
+                key={schedule.id}
+                schedule={schedule}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onUpdateStatus={updateStatus}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
-              {/* Past Work */}
-              {pastSchedules.length > 0 && (
-                <div>
-                  <h3 className="text-xl font-bold mb-4">Past & Completed</h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {pastSchedules.map(schedule => (
-                      <ScheduleCard
-                        key={schedule.id}
-                        schedule={schedule}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onUpdateStatus={updateStatus}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
+      {/* Empty State */}
+      {schedules.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p className="mb-4">No scheduled work yet</p>
+            <Button onClick={() => setShowAddDialog(true)} variant="outline">
+              <Plus className="w-4 h-4 mr-2" />
+              Schedule First Work
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
-              {/* Empty State */}
-              {schedules.length === 0 && (
-                <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="mb-4">No scheduled work yet</p>
-                    <Button onClick={() => setShowAddDialog(true)} variant="outline">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Schedule First Work
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-
-          {/* Subcontractor Management View */}
-          {subcontractorView === 'list' && (
-            <SubcontractorManagement />
-          )}
-
-          {/* Add/Edit Dialog */}
-          <Dialog open={showAddDialog} onOpenChange={(open) => !open && handleCloseDialog()}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingSchedule ? 'Edit Schedule' : 'Schedule Work'}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Subcontractor *</Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={formData.subcontractor_id}
-                        onValueChange={(value) => setFormData({ ...formData, subcontractor_id: value })}
-                        required
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select subcontractor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {subcontractors.map(sub => (
-                            <SelectItem key={sub.id} value={sub.id}>
-                              {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowAddSubDialog(true)}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        New Sub
-                      </Button>
-                    </div>
-                    {subcontractors.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        No active subcontractors. Click "New Sub" to add one.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Start Date *</Label>
-                    <Input
-                      type="date"
-                      value={formData.start_date}
-                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>End Date</Label>
-                    <Input
-                      type="date"
-                      value={formData.end_date}
-                      onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                      min={formData.start_date}
-                    />
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Work Description</Label>
-                    <Input
-                      value={formData.work_description}
-                      onChange={(e) => setFormData({ ...formData, work_description: e.target.value })}
-                      placeholder="What work will be performed?"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) => setFormData({ ...formData, status: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="scheduled">Scheduled</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Notes</Label>
-                    <Textarea
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      placeholder="Additional notes or instructions..."
-                      rows={3}
-                    />
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={handleCloseDialog}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">
-                    {editingSchedule ? 'Update' : 'Schedule'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-
-          {/* Add Subcontractor Dialog */}
-          <Dialog open={showAddSubDialog} onOpenChange={setShowAddSubDialog}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Subcontractor</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddSubcontractor} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Name *</Label>
-                  <Input
-                    value={newSubData.name}
-                    onChange={(e) => setNewSubData({ ...newSubData, name: e.target.value })}
-                    placeholder="John Smith"
+      {/* Add/Edit Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingSchedule ? 'Edit Schedule' : 'Schedule Work'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label>Subcontractor *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={formData.subcontractor_id}
+                    onValueChange={(value) => setFormData({ ...formData, subcontractor_id: value })}
                     required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Company Name</Label>
-                  <Input
-                    value={newSubData.company_name}
-                    onChange={(e) => setNewSubData({ ...newSubData, company_name: e.target.value })}
-                    placeholder="ABC Construction"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Phone</Label>
-                    <Input
-                      type="tel"
-                      value={newSubData.phone}
-                      onChange={(e) => setNewSubData({ ...newSubData, phone: e.target.value })}
-                      placeholder="(555) 123-4567"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input
-                      type="email"
-                      value={newSubData.email}
-                      onChange={(e) => setNewSubData({ ...newSubData, email: e.target.value })}
-                      placeholder="email@example.com"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Trades</Label>
-                  <Input
-                    value={newSubData.trades}
-                    onChange={(e) => setNewSubData({ ...newSubData, trades: e.target.value })}
-                    placeholder="Plumbing, HVAC, Electrical (comma separated)"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Enter multiple trades separated by commas
-                  </p>
-                </div>
-
-                <DialogFooter>
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subcontractor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subcontractors.map(sub => (
+                        <SelectItem key={sub.id} value={sub.id}>
+                          {sub.name} {sub.trades && sub.trades.length > 0 && `- ${sub.trades.join(', ')}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setShowAddSubDialog(false);
-                      setNewSubData({
-                        name: '',
-                        company_name: '',
-                        phone: '',
-                        email: '',
-                        trades: '',
-                      });
-                    }}
+                    onClick={() => setShowAddSubDialog(true)}
                   >
-                    Cancel
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Sub
                   </Button>
-                  <Button type="submit">
-                    Add Subcontractor
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </TabsContent>
+                </div>
+                {subcontractors.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No active subcontractors. Click "New Sub" to add one.
+                  </p>
+                )}
+              </div>
 
-        <TabsContent value="tasks" className="mt-6">
-          <JobTasksManagement 
-            job={job} 
-            userId={profile?.id || ''}
-            userRole={profile?.role}
-          />
-        </TabsContent>
-      </Tabs>
-    </div>
+              <div className="space-y-2">
+                <Label>Start Date *</Label>
+                <Input
+                  type="date"
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                  min={formData.start_date}
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label>Work Description</Label>
+                <Input
+                  value={formData.work_description}
+                  onChange={(e) => setFormData({ ...formData, work_description: e.target.value })}
+                  placeholder="What work will be performed?"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value) => setFormData({ ...formData, status: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label>Notes</Label>
+                <Textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Additional notes or instructions..."
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCloseDialog}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingSchedule ? 'Update' : 'Schedule'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Subcontractor Dialog */}
+      <Dialog open={showAddSubDialog} onOpenChange={setShowAddSubDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Subcontractor</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddSubcontractor} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name *</Label>
+              <Input
+                value={newSubData.name}
+                onChange={(e) => setNewSubData({ ...newSubData, name: e.target.value })}
+                placeholder="John Smith"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Company Name</Label>
+              <Input
+                value={newSubData.company_name}
+                onChange={(e) => setNewSubData({ ...newSubData, company_name: e.target.value })}
+                placeholder="ABC Construction"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input
+                  type="tel"
+                  value={newSubData.phone}
+                  onChange={(e) => setNewSubData({ ...newSubData, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={newSubData.email}
+                  onChange={(e) => setNewSubData({ ...newSubData, email: e.target.value })}
+                  placeholder="email@example.com"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Trades</Label>
+              <Input
+                value={newSubData.trades}
+                onChange={(e) => setNewSubData({ ...newSubData, trades: e.target.value })}
+                placeholder="Plumbing, HVAC, Electrical (comma separated)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter multiple trades separated by commas
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAddSubDialog(false);
+                  setNewSubData({
+                    name: '',
+                    company_name: '',
+                    phone: '',
+                    email: '',
+                    trades: '',
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Add Subcontractor
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      </TabsContent>
+
+      <TabsContent value="tasks" className="mt-6">
+        <JobTasksManagement 
+          job={job} 
+          userId={profile?.id || ''}
+          userRole={profile?.role}
+        />
+      </TabsContent>
+    </Tabs>
   );
 }
 
