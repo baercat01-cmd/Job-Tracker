@@ -406,10 +406,7 @@ export function AllJobsTaskManagement() {
     );
   };
 
-  // Filter out completed tasks entirely
-  const activeTasks = tasks.filter(task => task.status !== 'completed');
-  
-  const filteredTasks = activeTasks.filter(task => {
+  const filteredTasks = tasks.filter(task => {
     if (task.status !== filterStatus) return false;
     if (filterJob !== 'all' && task.job_id !== filterJob) return false;
     return true;
@@ -434,8 +431,9 @@ export function AllJobsTaskManagement() {
   });
 
   const tasksByStatus = {
-    pending: activeTasks.filter(t => t.status === 'pending'),
-    blocked: activeTasks.filter(t => t.status === 'blocked'),
+    pending: tasks.filter(t => t.status === 'pending'),
+    blocked: tasks.filter(t => t.status === 'blocked'),
+    completed: tasks.filter(t => t.status === 'completed'),
   };
 
   if (loading) {
@@ -497,6 +495,14 @@ export function AllJobsTaskManagement() {
               Blocked ({tasksByStatus.blocked.length})
             </Button>
           )}
+          <Button
+            variant={filterStatus === 'completed' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFilterStatus('completed')}
+            className={filterStatus === 'completed' ? "bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
+          >
+            Completed ({tasksByStatus.completed.length})
+          </Button>
         </div>
       </div>
 
