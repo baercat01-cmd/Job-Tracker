@@ -733,10 +733,11 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     <>
       <Button
         onClick={() => setShowDialog(true)}
-        className="w-full h-12 bg-black text-yellow-600 hover:bg-gray-900 text-base font-bold shadow-lg hover:shadow-xl transition-all border-2 border-yellow-600 rounded-none"
+        className="h-8 sm:h-9 px-3 bg-gradient-to-r from-green-700 to-green-800 text-white hover:from-green-800 hover:to-green-900 text-xs sm:text-sm font-bold shadow-lg hover:shadow-xl transition-all border-2 border-black rounded-none whitespace-nowrap"
       >
-        <Clock className="w-5 h-5 mr-2" />
-        Time Clock
+        <Clock className="w-4 h-4 mr-1.5" />
+        <span className="hidden sm:inline">Time Clock</span>
+        <span className="sm:hidden">Clock</span>
       </Button>
 
       {/* Time Clock Dialog */}

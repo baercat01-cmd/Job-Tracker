@@ -243,7 +243,7 @@ export function OfficeDashboard() {
           {/* Right Side Actions */}
           <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
             {/* Quick Time Clock for Office Users */}
-            <div className="hidden sm:block w-28">
+            <div className="hidden sm:block">
               <QuickTimeEntry 
                 userId={profile?.id || ''} 
                 onSuccess={() => {
