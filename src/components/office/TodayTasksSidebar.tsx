@@ -350,15 +350,11 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
       <Card className="h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-50 border-2 border-slate-200 shadow-xl">
         <CardHeader className="pb-3 bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-t-lg border-b-4 border-yellow-500">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="w-5 h-5 text-yellow-400" />
+            <CardTitle className="text-lg">
               Office Tasks
             </CardTitle>
-            <Badge className="bg-yellow-500 text-black font-bold text-sm border-2 border-yellow-400">
-              {totalItems}
-            </Badge>
           </div>
-          <p className="text-xs text-slate-300 font-medium">
+          <p className="text-sm text-slate-200 font-bold mt-2">
             {(() => {
               // Use the same date string that's used for the query to ensure consistency
               const parts = todayStr.split('-'); // todayStr is in YYYY-MM-DD format
@@ -373,9 +369,6 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
                 year: 'numeric'
               });
             })()}
-          </p>
-          <p className="text-xs text-yellow-300 font-medium mt-1">
-            Office & shop tasks due today or overdue
           </p>
           <Button
             variant="outline"
