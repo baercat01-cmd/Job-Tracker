@@ -26,14 +26,23 @@ export function EnhancedScheduleView() {
             </Button>
           )}
           {activeTab === 'subcontractors' && (
-            <Button 
-              onClick={() => setSubcontractorView('list')} 
-              variant="outline"
-              className="bg-white hover:bg-slate-100 text-black font-semibold border-2 border-yellow-500"
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Manage Subcontractors
-            </Button>
+            <>
+              <Button 
+                onClick={() => setSubcontractorView('schedule')} 
+                className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                Schedule Work
+              </Button>
+              <Button 
+                onClick={() => setSubcontractorView('list')} 
+                variant="outline"
+                className="bg-white hover:bg-slate-100 text-black font-semibold border-2 border-yellow-500"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Manage Subcontractors
+              </Button>
+            </>
           )}
         </div>
       </div>
