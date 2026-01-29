@@ -8,6 +8,8 @@ import { SubcontractorManagement } from './SubcontractorManagement';
 
 export function EnhancedScheduleView() {
   const [subcontractorView, setSubcontractorView] = useState<'list' | 'schedule'>('schedule');
+  const [activeTab, setActiveTab] = useState('tasks');
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -16,9 +18,15 @@ export function EnhancedScheduleView() {
           <h2 className="text-2xl font-bold tracking-tight">Master Schedule</h2>
           <p className="text-yellow-400">Manage tasks and subcontractor work</p>
         </div>
+        {activeTab === 'tasks' && (
+          <Button onClick={() => setShowCreateDialog(true)} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
+            <Plus className="w-4 h-4 mr-2" />
+            New Task
+          </Button>
+        )}
       </div>
 
-      <Tabs defaultValue="tasks" className="w-full">
+      <Tabs defaultValue="tasks" className="w-full" onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 bg-black border-2 border-yellow-500 rounded-none shadow-lg">
           <TabsTrigger value="tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
             <ListTodo className="w-4 h-4 mr-2" />
@@ -31,7 +39,10 @@ export function EnhancedScheduleView() {
         </TabsList>
 
         <TabsContent value="tasks" className="mt-4">
-          <AllJobsTaskManagement />
+          <AllJobsTaskManagement 
+            showCreateDialog={showCreateDialog}
+            onCloseCreateDialog={() => setShowCreateDialog(false)}
+          />
         </TabsContent>
 
         <TabsContent value="subcontractors" className="mt-4">

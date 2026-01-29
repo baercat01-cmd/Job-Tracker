@@ -80,13 +80,20 @@ interface TaskFormData {
   priority: 'low' | 'medium' | 'high' | 'urgent';
 }
 
-export function AllJobsTaskManagement() {
+interface AllJobsTaskManagementProps {
+  showCreateDialog?: boolean;
+  onCloseCreateDialog?: () => void;
+}
+
+export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, onCloseCreateDialog }: AllJobsTaskManagementProps = {}) {
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<JobTask[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showDialog, setShowDialog] = useState(false);
+  const [internalShowDialog, setInternalShowDialog] = useState(false);
+  const showDialog = externalShowDialog !== undefined ? externalShowDialog : internalShowDialog;
+  const setShowDialog = onCloseCreateDialog || setInternalShowDialog;
   const [editingTask, setEditingTask] = useState<JobTask | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('pending');
   const [filterJob, setFilterJob] = useState<string>('all');
@@ -448,18 +455,7 @@ export function AllJobsTaskManagement() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Task Management</h2>
-          <p className="text-yellow-400">Create and manage tasks across all jobs</p>
-        </div>
-        <Button onClick={openCreateDialog} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
-          <Plus className="w-4 h-4 mr-2" />
-          New Task
-        </Button>
-      </div>
-
+    <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap gap-4">
         <Select value={filterJob} onValueChange={setFilterJob}>
