@@ -147,10 +147,10 @@ export function OfficeDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
       {/* Header with Navigation */}
       <header className="bg-white border-b-4 border-yellow-500 shadow-lg sticky top-0 z-50">
-        <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+        <div className="w-full px-1 sm:px-2 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
           {/* Logo */}
           <img 
             src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
@@ -315,7 +315,7 @@ export function OfficeDashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+      <main className="w-full px-1 sm:px-2 py-3 sm:py-6">
         {activeTab === 'jobs' && (
           <div className="space-y-6">
             {/* Active Jobs Cards */}
