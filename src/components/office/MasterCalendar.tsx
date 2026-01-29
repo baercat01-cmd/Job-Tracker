@@ -352,7 +352,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         });
       }
 
-      // Get calendar events (pickups, deliveries, order reminders)
+      // Get calendar events (pickups, deliveries, order reminders) - exclude completed
       let calendarEventsQuery = supabase
         .from('calendar_events')
         .select(`
@@ -365,7 +365,8 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           jobs!inner(id, name, client_name, status)
         `)
         .in('jobs.status', ['active', 'prepping'])
-        .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder']);
+        .in('event_type', ['material_pickup', 'material_delivery', 'material_order_reminder'])
+        .is('completed_at', null);
 
       // If viewing a specific job, filter to that job
       if (jobId) {
@@ -407,7 +408,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
         });
       }
 
-      // Load tasks with due dates (including completed tasks)
+      // Load tasks with due dates (exclude completed tasks)
       let tasksQuery = supabase
         .from('job_tasks')
         .select(`
@@ -425,7 +426,8 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           jobs!inner(id, name, client_name, status)
         `)
         .in('jobs.status', ['active', 'prepping'])
-        .not('due_date', 'is', null);
+        .not('due_date', 'is', null)
+        .neq('status', 'completed');
 
       if (filterJob !== 'all') {
         tasksQuery = tasksQuery.eq('job_id', filterJob);
