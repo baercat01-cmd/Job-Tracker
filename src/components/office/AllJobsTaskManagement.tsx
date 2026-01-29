@@ -88,7 +88,7 @@ export function AllJobsTaskManagement() {
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<JobTask | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('pending');
   const [filterJob, setFilterJob] = useState<string>('all');
   const [formData, setFormData] = useState<TaskFormData>({
     job_id: '',
@@ -406,8 +406,11 @@ export function AllJobsTaskManagement() {
     );
   };
 
-  const filteredTasks = tasks.filter(task => {
-    if (filterStatus !== 'all' && task.status !== filterStatus) return false;
+  // Filter out completed tasks entirely
+  const activeTasks = tasks.filter(task => task.status !== 'completed');
+  
+  const filteredTasks = activeTasks.filter(task => {
+    if (task.status !== filterStatus) return false;
     if (filterJob !== 'all' && task.job_id !== filterJob) return false;
     return true;
   }).sort((a, b) => {
@@ -431,10 +434,8 @@ export function AllJobsTaskManagement() {
   });
 
   const tasksByStatus = {
-    pending: filteredTasks.filter(t => t.status === 'pending'),
-    in_progress: filteredTasks.filter(t => t.status === 'in_progress'),
-    completed: filteredTasks.filter(t => t.status === 'completed'),
-    blocked: filteredTasks.filter(t => t.status === 'blocked'),
+    pending: activeTasks.filter(t => t.status === 'pending'),
+    blocked: activeTasks.filter(t => t.status === 'blocked'),
   };
 
   if (loading) {
@@ -479,36 +480,12 @@ export function AllJobsTaskManagement() {
 
         <div className="flex gap-2 flex-wrap">
           <Button
-            variant={filterStatus === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFilterStatus('all')}
-            className={filterStatus === 'all' ? "bg-gradient-to-r from-green-800 to-green-900 hover:from-green-900 hover:to-green-950 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
-          >
-            All ({tasks.length})
-          </Button>
-          <Button
             variant={filterStatus === 'pending' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilterStatus('pending')}
             className={filterStatus === 'pending' ? "bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
           >
             Pending ({tasksByStatus.pending.length})
-          </Button>
-          <Button
-            variant={filterStatus === 'in_progress' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFilterStatus('in_progress')}
-            className={filterStatus === 'in_progress' ? "bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 text-black font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
-          >
-            In Progress ({tasksByStatus.in_progress.length})
-          </Button>
-          <Button
-            variant={filterStatus === 'completed' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFilterStatus('completed')}
-            className={filterStatus === 'completed' ? "bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 text-white font-semibold" : "border-2 border-slate-400 text-slate-700 hover:bg-slate-100"}
-          >
-            Completed ({tasksByStatus.completed.length})
           </Button>
           {tasksByStatus.blocked.length > 0 && (
             <Button
