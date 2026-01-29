@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Users, ListTodo, UserPlus, Calendar } from 'lucide-react';
+import { Users, ListTodo, UserPlus, Calendar, Plus } from 'lucide-react';
 import { SubcontractorScheduling } from './SubcontractorScheduling';
 import { AllJobsTaskManagement } from './AllJobsTaskManagement';
 import { SubcontractorManagement } from './SubcontractorManagement';
