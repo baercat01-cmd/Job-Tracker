@@ -18,12 +18,33 @@ export function EnhancedScheduleView() {
           <h2 className="text-2xl font-bold tracking-tight">Master Schedule</h2>
           <p className="text-yellow-400">Manage tasks and subcontractor work</p>
         </div>
-        {activeTab === 'tasks' && (
-          <Button onClick={() => setShowCreateDialog(true)} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
-            <Plus className="w-4 h-4 mr-2" />
-            New Task
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {activeTab === 'tasks' && (
+            <Button onClick={() => setShowCreateDialog(true)} className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400">
+              <Plus className="w-4 h-4 mr-2" />
+              New Task
+            </Button>
+          )}
+          {activeTab === 'subcontractors' && (
+            <>
+              <Button 
+                onClick={() => setSubcontractorView('schedule')} 
+                className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                Schedule Work
+              </Button>
+              <Button 
+                onClick={() => setSubcontractorView('list')} 
+                variant="outline"
+                className="bg-white hover:bg-slate-100 text-black font-semibold border-2 border-yellow-500"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Manage Subcontractors
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="tasks" className="w-full" onValueChange={setActiveTab}>
@@ -46,35 +67,12 @@ export function EnhancedScheduleView() {
         </TabsContent>
 
         <TabsContent value="subcontractors" className="mt-4">
-          <div className="space-y-4">
-            {/* Toggle between List and Schedule views */}
-            <div className="space-y-2 border-b-2 border-yellow-500/30 pb-4">
-              <Button
-                variant={subcontractorView === 'schedule' ? 'default' : 'outline'}
-                onClick={() => setSubcontractorView('schedule')}
-                className={subcontractorView === 'schedule' ? "w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400" : "w-full border-2 border-green-800 text-green-900 hover:bg-green-50"}
-              >
-                <Calendar className="w-4 h-4 mr-2" />
-                Schedule Work
-              </Button>
-              <Button
-                variant={subcontractorView === 'list' ? 'secondary' : 'ghost'}
-                onClick={() => setSubcontractorView('list')}
-                size="sm"
-                className={subcontractorView === 'list' ? "w-full bg-black text-white hover:bg-slate-900 border-2 border-yellow-500" : "w-full text-slate-700 hover:text-black hover:bg-slate-100"}
-              >
-                <UserPlus className="w-3 h-3 mr-2" />
-                Manage Subcontractors
-              </Button>
-            </div>
-
-            {/* Conditional rendering based on view */}
-            {subcontractorView === 'list' ? (
-              <SubcontractorManagement />
-            ) : (
-              <SubcontractorScheduling />
-            )}
-          </div>
+          {/* Conditional rendering based on view */}
+          {subcontractorView === 'list' ? (
+            <SubcontractorManagement />
+          ) : (
+            <SubcontractorScheduling />
+          )}
         </TabsContent>
       </Tabs>
     </div>
