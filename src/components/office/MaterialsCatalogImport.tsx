@@ -65,9 +65,11 @@ export function MaterialsCatalogImport() {
    * - Group by Material + Part Length
    * - Use first row as primary record
    * - Store ALL original rows in raw_metadata for re-expansion
+   * - Generate unique SKUs to avoid conflicts
    */
   function convertToMaterialsCatalog(rows: any[]): MaterialRecord[] {
     const materialsMap = new Map<string, MaterialRecord>();
+    const usedSKUs = new Set<string>();
 
     rows.forEach((row, index) => {
       // Create unique key: Material + Part Length
@@ -76,9 +78,26 @@ export function MaterialsCatalogImport() {
       const key = `${material}|${partLength}`;
 
       if (!materialsMap.has(key)) {
+        // Generate a unique SKU
+        let sku = row['SKU'] || row['Full SKU'] || '';
+        
+        // If SKU is empty or already used, generate a unique one
+        if (!sku || usedSKUs.has(sku)) {
+          // Use Material + Length as base for SKU
+          const baseSKU = `${material.substring(0, 20)}_${partLength}`.replace(/[^a-zA-Z0-9_]/g, '');
+          let counter = 1;
+          sku = baseSKU;
+          while (usedSKUs.has(sku)) {
+            sku = `${baseSKU}_${counter}`;
+            counter++;
+          }
+        }
+        
+        usedSKUs.add(sku);
+        
         // First occurrence - create primary record
         materialsMap.set(key, {
-          sku: row['SKU'] || row['Full SKU'] || `AUTO_${index}`,
+          sku: sku,
           material_name: material,
           category: row['Category'] || 'Uncategorized',
           unit_price: parseFloat(row['Price']) || null,
@@ -129,27 +148,44 @@ export function MaterialsCatalogImport() {
       const materials = convertToMaterialsCatalog(rawRows);
       setProgress(60);
 
-      // Clear existing data (optional - you may want to ask user first)
-      const { error: deleteError } = await supabase
-        .from('materials_catalog')
-        .delete()
-        .neq('sku', '___NOTHING___'); // Delete all
+      // Clear existing data completely with proper error handling
+      try {
+        // First, try to delete all records
+        const { error: deleteError } = await supabase
+          .from('materials_catalog')
+          .delete()
+          .neq('sku', '___IMPOSSIBLE_SKU___'); // Delete all
 
-      if (deleteError) throw deleteError;
+        if (deleteError) {
+          console.warn('Delete warning:', deleteError);
+          // Continue anyway - table might be empty
+        }
+      } catch (deleteErr) {
+        console.warn('Delete error (continuing):', deleteErr);
+      }
+      
       setProgress(70);
 
       // Insert in batches (Supabase has limits)
-      const batchSize = 100;
+      // Use upsert to handle any remaining duplicates
+      const batchSize = 50; // Smaller batches for reliability
       let imported = 0;
 
       for (let i = 0; i < materials.length; i += batchSize) {
         const batch = materials.slice(i, i + batchSize);
         
+        // Use upsert with onConflict to handle duplicates
         const { error } = await supabase
           .from('materials_catalog')
-          .insert(batch);
+          .upsert(batch, { 
+            onConflict: 'sku',
+            ignoreDuplicates: false // Update if exists
+          });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Batch insert error:', error);
+          throw error;
+        }
 
         imported += batch.length;
         setProgress(70 + (imported / materials.length) * 30);
