@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, DollarSign } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -25,8 +25,6 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
-import { MaterialsCostAnalytics } from '@/components/office/MaterialsCostAnalytics';
-import { MaterialsCatalogPage } from '@/pages/office/MaterialsCatalogPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
@@ -240,19 +238,6 @@ export function OfficeDashboard() {
               <Truck className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Fleet</span>
             </Button>
-            <Button
-              variant={activeTab === 'materials' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('materials')}
-              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
-                activeTab === 'materials'
-                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Package className="w-4 h-4 mr-1.5" />
-              <span className="hidden sm:inline">Materials</span>
-            </Button>
           </div>
 
           {/* Right Side Actions */}
@@ -377,20 +362,6 @@ export function OfficeDashboard() {
           </div>
         )}
 
-        {activeTab === 'materials' && (
-          <MaterialsCatalogPage />
-        )}
-
-        {activeTab === 'materials' && (
-          <div className="space-y-6">
-            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Materials Catalog</h2>
-              <p className="text-yellow-400">Import, browse, and manage your materials database</p>
-            </div>
-            <MaterialsCatalogPage />
-          </div>
-        )}
-
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
@@ -398,12 +369,8 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Manage system configuration, users, and data export</p>
             </div>
             
-            <Tabs defaultValue="cost-analytics" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-12 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
-                <TabsTrigger value="cost-analytics" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Cost Analytics
-                </TabsTrigger>
+            <Tabs defaultValue="export" className="w-full">
+              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-11 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -449,10 +416,6 @@ export function OfficeDashboard() {
                   Quote Config
                 </TabsTrigger>
               </TabsList>
-
-              <TabsContent value="cost-analytics" className="mt-6">
-                <MaterialsCostAnalytics />
-              </TabsContent>
 
               <TabsContent value="export" className="mt-6">
                 <DataExport />

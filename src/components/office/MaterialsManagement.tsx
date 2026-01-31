@@ -36,7 +36,6 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
-import { MaterialsPurchaseOrderGenerator } from './MaterialsPurchaseOrderGenerator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement, cleanMaterialValue } from '@/lib/utils';
 import {
@@ -440,7 +439,7 @@ function SortableCategoryCard({
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'bundles' | 'purchase-orders'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1190,7 +1189,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       <div ref={containerRef} className="w-full -mx-2">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-            <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm">
+            <TabsList className="grid w-full grid-cols-2 h-14 bg-white shadow-sm">
               <TabsTrigger 
                 value="manage" 
                 className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
@@ -1204,13 +1203,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               >
                 <ShoppingCart className="w-5 h-5" />
                 <span className="text-xs sm:text-base">Material Bundles</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="purchase-orders" 
-                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-green-600 data-[state=active]:to-green-500 data-[state=active]:text-white transition-all shadow-sm"
-              >
-                <PackagePlus className="w-5 h-5" />
-                <span className="text-xs sm:text-base">Purchase Orders</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1340,14 +1332,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   allowBundleCreation={true}
                   defaultTab="bundles"
                 />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="purchase-orders" className="space-y-2">
-            <Card>
-              <CardContent className="pt-6">
-                <MaterialsPurchaseOrderGenerator job={job} />
               </CardContent>
             </Card>
           </TabsContent>
