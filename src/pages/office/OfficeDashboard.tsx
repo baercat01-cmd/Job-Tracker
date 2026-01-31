@@ -26,6 +26,7 @@ import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { MaterialsCostAnalytics } from '@/components/office/MaterialsCostAnalytics';
+import { MaterialsCatalogPage } from '@/pages/office/MaterialsCatalogPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
@@ -378,6 +379,16 @@ export function OfficeDashboard() {
 
         {activeTab === 'materials' && (
           <MaterialsCatalogPage />
+        )}
+
+        {activeTab === 'materials' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Materials Catalog</h2>
+              <p className="text-yellow-400">Import, browse, and manage your materials database</p>
+            </div>
+            <MaterialsCatalogPage />
+          </div>
         )}
 
         {activeTab === 'settings' && (
