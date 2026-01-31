@@ -107,10 +107,13 @@ export function InventoryImport() {
     try {
       // Read file
       const text = await file.text();
+      console.log('📄 File read, size:', text.length, 'characters');
       setProgress(20);
 
       // Parse CSV
       const rawRows = parseCSV(text);
+      console.log('📊 Parsed rows:', rawRows.length);
+      console.log('📋 First row sample:', rawRows[0]);
       setProgress(40);
 
       if (rawRows.length === 0) {
@@ -120,6 +123,8 @@ export function InventoryImport() {
 
       // Convert to inventory items
       const items = convertToInventoryItems(rawRows);
+      console.log('✅ Valid items to import:', items.length);
+      console.log('📦 First item sample:', items[0]);
       setProgress(60);
 
       if (items.length === 0) {
@@ -128,41 +133,54 @@ export function InventoryImport() {
       }
 
       // Use upsert to insert or update based on SKU (prevents duplicates)
-      const batchSize = 50;
+      const batchSize = 100; // Increased from 50
       let imported = 0;
-      let skipped = 0;
+      let failed = 0;
+      const errors: string[] = [];
 
       for (let i = 0; i < items.length; i += batchSize) {
         const batch = items.slice(i, i + batchSize);
+        console.log(`⬆️ Uploading batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)}:`, batch.length, 'items');
         
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('materials_master')
           .upsert(batch, { 
             onConflict: 'sku',
             ignoreDuplicates: false // Update if exists
-          });
+          })
+          .select();
 
         if (error) {
-          console.error('Batch insert error:', error);
-          throw error;
+          console.error('❌ Batch insert error:', error);
+          failed += batch.length;
+          errors.push(`Batch ${i / batchSize + 1}: ${error.message}`);
+          // Continue with next batch instead of throwing
+        } else {
+          console.log('✅ Batch inserted successfully:', data?.length || batch.length, 'items');
+          imported += batch.length;
         }
 
-        imported += batch.length;
         setProgress(60 + (imported / items.length) * 40);
       }
 
       // Set stats
       setStats({
         totalRows: rawRows.length,
-        imported: items.length,
-        skipped: rawRows.length - items.length,
+        imported: imported,
+        skipped: rawRows.length - items.length + failed,
       });
 
       setProgress(100);
-      toast.success(`Imported ${items.length} items successfully`);
+      
+      if (errors.length > 0) {
+        console.error('Import completed with errors:', errors);
+        toast.error(`Imported ${imported} items, but ${failed} failed. Check console for details.`);
+      } else {
+        toast.success(`Successfully imported ${imported} items!`);
+      }
 
     } catch (error: any) {
-      console.error('Import error:', error);
+      console.error('❌ Import error:', error);
       toast.error(`Import failed: ${error.message}`);
     } finally {
       setImporting(false);
