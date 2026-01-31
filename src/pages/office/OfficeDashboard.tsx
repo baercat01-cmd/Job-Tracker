@@ -25,6 +25,7 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
+import { MaterialsCostAnalytics } from '@/components/office/MaterialsCostAnalytics';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
@@ -386,8 +387,12 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Manage system configuration, users, and data export</p>
             </div>
             
-            <Tabs defaultValue="export" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-11 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
+            <Tabs defaultValue="cost-analytics" className="w-full">
+              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-12 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
+                <TabsTrigger value="cost-analytics" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Cost Analytics
+                </TabsTrigger>
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -433,6 +438,10 @@ export function OfficeDashboard() {
                   Quote Config
                 </TabsTrigger>
               </TabsList>
+
+              <TabsContent value="cost-analytics" className="mt-6">
+                <MaterialsCostAnalytics />
+              </TabsContent>
 
               <TabsContent value="export" className="mt-6">
                 <DataExport />
