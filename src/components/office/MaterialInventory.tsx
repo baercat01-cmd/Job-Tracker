@@ -198,13 +198,22 @@ export function MaterialInventory() {
                              sku.match(/(\d+['"]?)/);
           const partLength = lengthMatch ? lengthMatch[1] : null;
 
+          // Helper to parse price values that may have "USD" prefix
+          const parsePrice = (value: string): number => {
+            if (!value) return 0;
+            // Remove "USD" prefix and any whitespace
+            const cleaned = value.replace(/USD\s*/i, '').trim();
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? 0 : parsed;
+          };
+
           // Create new entry with metadata as an array
           materialsBySku.set(sku, {
             sku: sku,
             material_name: itemName,
             category: accountIdx !== -1 ? values[accountIdx] : null,
-            unit_price: rateIdx !== -1 ? parseFloat(values[rateIdx]) || 0 : 0,
-            purchase_cost: purchaseRateIdx !== -1 ? parseFloat(values[purchaseRateIdx]) || 0 : 0,
+            unit_price: rateIdx !== -1 ? parsePrice(values[rateIdx]) : 0,
+            purchase_cost: purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0,
             part_length: partLength,
             raw_metadata: [rowMetadata], // Store as array to preserve all variants
           });
