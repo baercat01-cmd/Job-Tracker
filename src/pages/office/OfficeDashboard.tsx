@@ -25,6 +25,7 @@ import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
+import { MaterialInventory } from '@/components/office/MaterialInventory';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
@@ -370,7 +371,7 @@ export function OfficeDashboard() {
             </div>
             
             <Tabs defaultValue="export" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-11 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
+              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-12 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -414,6 +415,10 @@ export function OfficeDashboard() {
                 <TabsTrigger value="quote-config" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Settings className="w-4 h-4 mr-2" />
                   Quote Config
+                </TabsTrigger>
+                <TabsTrigger value="materials" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Materials
                 </TabsTrigger>
               </TabsList>
 
@@ -459,6 +464,10 @@ export function OfficeDashboard() {
 
               <TabsContent value="quote-config" className="mt-6">
                 <QuoteConfigManagement />
+              </TabsContent>
+
+              <TabsContent value="materials" className="mt-6">
+                <MaterialInventory />
               </TabsContent>
             </Tabs>
           </div>
