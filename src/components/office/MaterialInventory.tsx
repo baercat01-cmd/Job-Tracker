@@ -163,7 +163,9 @@ export function MaterialInventory() {
         throw new Error('Required columns not found (Item Name, SKU)');
       }
 
-      const materialsToInsert: any[] = [];
+      // Group by SKU to handle duplicates (color variants, etc.)
+      const materialsBySku = new Map<string, any>();
+      let totalRows = 0;
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -177,27 +179,40 @@ export function MaterialInventory() {
         
         if (!itemName || !sku) continue;
 
-        // Create raw metadata object with ALL columns
-        const rawMetadata: any = {};
+        totalRows++;
+
+        // Create raw metadata object with ALL columns for this row
+        const rowMetadata: any = {};
         headers.forEach((header, idx) => {
-          rawMetadata[header] = values[idx] || '';
+          rowMetadata[header] = values[idx] || '';
         });
 
-        // Extract length from item name or SKU if present
-        const lengthMatch = itemName.match(/(\d+['"]?\s*(?:LVL|x|ft|in)?)/i) || 
-                           sku.match(/(\d+['"]?)/);
-        const partLength = lengthMatch ? lengthMatch[1] : null;
+        // If this SKU already exists, add to the metadata array
+        if (materialsBySku.has(sku)) {
+          const existing = materialsBySku.get(sku);
+          // Add this row's metadata to the array
+          existing.raw_metadata.push(rowMetadata);
+        } else {
+          // Extract length from item name or SKU if present
+          const lengthMatch = itemName.match(/(\d+['"]?\s*(?:LVL|x|ft|in)?)/i) || 
+                             sku.match(/(\d+['"]?)/);
+          const partLength = lengthMatch ? lengthMatch[1] : null;
 
-        materialsToInsert.push({
-          sku: sku,
-          material_name: itemName,
-          category: accountIdx !== -1 ? values[accountIdx] : null,
-          unit_price: rateIdx !== -1 ? parseFloat(values[rateIdx]) || 0 : 0,
-          purchase_cost: purchaseRateIdx !== -1 ? parseFloat(values[purchaseRateIdx]) || 0 : 0,
-          part_length: partLength,
-          raw_metadata: rawMetadata,
-        });
+          // Create new entry with metadata as an array
+          materialsBySku.set(sku, {
+            sku: sku,
+            material_name: itemName,
+            category: accountIdx !== -1 ? values[accountIdx] : null,
+            unit_price: rateIdx !== -1 ? parseFloat(values[rateIdx]) || 0 : 0,
+            purchase_cost: purchaseRateIdx !== -1 ? parseFloat(values[purchaseRateIdx]) || 0 : 0,
+            part_length: partLength,
+            raw_metadata: [rowMetadata], // Store as array to preserve all variants
+          });
+        }
       }
+
+      // Convert to array of unique materials
+      const materialsToInsert = Array.from(materialsBySku.values());
 
       // Insert in batches of 500
       const batchSize = 500;
@@ -210,7 +225,7 @@ export function MaterialInventory() {
         if (error) throw error;
       }
 
-      toast.success(`Imported ${materialsToInsert.length} materials`);
+      toast.success(`Imported ${materialsToInsert.length} unique materials from ${totalRows} rows`);
       setShowImportDialog(false);
       setImportFile(null);
       loadMaterials();
