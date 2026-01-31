@@ -1,23 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { 
   Search, 
-  Package, 
-  ChevronDown, 
-  ChevronRight,
-  FileSpreadsheet,
-  Ruler,
-  DollarSign
+  Package,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface Material {
@@ -30,27 +29,21 @@ interface Material {
   raw_metadata: any[];
 }
 
-interface MaterialGroup {
-  material_name: string;
+interface CategoryGroup {
   category: string;
-  lengths: Material[];
+  materials: Material[];
   expanded: boolean;
 }
 
 export function MaterialsCatalogBrowser() {
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [groups, setGroups] = useState<MaterialGroup[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMaterials();
   }, []);
-
-  useEffect(() => {
-    groupMaterials();
-  }, [materials, searchTerm]);
 
   async function loadMaterials() {
     try {
@@ -69,56 +62,67 @@ export function MaterialsCatalogBrowser() {
     }
   }
 
-  /**
-   * Group materials by material_name and create length hierarchy
-   */
-  function groupMaterials() {
+  // Group materials by category
+  const categoryGroups = useMemo(() => {
     const filtered = materials.filter(m => {
       const search = searchTerm.toLowerCase();
       return (
         m.material_name.toLowerCase().includes(search) ||
         m.category.toLowerCase().includes(search) ||
-        m.sku.toLowerCase().includes(search)
+        m.sku.toLowerCase().includes(search) ||
+        m.part_length.toLowerCase().includes(search)
       );
     });
 
-    // Group by material_name
-    const groupsMap = new Map<string, MaterialGroup>();
+    // Group by category
+    const groupsMap = new Map<string, Material[]>();
 
     filtered.forEach(material => {
-      const key = material.material_name;
-      
-      if (!groupsMap.has(key)) {
-        groupsMap.set(key, {
-          material_name: material.material_name,
-          category: material.category,
-          lengths: [material],
-          expanded: false,
-        });
-      } else {
-        groupsMap.get(key)!.lengths.push(material);
+      const category = material.category || 'Uncategorized';
+      if (!groupsMap.has(category)) {
+        groupsMap.set(category, []);
       }
+      groupsMap.get(category)!.push(material);
     });
 
-    // Sort lengths numerically
-    groupsMap.forEach(group => {
-      group.lengths.sort((a, b) => {
-        const aNum = parseFloat(a.part_length) || 0;
-        const bNum = parseFloat(b.part_length) || 0;
-        return aNum - bNum;
-      });
-    });
+    // Convert to array and sort
+    return Array.from(groupsMap.entries())
+      .map(([category, materials]) => ({
+        category,
+        materials: materials.sort((a, b) => {
+          // Sort by material name, then by length
+          if (a.material_name !== b.material_name) {
+            return a.material_name.localeCompare(b.material_name);
+          }
+          const aNum = parseFloat(a.part_length) || 0;
+          const bNum = parseFloat(b.part_length) || 0;
+          return aNum - bNum;
+        }),
+        expanded: expandedCategories.has(category)
+      }))
+      .sort((a, b) => a.category.localeCompare(b.category));
+  }, [materials, searchTerm, expandedCategories]);
 
-    setGroups(Array.from(groupsMap.values()));
+  function toggleCategory(category: string) {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(category)) {
+      newExpanded.delete(category);
+    } else {
+      newExpanded.add(category);
+    }
+    setExpandedCategories(newExpanded);
   }
 
-  function toggleGroup(materialName: string) {
-    setGroups(groups.map(g => 
-      g.material_name === materialName 
-        ? { ...g, expanded: !g.expanded }
-        : g
-    ));
+  function expandAll() {
+    setExpandedCategories(new Set(categoryGroups.map(g => g.category)));
   }
+
+  function collapseAll() {
+    setExpandedCategories(new Set());
+  }
+
+  const totalMaterials = materials.length;
+  const totalCategories = categoryGroups.length;
 
   if (loading) {
     return (
@@ -132,174 +136,134 @@ export function MaterialsCatalogBrowser() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold">Materials Browser</h2>
-          <p className="text-muted-foreground">
-            {materials.length.toLocaleString()} materials • {groups.length} groups
-          </p>
+    <div className="space-y-4">
+      {/* Search and Controls */}
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search materials, categories, SKU, length..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={expandAll}>
+            <ChevronDown className="w-4 h-4 mr-2" />
+            Expand All
+          </Button>
+          <Button variant="outline" size="sm" onClick={collapseAll}>
+            <ChevronUp className="w-4 h-4 mr-2" />
+            Collapse All
+          </Button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search materials, categories, SKU..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+      {/* Stats */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <span>{totalMaterials.toLocaleString()} materials</span>
+        <span>•</span>
+        <span>{totalCategories} categories</span>
+        <span>•</span>
+        <span>{expandedCategories.size} expanded</span>
       </div>
 
-      {/* Material Groups */}
-      <div className="space-y-2">
-        {groups.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No materials found</p>
-            </CardContent>
-          </Card>
-        ) : (
-          groups.map(group => (
-            <Card key={group.material_name} className="overflow-hidden">
-              <CardHeader
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => toggleGroup(group.material_name)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1">
-                    {group.expanded ? (
-                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    )}
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{group.material_name}</CardTitle>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline">{group.category}</Badge>
-                        <Badge variant="secondary">{group.lengths.length} lengths</Badge>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-
-              {/* Length List */}
-              {group.expanded && (
-                <CardContent className="pt-0">
-                  <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                    {group.lengths.map(material => (
-                      <button
-                        key={material.sku}
-                        onClick={() => setSelectedMaterial(material)}
-                        className="text-left p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Ruler className="w-4 h-4 text-primary" />
-                            <span className="font-semibold">{material.part_length}"</span>
-                          </div>
-                          {material.unit_price && (
-                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                              <DollarSign className="w-3 h-3" />
-                              <span>{material.unit_price.toFixed(2)}</span>
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          SKU: {material.sku}
-                        </p>
-                        {material.raw_metadata.length > 1 && (
-                          <Badge variant="secondary" className="mt-2 text-xs">
-                            {material.raw_metadata.length} color variants
+      {/* Spreadsheet Table with Scroll */}
+      <Card className="border-2">
+        <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+          <Table>
+            <TableHeader className="sticky top-0 bg-slate-900 text-white z-10">
+              <TableRow className="hover:bg-slate-900">
+                <TableHead className="text-white font-bold w-[40px]"></TableHead>
+                <TableHead className="text-white font-bold">SKU</TableHead>
+                <TableHead className="text-white font-bold">Material Name</TableHead>
+                <TableHead className="text-white font-bold">Length</TableHead>
+                <TableHead className="text-white font-bold text-right">Unit Price</TableHead>
+                <TableHead className="text-white font-bold text-right">Cost</TableHead>
+                <TableHead className="text-white font-bold text-center">Variants</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categoryGroups.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No materials found</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                categoryGroups.map(group => (
+                  <>
+                    {/* Category Header Row */}
+                    <TableRow
+                      key={group.category}
+                      className="bg-yellow-50 hover:bg-yellow-100 cursor-pointer border-y-2 border-yellow-500"
+                      onClick={() => toggleCategory(group.category)}
+                    >
+                      <TableCell className="font-bold">
+                        {group.expanded ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronUp className="w-5 h-5" />
+                        )}
+                      </TableCell>
+                      <TableCell colSpan={6} className="font-bold text-lg">
+                        <div className="flex items-center justify-between">
+                          <span>{group.category}</span>
+                          <Badge variant="secondary" className="bg-yellow-500 text-black">
+                            {group.materials.length} items
                           </Badge>
-                        )}
-                      </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Material Rows */}
+                    {group.expanded && group.materials.map((material, index) => (
+                      <TableRow
+                        key={material.sku}
+                        className={index % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50 hover:bg-slate-100'}
+                      >
+                        <TableCell></TableCell>
+                        <TableCell className="font-mono text-sm">{material.sku}</TableCell>
+                        <TableCell className="font-medium">{material.material_name}</TableCell>
+                        <TableCell className="font-semibold">{material.part_length}"</TableCell>
+                        <TableCell className="text-right">
+                          {material.unit_price ? (
+                            <span className="font-semibold text-green-700">
+                              ${material.unit_price.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {material.purchase_cost ? (
+                            <span className="text-slate-700">
+                              ${material.purchase_cost.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {material.raw_metadata.length > 1 ? (
+                            <Badge variant="outline" className="text-xs">
+                              {material.raw_metadata.length}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </div>
-                </CardContent>
+                  </>
+                ))
               )}
-            </Card>
-          ))
-        )}
-      </div>
-
-      {/* Material Details Dialog */}
-      <Dialog open={!!selectedMaterial} onOpenChange={() => setSelectedMaterial(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedMaterial?.material_name} - {selectedMaterial?.part_length}"
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedMaterial && (
-            <div className="space-y-6">
-              {/* Primary Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">SKU</p>
-                  <p className="font-semibold">{selectedMaterial.sku}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Category</p>
-                  <p className="font-semibold">{selectedMaterial.category}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Unit Price</p>
-                  <p className="font-semibold">
-                    {selectedMaterial.unit_price 
-                      ? `$${selectedMaterial.unit_price.toFixed(2)}`
-                      : 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Purchase Cost</p>
-                  <p className="font-semibold">
-                    {selectedMaterial.purchase_cost 
-                      ? `$${selectedMaterial.purchase_cost.toFixed(2)}`
-                      : 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Original Smartbuild Data */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <h3 className="font-semibold">Original Smartbuild Data</h3>
-                  <Badge variant="secondary">
-                    {selectedMaterial.raw_metadata.length} row(s)
-                  </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  {selectedMaterial.raw_metadata.map((row, index) => (
-                    <Card key={index} className="p-3">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        {Object.entries(row).slice(0, 10).map(([key, value]) => (
-                          <div key={key}>
-                            <span className="text-muted-foreground">{key}:</span>{' '}
-                            <span className="font-medium">{value as string}</span>
-                          </div>
-                        ))}
-                        {Object.keys(row).length > 10 && (
-                          <p className="col-span-2 text-xs text-muted-foreground">
-                            + {Object.keys(row).length - 10} more fields
-                          </p>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
     </div>
   );
 }
