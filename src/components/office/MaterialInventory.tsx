@@ -152,15 +152,36 @@ export function MaterialInventory() {
       const lines = text.split('\n');
       const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
 
-      // Find column indices
-      const itemNameIdx = headers.indexOf('Item Name');
-      const skuIdx = headers.indexOf('SKU');
-      const rateIdx = headers.indexOf('Rate');
-      const purchaseRateIdx = headers.indexOf('Purchase Rate');
-      const accountIdx = headers.indexOf('Account');
+      console.log('📋 CSV Headers found:', headers);
+
+      // Helper function to find column index (case-insensitive, flexible matching)
+      const findColumnIndex = (possibleNames: string[]): number => {
+        for (const name of possibleNames) {
+          const idx = headers.findIndex(h => 
+            h.toLowerCase().trim() === name.toLowerCase().trim()
+          );
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      // Find column indices with multiple possible names
+      const itemNameIdx = findColumnIndex(['Item Name', 'ItemName', 'Name', 'Material Name']);
+      const skuIdx = findColumnIndex(['SKU', 'Item ID', 'ItemID', 'ID']);
+      const rateIdx = findColumnIndex(['Rate', 'Price', 'Unit Price', 'Selling Price']);
+      const purchaseRateIdx = findColumnIndex(['Purchase Rate', 'Cost', 'Purchase Cost', 'Purchase Price']);
+      const accountIdx = findColumnIndex(['Account', 'Category', 'Type']);
+
+      console.log('📊 Column indices:', {
+        itemName: itemNameIdx,
+        sku: skuIdx,
+        rate: rateIdx,
+        purchaseRate: purchaseRateIdx,
+        account: accountIdx
+      });
 
       if (itemNameIdx === -1 || skuIdx === -1) {
-        throw new Error('Required columns not found (Item Name, SKU)');
+        throw new Error(`Required columns not found. Found headers: ${headers.join(', ')}`);
       }
 
       // Group by SKU to handle duplicates (color variants, etc.)
@@ -198,22 +219,42 @@ export function MaterialInventory() {
                              sku.match(/(\d+['"]?)/);
           const partLength = lengthMatch ? lengthMatch[1] : null;
 
-          // Helper to parse price values that may have "USD" prefix
+          // Helper to parse price values that may have "USD" prefix, currency symbols, etc.
           const parsePrice = (value: string): number => {
-            if (!value) return 0;
-            // Remove "USD" prefix and any whitespace
-            const cleaned = value.replace(/USD\s*/i, '').trim();
+            if (!value || value === '') return 0;
+            // Remove currency symbols, "USD" prefix, commas, and whitespace
+            const cleaned = value
+              .replace(/USD\s*/i, '')
+              .replace(/\$/g, '')
+              .replace(/,/g, '')
+              .trim();
             const parsed = parseFloat(cleaned);
-            return isNaN(parsed) ? 0 : parsed;
+            const result = isNaN(parsed) ? 0 : parsed;
+            return result;
           };
+
+          const unitPrice = rateIdx !== -1 ? parsePrice(values[rateIdx]) : 0;
+          const purchaseCost = purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0;
+
+          // Debug first few rows
+          if (totalRows <= 3) {
+            console.log(`Row ${totalRows} pricing:`, {
+              sku,
+              itemName,
+              rawRate: values[rateIdx],
+              rawPurchaseRate: values[purchaseRateIdx],
+              parsedUnitPrice: unitPrice,
+              parsedPurchaseCost: purchaseCost
+            });
+          }
 
           // Create new entry with metadata as an array
           materialsBySku.set(sku, {
             sku: sku,
             material_name: itemName,
             category: accountIdx !== -1 ? values[accountIdx] : null,
-            unit_price: rateIdx !== -1 ? parsePrice(values[rateIdx]) : 0,
-            purchase_cost: purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0,
+            unit_price: unitPrice,
+            purchase_cost: purchaseCost,
             part_length: partLength,
             raw_metadata: [rowMetadata], // Store as array to preserve all variants
           });
@@ -234,10 +275,16 @@ export function MaterialInventory() {
         if (error) throw error;
       }
 
+      console.log('✅ Import complete:', {
+        uniqueMaterials: materialsToInsert.length,
+        totalRows,
+        sampleMaterial: materialsToInsert[0]
+      });
+      
       toast.success(`Imported ${materialsToInsert.length} unique materials from ${totalRows} rows`);
       setShowImportDialog(false);
       setImportFile(null);
-      loadMaterials();
+      await loadMaterials();
     } catch (error: any) {
       console.error('Import error:', error);
       toast.error(`Import failed: ${error.message}`);
