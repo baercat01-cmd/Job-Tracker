@@ -74,18 +74,73 @@ export function InventoryImport() {
 
   /**
    * Convert Items.csv rows to inventory items
+   * Handles both old format (Item Name, SKU, Rate, Account, Category)
+   * and new format (Item ID, Item Name, SKU, Rate, Account, Account Code, etc.)
    */
   function convertToInventoryItems(rows: any[]): InventoryItem[] {
     return rows
       .filter(row => row['SKU'] && row['SKU'].trim()) // Skip rows without SKU
-      .map(row => ({
-        sku: row['SKU']?.trim() || '',
-        item_name: row['Item Name']?.trim() || '',
-        rate: parseFloat(row['Rate']) || null,
-        account: row['Account']?.trim() || '',
-        category: row['Category']?.trim() || '',
-        smartbuild_data: {}, // Empty for now, will be populated later
-      }));
+      .map(row => {
+        // Determine if this is the new format (has Item ID) or old format (has Category)
+        const isNewFormat = 'Item ID' in row;
+        
+        // Parse rate - handle "USD 0.00" format
+        let rate = null;
+        const rateStr = row['Rate']?.toString().trim();
+        if (rateStr) {
+          const numMatch = rateStr.match(/([0-9.]+)/);
+          if (numMatch) {
+            rate = parseFloat(numMatch[1]);
+          }
+        }
+
+        // Parse purchase rate similarly
+        let purchaseRate = null;
+        const purchaseRateStr = row['Purchase Rate']?.toString().trim();
+        if (purchaseRateStr) {
+          const numMatch = purchaseRateStr.match(/([0-9.]+)/);
+          if (numMatch) {
+            purchaseRate = parseFloat(numMatch[1]);
+          }
+        }
+
+        // Build the item
+        const item: InventoryItem = {
+          sku: row['SKU']?.trim() || '',
+          item_name: row['Item Name']?.trim() || '',
+          rate: rate,
+          account: isNewFormat ? (row['Account Code']?.trim() || '') : (row['Account']?.trim() || ''),
+          category: isNewFormat ? (row['Account']?.trim() || '') : (row['Category']?.trim() || ''),
+          smartbuild_data: {},
+        };
+
+        // For new format, store all extra columns in smartbuild_data
+        if (isNewFormat) {
+          item.smartbuild_data = {
+            item_id: row['Item ID']?.trim(),
+            taxable: row['Taxable']?.trim(),
+            product_type: row['Product Type']?.trim(),
+            status: row['Status']?.trim(),
+            usage_unit: row['Usage unit']?.trim(),
+            unit_name: row['Unit Name']?.trim(),
+            purchase_rate: purchaseRate,
+            purchase_account: row['Purchase Account']?.trim(),
+            cob_smart: row['COB Smart']?.trim(),
+            inventory_account: row['Inventory Account']?.trim(),
+            item_type: row['Item Type']?.trim(),
+            sellable: row['Sellable']?.trim(),
+            purchasable: row['Purchasable']?.trim(),
+            track_inventory: row['Track Inventory']?.trim(),
+            ce_part: row['CE Part']?.trim(),
+            length: row['Length']?.trim(),
+            cf_markup: row['CF-Markup']?.trim(),
+            cf_data_source: row['CF-Data Source']?.trim(),
+            cf_color: row['CF-Color']?.trim(),
+          };
+        }
+
+        return item;
+      });
   }
 
   /**
@@ -263,14 +318,14 @@ export function InventoryImport() {
 
         {/* Instructions */}
         <div className="text-sm text-muted-foreground space-y-2 pt-4 border-t">
-          <p className="font-semibold">CSV Format Expected:</p>
+          <p className="font-semibold">CSV Format Supported:</p>
           <ul className="list-disc list-inside space-y-1 pl-2">
-            <li>Item Name</li>
-            <li>SKU (required - used as unique identifier)</li>
-            <li>Rate</li>
-            <li>Account</li>
-            <li>Category</li>
+            <li><strong>Required:</strong> SKU (unique identifier)</li>
+            <li><strong>Required:</strong> Item Name</li>
+            <li><strong>Optional:</strong> Rate, Account, Category, Account Code</li>
+            <li><strong>Optional:</strong> All other columns stored in metadata (Item ID, Taxable, Product Type, Length, CF-Color, etc.)</li>
           </ul>
+          <p className="text-xs mt-2 italic">Supports both simple and extended CSV formats. All extra columns preserved in JSON metadata.</p>
         </div>
 
         {/* Data Integrity Notice */}
