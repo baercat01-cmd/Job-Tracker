@@ -258,14 +258,14 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   }
 
   function isPastDue(dateStr: string): boolean {
-    const date = new Date(dateStr);
+    const date = parseDateLocal(dateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return date < today;
   }
 
   function isUpcoming(dateStr: string, days: number = 7): boolean {
-    const date = new Date(dateStr);
+    const date = parseDateLocal(dateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const upcoming = new Date(today);
@@ -315,12 +315,12 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   today.setHours(0, 0, 0, 0);
   const upcomingEvents = events
     .filter(event => {
-      const eventDate = new Date(event.date);
+      const eventDate = parseDateLocal(event.date);
       const thirtyDaysFromNow = new Date(today);
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
       return eventDate >= today && eventDate <= thirtyDaysFromNow;
     })
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => parseDateLocal(a.date).getTime() - parseDateLocal(b.date).getTime());
 
   const EVENT_TYPE_CONFIG = {
     material_order: { icon: Package, label: 'Order Deadline', color: 'bg-yellow-500' },
@@ -465,7 +465,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
             {selectedDate && (
               <div className="mt-6 p-4 border-t">
                 <h3 className="font-semibold mb-3">
-                  {new Date(selectedDate).toLocaleDateString('en-US', {
+                  {parseDateLocal(selectedDate).toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
@@ -546,7 +546,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
                 {upcomingEvents.map(event => {
                   const config = EVENT_TYPE_CONFIG[event.type];
                   const Icon = config.icon;
-                  const eventDate = new Date(event.date);
+                  const eventDate = parseDateLocal(event.date);
                   const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                   const isMaterialEvent = event.type.startsWith('material_');
                   

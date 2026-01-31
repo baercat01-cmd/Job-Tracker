@@ -181,12 +181,12 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   function getUnavailableUsers(dateStr: string): string[] {
     if (!displayUnavailableDates) return [];
     
-    const date = new Date(dateStr);
+    const date = parseDateLocal(dateStr);
     const unavailableUsers: string[] = [];
     
     unavailableDates.forEach(range => {
-      const start = new Date(range.start_date);
-      const end = new Date(range.end_date);
+      const start = parseDateLocal(range.start_date);
+      const end = parseDateLocal(range.end_date);
       if (date >= start && date <= end) {
         unavailableUsers.push((range.user_profiles as any)?.username || 'Unknown');
       }
@@ -469,7 +469,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   }
 
   function isPastDue(dateStr: string): boolean {
-    const eventDate = new Date(dateStr + 'T00:00:00');
+    const eventDate = parseDateLocal(dateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     // Only mark as overdue if BEFORE today, not ON today
@@ -477,15 +477,14 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   }
 
   function isToday(dateStr: string): boolean {
-    const eventDate = new Date(dateStr + 'T00:00:00');
+    const eventDate = parseDateLocal(dateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    eventDate.setHours(0, 0, 0, 0);
     return eventDate.getTime() === today.getTime();
   }
 
   function isUpcoming(dateStr: string, days: number = 7): boolean {
-    const date = new Date(dateStr);
+    const date = parseDateLocal(dateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const upcoming = new Date(today);
