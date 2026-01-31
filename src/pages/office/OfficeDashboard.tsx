@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -239,6 +239,19 @@ export function OfficeDashboard() {
               <Truck className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Fleet</span>
             </Button>
+            <Button
+              variant={activeTab === 'materials' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('materials')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'materials'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Package className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Materials</span>
+            </Button>
           </div>
 
           {/* Right Side Actions */}
@@ -360,6 +373,12 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Manage vehicles, maintenance, and equipment tracking</p>
             </div>
             <FleetDashboard hideHeader={true} />
+          </div>
+        )}
+
+        {activeTab === 'materials' && (
+          <div className="space-y-6">
+            <MaterialInventory />
           </div>
         )}
 
