@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -49,6 +50,7 @@ export function MaterialInventory() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importMode, setImportMode] = useState<'add' | 'replace'>('replace');
 
   useEffect(() => {
     loadMaterials();
@@ -254,6 +256,24 @@ export function MaterialInventory() {
 
     try {
       setImporting(true);
+
+      // STEP 1: If replace mode, clear all existing materials
+      if (importMode === 'replace') {
+        console.log('🗑️ Clearing all existing materials...');
+        const { error: deleteError } = await supabase
+          .from('materials_catalog')
+          .delete()
+          .neq('sku', ''); // Delete all (neq empty string matches all)
+
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          throw new Error(`Failed to clear existing materials: ${deleteError.message}`);
+        }
+        
+        toast.info('Existing catalog cleared, importing new data...');
+      }
+
+      // STEP 2: Parse and import the CSV
       const text = await importFile.text();
       const lines = text.split('\n').filter(line => line.trim());
       const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, '').trim());
@@ -385,16 +405,32 @@ export function MaterialInventory() {
       const batchSize = 500;
       for (let i = 0; i < materialsToInsert.length; i += batchSize) {
         const batch = materialsToInsert.slice(i, i + batchSize);
-        const { error } = await supabase
-          .from('materials_catalog')
-          .upsert(batch, { onConflict: 'sku' });
+        
+        if (importMode === 'replace') {
+          // In replace mode, use insert (no upsert needed since we cleared everything)
+          const { error } = await supabase
+            .from('materials_catalog')
+            .insert(batch);
 
-        if (error) throw error;
+          if (error) throw error;
+        } else {
+          // In add mode, use upsert to update existing SKUs
+          const { error } = await supabase
+            .from('materials_catalog')
+            .upsert(batch, { onConflict: 'sku' });
+
+          if (error) throw error;
+        }
       }
 
-      toast.success(`Imported ${materialsToInsert.length} unique materials from ${totalRows} rows`);
+      const successMessage = importMode === 'replace'
+        ? `✅ Replaced catalog with ${materialsToInsert.length} unique materials from ${totalRows} rows`
+        : `✅ Added/updated ${materialsToInsert.length} unique materials from ${totalRows} rows`;
+      
+      toast.success(successMessage);
       setShowImportDialog(false);
       setImportFile(null);
+      setImportMode('replace'); // Reset to default
       loadMaterials();
     } catch (error: any) {
       console.error('Import error:', error);
@@ -544,48 +580,143 @@ export function MaterialInventory() {
 
       {/* Import Dialog */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Import Materials from CSV</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-5 h-5" />
+              Import Materials from CSV
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Import Mode Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Import Mode</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setImportMode('replace')}
+                  className={`p-4 border-2 rounded-lg text-left transition-all ${
+                    importMode === 'replace'
+                      ? 'border-blue-600 bg-blue-50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                      importMode === 'replace' ? 'border-blue-600' : 'border-slate-300'
+                    }`}>
+                      {importMode === 'replace' && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm mb-1">Replace All Data</p>
+                      <p className="text-xs text-muted-foreground">
+                        Deletes all existing materials and imports fresh data from spreadsheet
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setImportMode('add')}
+                  className={`p-4 border-2 rounded-lg text-left transition-all ${
+                    importMode === 'add'
+                      ? 'border-blue-600 bg-blue-50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                      importMode === 'add' ? 'border-blue-600' : 'border-slate-300'
+                    }`}>
+                      {importMode === 'add' && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm mb-1">Add/Update Materials</p>
+                      <p className="text-xs text-muted-foreground">
+                        Keeps existing data and adds new materials or updates matching SKUs
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Warning for Replace Mode */}
+              {importMode === 'replace' && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-3 flex gap-3">
+                  <div className="text-amber-600 flex-shrink-0 mt-0.5">⚠️</div>
+                  <div>
+                    <p className="font-semibold text-sm text-amber-900 mb-1">
+                      Warning: This will delete all {materials.length} existing materials
+                    </p>
+                    <p className="text-xs text-amber-800">
+                      All current catalog data will be permanently removed and replaced with the uploaded spreadsheet. This cannot be undone.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* File Upload */}
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Upload your Smartbuild Items.csv file. The system will:
-              </p>
-              <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+              <Label className="text-sm font-semibold">CSV File</Label>
+              <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <label htmlFor="csv-upload" className="cursor-pointer">
+                  <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="font-medium mb-2">
+                    {importFile ? (
+                      <span className="text-blue-600">📄 {importFile.name}</span>
+                    ) : (
+                      'Click to select CSV file'
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Required columns: Item Name, SKU, Rate, Purchase Rate, Account, CF.Part Length
+                  </p>
+                </label>
+              </div>
+            </div>
+
+            {/* Expected Behavior */}
+            <div className="bg-slate-50 border rounded-lg p-3">
+              <p className="text-xs font-semibold text-slate-700 mb-2">The system will:</p>
+              <ul className="text-xs text-slate-600 space-y-1 ml-4 list-disc">
+                {importMode === 'replace' ? (
+                  <>
+                    <li>Delete all {materials.length} existing materials</li>
+                    <li>Import fresh data from your spreadsheet</li>
+                    <li>No duplicates - catalog will match spreadsheet exactly</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Keep all existing materials</li>
+                    <li>Add new materials from spreadsheet</li>
+                    <li>Update existing materials if SKU matches</li>
+                  </>
+                )}
                 <li>Group materials by Item Name</li>
                 <li>Preserve all SKU variants with pricing</li>
-                <li>Store complete metadata for export</li>
-                <li>Update existing SKUs if found</li>
+                <li>Store complete metadata for future export</li>
               </ul>
             </div>
 
-            <div className="border-2 border-dashed rounded-lg p-8 text-center">
-              <input
-                type="file"
-                accept=".csv"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                className="hidden"
-                id="csv-upload"
-              />
-              <label htmlFor="csv-upload" className="cursor-pointer">
-                <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="font-medium mb-2">
-                  {importFile ? importFile.name : 'Click to select CSV file'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Required columns: Item Name, SKU, Rate, Purchase Rate, Account, CF.Part Length
-                </p>
-              </label>
-            </div>
-
-            <div className="flex gap-2">
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowImportDialog(false);
                   setImportFile(null);
+                  setImportMode('replace');
                 }}
                 disabled={importing}
                 className="flex-1"
@@ -595,9 +726,18 @@ export function MaterialInventory() {
               <Button
                 onClick={handleImportCSV}
                 disabled={!importFile || importing}
-                className="flex-1"
+                className={`flex-1 ${importMode === 'replace' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
               >
-                {importing ? 'Importing...' : 'Import'}
+                {importing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    {importMode === 'replace' ? 'Replacing...' : 'Importing...'}
+                  </>
+                ) : (
+                  <>
+                    {importMode === 'replace' ? '🗑️ Replace All Data' : '➕ Add/Update Materials'}
+                  </>
+                )}
               </Button>
             </div>
           </div>
