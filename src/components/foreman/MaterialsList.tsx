@@ -1392,11 +1392,11 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
               <ChevronLeft className="w-6 h-6 text-muted-foreground opacity-40 animate-pulse" />
             </div>
           )}
-          {((activeTab === 'all' || activeTab === 'ready') && pullFromShopCount > 0) || (activeTab === 'all' && readyMaterialsCount > 0) ? (
+          {(((activeTab === 'all' || activeTab === 'ready') && pullFromShopCount > 0) || (activeTab === 'all' && readyMaterialsCount > 0)) && (
             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 pointer-events-none">
               <ChevronRightIcon className="w-6 h-6 text-muted-foreground opacity-40 animate-pulse" />
             </div>
-          ) : null}
+          )}
         </div>
 
         <TabsContent value="all" className="space-y-3">
