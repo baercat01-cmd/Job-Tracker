@@ -95,7 +95,7 @@ interface MaterialsListProps {
 }
 
 const STATUS_CONFIG = {
-  not_ordered: { label: 'Needed', color: 'bg-orange-500', bgClass: 'bg-orange-50 text-orange-700 border-orange-200' },
+  not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
   ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
   at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
   ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-200' },
@@ -805,7 +805,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         .select('material_id')
         .eq('bundle_id', bundleId);
 
-      // Update all materials in bundle to match bundle status
+      // Update all materials in bundle
       if (itemsData && itemsData.length > 0) {
         const materialIds = itemsData.map(item => item.material_id);
         const { error: materialsError } = await supabase
@@ -822,37 +822,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       console.error('Error updating bundle status:', error);
       toast.error('Failed to update bundle status');
     }
-  }
-
-  // Get the aggregate status of all materials in a bundle
-  function getBundleAggregateStatus(bundle: MaterialBundle): {
-    allSameStatus: boolean;
-    commonStatus: Material['status'] | null;
-    statusCounts: Map<Material['status'], number>;
-    canMarkAtJob: boolean;
-  } {
-    if (bundle.materials.length === 0) {
-      return { allSameStatus: true, commonStatus: null, statusCounts: new Map(), canMarkAtJob: false };
-    }
-
-    const statusCounts = new Map<Material['status'], number>();
-    bundle.materials.forEach(material => {
-      statusCounts.set(material.status, (statusCounts.get(material.status) || 0) + 1);
-    });
-
-    const uniqueStatuses = Array.from(statusCounts.keys());
-    const allSameStatus = uniqueStatuses.length === 1;
-    const commonStatus = allSameStatus ? uniqueStatuses[0] : null;
-
-    // Check if all materials are "ready_to_pull" or better (at_job, installed)
-    const allReadyOrBetter = bundle.materials.every(m => 
-      m.status === 'ready_to_pull' || m.status === 'at_job' || m.status === 'installed'
-    );
-
-    // Can mark bundle as "at_job" if all materials are "ready_to_pull" status
-    const canMarkAtJob = bundle.materials.every(m => m.status === 'ready_to_pull');
-
-    return { allSameStatus, commonStatus, statusCounts, canMarkAtJob };
   }
 
   // Check and auto-update bundle status when individual materials change
@@ -1718,83 +1687,51 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                       </div>
                     </CardHeader>
 
-                    {isExpanded && (() => {
-                      const bundleStatusInfo = getBundleAggregateStatus(bundle);
-                      return (
-                        <CardContent className="pt-0 pb-4 px-4">
-                          {/* Material Status Summary */}
-                          {!bundleStatusInfo.allSameStatus && (
-                            <div className="mb-4 p-3 bg-amber-50 border-2 border-amber-200 rounded-lg">
-                              <p className="text-sm font-semibold text-amber-900 mb-2">⚠️ Materials have mixed statuses:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {Array.from(bundleStatusInfo.statusCounts.entries()).map(([status, count]) => {
-                                  const config = getStatusConfig(status);
-                                  return (
-                                    <Badge key={status} className={config.bgClass}>
-                                      {config.label}: {count}
-                                    </Badge>
-                                  );
-                                })}
-                              </div>
-                              <p className="text-xs text-amber-800 mt-2">
-                                Update individual materials below to sync the bundle status
-                              </p>
-                            </div>
-                          )}
-
-                          {/* Bundle Status Workflow */}
-                          <div className="mb-4 pb-4 border-b">
-                            <h4 className="text-sm font-semibold mb-3">Bundle Status</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              {/* Show "Mark at Job" button when all materials are ready_to_pull */}
-                              {bundleStatusInfo.canMarkAtJob && (
-                                <Button
-                                  onClick={() => updateBundleStatus(bundle.id, 'at_job')}
-                                  className="col-span-2 bg-green-600 hover:bg-green-700 h-12"
-                                >
-                                  <CheckCircle className="w-5 h-5 mr-2" />
-                                  ✓ All Ready - Mark Bundle at Job
-                                </Button>
-                              )}
-
-                              {bundle.status === 'pending' && (
-                                <Button
-                                  onClick={() => updateBundleStatus(bundle.id, 'preparing')}
-                                  variant="outline"
-                                  className="bg-blue-50 hover:bg-blue-100 border-blue-300"
-                                >
-                                  <Package className="w-4 h-4 mr-2" />
-                                  Start Preparing
-                                </Button>
-                              )}
-                              {bundle.status === 'preparing' && (
-                                <Button
-                                  onClick={() => updateBundleStatus(bundle.id, 'ready')}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-2" />
-                                  Mark Ready
-                                </Button>
-                              )}
-                              {bundle.status === 'ready' && (
-                                <Button
-                                  onClick={() => updateBundleStatus(bundle.id, 'picked_up')}
-                                  className="bg-purple-600 hover:bg-purple-700"
-                                >
-                                  <Truck className="w-4 h-4 mr-2" />
-                                  Mark Picked Up
-                                </Button>
-                              )}
-                              {bundle.status === 'picked_up' && (
-                                <Button
-                                  onClick={() => updateBundleStatus(bundle.id, 'delivered')}
-                                  variant="outline"
-                                  className="bg-slate-50 hover:bg-slate-100"
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-2" />
-                                  Mark Delivered
-                                </Button>
-                              )}
+                    {isExpanded && (
+                      <CardContent className="pt-0 pb-4 px-4">
+                        {/* Bundle Status Workflow */}
+                        <div className="mb-4 pb-4 border-b">
+                          <h4 className="text-sm font-semibold mb-3">Bundle Status</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {userRole === 'shop' && bundle.status === 'pending' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'preparing')}
+                                variant="outline"
+                                className="bg-blue-50 hover:bg-blue-100 border-blue-300"
+                              >
+                                <Package className="w-4 h-4 mr-2" />
+                                Start Preparing
+                              </Button>
+                            )}
+                            {userRole === 'shop' && bundle.status === 'preparing' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'ready')}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Ready
+                              </Button>
+                            )}
+                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'ready' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'picked_up')}
+                                className="bg-purple-600 hover:bg-purple-700"
+                              >
+                                <Truck className="w-4 h-4 mr-2" />
+                                Mark Picked Up
+                              </Button>
+                            )}
+                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'picked_up' && (
+                              <Button
+                                onClick={() => updateBundleStatus(bundle.id, 'delivered')}
+                                variant="outline"
+                                className="bg-slate-50 hover:bg-slate-100"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Delivered
+                              </Button>
+                            )}
+                            {(userRole === 'office' || allowBundleCreation) && (
                               <Button
                                 onClick={() => deleteBundle(bundle.id)}
                                 variant="outline"
@@ -1803,77 +1740,57 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete Bundle
                               </Button>
-                            </div>
+                            )}
                           </div>
+                        </div>
 
-                          {/* Materials in Bundle */}
-                          <div>
-                            <h4 className="text-sm font-semibold mb-3">Materials in Bundle</h4>
-                            <div className="space-y-2">
-                              {bundle.materials.map((material) => {
-                                const matStatusConfig = getStatusConfig(material.status);
-                                return (
-                                  <div
-                                    key={material.id}
-                                    className="p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow cursor-pointer"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1" onClick={() => openMaterialDetail(material)}>
-                                        <div className="flex items-baseline gap-2">
-                                          <h5 className="font-medium text-sm">{material.name}</h5>
-                                          {material.length && (
-                                            <span className="text-xs text-muted-foreground">
-                                              {cleanMaterialValue(material.length)}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                          <span className="text-sm text-muted-foreground">
-                                            Qty: {material.quantity}
+                        {/* Materials in Bundle */}
+                        <div>
+                          <h4 className="text-sm font-semibold mb-3">Materials in Bundle</h4>
+                          <div className="space-y-2">
+                            {bundle.materials.map((material) => {
+                              const matStatusConfig = getStatusConfig(material.status);
+                              return (
+                                <div
+                                  key={material.id}
+                                  className="p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow"
+                                  onClick={() => openMaterialDetail(material)}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-baseline gap-2">
+                                        <h5 className="font-medium text-sm">{material.name}</h5>
+                                        {material.length && (
+                                          <span className="text-xs text-muted-foreground">
+                                            {cleanMaterialValue(material.length)}
                                           </span>
-                                          <Badge
-                                            variant="outline"
-                                            className={matStatusConfig.bgClass}
-                                          >
-                                            {matStatusConfig.label}
-                                          </Badge>
-                                        </div>
-                                        {(material as any).use_case && (
-                                          <p className="text-xs text-muted-foreground mt-1">
-                                            {(material as any).use_case}
-                                          </p>
                                         )}
                                       </div>
-                                      {/* Quick status change dropdown for bundle materials */}
-                                      <div onClick={(e) => e.stopPropagation()}>
-                                        <Select
-                                          value={material.status}
-                                          onValueChange={(newStatus) => handleMaterialStatusChange(material, newStatus as Material['status'])}
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-sm text-muted-foreground">
+                                          Qty: {material.quantity}
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className={matStatusConfig.bgClass}
                                         >
-                                          <SelectTrigger className="h-8 w-[140px] text-xs">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {Object.entries(STATUS_CONFIG).map(([value, config]) => (
-                                              <SelectItem key={value} value={value}>
-                                                <div className="flex items-center gap-2">
-                                                  <div className={`w-2 h-2 rounded-full ${config.color}`} />
-                                                  <span>{config.label}</span>
-                                                </div>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          {matStatusConfig.label}
+                                        </Badge>
                                       </div>
+                                      {(material as any).use_case && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          {(material as any).use_case}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        </CardContent>
-                      );
-                    })()}
+                        </div>
+                      </CardContent>
+                    )}
                   </Card>
                 );
               })}
