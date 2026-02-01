@@ -131,7 +131,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         categoryId = newCategory.id;
       }
 
-      // Add material to job
+      // Add material to job with 'ordered' status and tracking
       const { error: materialError } = await supabase
         .from('materials')
         .insert({
@@ -140,9 +140,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: selectedCatalogMaterial.material_name,
           quantity: addMaterialQuantity,
           length: selectedCatalogMaterial.part_length,
-          status: 'not_ordered',
+          status: 'ordered',
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
+          ordered_by: userId,
+          order_requested_at: new Date().toISOString(),
           import_source: 'field_catalog',
         });
 
@@ -162,7 +164,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         },
       });
 
-      toast.success('Material added to job');
+      toast.success('Material request sent to office');
       setShowAddMaterialDialog(false);
       setSelectedCatalogMaterial(null);
       
@@ -352,9 +354,15 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-900">
-                  This material will be added to "Field Requests" and the office will be notified.
+                <p className="text-sm text-blue-900 font-semibold mb-1">
+                  📋 Field Request Process:
                 </p>
+                <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
+                  <li>Added to "Field Requests" category</li>
+                  <li>Marked as "Ordered" - office will be notified</li>
+                  <li>Tracked separately for job cost tracking</li>
+                  <li>Your name will be recorded as requester</li>
+                </ul>
               </div>
 
               <div className="flex flex-col gap-3 pt-4 border-t">
