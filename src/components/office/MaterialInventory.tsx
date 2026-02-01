@@ -279,22 +279,18 @@ export function MaterialInventory() {
           return isNaN(parsed) ? 0 : parsed;
         };
 
-        // Check if Account column contains a number - if so, it's actually cost data
+        // Get category from Account column - ONLY use text values, never numbers
         const accountValue = accountIdx !== -1 ? values[accountIdx] : null;
         let category: string | null = null;
-        let costFromAccount: number = 0;
         
         if (accountValue) {
           const trimmed = accountValue.trim();
-          // Check if it's a pure number (with optional $ and commas)
-          const asNumber = parsePrice(trimmed);
-          if (asNumber > 0 && /^[\d\$,.\s]+$/.test(trimmed)) {
-            // It's a number - use it as cost
-            costFromAccount = asNumber;
-          } else {
-            // It's text - use it as category
+          // Only use Account column for category if it contains text (not pure numbers)
+          // Check if it's NOT a pure number (rejects "123", "$45.67", "1,234.56", etc.)
+          if (trimmed && !/^[\d\$,.\s]+$/.test(trimmed)) {
             category = accountValue;
           }
+          // If it's a number, category remains null - we don't use it
         }
 
         // Debug first row
@@ -325,21 +321,16 @@ export function MaterialInventory() {
           // Get length from CF.Part Length column
           const partLength = partLengthIdx !== -1 ? values[partLengthIdx] : null;
 
-          // Determine purchase cost - use Account column if it contains numbers, otherwise use Purchase Rate
-          let purchaseCost = 0;
-          if (costFromAccount > 0) {
-            purchaseCost = costFromAccount;
-          } else if (purchaseRateIdx !== -1) {
-            purchaseCost = parsePrice(values[purchaseRateIdx]);
-          }
+          // Get purchase cost from Purchase Rate column only
+          const purchaseCost = purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0;
 
           // Create new entry with metadata as an array
           materialsBySku.set(sku, {
             sku: sku,
             material_name: itemName,
-            category: category, // Only set if Account contains text, not numbers
+            category: category, // Only text from Account column, never numbers
             unit_price: rateIdx !== -1 ? parsePrice(values[rateIdx]) : 0,
-            purchase_cost: purchaseCost, // Use Account value if it's a number, otherwise use Purchase Rate
+            purchase_cost: purchaseCost, // From Purchase Rate column only
             part_length: partLength,
             raw_metadata: [rowMetadata], // Store as array to preserve all variants
           });
