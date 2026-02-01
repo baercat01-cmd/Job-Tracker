@@ -399,15 +399,8 @@ export function OfficeDashboard() {
         {activeTab === 'materials' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Material Inventory</h2>
-                </div>
-                <div className="bg-yellow-500 text-black px-4 py-2 rounded-lg">
-                  <div className="text-2xl font-bold">{materialsCount.toLocaleString()}</div>
-                  <div className="text-xs font-semibold">Materials</div>
-                </div>
-              </div>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Material Inventory</h2>
+              <p className="text-yellow-400">Manage your master materials catalog</p>
             </div>
             <MaterialInventory />
           </div>

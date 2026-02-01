@@ -501,7 +501,7 @@ export function MaterialInventory() {
       </div>
 
       {/* Search and Import Button */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -510,6 +510,10 @@ export function MaterialInventory() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
+        </div>
+        <div className="text-sm text-slate-600 px-3 py-2 bg-slate-100 rounded border border-slate-200 flex-shrink-0">
+          <span className="font-medium">{filteredMaterials.length.toLocaleString()}</span>
+          <span className="text-slate-500 ml-1">materials</span>
         </div>
         <Button
           onClick={() => setShowImportDialog(true)}
