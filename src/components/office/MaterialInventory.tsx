@@ -404,23 +404,6 @@ export function MaterialInventory() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Material Inventory</h2>
-          <p className="text-yellow-400">
-            {totalItems} Materials
-          </p>
-        </div>
-        <Button 
-          onClick={() => setShowImportDialog(true)}
-          className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
-        >
-          <Upload className="w-4 h-4 mr-2" />
-          Import CSV
-        </Button>
-      </div>
-
       {/* Category Tabs */}
       <div className="border-b border-slate-200">
         <div className="flex items-center gap-1 overflow-x-auto pb-0">
