@@ -49,9 +49,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
   const [selectedTab, setSelectedTab] = useState('overview');
   const [stats, setStats] = useState<Record<string, any>>({});
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
+  const [crewOrderCounts, setCrewOrderCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadJobs();
+    loadCrewOrderCounts();
   }, []);
 
   // Auto-scroll to selected job when selectedJobId changes
@@ -218,6 +220,27 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
         photosCount: photosData.data?.length || 0,
       },
     }));
+  }
+
+  async function loadCrewOrderCounts() {
+    try {
+      const { data, error } = await supabase
+        .from('materials')
+        .select('job_id')
+        .eq('import_source', 'field_catalog');
+
+      if (error) throw error;
+
+      // Count crew orders by job
+      const counts: Record<string, number> = {};
+      (data || []).forEach((material: any) => {
+        counts[material.job_id] = (counts[material.job_id] || 0) + 1;
+      });
+
+      setCrewOrderCounts(counts);
+    } catch (error: any) {
+      console.error('Error loading crew order counts:', error);
+    }
   }
 
   async function reloadSelectedJob() {
@@ -687,7 +710,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
+                              className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
@@ -696,6 +719,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             >
                               <Package className="w-2.5 h-2.5 mr-0.5" />
                               Materials
+                              {crewOrderCounts[job.id] > 0 && (
+                                <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
+                                  {crewOrderCounts[job.id]}
+                                </Badge>
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -834,7 +862,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
+                              className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
@@ -843,6 +871,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             >
                               <Package className="w-2.5 h-2.5 mr-0.5" />
                               Materials
+                              {crewOrderCounts[job.id] > 0 && (
+                                <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
+                                  {crewOrderCounts[job.id]}
+                                </Badge>
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -972,7 +1005,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
+                              className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
@@ -981,6 +1014,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             >
                               <Package className="w-2.5 h-2.5 mr-0.5" />
                               Materials
+                              {crewOrderCounts[job.id] > 0 && (
+                                <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
+                                  {crewOrderCounts[job.id]}
+                                </Badge>
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -1110,7 +1148,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
+                              className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
@@ -1119,6 +1157,11 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
                             >
                               <Package className="w-2.5 h-2.5 mr-0.5" />
                               Materials
+                              {crewOrderCounts[job.id] > 0 && (
+                                <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
+                                  {crewOrderCounts[job.id]}
+                                </Badge>
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
