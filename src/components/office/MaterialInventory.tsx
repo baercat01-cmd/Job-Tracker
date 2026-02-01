@@ -392,7 +392,7 @@ export function MaterialInventory() {
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold text-blue-700">
-                        {material.part_length || '—'}
+                        {material.part_length || ''}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
