@@ -348,78 +348,6 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
   }
 
-  async function loadFieldRequests() {
-    try {
-      setLoadingRequests(true);
-      
-      const { data, error } = await supabase
-        .from('materials')
-        .select(`
-          id,
-          name,
-          quantity,
-          length,
-          status,
-          notes,
-          ordered_by,
-          order_requested_at,
-          use_case,
-          materials_categories!inner(name)
-        `)
-        .eq('job_id', job.id)
-        .eq('import_source', 'field_catalog')
-        .order('order_requested_at', { ascending: false });
-
-      if (error) throw error;
-
-      const requests: FieldRequestMaterial[] = (data || []).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        quantity: m.quantity,
-        length: m.length,
-        status: m.status,
-        notes: m.notes,
-        ordered_by: m.ordered_by,
-        order_requested_at: m.order_requested_at,
-        use_case: m.use_case,
-        category_name: m.materials_categories?.name || 'Unknown',
-      }));
-
-      setFieldRequests(requests);
-    } catch (error: any) {
-      console.error('Error loading field requests:', error);
-    } finally {
-      setLoadingRequests(false);
-    }
-  }
-
-  async function updateMaterialStatus(materialId: string, newStatus: FieldRequestMaterial['status']) {
-    try {
-      // Optimistic update
-      setFieldRequests(prev =>
-        prev.map(m => m.id === materialId ? { ...m, status: newStatus } : m)
-      );
-
-      const { error } = await supabase
-        .from('materials')
-        .update({
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', materialId);
-
-      if (error) throw error;
-
-      // Reload to ensure consistency
-      await loadFieldRequests();
-    } catch (error: any) {
-      console.error('Error updating material status:', error);
-      toast.error('Failed to update status');
-      // Reload on error to revert optimistic update
-      loadFieldRequests();
-    }
-  }
-
   // Filter catalog materials
   const filteredCatalogMaterials = catalogMaterials.filter(m => {
     // Category filter
@@ -493,7 +421,76 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </CardContent>
       </Card>
 
-      {/* Ordered Materials Section - Always visible under search */}
+      {/* Catalog Search Results - Show directly under search when searching */}
+      {catalogSearch && catalogLoading ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading catalog...</p>
+          </CardContent>
+        </Card>
+      ) : catalogSearch && filteredCatalogMaterials.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <p>No materials found matching "{catalogSearch}"</p>
+          </CardContent>
+        </Card>
+      ) : catalogSearch ? (
+        <Card className="border-2 border-green-200 bg-green-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="w-5 h-5 text-green-700" />
+              Search Results ({filteredCatalogMaterials.length})
+            </CardTitle>
+            <p className="text-sm text-green-700 mt-1">
+              Click "Add" to request any material for this job
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {filteredCatalogMaterials.map(material => (
+                <Card key={material.sku} className="hover:shadow-md transition-shadow bg-white border-2 border-green-100">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <h4 className="font-semibold text-sm truncate">{material.material_name}</h4>
+                          {material.part_length && (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {cleanMaterialValue(material.part_length)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-xs">
+                            {material.sku}
+                          </Badge>
+                          {cleanCatalogCategory(material.category) && (
+                            <Badge variant="secondary" className="text-xs">
+                              {cleanCatalogCategory(material.category)}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => openAddMaterialDialog(material)}
+                        size="sm"
+                        className="flex-shrink-0"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Ordered Materials Section - Show after search results */}
       {loadingRequests ? (
         <Card>
           <CardContent className="py-8 text-center">
@@ -587,7 +584,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : !catalogSearch ? (
         <Card className="border-2 border-blue-200 bg-blue-50">
           <CardContent className="py-6 text-center">
             <Package className="w-12 h-12 mx-auto mb-3 text-blue-700 opacity-50" />
@@ -597,62 +594,6 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </p>
           </CardContent>
         </Card>
-      )}
-
-      {/* Catalog Search Results - Only show when searching */}
-      {catalogSearch && catalogLoading ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading catalog...</p>
-          </CardContent>
-        </Card>
-      ) : filteredCatalogMaterials.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p>No materials found matching "{catalogSearch}"</p>
-          </CardContent>
-        </Card>
-      ) : catalogSearch ? (
-        <div className="space-y-2">
-          {filteredCatalogMaterials.map(material => (
-            <Card key={material.sku} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <h4 className="font-semibold text-sm truncate">{material.material_name}</h4>
-                      {material.part_length && (
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {cleanMaterialValue(material.part_length)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {material.sku}
-                      </Badge>
-                      {cleanCatalogCategory(material.category) && (
-                        <Badge variant="secondary" className="text-xs">
-                          {cleanCatalogCategory(material.category)}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => openAddMaterialDialog(material)}
-                    size="sm"
-                    className="flex-shrink-0"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       ) : null}
 
       {/* Add Material Dialog */}
