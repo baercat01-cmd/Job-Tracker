@@ -266,6 +266,37 @@ export function MaterialInventory() {
 
         totalRows++;
 
+        // Helper to parse price values with various formats
+        const parsePrice = (value: string): number => {
+          if (!value) return 0;
+          // Remove USD prefix, dollar signs, commas, and whitespace
+          const cleaned = value
+            .replace(/USD\s*/i, '')
+            .replace(/\$/g, '')
+            .replace(/,/g, '')
+            .trim();
+          const parsed = parseFloat(cleaned);
+          return isNaN(parsed) ? 0 : parsed;
+        };
+
+        // Check if Account column contains a number - if so, it's actually cost data
+        const accountValue = accountIdx !== -1 ? values[accountIdx] : null;
+        let category: string | null = null;
+        let costFromAccount: number = 0;
+        
+        if (accountValue) {
+          const trimmed = accountValue.trim();
+          // Check if it's a pure number (with optional $ and commas)
+          const asNumber = parsePrice(trimmed);
+          if (asNumber > 0 && /^[\d\$,.\s]+$/.test(trimmed)) {
+            // It's a number - use it as cost
+            costFromAccount = asNumber;
+          } else {
+            // It's text - use it as category
+            category = accountValue;
+          }
+        }
+
         // Debug first row
         if (totalRows === 1) {
           console.log('First row sample:', {
@@ -273,7 +304,8 @@ export function MaterialInventory() {
             sku,
             rate: values[rateIdx],
             purchaseRate: values[purchaseRateIdx],
-            account: accountIdx !== -1 ? values[accountIdx] : 'N/A',
+            account: accountValue,
+            accountIsNumber: costFromAccount > 0,
             partLength: partLengthIdx !== -1 ? values[partLengthIdx] : 'N/A'
           });
         }
@@ -293,26 +325,21 @@ export function MaterialInventory() {
           // Get length from CF.Part Length column
           const partLength = partLengthIdx !== -1 ? values[partLengthIdx] : null;
 
-          // Helper to parse price values with various formats
-          const parsePrice = (value: string): number => {
-            if (!value) return 0;
-            // Remove USD prefix, dollar signs, commas, and whitespace
-            const cleaned = value
-              .replace(/USD\s*/i, '')
-              .replace(/\$/g, '')
-              .replace(/,/g, '')
-              .trim();
-            const parsed = parseFloat(cleaned);
-            return isNaN(parsed) ? 0 : parsed;
-          };
+          // Determine purchase cost - use Account column if it contains numbers, otherwise use Purchase Rate
+          let purchaseCost = 0;
+          if (costFromAccount > 0) {
+            purchaseCost = costFromAccount;
+          } else if (purchaseRateIdx !== -1) {
+            purchaseCost = parsePrice(values[purchaseRateIdx]);
+          }
 
           // Create new entry with metadata as an array
           materialsBySku.set(sku, {
             sku: sku,
             material_name: itemName,
-            category: accountIdx !== -1 ? values[accountIdx] : null,
+            category: category, // Only set if Account contains text, not numbers
             unit_price: rateIdx !== -1 ? parsePrice(values[rateIdx]) : 0,
-            purchase_cost: purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0,
+            purchase_cost: purchaseCost, // Use Account value if it's a number, otherwise use Purchase Rate
             part_length: partLength,
             raw_metadata: [rowMetadata], // Store as array to preserve all variants
           });
