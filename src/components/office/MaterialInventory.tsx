@@ -167,8 +167,11 @@ export function MaterialInventory() {
         h.toLowerCase().includes('purchase') && h.toLowerCase().includes('rate')
       );
       const accountIdx = headers.findIndex(h => h.toLowerCase() === 'account');
+      const partLengthIdx = headers.findIndex(h => 
+        h.toLowerCase().includes('cf.part') && h.toLowerCase().includes('length')
+      );
 
-      console.log('Column indices:', { itemNameIdx, skuIdx, rateIdx, purchaseRateIdx, accountIdx });
+      console.log('Column indices:', { itemNameIdx, skuIdx, rateIdx, purchaseRateIdx, accountIdx, partLengthIdx });
 
       if (itemNameIdx === -1 || skuIdx === -1) {
         throw new Error(`Required columns not found. Found headers: ${headers.join(', ')}`);
@@ -199,7 +202,8 @@ export function MaterialInventory() {
             sku,
             rate: values[rateIdx],
             purchaseRate: values[purchaseRateIdx],
-            account: accountIdx !== -1 ? values[accountIdx] : 'N/A'
+            account: accountIdx !== -1 ? values[accountIdx] : 'N/A',
+            partLength: partLengthIdx !== -1 ? values[partLengthIdx] : 'N/A'
           });
         }
 
@@ -215,10 +219,8 @@ export function MaterialInventory() {
           // Add this row's metadata to the array
           existing.raw_metadata.push(rowMetadata);
         } else {
-          // Extract length from item name or SKU if present
-          const lengthMatch = itemName.match(/(\d+['"]?\s*(?:LVL|x|ft|in)?)/i) || 
-                             sku.match(/(\d+['"]?)/);
-          const partLength = lengthMatch ? lengthMatch[1] : null;
+          // Get length from CF.Part Length column
+          const partLength = partLengthIdx !== -1 ? values[partLengthIdx] : null;
 
           // Helper to parse price values with various formats
           const parsePrice = (value: string): number => {
@@ -360,7 +362,8 @@ export function MaterialInventory() {
           <Table>
             <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
               <TableRow className="border-b-2 border-slate-200">
-                <TableHead className="bg-slate-50 font-bold">Material Name & Length</TableHead>
+                <TableHead className="bg-slate-50 font-bold">Material Name</TableHead>
+                <TableHead className="bg-slate-50 font-bold">Length</TableHead>
                 <TableHead className="bg-slate-50 font-bold">SKU</TableHead>
                 <TableHead className="bg-slate-50 font-bold">Category</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Cost</TableHead>
@@ -371,7 +374,7 @@ export function MaterialInventory() {
             <TableBody>
               {filteredMaterials.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No materials found</p>
                   </TableCell>
@@ -385,13 +388,11 @@ export function MaterialInventory() {
                       <TableCell className="font-medium text-slate-900">
                         <div className="flex items-center gap-2">
                           <Package className="w-4 h-4 text-slate-600" />
-                          <span>
-                            {material.material_name}
-                            {material.part_length && (
-                              <span className="text-blue-700 font-bold"> : {material.part_length}</span>
-                            )}
-                          </span>
+                          <span>{material.material_name}</span>
                         </div>
+                      </TableCell>
+                      <TableCell className="font-semibold text-blue-700">
+                        {material.part_length || '—'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -455,7 +456,7 @@ export function MaterialInventory() {
                   {importFile ? importFile.name : 'Click to select CSV file'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Required columns: Item Name, SKU, Rate, Purchase Rate, Account
+                  Required columns: Item Name, SKU, Rate, Purchase Rate, Account, CF.Part Length
                 </p>
               </label>
             </div>
@@ -486,5 +487,3 @@ export function MaterialInventory() {
     </div>
   );
 }
-
-
