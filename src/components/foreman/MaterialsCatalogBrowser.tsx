@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Database, Search, Plus, Package, Edit } from 'lucide-react';
+import { Database, Search, Plus, Package, Edit, Camera, Image as ImageIcon } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -87,6 +87,16 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [showCustomLength, setShowCustomLength] = useState(false);
   const [fieldRequests, setFieldRequests] = useState<FieldRequestMaterial[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  
+  // Custom material state
+  const [showCustomMaterialDialog, setShowCustomMaterialDialog] = useState(false);
+  const [customMaterialName, setCustomMaterialName] = useState('');
+  const [customMaterialQuantity, setCustomMaterialQuantity] = useState<number>(1);
+  const [customMaterialLength, setCustomMaterialLength] = useState('');
+  const [customMaterialNotes, setCustomMaterialNotes] = useState('');
+  const [customMaterialPhoto, setCustomMaterialPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [addingCustomMaterial, setAddingCustomMaterial] = useState(false);
 
   useEffect(() => {
     loadCatalogMaterials();
@@ -348,6 +358,156 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
   }
 
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCustomMaterialPhoto(file);
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  async function addCustomMaterial() {
+    if (!customMaterialName.trim()) {
+      toast.error('Please enter a material name');
+      return;
+    }
+
+    setAddingCustomMaterial(true);
+
+    try {
+      // First, check if we have a "Field Requests" category for this job
+      let categoryId: string | null = null;
+      
+      const { data: existingCategory } = await supabase
+        .from('materials_categories')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('name', 'Field Requests')
+        .single();
+
+      if (existingCategory) {
+        categoryId = existingCategory.id;
+      } else {
+        // Create "Field Requests" category
+        const { data: newCategory, error: categoryError } = await supabase
+          .from('materials_categories')
+          .insert({
+            job_id: job.id,
+            name: 'Field Requests',
+            order_index: 999,
+            created_by: userId,
+          })
+          .select()
+          .single();
+
+        if (categoryError) throw categoryError;
+        categoryId = newCategory.id;
+      }
+
+      // Insert the custom material
+      const { data: materialData, error: materialError } = await supabase
+        .from('materials')
+        .insert({
+          category_id: categoryId,
+          job_id: job.id,
+          name: customMaterialName,
+          quantity: customMaterialQuantity,
+          length: customMaterialLength || null,
+          status: 'ordered',
+          notes: customMaterialNotes || 'Custom material added from field',
+          created_by: userId,
+          ordered_by: userId,
+          order_requested_at: new Date().toISOString(),
+          import_source: 'field_custom',
+          is_extra: true,
+          unit_cost: 0,
+          total_cost: 0,
+        })
+        .select()
+        .single();
+
+      if (materialError) throw materialError;
+
+      // Upload photo if provided
+      if (customMaterialPhoto && materialData) {
+        const fileExt = customMaterialPhoto.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${job.id}/materials/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('job-files')
+          .upload(filePath, customMaterialPhoto);
+
+        if (uploadError) {
+          console.error('Photo upload error:', uploadError);
+          toast.error('Material added but photo upload failed');
+        } else {
+          // Get public URL
+          const { data: urlData } = supabase.storage
+            .from('job-files')
+            .getPublicUrl(filePath);
+
+          // Link photo to material in material_photos table
+          const { error: photoLinkError } = await supabase
+            .from('material_photos')
+            .insert({
+              material_id: materialData.id,
+              photo_url: urlData.publicUrl,
+              uploaded_by: userId,
+            });
+
+          if (photoLinkError) {
+            console.error('Photo link error:', photoLinkError);
+          }
+        }
+      }
+
+      // Create notification for office
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'material_request',
+        brief: `Custom material request: ${customMaterialName} (Qty: ${customMaterialQuantity})`,
+        referenceId: materialData?.id || null,
+        referenceData: {
+          materialName: customMaterialName,
+          quantity: customMaterialQuantity,
+          notes: customMaterialNotes,
+          hasPhoto: !!customMaterialPhoto,
+        },
+      });
+
+      toast.success('Custom material added successfully');
+      setShowCustomMaterialDialog(false);
+      
+      // Reset form
+      setCustomMaterialName('');
+      setCustomMaterialQuantity(1);
+      setCustomMaterialLength('');
+      setCustomMaterialNotes('');
+      setCustomMaterialPhoto(null);
+      setPhotoPreview(null);
+      
+      // Reload field requests
+      await loadFieldRequests();
+      
+      // Notify parent
+      if (onMaterialAdded) {
+        onMaterialAdded();
+      }
+    } catch (error: any) {
+      console.error('Error adding custom material:', error);
+      toast.error('Failed to add custom material');
+    } finally {
+      setAddingCustomMaterial(false);
+    }
+  }
+
   // Filter catalog materials
   const filteredCatalogMaterials = catalogMaterials.filter(m => {
     // Category filter
@@ -383,15 +543,27 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </CardHeader>
         <CardContent className="pb-3">
           {/* Search Bar - Always Visible at Top */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search materials by name or SKU..."
-              value={catalogSearch}
-              onChange={(e) => setCatalogSearch(e.target.value)}
-              className="pl-10 h-12 text-base"
-              autoFocus
-            />
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search materials by name or SKU..."
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                className="pl-10 h-12 text-base"
+                autoFocus
+              />
+            </div>
+            
+            {/* Custom Material Button */}
+            <Button
+              onClick={() => setShowCustomMaterialDialog(true)}
+              variant="outline"
+              className="w-full h-12 border-2 border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-900 font-semibold"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Add Custom Material
+            </Button>
           </div>
 
           {/* Category Filter - Only show when searching */}
@@ -755,6 +927,161 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Material Dialog */}
+      <Dialog open={showCustomMaterialDialog} onOpenChange={setShowCustomMaterialDialog}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add Custom Material
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-3">
+              <p className="text-sm text-purple-900 font-semibold mb-1">
+                ✨ Custom Material Request
+              </p>
+              <p className="text-xs text-purple-800">
+                Can't find what you need in the catalog? Add a custom material with photo for office review.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-name">Material Name *</Label>
+              <Input
+                id="custom-name"
+                value={customMaterialName}
+                onChange={(e) => setCustomMaterialName(e.target.value)}
+                placeholder="e.g., Special hinges, Custom bracket..."
+                className="h-12"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-quantity">Quantity *</Label>
+              <Input
+                id="custom-quantity"
+                type="number"
+                min="1"
+                value={customMaterialQuantity}
+                onChange={(e) => setCustomMaterialQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="h-12"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-length">Length/Size (Optional)</Label>
+              <Input
+                id="custom-length"
+                value={customMaterialLength}
+                onChange={(e) => setCustomMaterialLength(e.target.value)}
+                placeholder="e.g., 12', 6x6, 1/4\"..."
+                className="h-12"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-notes">Notes/Description (Optional)</Label>
+              <Textarea
+                id="custom-notes"
+                value={customMaterialNotes}
+                onChange={(e) => setCustomMaterialNotes(e.target.value)}
+                placeholder="Add details about what you need, brand, specifications, where to purchase, etc."
+                rows={3}
+              />
+            </div>
+
+            {/* Photo Upload */}
+            <div className="space-y-2">
+              <Label>Photo (Optional but Recommended)</Label>
+              <div className="border-2 border-dashed rounded-lg p-4 text-center hover:border-purple-400 transition-colors bg-purple-50">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                  id="custom-material-photo"
+                />
+                <label htmlFor="custom-material-photo" className="cursor-pointer">
+                  {photoPreview ? (
+                    <div className="space-y-2">
+                      <img
+                        src={photoPreview}
+                        alt="Preview"
+                        className="w-full h-48 object-cover rounded-lg"
+                      />
+                      <p className="text-sm text-purple-700 font-semibold">
+                        ✓ Photo attached - Click to change
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <Camera className="w-12 h-12 mx-auto mb-2 text-purple-600" />
+                      <p className="font-medium text-purple-900 mb-1">
+                        Take or Upload Photo
+                      </p>
+                      <p className="text-xs text-purple-700">
+                        Help the office identify the exact material you need
+                      </p>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-900 font-semibold mb-1">
+                📋 What Happens Next:
+              </p>
+              <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
+                <li>Added to "Field Requests" category</li>
+                <li>Marked as "Ordered" - office will be notified</li>
+                <li>Office can source and price the material</li>
+                <li>Photo helps office identify exact product needed</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4 border-t">
+              <Button
+                onClick={addCustomMaterial}
+                disabled={addingCustomMaterial || !customMaterialName.trim()}
+                className="h-12 bg-purple-600 hover:bg-purple-700"
+              >
+                {addingCustomMaterial ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-5 h-5 mr-2" />
+                    Add Custom Material
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCustomMaterialDialog(false);
+                  setCustomMaterialName('');
+                  setCustomMaterialQuantity(1);
+                  setCustomMaterialLength('');
+                  setCustomMaterialNotes('');
+                  setCustomMaterialPhoto(null);
+                  setPhotoPreview(null);
+                }}
+                disabled={addingCustomMaterial}
+                className="h-12"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
