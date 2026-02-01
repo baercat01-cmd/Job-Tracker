@@ -1691,31 +1691,30 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                         {/* Bundle Status Workflow */}
                         <div className="mb-4 pb-4 border-b">
                           <h4 className="text-sm font-semibold mb-3">Bundle Status</h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(userRole === 'office' || userRole === 'shop') && bundle.status === 'ordered' && (
-                              <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'ready_to_pull')}
-                                variant="outline"
-                                className="bg-purple-50 hover:bg-purple-100 border-purple-300"
-                              >
-                                <Package className="w-4 h-4 mr-2" />
-                                Mark Pull from Shop
-                              </Button>
-                            )}
-                            {bundle.status === 'ready_to_pull' && (
-                              <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'at_job')}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Mark At Job
-                              </Button>
-                            )}
+                          <div className="space-y-3">
+                            <Select
+                              value={bundle.status}
+                              onValueChange={(newStatus) => updateBundleStatus(bundle.id, newStatus as Material['status'])}
+                            >
+                              <SelectTrigger className={`w-full h-12 font-semibold border-2 ${getBundleStatusConfig(bundle.status).bgClass}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(BUNDLE_STATUS_CONFIG).map(([value, config]) => (
+                                  <SelectItem key={value} value={value}>
+                                    <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold ${config.bgClass}`}>
+                                      <config.icon className="w-4 h-4 mr-2" />
+                                      {config.label}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             {(userRole === 'office' || allowBundleCreation) && (
                               <Button
                                 onClick={() => deleteBundle(bundle.id)}
                                 variant="outline"
-                                className="text-destructive hover:bg-destructive/10"
+                                className="w-full text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete Bundle
