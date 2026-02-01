@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle, ChevronLeft, ChevronRight as ChevronRightIcon, Truck, Clock, Trash2, Edit, Database } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Camera, FileText, ChevronDownIcon, Search, X, PackagePlus, Layers, ShoppingCart, Calendar, ArrowUpDown, CheckCircle, ChevronLeft, ChevronRight as ChevronRightIcon, Truck, Clock, Trash2, Edit, Database, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { createNotification, getMaterialStatusBrief } from '@/lib/notifications';
 import { getLocalDateString, cleanMaterialValue } from '@/lib/utils';
@@ -1171,6 +1171,91 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
   const filteredCategories = getFilteredCategories(false);
 
+  async function downloadMaterialsList() {
+    try {
+      // Get all materials across all categories
+      const allMaterials: any[] = [];
+      
+      categories.forEach(category => {
+        category.materials.forEach(material => {
+          allMaterials.push({
+            category: category.name,
+            name: material.name,
+            quantity: material.quantity,
+            length: material.length || '',
+            status: getStatusConfig(material.status).label,
+            use_case: (material as any).use_case || '',
+            notes: material.notes || '',
+            date_needed_by: material.date_needed_by || '',
+            order_by_date: material.order_by_date || '',
+            delivery_date: material.delivery_date || '',
+            actual_delivery_date: material.actual_delivery_date || '',
+          });
+        });
+      });
+
+      if (allMaterials.length === 0) {
+        toast.error('No materials to download');
+        return;
+      }
+
+      // Create CSV content
+      const headers = [
+        'Category',
+        'Material Name',
+        'Quantity',
+        'Length',
+        'Status',
+        'Use Case',
+        'Notes',
+        'Date Needed By',
+        'Order By Date',
+        'Delivery Date',
+        'Actual Delivery Date'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      allMaterials.forEach(material => {
+        const row = [
+          `"${material.category}"`,
+          `"${material.name}"`,
+          material.quantity,
+          `"${material.length}"`,
+          `"${material.status}"`,
+          `"${material.use_case}"`,
+          `"${material.notes}"`,
+          material.date_needed_by,
+          material.order_by_date,
+          material.delivery_date,
+          material.actual_delivery_date
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      const fileName = `${job.name.replace(/[^a-z0-9]/gi, '_')}_materials_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Downloaded ${allMaterials.length} materials`);
+    } catch (error: any) {
+      console.error('Error downloading materials:', error);
+      toast.error('Failed to download materials list');
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1232,6 +1317,21 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
               <span className="text-sm font-bold">{pullFromShopCount}</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Download Button - Show on All, Ready, and Pull tabs */}
+      {(activeTab === 'all' || activeTab === 'ready' || activeTab === 'pull') && categories.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <Button
+            onClick={downloadMaterialsList}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Download Materials List
+          </Button>
         </div>
       )}
 
