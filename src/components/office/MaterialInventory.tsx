@@ -114,7 +114,7 @@ export function MaterialInventory() {
   };
 
   // Format length with feet and inches notation
-  const formatLength = (length: string | null): string => {
+  const formatLength = (length: string | null, category: string | null): string => {
     if (!length) return '';
     
     // Handle already formatted lengths (e.g., "12' 6\"")
@@ -124,7 +124,38 @@ export function MaterialInventory() {
     
     // Parse various formats: "12.5", "12 6", "12-6", etc.
     const cleaned = length.trim();
+    const cleanedCategory = cleanCategory(category);
     
+    // For fasteners, treat numbers as inches
+    if (cleanedCategory === 'Fastener') {
+      const num = parseFloat(cleaned);
+      if (!isNaN(num)) {
+        // Display as inches with proper formatting
+        if (num === Math.floor(num)) {
+          return `${Math.floor(num)}"`;
+        } else {
+          // Convert decimal to fraction for common values
+          const whole = Math.floor(num);
+          const decimal = num - whole;
+          
+          // Common fractions
+          if (Math.abs(decimal - 0.25) < 0.01) return whole > 0 ? `${whole} 1/4"` : `1/4"`;
+          if (Math.abs(decimal - 0.5) < 0.01) return whole > 0 ? `${whole} 1/2"` : `1/2"`;
+          if (Math.abs(decimal - 0.75) < 0.01) return whole > 0 ? `${whole} 3/4"` : `3/4"`;
+          if (Math.abs(decimal - 0.125) < 0.01) return whole > 0 ? `${whole} 1/8"` : `1/8"`;
+          if (Math.abs(decimal - 0.375) < 0.01) return whole > 0 ? `${whole} 3/8"` : `3/8"`;
+          if (Math.abs(decimal - 0.625) < 0.01) return whole > 0 ? `${whole} 5/8"` : `5/8"`;
+          if (Math.abs(decimal - 0.875) < 0.01) return whole > 0 ? `${whole} 7/8"` : `7/8"`;
+          
+          // If not a common fraction, just show decimal
+          return `${num}"`;
+        }
+      }
+      // If we can't parse it, return as-is with inch mark
+      return length.includes('"') ? length : `${length}"`;
+    }
+    
+    // For non-fasteners, treat as feet/inches
     // Try to parse as decimal (e.g., "12.5" -> 12' 6")
     if (cleaned.includes('.')) {
       const feet = Math.floor(parseFloat(cleaned));
@@ -480,7 +511,7 @@ export function MaterialInventory() {
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold text-blue-700">
-                        {formatLength(material.part_length)}
+                        {formatLength(material.part_length, material.category)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
