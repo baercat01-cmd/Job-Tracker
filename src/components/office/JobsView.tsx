@@ -37,9 +37,10 @@ import { TodayTasksSidebar } from './TodayTasksSidebar';
 interface JobsViewProps {
   showArchived?: boolean;
   selectedJobId?: string | null;
+  openMaterialsTab?: boolean; // New prop to auto-open materials tab
 }
 
-export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps) {
+export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab = false }: JobsViewProps) {
   const { profile } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +63,10 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
       const job = jobs.find(j => j.id === selectedJobId);
       if (job) {
         setSelectedJob(job);
+        // Auto-open materials tab if requested (from notification)
+        if (openMaterialsTab) {
+          setSelectedTab('materials');
+        }
         // Scroll to job card if it exists in the DOM
         setTimeout(() => {
           const element = document.getElementById(`job-${selectedJobId}`);
@@ -71,7 +76,7 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
         }, 100);
       }
     }
-  }, [selectedJobId, jobs]);
+  }, [selectedJobId, jobs, openMaterialsTab]);
 
   async function loadJobs() {
     try {
@@ -224,10 +229,12 @@ export function JobsView({ showArchived = false, selectedJobId }: JobsViewProps)
 
   async function loadCrewOrderCounts() {
     try {
+      // Only count field-requested materials that are still in 'ordered' status (not yet processed)
       const { data, error } = await supabase
         .from('materials')
         .select('job_id')
-        .eq('import_source', 'field_catalog');
+        .eq('import_source', 'field_catalog')
+        .eq('status', 'ordered'); // Only count unprocessed orders
 
       if (error) throw error;
 

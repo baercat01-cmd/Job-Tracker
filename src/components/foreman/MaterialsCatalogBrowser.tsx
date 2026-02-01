@@ -276,12 +276,22 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
       if (materialError) throw materialError;
 
-      // Create notification for office
+      // Create notification for office with material ID reference
+      const { data: newMaterialData } = await supabase
+        .from('materials')
+        .select('id')
+        .eq('category_id', categoryId)
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
       await createNotification({
         jobId: job.id,
         createdBy: userId,
         type: 'material_request',
         brief: `Field request: ${selectedCatalogMaterial.material_name} (Qty: ${addMaterialQuantity})`,
+        referenceId: newMaterialData?.id || null,
         referenceData: {
           materialName: selectedCatalogMaterial.material_name,
           sku: selectedCatalogMaterial.sku,

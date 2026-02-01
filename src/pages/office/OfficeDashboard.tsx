@@ -46,6 +46,7 @@ export function OfficeDashboard() {
   });
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [openMaterialsTab, setOpenMaterialsTab] = useState(false);
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
 
   // Save view state to localStorage and update URL
@@ -303,7 +304,11 @@ export function OfficeDashboard() {
                     break;
                   case 'material_request':
                   case 'material_status':
+                    // Navigate to the job with materials tab (crew orders)
                     setActiveTab('jobs');
+                    setOpenMaterialsTab(true);
+                    // Reset after navigation
+                    setTimeout(() => setOpenMaterialsTab(false), 1000);
                     break;
                   case 'document_revision':
                     setActiveTab('jobs');
@@ -333,7 +338,7 @@ export function OfficeDashboard() {
         {activeTab === 'jobs' && (
           <div className="space-y-6">
             {/* Active Jobs Cards */}
-            <JobsView selectedJobId={selectedJobId} />
+            <JobsView selectedJobId={selectedJobId} openMaterialsTab={openMaterialsTab} />
             
             {/* Master Calendar - Full Width Below Jobs */}
             <MasterCalendar 
