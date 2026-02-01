@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Database, Search, Plus, Package, Edit, Camera, Image as ImageIcon } from 'lucide-react';
+import { Database, Search, Plus, Package, Edit, Camera, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -98,6 +98,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [customMaterialPhoto, setCustomMaterialPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [addingCustomMaterial, setAddingCustomMaterial] = useState(false);
+  const [expandedRequestIds, setExpandedRequestIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadCatalogMaterials();
@@ -357,6 +358,16 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     } finally {
       setAddingMaterial(false);
     }
+  }
+
+  function toggleRequestExpanded(materialId: string) {
+    const newExpanded = new Set(expandedRequestIds);
+    if (newExpanded.has(materialId)) {
+      newExpanded.delete(materialId);
+    } else {
+      newExpanded.add(materialId);
+    }
+    setExpandedRequestIds(newExpanded);
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -682,15 +693,23 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               Materials you've requested - update status as they move through the workflow
             </p>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {fieldRequests.map(material => (
-                <Card key={material.id} className="bg-white border-2 border-orange-100">
-                  <CardContent className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
+          <CardContent className="p-0">
+            <div className="divide-y divide-orange-200">
+              {fieldRequests.map(material => {
+                const isExpanded = expandedRequestIds.has(material.id);
+                return (
+                  <div
+                    key={material.id}
+                    className="bg-white hover:bg-orange-50/50 transition-colors"
+                  >
+                    {/* Compact View - Always Visible */}
+                    <div
+                      className="p-4 cursor-pointer"
+                      onClick={() => toggleRequestExpanded(material.id)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2 flex-wrap">
+                          <div className="flex items-baseline gap-2 flex-wrap mb-2">
                             <h4 className="font-semibold text-base">{material.name}</h4>
                             {material.length && (
                               <span className="text-sm text-muted-foreground">
@@ -698,10 +717,34 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="text-xs font-semibold">
                               Qty: {material.quantity}
                             </Badge>
+                            <Badge
+                              variant="outline"
+                              className={getStatusColor(material.status) + " text-xs font-semibold"}
+                            >
+                              {getStatusLabel(material.status)}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {isExpanded ? (
+                            <ChevronDown className="w-5 h-5 text-orange-700" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5 text-orange-700" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Details - Show on tap */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-3 border-t border-orange-200 bg-white">
+                        {/* Additional Info */}
+                        <div className="space-y-1 text-sm">
+                          <div className="flex items-center gap-2">
                             <Badge variant="secondary" className="text-xs">
                               {material.category_name}
                             </Badge>
@@ -710,50 +753,50 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                             </Badge>
                           </div>
                           {material.use_case && (
-                            <p className="text-sm text-muted-foreground mt-2">
+                            <p className="text-sm text-muted-foreground">
                               Use: {material.use_case}
                             </p>
                           )}
                           {material.notes && (
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="text-xs text-muted-foreground">
                               Notes: {material.notes}
                             </p>
                           )}
                           {material.order_requested_at && (
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="text-xs text-muted-foreground">
                               Ordered: {new Date(material.order_requested_at).toLocaleString()}
                             </p>
                           )}
                         </div>
-                      </div>
 
-                      {/* Status Selector */}
-                      <div className="pt-3 border-t border-orange-200">
-                        <Label className="text-xs font-semibold text-orange-900 mb-2 block">
-                          Material Status
-                        </Label>
-                        <Select
-                          value={material.status}
-                          onValueChange={(newStatus) => updateMaterialStatus(material.id, newStatus as FieldRequestMaterial['status'])}
-                        >
-                          <SelectTrigger className={`w-full h-11 font-semibold border-2 ${getStatusColor(material.status)}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUS_OPTIONS.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold ${opt.color}`}>
-                                  {opt.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {/* Status Selector */}
+                        <div className="pt-2">
+                          <Label className="text-xs font-semibold text-orange-900 mb-2 block">
+                            Update Status
+                          </Label>
+                          <Select
+                            value={material.status}
+                            onValueChange={(newStatus) => updateMaterialStatus(material.id, newStatus as FieldRequestMaterial['status'])}
+                          >
+                            <SelectTrigger className={`w-full h-11 font-semibold border-2 ${getStatusColor(material.status)}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATUS_OPTIONS.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold ${opt.color}`}>
+                                    {opt.label}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
