@@ -82,7 +82,7 @@ export function MaterialInventory() {
     }));
   }, [materials]);
 
-  // Get unique categories with cleaned names
+  // Get unique categories with cleaned names, excluding numeric-only categories
   const categories = useMemo(() => {
     const cats = new Set<string>();
     flatMaterials.forEach(m => {
@@ -93,7 +93,10 @@ export function MaterialInventory() {
           .replace(/Sales\s*[-:]?\s*/gi, '') // Remove Sales text
           .replace(/^[-:]\s*/, '')           // Remove leading dash/colon
           .trim();
-        if (cleaned) cats.add(cleaned);
+        // Exclude categories that are purely numeric
+        if (cleaned && !/^\d+$/.test(cleaned)) {
+          cats.add(cleaned);
+        }
       }
     });
     return Array.from(cats).sort();
@@ -388,6 +391,35 @@ export function MaterialInventory() {
           <Upload className="w-4 h-4 mr-2" />
           Import CSV
         </Button>
+      </div>
+
+      {/* Category Tabs */}
+      <div className="border-b border-slate-200">
+        <div className="flex items-center gap-1 overflow-x-auto pb-0">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${
+              selectedCategory === null
+                ? 'border-blue-600 text-blue-600 bg-blue-50'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+            }`}
+          >
+            All Materials
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${
+                selectedCategory === cat
+                  ? 'border-blue-600 text-blue-600 bg-blue-50'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search */}
