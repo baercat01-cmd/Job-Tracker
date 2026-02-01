@@ -47,6 +47,7 @@ export function OfficeDashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [openMaterialsTab, setOpenMaterialsTab] = useState(false);
+  const [materialsCount, setMaterialsCount] = useState(0);
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
 
   // Save view state to localStorage and update URL
@@ -64,6 +65,7 @@ export function OfficeDashboard() {
 
   useEffect(() => {
     loadUnreadCount();
+    loadMaterialsCount();
     
     // Subscribe to notification changes
     const channel = supabase
@@ -92,6 +94,19 @@ export function OfficeDashboard() {
       setUnreadCount(count || 0);
     } catch (error) {
       console.error('Error loading unread count:', error);
+    }
+  }
+
+  async function loadMaterialsCount() {
+    try {
+      const { count, error } = await supabase
+        .from('materials_catalog')
+        .select('*', { count: 'exact', head: true });
+      
+      if (error) throw error;
+      setMaterialsCount(count || 0);
+    } catch (error) {
+      console.error('Error loading materials count:', error);
     }
   }
 
@@ -384,8 +399,15 @@ export function OfficeDashboard() {
         {activeTab === 'materials' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Material Inventory</h2>
-              <p className="text-yellow-400">Manage your master materials catalog from Smartbuild</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Material Inventory</h2>
+                </div>
+                <div className="bg-yellow-500 text-black px-4 py-2 rounded-lg">
+                  <div className="text-2xl font-bold">{materialsCount.toLocaleString()}</div>
+                  <div className="text-xs font-semibold">Materials</div>
+                </div>
+              </div>
             </div>
             <MaterialInventory />
           </div>
