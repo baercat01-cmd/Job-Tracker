@@ -95,7 +95,7 @@ interface MaterialsListProps {
 }
 
 const STATUS_CONFIG = {
-  not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
+  not_ordered: { label: 'Needed', color: 'bg-orange-500', bgClass: 'bg-orange-50 text-orange-700 border-orange-200' },
   ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
   at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
   ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-200' },
@@ -1757,7 +1757,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                 </Button>
                               )}
 
-                              {userRole === 'shop' && bundle.status === 'pending' && (
+                              {bundle.status === 'pending' && (
                                 <Button
                                   onClick={() => updateBundleStatus(bundle.id, 'preparing')}
                                   variant="outline"
@@ -1767,7 +1767,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                   Start Preparing
                                 </Button>
                               )}
-                              {userRole === 'shop' && bundle.status === 'preparing' && (
+                              {bundle.status === 'preparing' && (
                                 <Button
                                   onClick={() => updateBundleStatus(bundle.id, 'ready')}
                                   className="bg-green-600 hover:bg-green-700"
@@ -1776,7 +1776,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                   Mark Ready
                                 </Button>
                               )}
-                              {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'ready' && (
+                              {bundle.status === 'ready' && (
                                 <Button
                                   onClick={() => updateBundleStatus(bundle.id, 'picked_up')}
                                   className="bg-purple-600 hover:bg-purple-700"
@@ -1785,7 +1785,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                   Mark Picked Up
                                 </Button>
                               )}
-                              {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'picked_up' && (
+                              {bundle.status === 'picked_up' && (
                                 <Button
                                   onClick={() => updateBundleStatus(bundle.id, 'delivered')}
                                   variant="outline"
@@ -1795,16 +1795,14 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                   Mark Delivered
                                 </Button>
                               )}
-                              {(userRole === 'office' || allowBundleCreation) && (
-                                <Button
-                                  onClick={() => deleteBundle(bundle.id)}
-                                  variant="outline"
-                                  className="text-destructive hover:bg-destructive/10"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete Bundle
-                                </Button>
-                              )}
+                              <Button
+                                onClick={() => deleteBundle(bundle.id)}
+                                variant="outline"
+                                className="text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Bundle
+                              </Button>
                             </div>
                           </div>
 
