@@ -279,18 +279,26 @@ export function MaterialInventory() {
           return isNaN(parsed) ? 0 : parsed;
         };
 
-        // Get category from Account column - ONLY use text values, never numbers
+        // Get category and cost from Account column
+        // Account column can contain either:
+        // - Text (category name like "Fastener") → use as category
+        // - Number (cost like "0.15") → use as purchase_cost
         const accountValue = accountIdx !== -1 ? values[accountIdx] : null;
         let category: string | null = null;
+        let costFromAccount: number = 0;
         
         if (accountValue) {
           const trimmed = accountValue.trim();
-          // Only use Account column for category if it contains text (not pure numbers)
-          // Check if it's NOT a pure number (rejects "123", "$45.67", "1,234.56", etc.)
-          if (trimmed && !/^[\d\$,.\s]+$/.test(trimmed)) {
+          // Check if it's a pure number (with optional $ and commas)
+          const asNumber = parsePrice(trimmed);
+          if (asNumber > 0 && /^[\d\$,.\s]+$/.test(trimmed)) {
+            // It's a number - use it as cost
+            costFromAccount = asNumber;
+            // Category will be null - could be inferred from item name if needed
+          } else {
+            // It's text - use it as category
             category = accountValue;
           }
-          // If it's a number, category remains null - we don't use it
         }
 
         // Debug first row
@@ -321,8 +329,9 @@ export function MaterialInventory() {
           // Get length from CF.Part Length column
           const partLength = partLengthIdx !== -1 ? values[partLengthIdx] : null;
 
-          // Get purchase cost from Purchase Rate column only
-          const purchaseCost = purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0;
+          // Get purchase cost - prioritize Account column if it has a number, otherwise use Purchase Rate
+          const purchaseRateCost = purchaseRateIdx !== -1 ? parsePrice(values[purchaseRateIdx]) : 0;
+          const purchaseCost = costFromAccount > 0 ? costFromAccount : purchaseRateCost;
 
           // Create new entry with metadata as an array
           materialsBySku.set(sku, {
