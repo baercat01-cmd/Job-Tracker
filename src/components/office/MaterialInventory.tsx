@@ -82,14 +82,32 @@ export function MaterialInventory() {
     }));
   }, [materials]);
 
-  // Get unique categories
+  // Get unique categories with cleaned names
   const categories = useMemo(() => {
     const cats = new Set<string>();
     flatMaterials.forEach(m => {
-      if (m.category) cats.add(m.category);
+      if (m.category) {
+        // Remove USD prefix and Sales text, clean up the category name
+        const cleaned = m.category
+          .replace(/^USD\s*[-:]?\s*/i, '')  // Remove USD prefix
+          .replace(/Sales\s*[-:]?\s*/gi, '') // Remove Sales text
+          .replace(/^[-:]\s*/, '')           // Remove leading dash/colon
+          .trim();
+        if (cleaned) cats.add(cleaned);
+      }
     });
     return Array.from(cats).sort();
   }, [flatMaterials]);
+
+  // Helper to clean category name for display
+  const cleanCategory = (category: string | null): string | null => {
+    if (!category) return null;
+    return category
+      .replace(/^USD\s*[-:]?\s*/i, '')
+      .replace(/Sales\s*[-:]?\s*/gi, '')
+      .replace(/^[-:]\s*/, '')
+      .trim() || null;
+  };
 
   // Format length with feet and inches notation
   const formatLength = (length: string | null): string => {
@@ -145,9 +163,9 @@ export function MaterialInventory() {
   const filteredMaterials = useMemo(() => {
     let filtered = flatMaterials;
 
-    // Filter by category
+    // Filter by category (compare cleaned names)
     if (selectedCategory) {
-      filtered = filtered.filter(m => m.category === selectedCategory);
+      filtered = filtered.filter(m => cleanCategory(m.category) === selectedCategory);
     }
 
     // Filter by search term
@@ -449,8 +467,8 @@ export function MaterialInventory() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {material.category && (
-                          <Badge variant="outline" className="font-medium">{material.category}</Badge>
+                        {cleanCategory(material.category) && (
+                          <Badge variant="outline" className="font-medium">{cleanCategory(material.category)}</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-black">
