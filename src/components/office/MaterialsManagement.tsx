@@ -199,11 +199,18 @@ function SortableMaterialRow({
       </td>
       <td className="p-2">
         <div className="font-medium truncate">{cleanMaterialValue(material.name)}</div>
-        {material.bundle_name && (
-          <Badge variant="secondary" className="mt-1 text-xs">
-            📦 {material.bundle_name}
-          </Badge>
-        )}
+        <div className="flex items-center gap-1 mt-1 flex-wrap">
+          {material.bundle_name && (
+            <Badge variant="secondary" className="text-xs">
+              📦 {material.bundle_name}
+            </Badge>
+          )}
+          {material.import_source === 'field_catalog' && (
+            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300 font-semibold">
+              🔧 Field Request
+            </Badge>
+          )}
+        </div>
       </td>
       <td className="p-2 text-sm text-muted-foreground truncate">
         {material.use_case || '-'}
@@ -459,6 +466,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterFieldRequests, setFilterFieldRequests] = useState(false);
 
   // Sorting
   const [sortBy, setSortBy] = useState<'order' | 'name' | 'useCase' | 'quantity' | 'length' | 'color'>('order');
@@ -1106,8 +1114,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         (material.length && material.length.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesStatus = filterStatus === 'all' || material.status === filterStatus;
+      
+      const matchesFieldRequest = !filterFieldRequests || material.import_source === 'field_catalog';
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesFieldRequest;
     });
 
     filtered.sort((a, b) => {
@@ -1217,6 +1227,26 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               {/* Search & Filter Bar */}
               <Card>
                 <CardContent className="pt-3 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Button
+                      variant={filterFieldRequests ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setFilterFieldRequests(!filterFieldRequests)}
+                      className={filterFieldRequests ? "bg-orange-600 hover:bg-orange-700" : ""}
+                    >
+                      🔧 Field Requests Only
+                      {filterFieldRequests && (
+                        <Badge variant="secondary" className="ml-2">
+                          {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
+                        </Badge>
+                      )}
+                    </Button>
+                    {filterFieldRequests && (
+                      <p className="text-sm text-muted-foreground">
+                        Showing materials requested by crew from field
+                      </p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
