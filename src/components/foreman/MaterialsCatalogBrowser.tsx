@@ -54,7 +54,7 @@ interface FieldRequestMaterial {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  { value: 'not_ordered', label: 'Needed', color: 'bg-orange-100 text-orange-700 border-orange-300' },
   { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
   { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
   { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
@@ -302,7 +302,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: selectedCatalogMaterial.material_name,
           quantity: addMaterialQuantity,
           length: finalLength,
-          status: 'ordered',
+          status: 'not_ordered',
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
           ordered_by: userId,
@@ -418,7 +418,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: customMaterialName,
           quantity: customMaterialQuantity,
           length: customMaterialLength || null,
-          status: 'ordered',
+          status: 'not_ordered',
           notes: customMaterialNotes || 'Custom material added from field',
           created_by: userId,
           ordered_by: userId,
@@ -609,53 +609,48 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           </CardContent>
         </Card>
       ) : catalogSearch ? (
-        <Card className="border-2 border-green-200 bg-green-50">
-          <CardHeader className="pb-3">
+        <Card className="border-2 border-slate-200">
+          <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <Search className="w-5 h-5 text-green-700" />
+              <Search className="w-4 h-4 text-slate-700" />
               Search Results ({filteredCatalogMaterials.length})
             </CardTitle>
-            <p className="text-sm text-green-700 mt-1">
+            <p className="text-xs text-slate-600 mt-1">
               Click "Add" to request any material for this job
             </p>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="pt-2">
+            <div className="space-y-1">
               {filteredCatalogMaterials.map(material => (
-                <Card key={material.sku} className="hover:shadow-md transition-shadow bg-white border-2 border-green-100">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <h4 className="font-semibold text-sm truncate">{material.material_name}</h4>
-                          {material.part_length && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {cleanMaterialValue(material.part_length)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline" className="text-xs">
-                            {material.sku}
-                          </Badge>
-                          {cleanCatalogCategory(material.category) && (
-                            <Badge variant="secondary" className="text-xs">
-                              {cleanCatalogCategory(material.category)}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => openAddMaterialDialog(material)}
-                        size="sm"
-                        className="flex-shrink-0"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add
-                      </Button>
+                <div key={material.sku} className="flex items-center justify-between gap-2 p-2 hover:bg-slate-50 border border-slate-200 rounded">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <h4 className="font-medium text-sm truncate">{material.material_name}</h4>
+                      {material.part_length && (
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {cleanMaterialValue(material.part_length)}
+                        </span>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs font-mono text-slate-600">{material.sku}</span>
+                      {cleanCatalogCategory(material.category) && (
+                        <>
+                          <span className="text-xs text-slate-400">•</span>
+                          <span className="text-xs text-slate-600">{cleanCatalogCategory(material.category)}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => openAddMaterialDialog(material)}
+                    size="sm"
+                    className="flex-shrink-0 h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add
+                  </Button>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -892,7 +887,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 </p>
                 <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                   <li>Added to "Field Requests" category</li>
-                  <li>Marked as "Ordered" - office will be notified</li>
+                  <li>Marked as "Needed" - office will be notified</li>
+                  <li>Office updates to "Ordered" when ordering from vendor</li>
                   <li>Tracked separately for job cost tracking</li>
                   <li>Your name will be recorded as requester</li>
                 </ul>
@@ -1040,8 +1036,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </p>
               <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                 <li>Added to "Field Requests" category</li>
-                <li>Marked as "Ordered" - office will be notified</li>
-                <li>Office can source and price the material</li>
+                <li>Marked as "Needed" - office will be notified</li>
+                <li>Office can source, price, and order the material</li>
+                <li>Office updates to "Ordered" when ordering from vendor</li>
                 <li>Photo helps office identify exact product needed</li>
               </ul>
             </div>
