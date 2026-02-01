@@ -1435,7 +1435,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
           {/* Selection Mode Controls */}
           {(userRole === 'office' || allowBundleCreation) && (
-            <>
             <Card className={`${selectionMode ? 'border-2 border-primary' : ''}`}>
               <CardContent className="py-3">
                 {selectionMode ? (
@@ -1458,7 +1457,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                 )}
               </CardContent>
             </Card>
-          </>
           )}
 
           {/* Materials List - All Categories */
