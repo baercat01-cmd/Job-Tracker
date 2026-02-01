@@ -1286,6 +1286,23 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
+      {/* Export Button - Always visible at top */}
+      {categories.length > 0 && (
+        <Card className="border-2 border-primary/20 bg-primary/5">
+          <CardContent className="py-3">
+            <Button
+              onClick={downloadMaterialsList}
+              variant="default"
+              size="lg"
+              className="w-full h-12 gap-2"
+            >
+              <Download className="w-5 h-5" />
+              Export All Materials as CSV
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status Color Bar - Shows at top when on ready or pull tabs */}
       {activeTab === 'ready' && (
         <div className="rounded-none border-2 border-blue-900 bg-blue-500 text-white p-1.5 mb-4 shadow-md">
@@ -1401,23 +1418,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
 
         <TabsContent value="all" className="space-y-3">
-          {/* Export Button - Prominent placement at top of All Materials */}
-          {categories.length > 0 && (
-            <Card className="border-2 border-primary/20 bg-primary/5">
-              <CardContent className="py-3">
-                <Button
-                  onClick={downloadMaterialsList}
-                  variant="default"
-                  size="lg"
-                  className="w-full h-12 gap-2"
-                >
-                  <Download className="w-5 h-5" />
-                  Export All Materials as CSV
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Bundle Creation Button (when in selection mode) */}
           {selectionMode && selectedMaterialIds.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
