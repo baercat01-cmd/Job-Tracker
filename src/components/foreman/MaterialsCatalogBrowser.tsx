@@ -12,7 +12,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Database, Search, Plus, Package } from 'lucide-react';
+import { Database, Search, Plus, Package, Edit } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { createNotification } from '@/lib/notifications';
 import { cleanMaterialValue } from '@/lib/utils';
@@ -36,11 +43,30 @@ interface FieldRequestMaterial {
   name: string;
   quantity: number;
   length: string | null;
-  status: string;
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   notes: string | null;
   ordered_by: string | null;
   order_requested_at: string | null;
   category_name: string;
+  use_case?: string;
+}
+
+const STATUS_OPTIONS = [
+  { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
+  { value: 'at_job', label: 'At Job', color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'installed', label: 'Installed', color: 'bg-slate-800 text-white border-slate-800' },
+  { value: 'missing', label: 'Missing', color: 'bg-red-100 text-red-700 border-red-300' },
+];
+
+function getStatusColor(status: string) {
+  return STATUS_OPTIONS.find(s => s.value === status)?.color || 'bg-gray-100 text-gray-700 border-gray-300';
+}
+
+function getStatusLabel(status: string) {
+  return STATUS_OPTIONS.find(s => s.value === status)?.label || status;
 }
 
 export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: MaterialsCatalogBrowserProps) {
@@ -110,6 +136,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           notes,
           ordered_by,
           order_requested_at,
+          use_case,
           materials_categories!inner(name)
         `)
         .eq('job_id', job.id)
@@ -127,6 +154,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         notes: m.notes,
         ordered_by: m.ordered_by,
         order_requested_at: m.order_requested_at,
+        use_case: m.use_case,
         category_name: m.materials_categories?.name || 'Unknown',
       }));
 
@@ -135,6 +163,33 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       console.error('Error loading field requests:', error);
     } finally {
       setLoadingRequests(false);
+    }
+  }
+
+  async function updateMaterialStatus(materialId: string, newStatus: FieldRequestMaterial['status']) {
+    try {
+      // Optimistic update
+      setFieldRequests(prev =>
+        prev.map(m => m.id === materialId ? { ...m, status: newStatus } : m)
+      );
+
+      const { error } = await supabase
+        .from('materials')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+
+      // Reload to ensure consistency
+      await loadFieldRequests();
+    } catch (error: any) {
+      console.error('Error updating material status:', error);
+      toast.error('Failed to update status');
+      // Reload on error to revert optimistic update
+      loadFieldRequests();
     }
   }
 
@@ -256,6 +311,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           notes,
           ordered_by,
           order_requested_at,
+          use_case,
           materials_categories!inner(name)
         `)
         .eq('job_id', job.id)
@@ -273,6 +329,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         notes: m.notes,
         ordered_by: m.ordered_by,
         order_requested_at: m.order_requested_at,
+        use_case: m.use_case,
         category_name: m.materials_categories?.name || 'Unknown',
       }));
 
@@ -281,6 +338,33 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       console.error('Error loading field requests:', error);
     } finally {
       setLoadingRequests(false);
+    }
+  }
+
+  async function updateMaterialStatus(materialId: string, newStatus: FieldRequestMaterial['status']) {
+    try {
+      // Optimistic update
+      setFieldRequests(prev =>
+        prev.map(m => m.id === materialId ? { ...m, status: newStatus } : m)
+      );
+
+      const { error } = await supabase
+        .from('materials')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+
+      // Reload to ensure consistency
+      await loadFieldRequests();
+    } catch (error: any) {
+      console.error('Error updating material status:', error);
+      toast.error('Failed to update status');
+      // Reload on error to revert optimistic update
+      loadFieldRequests();
     }
   }
 
@@ -306,7 +390,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Header with Search at Top */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -314,12 +398,50 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             Order Materials
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            View your orders and search catalog for additional materials
+            Search catalog and manage your material orders
           </p>
         </CardHeader>
+        <CardContent className="pb-3">
+          {/* Search Bar - Always Visible at Top */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search materials by name or SKU..."
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              className="pl-10 h-12 text-base"
+              autoFocus
+            />
+          </div>
+
+          {/* Category Filter - Only show when searching */}
+          {catalogSearch && (
+            <div className="flex gap-2 overflow-x-auto pb-2 mt-3">
+              <Button
+                variant={catalogCategory === null ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCatalogCategory(null)}
+                className="whitespace-nowrap flex-shrink-0"
+              >
+                All
+              </Button>
+              {catalogCategories.map(cat => (
+                <Button
+                  key={cat}
+                  variant={catalogCategory === cat ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCatalogCategory(cat)}
+                  className="whitespace-nowrap flex-shrink-0"
+                >
+                  {cat}
+                </Button>
+              ))}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
-      {/* Field Requests Section */}
+      {/* Ordered Materials Section - Always visible under search */}
       {loadingRequests ? (
         <Card>
           <CardContent className="py-8 text-center">
@@ -335,49 +457,44 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               Your Orders ({fieldRequests.length})
             </CardTitle>
             <p className="text-sm text-orange-700 mt-1">
-              Materials you've requested from the catalog
+              Materials you've requested - update status as they move through the workflow
             </p>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {fieldRequests.map(material => {
-                const statusConfig = {
-                  not_ordered: { label: 'Not Ordered', color: 'bg-gray-100 text-gray-700' },
-                  ordered: { label: 'Ordered', color: 'bg-yellow-100 text-yellow-700' },
-                  at_shop: { label: 'At Shop', color: 'bg-blue-100 text-blue-700' },
-                  ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700' },
-                  at_job: { label: 'At Job', color: 'bg-green-100 text-green-700' },
-                  installed: { label: 'Installed', color: 'bg-slate-800 text-white' },
-                  missing: { label: 'Missing', color: 'bg-red-100 text-red-700' },
-                }[material.status] || { label: material.status, color: 'bg-gray-100 text-gray-700' };
-
-                return (
-                  <Card key={material.id} className="bg-white">
-                    <CardContent className="p-4">
+              {fieldRequests.map(material => (
+                <Card key={material.id} className="bg-white border-2 border-orange-100">
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            <h4 className="font-semibold text-sm truncate">{material.name}</h4>
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <h4 className="font-semibold text-base">{material.name}</h4>
                             {material.length && (
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              <span className="text-sm text-muted-foreground">
                                 {cleanMaterialValue(material.length)}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <Badge variant="outline" className="text-xs">
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs font-semibold">
                               Qty: {material.quantity}
-                            </Badge>
-                            <Badge className={`text-xs ${statusConfig.color}`}>
-                              {statusConfig.label}
                             </Badge>
                             <Badge variant="secondary" className="text-xs">
                               {material.category_name}
                             </Badge>
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                              🔧 Field Request
+                            </Badge>
                           </div>
+                          {material.use_case && (
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Use: {material.use_case}
+                            </p>
+                          )}
                           {material.notes && (
-                            <p className="text-xs text-muted-foreground mt-2">
-                              {material.notes}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Notes: {material.notes}
                             </p>
                           )}
                           {material.order_requested_at && (
@@ -387,10 +504,34 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                           )}
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+
+                      {/* Status Selector */}
+                      <div className="pt-3 border-t border-orange-200">
+                        <Label className="text-xs font-semibold text-orange-900 mb-2 block">
+                          Material Status
+                        </Label>
+                        <Select
+                          value={material.status}
+                          onValueChange={(newStatus) => updateMaterialStatus(material.id, newStatus as FieldRequestMaterial['status'])}
+                        >
+                          <SelectTrigger className={`w-full h-11 font-semibold border-2 ${getStatusColor(material.status)}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map(opt => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold ${opt.color}`}>
+                                  {opt.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -400,61 +541,13 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             <Package className="w-12 h-12 mx-auto mb-3 text-blue-700 opacity-50" />
             <p className="text-sm text-blue-900 font-semibold">No orders yet</p>
             <p className="text-xs text-blue-700 mt-1">
-              Search the catalog below to request materials
+              Use the search bar above to find and request materials
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* Divider */}
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-slate-300"></div>
-        </div>
-        <div className="relative flex justify-center">
-          <span className="bg-slate-50 px-3 text-sm font-semibold text-slate-700">
-            Search Catalog
-          </span>
-        </div>
-      </div>
-
-      {/* Category Filter - Only show when searching */}
-      {catalogSearch && (
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <Button
-            variant={catalogCategory === null ? "default" : "outline"}
-            size="sm"
-            onClick={() => setCatalogCategory(null)}
-            className="whitespace-nowrap flex-shrink-0"
-          >
-            All
-          </Button>
-          {catalogCategories.map(cat => (
-            <Button
-              key={cat}
-              variant={catalogCategory === cat ? "default" : "outline"}
-              size="sm"
-              onClick={() => setCatalogCategory(cat)}
-              className="whitespace-nowrap flex-shrink-0"
-            >
-              {cat}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search materials by name or SKU..."
-          value={catalogSearch}
-          onChange={(e) => setCatalogSearch(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {/* Materials List - Only show when searching */}
+      {/* Catalog Search Results - Only show when searching */}
       {catalogSearch && catalogLoading ? (
         <Card>
           <CardContent className="py-12 text-center">
