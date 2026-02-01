@@ -31,11 +31,13 @@ import {
   ChevronUp,
   ChevronDown,
   GripVertical,
+  DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
+import { ExtrasManagement } from './ExtrasManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement, cleanMaterialValue } from '@/lib/utils';
 import {
@@ -1199,7 +1201,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       <div ref={containerRef} className="w-full -mx-2">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-            <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm">
+            <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm">
               <TabsTrigger 
                 value="manage" 
                 className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
@@ -1225,6 +1227,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
                   </Badge>
                 )}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="extras" 
+                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-green-600 data-[state=active]:to-green-500 data-[state=active]:text-white transition-all shadow-sm"
+              >
+                <DollarSign className="w-5 h-5" />
+                <span className="text-xs sm:text-base">Extras</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1490,6 +1499,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="extras" className="space-y-2">
+            <ExtrasManagement job={job} userId={userId} />
           </TabsContent>
         </Tabs>
       </div>

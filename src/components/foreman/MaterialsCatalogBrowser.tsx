@@ -245,6 +245,16 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       }
 
       // Add material to job with 'ordered' status and tracking
+      // Load catalog material cost data
+      const { data: catalogData } = await supabase
+        .from('materials_catalog')
+        .select('purchase_cost, unit_price')
+        .eq('sku', selectedCatalogMaterial.sku)
+        .single();
+
+      const unit_cost = catalogData?.purchase_cost || 0;
+      const total_cost = unit_cost * addMaterialQuantity;
+
       const { error: materialError } = await supabase
         .from('materials')
         .insert({
@@ -259,6 +269,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           ordered_by: userId,
           order_requested_at: new Date().toISOString(),
           import_source: 'field_catalog',
+          is_extra: true,
+          unit_cost,
+          total_cost,
         });
 
       if (materialError) throw materialError;
