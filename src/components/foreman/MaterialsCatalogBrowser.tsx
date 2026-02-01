@@ -54,6 +54,7 @@ interface FieldRequestMaterial {
 }
 
 const STATUS_OPTIONS = [
+  { value: 'needed', label: 'Needed', color: 'bg-orange-100 text-orange-700 border-orange-300' },
   { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
   { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
@@ -302,7 +303,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: selectedCatalogMaterial.material_name,
           quantity: addMaterialQuantity,
           length: finalLength,
-          status: 'ordered',
+          status: 'needed',
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
           ordered_by: userId,
@@ -418,7 +419,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: customMaterialName,
           quantity: customMaterialQuantity,
           length: customMaterialLength || null,
-          status: 'ordered',
+          status: 'needed',
           notes: customMaterialNotes || 'Custom material added from field',
           created_by: userId,
           ordered_by: userId,
@@ -892,7 +893,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 </p>
                 <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                   <li>Added to "Field Requests" category</li>
-                  <li>Marked as "Ordered" - office will be notified</li>
+                  <li>Marked as "Needed" - office will be notified</li>
                   <li>Tracked separately for job cost tracking</li>
                   <li>Your name will be recorded as requester</li>
                 </ul>
@@ -1040,7 +1041,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </p>
               <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                 <li>Added to "Field Requests" category</li>
-                <li>Marked as "Ordered" - office will be notified</li>
+                <li>Marked as "Needed" - office will be notified</li>
                 <li>Office can source and price the material</li>
                 <li>Photo helps office identify exact product needed</li>
               </ul>

@@ -35,7 +35,7 @@ interface Material {
   name: string;
   quantity: number;
   length: string | null;
-  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
+  status: 'needed' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   notes: string | null;
   updated_at: string;
   use_case?: string;
@@ -84,7 +84,7 @@ interface MaterialPhoto {
   timestamp: string;
 }
 
-type StatusFilter = 'all' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
+type StatusFilter = 'all' | 'needed' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
 
 interface MaterialsListProps {
   job: Job;
@@ -95,6 +95,7 @@ interface MaterialsListProps {
 }
 
 const STATUS_CONFIG = {
+  needed: { label: 'Needed', color: 'bg-orange-500', bgClass: 'bg-orange-50 text-orange-800 border-orange-200' },
   not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
   ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
   at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
@@ -105,11 +106,9 @@ const STATUS_CONFIG = {
 };
 
 const BUNDLE_STATUS_CONFIG = {
-  pending: { label: 'Pending Prep', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-300', icon: Clock },
-  preparing: { label: 'Preparing', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-300', icon: Package },
-  ready: { label: 'Ready to Take', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-300', icon: CheckCircle },
-  picked_up: { label: 'Picked Up', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-300', icon: Truck },
-  delivered: { label: 'Delivered', color: 'bg-slate-700', bgClass: 'bg-slate-100 text-slate-800 border-slate-300', icon: CheckCircle },
+  ordered: { label: 'Order', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-300', icon: Clock },
+  ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-300', icon: Package },
+  at_job: { label: 'At Job', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-300', icon: CheckCircle },
 };
 
 // Helper function to get status config with fallback
@@ -118,7 +117,7 @@ function getStatusConfig(status: string) {
 }
 
 function getBundleStatusConfig(status: string) {
-  return BUNDLE_STATUS_CONFIG[status as keyof typeof BUNDLE_STATUS_CONFIG] || BUNDLE_STATUS_CONFIG.pending;
+  return BUNDLE_STATUS_CONFIG[status as keyof typeof BUNDLE_STATUS_CONFIG] || BUNDLE_STATUS_CONFIG.ordered;
 }
 
 export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCreation = false, defaultTab = 'all' }: MaterialsListProps) {
@@ -752,7 +751,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
           name: bundleName.trim(),
           description: bundleDescription.trim() || null,
           created_by: userId,
-          status: 'pending', // Pending shop preparation
+          status: 'ordered', // Initial status
         })
         .select()
         .single();
@@ -1136,7 +1135,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         if (sortBy === 'name') {
           return a.name.localeCompare(b.name);
         } else if (sortBy === 'status') {
-          const statusOrder = ['not_ordered', 'ordered', 'at_shop', 'ready_to_pull', 'at_job', 'installed', 'missing'];
+          const statusOrder = ['needed', 'not_ordered', 'ordered', 'at_shop', 'ready_to_pull', 'at_job', 'installed', 'missing'];
           return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
         } else if (sortBy === 'date') {
           const aDate = a.delivery_date || a.order_by_date || a.updated_at;
@@ -1693,42 +1692,23 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                         <div className="mb-4 pb-4 border-b">
                           <h4 className="text-sm font-semibold mb-3">Bundle Status</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {userRole === 'shop' && bundle.status === 'pending' && (
+                            {(userRole === 'office' || userRole === 'shop') && bundle.status === 'ordered' && (
                               <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'preparing')}
+                                onClick={() => updateBundleStatus(bundle.id, 'ready_to_pull')}
                                 variant="outline"
-                                className="bg-blue-50 hover:bg-blue-100 border-blue-300"
+                                className="bg-purple-50 hover:bg-purple-100 border-purple-300"
                               >
                                 <Package className="w-4 h-4 mr-2" />
-                                Start Preparing
+                                Mark Pull from Shop
                               </Button>
                             )}
-                            {userRole === 'shop' && bundle.status === 'preparing' && (
+                            {bundle.status === 'ready_to_pull' && (
                               <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'ready')}
+                                onClick={() => updateBundleStatus(bundle.id, 'at_job')}
                                 className="bg-green-600 hover:bg-green-700"
                               >
                                 <CheckCircle className="w-4 h-4 mr-2" />
-                                Mark Ready
-                              </Button>
-                            )}
-                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'ready' && (
-                              <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'picked_up')}
-                                className="bg-purple-600 hover:bg-purple-700"
-                              >
-                                <Truck className="w-4 h-4 mr-2" />
-                                Mark Picked Up
-                              </Button>
-                            )}
-                            {(userRole === 'foreman' || userRole === 'crew') && bundle.status === 'picked_up' && (
-                              <Button
-                                onClick={() => updateBundleStatus(bundle.id, 'delivered')}
-                                variant="outline"
-                                className="bg-slate-50 hover:bg-slate-100"
-                              >
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Mark Delivered
+                                Mark At Job
                               </Button>
                             )}
                             {(userRole === 'office' || allowBundleCreation) && (
