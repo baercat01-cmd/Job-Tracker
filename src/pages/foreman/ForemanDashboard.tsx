@@ -34,7 +34,7 @@ import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'history' | 'schedule' | 'components';
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'schedule';
 
 interface ForemanDashboardProps {
   hideHeader?: boolean;
@@ -667,28 +667,14 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           />
         )}
 
-        {activeTab === 'history' && (
-          <ComponentHistory
-            job={selectedJob}
-            userId={profile?.id || ''}
-          />
-        )}
-
         {activeTab === 'schedule' && (
           <JobSchedule
             job={selectedJob}
           />
         )}
-
-        {activeTab === 'components' && jobData && (
-          <JobComponents
-            job={jobData}
-            onUpdate={reloadJobData}
-          />
-        )}
       </main>
 
-      {/* Bottom Navigation - 7 tabs for job features */}
+      {/* Bottom Navigation - 5 tabs for job features */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-hidden">
         <div className="w-full max-w-full flex">
           <Button
@@ -736,33 +722,13 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           </Button>
           <Button
             variant="ghost"
-            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
-              activeTab === 'history' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
-            }`}
-            onClick={() => setActiveTab('history')}
-          >
-            <History className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
-            <span className="text-[9px] sm:text-xs font-bold leading-tight">History</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
               activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
             }`}
             onClick={() => setActiveTab('schedule')}
           >
             <CalendarIcon className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
             <span className="text-[9px] sm:text-xs font-bold leading-tight text-center">Sched</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`flex-1 flex-col h-auto py-2 sm:py-3 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
-              activeTab === 'components' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
-            }`}
-            onClick={() => setActiveTab('components')}
-          >
-            <ListTodo className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
-            <span className="text-[9px] sm:text-xs font-bold leading-tight">Tasks</span>
           </Button>
         </div>
       </nav>
