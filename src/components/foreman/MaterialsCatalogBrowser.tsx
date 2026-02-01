@@ -520,6 +520,47 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
   }
 
+  // Helper function to parse length for sorting
+  function parseLengthForSorting(length: string | null): number {
+    if (!length) return 999999; // Put items without length at the end
+    
+    // Extract numeric value from common length formats
+    // Examples: "12'", "8' 6\"", "16 ft", "4x4", "1/4\""
+    const cleaned = length.toLowerCase().replace(/[^0-9.'"x/\s-]/g, '');
+    
+    // Try to match feet and inches pattern (e.g., "12' 6\"" or "12'")
+    const feetInchMatch = cleaned.match(/(\d+)\s*'\s*(\d+)?/);
+    if (feetInchMatch) {
+      const feet = parseInt(feetInchMatch[1]) || 0;
+      const inches = parseInt(feetInchMatch[2]) || 0;
+      return feet * 12 + inches; // Convert to total inches
+    }
+    
+    // Try to match dimension pattern (e.g., "4x4", "2x6")
+    const dimensionMatch = cleaned.match(/(\d+)\s*x\s*(\d+)/);
+    if (dimensionMatch) {
+      const dim1 = parseInt(dimensionMatch[1]) || 0;
+      const dim2 = parseInt(dimensionMatch[2]) || 0;
+      return dim1 * dim2; // Sort by area
+    }
+    
+    // Try to match fraction pattern (e.g., "1/4\"", "3/8\"")
+    const fractionMatch = cleaned.match(/(\d+)\/(\d+)/);
+    if (fractionMatch) {
+      const numerator = parseInt(fractionMatch[1]) || 0;
+      const denominator = parseInt(fractionMatch[2]) || 1;
+      return numerator / denominator; // Convert to decimal
+    }
+    
+    // Try to extract any number
+    const numberMatch = cleaned.match(/\d+/);
+    if (numberMatch) {
+      return parseInt(numberMatch[0]);
+    }
+    
+    return 999999; // Unparseable lengths go to the end
+  }
+
   // Filter catalog materials
   const filteredCatalogMaterials = catalogMaterials.filter(m => {
     // Category filter
@@ -538,6 +579,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
     
     return true;
+  }).sort((a, b) => {
+    // Sort by length (shortest to longest)
+    const lengthA = parseLengthForSorting(a.part_length);
+    const lengthB = parseLengthForSorting(b.part_length);
+    return lengthA - lengthB;
   });
 
   return (
@@ -621,53 +667,45 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           </CardContent>
         </Card>
       ) : catalogSearch ? (
-        <Card className="border-2 border-green-200 bg-green-50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Search className="w-5 h-5 text-green-700" />
-              Search Results ({filteredCatalogMaterials.length})
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4" />
+                Results ({filteredCatalogMaterials.length})
+              </div>
+              <span className="text-xs text-muted-foreground font-normal">Sorted by length</span>
             </CardTitle>
-            <p className="text-sm text-green-700 mt-1">
-              Click "Add" to request any material for this job
-            </p>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="p-0">
+            <div className="divide-y">
               {filteredCatalogMaterials.map(material => (
-                <Card key={material.sku} className="hover:shadow-md transition-shadow bg-white border-2 border-green-100">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <h4 className="font-semibold text-sm truncate">{material.material_name}</h4>
-                          {material.part_length && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {cleanMaterialValue(material.part_length)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline" className="text-xs">
-                            {material.sku}
-                          </Badge>
-                          {cleanCatalogCategory(material.category) && (
-                            <Badge variant="secondary" className="text-xs">
-                              {cleanCatalogCategory(material.category)}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => openAddMaterialDialog(material)}
-                        size="sm"
-                        className="flex-shrink-0"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add
-                      </Button>
+                <div
+                  key={material.sku}
+                  className="flex items-center justify-between gap-3 p-3 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                    <div className="flex-1">
+                      <h4 className="font-medium text-sm leading-tight">{material.material_name}</h4>
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="flex-shrink-0 text-right">
+                      {material.part_length ? (
+                        <span className="text-base font-bold text-primary">
+                          {cleanMaterialValue(material.part_length)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground italic">No length</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => openAddMaterialDialog(material)}
+                    size="sm"
+                    className="flex-shrink-0 h-8"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
               ))}
             </div>
           </CardContent>
