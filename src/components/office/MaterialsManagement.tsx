@@ -1199,7 +1199,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       <div ref={containerRef} className="w-full -mx-2">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-            <TabsList className="grid w-full grid-cols-2 h-14 bg-white shadow-sm">
+            <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm">
               <TabsTrigger 
                 value="manage" 
                 className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
@@ -1213,6 +1213,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               >
                 <ShoppingCart className="w-5 h-5" />
                 <span className="text-xs sm:text-base">Material Bundles</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="field-orders" 
+                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-orange-600 data-[state=active]:to-orange-500 data-[state=active]:text-white transition-all shadow-sm"
+              >
+                <PackagePlus className="w-5 h-5" />
+                <span className="text-xs sm:text-base">Crew Orders</span>
+                {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length > 0 && (
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                    {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
+                  </Badge>
+                )}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1362,6 +1374,120 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   allowBundleCreation={true}
                   defaultTab="bundles"
                 />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="field-orders" className="space-y-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <PackagePlus className="w-5 h-5 text-orange-600" />
+                  Crew Orders
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Materials requested by crew from the field - tracked separately for job cost management
+                </p>
+              </CardHeader>
+              <CardContent className="pt-3">
+                {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length === 0 ? (
+                  <div className="text-center py-12">
+                    <PackagePlus className="w-16 h-16 mx-auto mb-4 opacity-50 text-muted-foreground" />
+                    <p className="text-muted-foreground">No crew orders yet</p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Crew can order materials from their Order tab in the field
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {categories
+                      .filter(cat => cat.materials.some(m => m.import_source === 'field_catalog'))
+                      .map(category => {
+                        const fieldMaterials = category.materials.filter(m => m.import_source === 'field_catalog');
+                        return (
+                          <Card key={category.id} className="border-2 border-orange-200 bg-orange-50">
+                            <CardHeader className="pb-3">
+                              <CardTitle className="text-base text-orange-900 flex items-center justify-between">
+                                <span>{category.name}</span>
+                                <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                                  {fieldMaterials.length} {fieldMaterials.length === 1 ? 'order' : 'orders'}
+                                </Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="bg-white rounded-lg border border-orange-200">
+                                <table className="w-full">
+                                  <thead className="bg-orange-100 border-b border-orange-200">
+                                    <tr>
+                                      <th className="text-left p-2 text-xs font-semibold text-orange-900">Material</th>
+                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Qty</th>
+                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Ordered By</th>
+                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">When</th>
+                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {fieldMaterials.map((material, index) => (
+                                      <tr key={material.id} className={index % 2 === 0 ? 'bg-white' : 'bg-orange-50/30'}>
+                                        <td className="p-2">
+                                          <div>
+                                            <div className="font-medium text-sm">{cleanMaterialValue(material.name)}</div>
+                                            {material.length && (
+                                              <div className="text-xs text-muted-foreground">
+                                                {cleanMaterialValue(material.length)}
+                                              </div>
+                                            )}
+                                            {material.notes && (
+                                              <div className="text-xs text-muted-foreground mt-1">
+                                                {material.notes}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2 text-center font-semibold">{material.quantity}</td>
+                                        <td className="p-2 text-center text-sm">
+                                          {material.ordered_by ? (
+                                            <Badge variant="outline" className="text-xs">
+                                              User ID: {material.ordered_by.substring(0, 8)}...
+                                            </Badge>
+                                          ) : '-'}
+                                        </td>
+                                        <td className="p-2 text-center text-xs text-muted-foreground">
+                                          {material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td className="p-2">
+                                          <div className="flex justify-center">
+                                            <Select
+                                              value={material.status}
+                                              onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                            >
+                                              <SelectTrigger className={`w-full h-8 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {STATUS_OPTIONS.map(opt => (
+                                                  <SelectItem key={opt.value} value={opt.value}>
+                                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
+                                                      {opt.label}
+                                                    </span>
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })
+                    }
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

@@ -91,7 +91,7 @@ interface MaterialsListProps {
   userId: string;
   userRole?: 'office' | 'foreman' | 'shop' | 'crew';
   allowBundleCreation?: boolean;
-  defaultTab?: 'all' | 'ready' | 'pull' | 'bundles' | 'catalog';
+  defaultTab?: 'all' | 'ready' | 'pull' | 'bundles' | 'order';
 }
 
 const STATUS_CONFIG = {
@@ -126,7 +126,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull' | 'bundles' | 'catalog'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull' | 'bundles' | 'order'>(defaultTab);
   const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
   const [pullFromShopCount, setPullFromShopCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -1229,7 +1229,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       )}
 
       {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'catalog')} className="w-full">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'order')} className="w-full">
         <div className="relative mb-4">
           <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-5' : 'grid-cols-4'} bg-slate-100 p-1 rounded-none`}>
             <TabsTrigger 
@@ -1285,12 +1285,12 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
               )}
             </TabsTrigger>
             <TabsTrigger 
-              value="catalog" 
+              value="order" 
               className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
             >
-              <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-              <span className="hidden sm:inline">Catalog</span>
-              <span className="sm:hidden">Add</span>
+              <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Order</span>
+              <span className="sm:hidden">Order</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1882,7 +1882,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
           )}
         </TabsContent>
 
-        <TabsContent value="catalog">
+        <TabsContent value="order">
           <MaterialsCatalogBrowser
             job={job}
             userId={userId}

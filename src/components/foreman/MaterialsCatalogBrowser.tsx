@@ -31,6 +31,18 @@ interface MaterialsCatalogBrowserProps {
   onMaterialAdded?: () => void;
 }
 
+interface FieldRequestMaterial {
+  id: string;
+  name: string;
+  quantity: number;
+  length: string | null;
+  status: string;
+  notes: string | null;
+  ordered_by: string | null;
+  order_requested_at: string | null;
+  category_name: string;
+}
+
 export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: MaterialsCatalogBrowserProps) {
   const [catalogMaterials, setCatalogMaterials] = useState<CatalogMaterial[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -42,10 +54,13 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [addMaterialQuantity, setAddMaterialQuantity] = useState<number>(1);
   const [addMaterialNotes, setAddMaterialNotes] = useState('');
   const [addingMaterial, setAddingMaterial] = useState(false);
+  const [fieldRequests, setFieldRequests] = useState<FieldRequestMaterial[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
 
   useEffect(() => {
     loadCatalogMaterials();
-  }, []);
+    loadFieldRequests();
+  }, [job.id]);
 
   async function loadCatalogMaterials() {
     try {
@@ -77,6 +92,49 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       toast.error('Failed to load materials catalog');
     } finally {
       setCatalogLoading(false);
+    }
+  }
+
+  async function loadFieldRequests() {
+    try {
+      setLoadingRequests(true);
+      
+      const { data, error } = await supabase
+        .from('materials')
+        .select(`
+          id,
+          name,
+          quantity,
+          length,
+          status,
+          notes,
+          ordered_by,
+          order_requested_at,
+          materials_categories!inner(name)
+        `)
+        .eq('job_id', job.id)
+        .eq('import_source', 'field_catalog')
+        .order('order_requested_at', { ascending: false });
+
+      if (error) throw error;
+
+      const requests: FieldRequestMaterial[] = (data || []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        quantity: m.quantity,
+        length: m.length,
+        status: m.status,
+        notes: m.notes,
+        ordered_by: m.ordered_by,
+        order_requested_at: m.order_requested_at,
+        category_name: m.materials_categories?.name || 'Unknown',
+      }));
+
+      setFieldRequests(requests);
+    } catch (error: any) {
+      console.error('Error loading field requests:', error);
+    } finally {
+      setLoadingRequests(false);
     }
   }
 
@@ -168,6 +226,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       setShowAddMaterialDialog(false);
       setSelectedCatalogMaterial(null);
       
+      // Reload field requests
+      await loadFieldRequests();
+      
       // Notify parent to reload materials
       if (onMaterialAdded) {
         onMaterialAdded();
@@ -177,6 +238,49 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       toast.error('Failed to add material');
     } finally {
       setAddingMaterial(false);
+    }
+  }
+
+  async function loadFieldRequests() {
+    try {
+      setLoadingRequests(true);
+      
+      const { data, error } = await supabase
+        .from('materials')
+        .select(`
+          id,
+          name,
+          quantity,
+          length,
+          status,
+          notes,
+          ordered_by,
+          order_requested_at,
+          materials_categories!inner(name)
+        `)
+        .eq('job_id', job.id)
+        .eq('import_source', 'field_catalog')
+        .order('order_requested_at', { ascending: false });
+
+      if (error) throw error;
+
+      const requests: FieldRequestMaterial[] = (data || []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        quantity: m.quantity,
+        length: m.length,
+        status: m.status,
+        notes: m.notes,
+        ordered_by: m.ordered_by,
+        order_requested_at: m.order_requested_at,
+        category_name: m.materials_categories?.name || 'Unknown',
+      }));
+
+      setFieldRequests(requests);
+    } catch (error: any) {
+      console.error('Error loading field requests:', error);
+    } finally {
+      setLoadingRequests(false);
     }
   }
 
@@ -207,36 +311,137 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Database className="w-5 h-5 text-primary" />
-            Browse Materials Catalog
+            Order Materials
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Search and request materials not included in the job plan
+            View your orders and search catalog for additional materials
           </p>
         </CardHeader>
       </Card>
 
-      {/* Category Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        <Button
-          variant={catalogCategory === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setCatalogCategory(null)}
-          className="whitespace-nowrap flex-shrink-0"
-        >
-          All
-        </Button>
-        {catalogCategories.map(cat => (
+      {/* Field Requests Section */}
+      {loadingRequests ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading your orders...</p>
+          </CardContent>
+        </Card>
+      ) : fieldRequests.length > 0 ? (
+        <Card className="border-2 border-orange-200 bg-orange-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Package className="w-5 h-5 text-orange-700" />
+              Your Orders ({fieldRequests.length})
+            </CardTitle>
+            <p className="text-sm text-orange-700 mt-1">
+              Materials you've requested from the catalog
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {fieldRequests.map(material => {
+                const statusConfig = {
+                  not_ordered: { label: 'Not Ordered', color: 'bg-gray-100 text-gray-700' },
+                  ordered: { label: 'Ordered', color: 'bg-yellow-100 text-yellow-700' },
+                  at_shop: { label: 'At Shop', color: 'bg-blue-100 text-blue-700' },
+                  ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700' },
+                  at_job: { label: 'At Job', color: 'bg-green-100 text-green-700' },
+                  installed: { label: 'Installed', color: 'bg-slate-800 text-white' },
+                  missing: { label: 'Missing', color: 'bg-red-100 text-red-700' },
+                }[material.status] || { label: material.status, color: 'bg-gray-100 text-gray-700' };
+
+                return (
+                  <Card key={material.id} className="bg-white">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <h4 className="font-semibold text-sm truncate">{material.name}</h4>
+                            {material.length && (
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {cleanMaterialValue(material.length)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <Badge variant="outline" className="text-xs">
+                              Qty: {material.quantity}
+                            </Badge>
+                            <Badge className={`text-xs ${statusConfig.color}`}>
+                              {statusConfig.label}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              {material.category_name}
+                            </Badge>
+                          </div>
+                          {material.notes && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {material.notes}
+                            </p>
+                          )}
+                          {material.order_requested_at && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Ordered: {new Date(material.order_requested_at).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-2 border-blue-200 bg-blue-50">
+          <CardContent className="py-6 text-center">
+            <Package className="w-12 h-12 mx-auto mb-3 text-blue-700 opacity-50" />
+            <p className="text-sm text-blue-900 font-semibold">No orders yet</p>
+            <p className="text-xs text-blue-700 mt-1">
+              Search the catalog below to request materials
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Divider */}
+      <div className="relative py-2">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-slate-300"></div>
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+            Search Catalog
+          </span>
+        </div>
+      </div>
+
+      {/* Category Filter - Only show when searching */}
+      {catalogSearch && (
+        <div className="flex gap-2 overflow-x-auto pb-2">
           <Button
-            key={cat}
-            variant={catalogCategory === cat ? "default" : "outline"}
+            variant={catalogCategory === null ? "default" : "outline"}
             size="sm"
-            onClick={() => setCatalogCategory(cat)}
+            onClick={() => setCatalogCategory(null)}
             className="whitespace-nowrap flex-shrink-0"
           >
-            {cat}
+            All
           </Button>
-        ))}
-      </div>
+          {catalogCategories.map(cat => (
+            <Button
+              key={cat}
+              variant={catalogCategory === cat ? "default" : "outline"}
+              size="sm"
+              onClick={() => setCatalogCategory(cat)}
+              className="whitespace-nowrap flex-shrink-0"
+            >
+              {cat}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">
@@ -249,8 +454,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         />
       </div>
 
-      {/* Materials List */}
-      {catalogLoading ? (
+      {/* Materials List - Only show when searching */}
+      {catalogSearch && catalogLoading ? (
         <Card>
           <CardContent className="py-12 text-center">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -261,10 +466,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p>No materials found</p>
+            <p>No materials found matching "{catalogSearch}"</p>
           </CardContent>
         </Card>
-      ) : (
+      ) : catalogSearch ? (
         <div className="space-y-2">
           {filteredCatalogMaterials.map(material => (
             <Card key={material.sku} className="hover:shadow-md transition-shadow">
@@ -303,7 +508,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </Card>
           ))}
         </div>
-      )}
+      ) : null}
 
       {/* Add Material Dialog */}
       <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
