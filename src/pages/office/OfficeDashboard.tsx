@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Cube } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -26,6 +26,7 @@ import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { MaterialInventory } from '@/components/office/MaterialInventory';
+import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
@@ -38,6 +39,7 @@ import {
 
 export function OfficeDashboard() {
   const { profile, clearUser } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => {
@@ -366,7 +368,53 @@ export function OfficeDashboard() {
         )}
 
         {activeTab === 'quotes' && (
-          <QuotesView />
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Quotes & Estimating</h2>
+              <p className="text-yellow-400">Manage customer quotes and 3D building configurations</p>
+            </div>
+            
+            {/* Quick Access Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                onClick={() => navigate('/office/estimator')}
+                className="group bg-white border-2 border-blue-500 rounded-lg p-6 hover:border-blue-600 hover:shadow-xl transition-all text-left"
+              >
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="bg-blue-500 text-white rounded-lg p-3 group-hover:bg-blue-600 transition-colors">
+                    <Cube className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">3D Building Estimator</h3>
+                    <p className="text-sm text-slate-600">Configure structures & calculate materials</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Design post-frame buildings in 3D, automatically calculate materials, and generate quotes
+                </p>
+              </button>
+              
+              <button
+                onClick={() => {/* Navigate to quote intake */}}
+                className="group bg-white border-2 border-green-600 rounded-lg p-6 hover:border-green-700 hover:shadow-xl transition-all text-left"
+              >
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="bg-green-600 text-white rounded-lg p-3 group-hover:bg-green-700 transition-colors">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Quote Management</h3>
+                    <p className="text-sm text-slate-600">View and manage all quotes</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Track quote status, convert to jobs, and manage customer proposals
+                </p>
+              </button>
+            </div>
+            
+            <QuotesView />
+          </div>
         )}
 
         {activeTab === 'schedule' && (

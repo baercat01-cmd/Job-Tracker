@@ -9,6 +9,7 @@ import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
+import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
 import { FleetLoginPage } from '@/pages/fleet/FleetLoginPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { Toaster } from '@/components/ui/sonner';
@@ -130,6 +131,7 @@ function AppContent() {
         <Route path="/office" element={<OfficeDashboard />} />
         <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
         <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
+        <Route path="/office/estimator" element={<BuildingEstimatorPage />} />
         <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
       </Routes>
     );
