@@ -1320,8 +1320,8 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
       )}
 
-      {/* Download Button - Show on All, Ready, and Pull tabs */}
-      {(activeTab === 'all' || activeTab === 'ready' || activeTab === 'pull') && categories.length > 0 && (
+      {/* Download Button - Show when there are materials to download */}
+      {activeTab === 'all' && categories.length > 0 && (
         <div className="flex justify-end mb-2">
           <Button
             onClick={downloadMaterialsList}
