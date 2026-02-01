@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Cube } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -382,7 +382,7 @@ export function OfficeDashboard() {
               >
                 <div className="flex items-center gap-4 mb-3">
                   <div className="bg-blue-500 text-white rounded-lg p-3 group-hover:bg-blue-600 transition-colors">
-                    <Cube className="w-6 h-6" />
+                    <Box className="w-6 h-6" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-900">3D Building Estimator</h3>
