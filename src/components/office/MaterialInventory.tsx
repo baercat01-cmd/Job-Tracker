@@ -27,7 +27,8 @@ import {
   Package,
   DollarSign,
   Tag,
-  FileText
+  FileText,
+  Download
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -51,6 +52,7 @@ export function MaterialInventory() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMode, setImportMode] = useState<'add' | 'replace'>('replace');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadMaterials();
@@ -442,6 +444,90 @@ export function MaterialInventory() {
 
   const totalItems = materials.length;
   
+  async function exportMaterialsCatalog() {
+    setExporting(true);
+
+    try {
+      if (materials.length === 0) {
+        toast.error('No materials to export');
+        return;
+      }
+
+      // Status labels
+      const STATUS_LABELS: Record<string, string> = {
+        needed: 'Needed',
+        not_ordered: 'Not Ordered',
+        ordered: 'Ordered',
+        at_shop: 'At Shop',
+        ready_to_pull: 'Pull from Shop',
+        at_job: 'At Job',
+        installed: 'Installed',
+        missing: 'Missing',
+      };
+
+      // Create CSV headers
+      const headers = [
+        'Material Name',
+        'SKU',
+        'Category',
+        'Length',
+        'Purchase Cost',
+        'Unit Price',
+        'Markup %',
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      // Helper function to escape CSV values
+      const escapeCSV = (str: string | null | undefined): string => {
+        if (!str) return '';
+        const text = String(str);
+        if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+          return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+      };
+
+      // Add each material as a row
+      materials.forEach((material) => {
+        const purchaseCost = material.purchase_cost || 0;
+        const unitPrice = material.unit_price || 0;
+        const markup = purchaseCost > 0 ? ((unitPrice - purchaseCost) / purchaseCost) * 100 : 0;
+
+        const row = [
+          escapeCSV(material.material_name),
+          escapeCSV(material.sku),
+          escapeCSV(cleanCategory(material.category)),
+          escapeCSV(formatLength(material.part_length, material.category)),
+          purchaseCost.toFixed(2),
+          unitPrice.toFixed(2),
+          markup.toFixed(1),
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Materials_Catalog_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${materials.length} materials to CSV`);
+    } catch (error: any) {
+      console.error('Error exporting materials:', error);
+      toast.error('Failed to export materials catalog');
+    } finally {
+      setExporting(false);
+    }
+  }
+  
   // Helper function to calculate markup and determine color
   const getMarkupDisplay = (cost: number | null, price: number | null) => {
     if (!cost || cost === 0 || !price) {
@@ -515,6 +601,24 @@ export function MaterialInventory() {
           <span className="font-medium">{filteredMaterials.length.toLocaleString()}</span>
           <span className="text-slate-500 ml-1">materials</span>
         </div>
+        <Button
+          onClick={exportMaterialsCatalog}
+          disabled={exporting || materials.length === 0}
+          variant="outline"
+          className="flex-shrink-0"
+        >
+          {exporting ? (
+            <>
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+              Exporting...
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </>
+          )}
+        </Button>
         <Button
           onClick={() => setShowImportDialog(true)}
           className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg flex-shrink-0"
