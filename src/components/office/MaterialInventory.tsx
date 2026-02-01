@@ -120,6 +120,29 @@ export function MaterialInventory() {
 
 
 
+  // Enhanced CSV parser that handles quoted values
+  function parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    result.push(current.trim());
+    return result;
+  }
+
   async function handleImportCSV() {
     if (!importFile) {
       toast.error('Please select a file');
@@ -129,18 +152,26 @@ export function MaterialInventory() {
     try {
       setImporting(true);
       const text = await importFile.text();
-      const lines = text.split('\n');
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const lines = text.split('\n').filter(line => line.trim());
+      const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, '').trim());
 
-      // Find column indices
-      const itemNameIdx = headers.indexOf('Item Name');
-      const skuIdx = headers.indexOf('SKU');
-      const rateIdx = headers.indexOf('Rate');
-      const purchaseRateIdx = headers.indexOf('Purchase Rate');
-      const accountIdx = headers.indexOf('Account');
+      console.log('CSV Headers found:', headers);
+
+      // Find column indices - try multiple variations
+      const itemNameIdx = headers.findIndex(h => 
+        h.toLowerCase().includes('item') && h.toLowerCase().includes('name')
+      );
+      const skuIdx = headers.findIndex(h => h.toLowerCase() === 'sku');
+      const rateIdx = headers.findIndex(h => h.toLowerCase() === 'rate');
+      const purchaseRateIdx = headers.findIndex(h => 
+        h.toLowerCase().includes('purchase') && h.toLowerCase().includes('rate')
+      );
+      const accountIdx = headers.findIndex(h => h.toLowerCase() === 'account');
+
+      console.log('Column indices:', { itemNameIdx, skuIdx, rateIdx, purchaseRateIdx, accountIdx });
 
       if (itemNameIdx === -1 || skuIdx === -1) {
-        throw new Error('Required columns not found (Item Name, SKU)');
+        throw new Error(`Required columns not found. Found headers: ${headers.join(', ')}`);
       }
 
       // Group by SKU to handle duplicates (color variants, etc.)
@@ -151,8 +182,8 @@ export function MaterialInventory() {
         const line = lines[i].trim();
         if (!line) continue;
 
-        // Parse CSV line (basic implementation - may need enhancement for complex CSVs)
-        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+        // Parse CSV line with proper quote handling
+        const values = parseCSVLine(line).map(v => v.replace(/"/g, '').trim());
         
         const itemName = values[itemNameIdx];
         const sku = values[skuIdx];
@@ -160,6 +191,17 @@ export function MaterialInventory() {
         if (!itemName || !sku) continue;
 
         totalRows++;
+
+        // Debug first row
+        if (totalRows === 1) {
+          console.log('First row sample:', {
+            itemName,
+            sku,
+            rate: values[rateIdx],
+            purchaseRate: values[purchaseRateIdx],
+            account: accountIdx !== -1 ? values[accountIdx] : 'N/A'
+          });
+        }
 
         // Create raw metadata object with ALL columns for this row
         const rowMetadata: any = {};
@@ -178,11 +220,15 @@ export function MaterialInventory() {
                              sku.match(/(\d+['"]?)/);
           const partLength = lengthMatch ? lengthMatch[1] : null;
 
-          // Helper to parse price values that may have "USD" prefix
+          // Helper to parse price values with various formats
           const parsePrice = (value: string): number => {
             if (!value) return 0;
-            // Remove "USD" prefix and any whitespace
-            const cleaned = value.replace(/USD\s*/i, '').trim();
+            // Remove USD prefix, dollar signs, commas, and whitespace
+            const cleaned = value
+              .replace(/USD\s*/i, '')
+              .replace(/\$/g, '')
+              .replace(/,/g, '')
+              .trim();
             const parsed = parseFloat(cleaned);
             return isNaN(parsed) ? 0 : parsed;
           };
