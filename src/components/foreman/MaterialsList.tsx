@@ -1320,22 +1320,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
       )}
 
-      {/* Download Button - Show when there are materials to download */}
-      {activeTab === 'all' && categories.length > 0 && (
-        <div className="flex justify-end mb-2">
-          <Button
-            onClick={downloadMaterialsList}
-            variant="outline"
-            size="sm"
-            className="gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Download Materials List
-          </Button>
-        </div>
-      )}
-
-      {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */}
+      {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'order')} className="w-full">
         <div className="relative mb-4">
           <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-5' : 'grid-cols-4'} bg-slate-100 p-1 rounded-none`}>
@@ -1415,6 +1400,23 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
 
         <TabsContent value="all" className="space-y-3">
+          {/* Export Button - Prominent placement at top of All Materials */}
+          {categories.length > 0 && (
+            <Card className="border-2 border-primary/20 bg-primary/5">
+              <CardContent className="py-3">
+                <Button
+                  onClick={downloadMaterialsList}
+                  variant="default"
+                  size="lg"
+                  className="w-full h-12 gap-2"
+                >
+                  <Download className="w-5 h-5" />
+                  Export All Materials as CSV
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Bundle Creation Button (when in selection mode) */}
           {selectionMode && selectedMaterialIds.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
