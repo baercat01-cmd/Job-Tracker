@@ -43,6 +43,7 @@ export function DataExport() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [exportingMaterials, setExportingMaterials] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -825,6 +826,108 @@ export function DataExport() {
     return text;
   }
 
+  async function exportAllMaterials() {
+    setExportingMaterials(true);
+
+    try {
+      // Fetch all materials with job info and category info
+      const { data: materialsData, error: materialsError } = await supabase
+        .from('materials')
+        .select(`
+          *,
+          jobs(id, name, client_name, job_number),
+          materials_categories(name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (materialsError) throw materialsError;
+
+      if (!materialsData || materialsData.length === 0) {
+        toast.error('No materials found in the system');
+        return;
+      }
+
+      // Status labels
+      const STATUS_LABELS: Record<string, string> = {
+        needed: 'Needed',
+        not_ordered: 'Not Ordered',
+        ordered: 'Ordered',
+        at_shop: 'At Shop',
+        ready_to_pull: 'Pull from Shop',
+        at_job: 'At Job',
+        installed: 'Installed',
+        missing: 'Missing',
+      };
+
+      // Create CSV headers
+      const headers = [
+        'Job Name',
+        'Client Name',
+        'Job Number',
+        'Category',
+        'Material Name',
+        'Quantity',
+        'Length',
+        'Status',
+        'Use Case',
+        'Notes',
+        'Date Needed By',
+        'Order By Date',
+        'Pull By Date',
+        'Delivery Date',
+        'Actual Delivery Date',
+        'Created At',
+        'Updated At'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      // Add each material as a row
+      materialsData.forEach((material: any) => {
+        const row = [
+          escapeCSV(material.jobs?.name || 'Unknown Job'),
+          escapeCSV(material.jobs?.client_name || ''),
+          escapeCSV(material.jobs?.job_number || ''),
+          escapeCSV(material.materials_categories?.name || 'Uncategorized'),
+          escapeCSV(material.name || ''),
+          material.quantity || 0,
+          escapeCSV(material.length || ''),
+          escapeCSV(STATUS_LABELS[material.status] || material.status || 'Not Ordered'),
+          escapeCSV(material.use_case || ''),
+          escapeCSV(material.notes || ''),
+          material.date_needed_by || '',
+          material.order_by_date || '',
+          material.pull_by_date || '',
+          material.delivery_date || '',
+          material.actual_delivery_date || '',
+          material.created_at ? new Date(material.created_at).toLocaleDateString() : '',
+          material.updated_at ? new Date(material.updated_at).toLocaleDateString() : ''
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `All_Materials_Export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${materialsData.length} materials from all jobs`);
+    } catch (error: any) {
+      console.error('Error exporting materials:', error);
+      toast.error('Failed to export materials');
+    } finally {
+      setExportingMaterials(false);
+    }
+  }
+
   async function exportToNotebookLM(job: Job, timeEntries: TimeEntry[], dailyLogs: DailyLog[]) {
     let report = '';
 
@@ -1034,11 +1137,52 @@ export function DataExport() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold mb-2">Export Job Data</h2>
+        <h2 className="text-2xl font-bold mb-2">Export Data</h2>
         <p className="text-muted-foreground">
-          Download complete job information in PDF, Excel, or NotebookLM format
+          Download complete job information, materials lists, and other data exports
         </p>
       </div>
+
+      {/* Export All Materials */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5" />
+            Export All Materials
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+            <p className="text-sm font-medium">Complete materials list includes:</p>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>✓ All materials from all jobs</li>
+              <li>✓ Job name, client, and job number</li>
+              <li>✓ Category, quantity, length, and status</li>
+              <li>✓ All dates (needed by, order by, delivery, etc.)</li>
+              <li>✓ Use case, notes, and timestamps</li>
+            </ul>
+          </div>
+
+          <Button
+            onClick={exportAllMaterials}
+            disabled={exportingMaterials}
+            size="lg"
+            className="w-full"
+          >
+            {exportingMaterials ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                Exporting Materials...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Download All Materials as CSV
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
