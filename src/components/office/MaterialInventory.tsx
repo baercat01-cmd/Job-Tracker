@@ -82,7 +82,7 @@ export function MaterialInventory() {
     }));
   }, [materials]);
 
-  // Get unique categories with cleaned names, excluding numeric-only categories
+  // Get unique categories with cleaned names from Account column
   const categories = useMemo(() => {
     const cats = new Set<string>();
     flatMaterials.forEach(m => {
@@ -93,8 +93,7 @@ export function MaterialInventory() {
           .replace(/Sales\s*[-:]?\s*/gi, '') // Remove Sales text
           .replace(/^[-:]\s*/, '')           // Remove leading dash/colon
           .trim();
-        // Exclude categories that are purely numeric
-        if (cleaned && !/^\d+$/.test(cleaned)) {
+        if (cleaned) {
           cats.add(cleaned);
         }
       }
