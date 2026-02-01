@@ -1220,33 +1220,60 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
       )}
 
-      {/* Tab Switcher with Swipe Navigation Hints */}
+      {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull')} className="w-full">
         <div className="relative mb-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all" className="flex items-center gap-2">
-              <Layers className="w-4 h-4" />
-              All Materials
+          <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-4' : 'grid-cols-3'} bg-slate-100 p-1 rounded-none`}>
+            <TabsTrigger 
+              value="all" 
+              className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">All Materials</span>
+              <span className="sm:hidden">All</span>
             </TabsTrigger>
-            <TabsTrigger value="ready" className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4" />
-              Ready for Job
+            <TabsTrigger 
+              value="ready" 
+              className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <div className="flex items-center gap-1 sm:gap-2">
+                <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                <span className="hidden lg:inline">Ready for Job</span>
+                <span className="lg:hidden">Ready</span>
+              </div>
               {readyMaterialsCount > 0 && (
-                <Badge variant="secondary" className="ml-1">{readyMaterialsCount}</Badge>
+                <Badge variant="secondary" className="ml-0 sm:ml-1 text-[10px] sm:text-xs px-1 sm:px-1.5 py-0">
+                  {readyMaterialsCount}
+                </Badge>
               )}
             </TabsTrigger>
             {pullFromShopCount > 0 && (
-              <TabsTrigger value="pull" className="flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                Pull from Shop
-                <Badge variant="secondary" className="ml-1">{pullFromShopCount}</Badge>
+              <TabsTrigger 
+                value="pull" 
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
+              >
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                  <span className="hidden lg:inline">Pull from Shop</span>
+                  <span className="lg:hidden">Pull</span>
+                </div>
+                <Badge variant="secondary" className="ml-0 sm:ml-1 text-[10px] sm:text-xs px-1 sm:px-1.5 py-0">
+                  {pullFromShopCount}
+                </Badge>
               </TabsTrigger>
             )}
-            <TabsTrigger value="bundles" className="flex items-center gap-2">
-              <PackagePlus className="w-4 h-4" />
-              Bundles
+            <TabsTrigger 
+              value="bundles" 
+              className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <div className="flex items-center gap-1 sm:gap-2">
+                <PackagePlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                <span>Bundles</span>
+              </div>
               {bundles.length > 0 && (
-                <Badge variant="secondary" className="ml-1">{bundles.length}</Badge>
+                <Badge variant="secondary" className="ml-0 sm:ml-1 text-[10px] sm:text-xs px-1 sm:px-1.5 py-0">
+                  {bundles.length}
+                </Badge>
               )}
             </TabsTrigger>
           </TabsList>
