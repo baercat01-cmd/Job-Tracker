@@ -134,7 +134,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'date' | 'quantity'>('name');
-  const [showFieldRequestsOnly, setShowFieldRequestsOnly] = useState(false);
   
   // Selection mode for creating bundles
   const [selectionMode, setSelectionMode] = useState(false);
@@ -318,9 +317,13 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       console.log('📦 Loaded materials:', materialsData?.length || 0);
       console.log('Materials data sample:', materialsData?.[0]);
 
-      // Group materials by category, including all materials
+      // Separate field requests from regular materials
+      const fieldRequestMaterials = (materialsData || []).filter((m: any) => m.import_source === 'field_catalog');
+      const regularMaterials = (materialsData || []).filter((m: any) => m.import_source !== 'field_catalog');
+
+      // Group regular materials by category
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => {
-        const categoryMaterials = (materialsData || []).filter((m: any) => m.category_id === cat.id);
+        const categoryMaterials = regularMaterials.filter((m: any) => m.category_id === cat.id);
         console.log(`📁 Category "${cat.name}" has ${categoryMaterials.length} materials`);
         return {
           id: cat.id,
@@ -329,6 +332,16 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
           materials: categoryMaterials,
         };
       });
+
+      // Add virtual "Field Requests" category at the top if there are any field requests
+      if (fieldRequestMaterials.length > 0) {
+        categoriesWithMaterials.unshift({
+          id: 'field-requests-virtual',
+          name: '🔧 Field Requests',
+          order_index: -1,
+          materials: fieldRequestMaterials,
+        });
+      }
 
       console.log('✅ Setting categories with materials');
       setCategories(categoriesWithMaterials);
@@ -1109,11 +1122,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       // Skip filters when in selection mode for bundles
       if (!skipFilters) {
-        // Field requests filter
-        if (showFieldRequestsOnly) {
-          filteredMaterials = filteredMaterials.filter(m => m.import_source === 'field_catalog');
-        }
-        
         // Apply status filter
         if (statusFilter !== 'all') {
           filteredMaterials = filteredMaterials.filter(m => m.status === statusFilter);
@@ -1307,49 +1315,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
 
         <TabsContent value="all" className="space-y-3">
-          {/* Field Requests Filter Dropdown */}
-          <Card className="border-2 border-orange-200 bg-orange-50">
-            <CardContent className="py-3">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <label className="text-sm font-semibold text-orange-900 whitespace-nowrap">
-                    View:
-                  </label>
-                  <Select
-                    value={showFieldRequestsOnly ? 'field_requests' : 'all'}
-                    onValueChange={(value) => setShowFieldRequestsOnly(value === 'field_requests')}
-                  >
-                    <SelectTrigger className="h-10 bg-white border-orange-300 font-semibold">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        <div className="flex items-center gap-2">
-                          <Layers className="w-4 h-4" />
-                          <span>All Materials</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="field_requests">
-                        <div className="flex items-center gap-2">
-                          <span>🔧</span>
-                          <span>My Field Requests Only</span>
-                          <Badge variant="secondary" className="ml-2 bg-orange-100 text-orange-800">
-                            {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {showFieldRequestsOnly && (
-                  <p className="text-xs text-orange-700">
-                    Materials requested from the field are kept separate for tracking extra charges to the job
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Bundle Creation Button (when in selection mode) */}
           {selectionMode && selectedMaterialIds.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
@@ -1459,12 +1424,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  {/* Field Request Badge */}
-                                  {group.materials.length === 1 && group.materials[0].import_source === 'field_catalog' && (
-                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300 font-semibold">
-                                      🔧 Field Request
-                                    </Badge>
-                                  )}
+
                                   <span className="text-sm text-muted-foreground">
                                     Total Qty: {group.totalQuantity}
                                   </span>
@@ -1513,11 +1473,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                                         >
                                           {getStatusConfig(material.status).label}
                                         </Badge>
-                                        {material.import_source === 'field_catalog' && (
-                                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300 font-semibold">
-                                            🔧 Field Request
-                                          </Badge>
-                                        )}
                                       </div>
                                       {(material as any).use_case && (
                                         <p className="text-xs text-muted-foreground mt-1">
