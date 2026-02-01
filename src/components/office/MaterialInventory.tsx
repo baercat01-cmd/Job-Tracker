@@ -18,10 +18,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { 
-  ChevronDown, 
-  ChevronRight, 
-  Search, 
+import {
+  ChevronDown,
+  ChevronRight,
+  Search,
   Upload,
   Package,
   DollarSign,
@@ -38,12 +38,7 @@ interface MaterialCatalogItem {
   purchase_cost: number | null;
   part_length: string | null;
   raw_metadata: any;
-}
-
-interface GroupedMaterial {
-  parent_name: string;
-  category: string | null;
-  items: MaterialCatalogItem[];
+  displayName?: string;
 }
 
 export function MaterialInventory() {
@@ -51,7 +46,6 @@ export function MaterialInventory() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -78,67 +72,53 @@ export function MaterialInventory() {
     }
   }
 
-  // Group materials by name
-  const groupedMaterials = useMemo(() => {
-    const groups = new Map<string, GroupedMaterial>();
-
-    materials.forEach(material => {
-      const key = material.material_name;
-      if (!groups.has(key)) {
-        groups.set(key, {
-          parent_name: key,
-          category: material.category,
-          items: [],
-        });
-      }
-      groups.get(key)!.items.push(material);
-    });
-
-    return Array.from(groups.values());
+  // Flatten materials - no grouping
+  const flatMaterials = useMemo(() => {
+    return materials.map(material => ({
+      ...material,
+      displayName: material.part_length 
+        ? `${material.material_name} : ${material.part_length}`
+        : material.material_name
+    }));
   }, [materials]);
 
   // Get unique categories
   const categories = useMemo(() => {
     const cats = new Set<string>();
-    materials.forEach(m => {
+    flatMaterials.forEach(m => {
       if (m.category) cats.add(m.category);
     });
     return Array.from(cats).sort();
-  }, [materials]);
+  }, [flatMaterials]);
 
   // Filter materials
-  const filteredGroups = useMemo(() => {
-    let filtered = groupedMaterials;
+  const filteredMaterials = useMemo(() => {
+    let filtered = flatMaterials;
 
     // Filter by category
     if (selectedCategory) {
-      filtered = filtered.filter(g => g.category === selectedCategory);
+      filtered = filtered.filter(m => m.category === selectedCategory);
     }
 
     // Filter by search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(g =>
-        g.parent_name.toLowerCase().includes(term) ||
-        g.items.some(item => 
-          item.sku.toLowerCase().includes(term) ||
-          item.part_length?.toLowerCase().includes(term)
-        )
+      filtered = filtered.filter(m =>
+        m.material_name.toLowerCase().includes(term) ||
+        m.sku.toLowerCase().includes(term) ||
+        m.part_length?.toLowerCase().includes(term)
       );
     }
 
-    return filtered;
-  }, [groupedMaterials, selectedCategory, searchTerm]);
+    // Sort by name then length
+    return filtered.sort((a, b) => {
+      const nameCompare = a.material_name.localeCompare(b.material_name);
+      if (nameCompare !== 0) return nameCompare;
+      return (a.part_length || '').localeCompare(b.part_length || '');
+    });
+  }, [flatMaterials, selectedCategory, searchTerm]);
 
-  function toggleParent(parentName: string) {
-    const newExpanded = new Set(expandedParents);
-    if (newExpanded.has(parentName)) {
-      newExpanded.delete(parentName);
-    } else {
-      newExpanded.add(parentName);
-    }
-    setExpandedParents(newExpanded);
-  }
+
 
   async function handleImportCSV() {
     if (!importFile) {
@@ -247,7 +227,24 @@ export function MaterialInventory() {
   }
 
   const totalItems = materials.length;
-  const totalParents = groupedMaterials.length;
+  
+  // Helper function to calculate markup and determine color
+  const getMarkupDisplay = (cost: number | null, price: number | null) => {
+    if (!cost || cost === 0 || !price) {
+      return { markup: 0, color: 'text-slate-400', bgColor: 'bg-slate-100' };
+    }
+    
+    const markup = ((price - cost) / cost) * 100;
+    
+    // Color coding based on margin
+    if (markup < 20) {
+      return { markup, color: 'text-red-700 font-bold', bgColor: 'bg-red-50' };
+    } else if (markup < 30) {
+      return { markup, color: 'text-orange-700 font-semibold', bgColor: 'bg-orange-50' };
+    } else {
+      return { markup, color: 'text-green-700', bgColor: 'bg-green-50' };
+    }
+  };
 
   if (loading) {
     return (
@@ -267,7 +264,7 @@ export function MaterialInventory() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Material Inventory</h2>
           <p className="text-yellow-400">
-            {totalParents} Materials • {totalItems} SKU Variants
+            {totalItems} Materials
           </p>
         </div>
         <Button 
@@ -317,33 +314,62 @@ export function MaterialInventory() {
           <Table>
             <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
               <TableRow className="border-b-2 border-slate-200">
-                <TableHead className="w-12 bg-slate-50"></TableHead>
                 <TableHead className="bg-slate-50 font-bold">Material Name & Length</TableHead>
                 <TableHead className="bg-slate-50 font-bold">SKU</TableHead>
                 <TableHead className="bg-slate-50 font-bold">Category</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Cost</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Price</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Markup %</TableHead>
-                <TableHead className="text-right bg-slate-50 font-bold">Variants</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredGroups.length === 0 ? (
+              {filteredMaterials.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No materials found</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredGroups.map(group => (
-                  <MaterialRow
-                    key={group.parent_name}
-                    group={group}
-                    isExpanded={expandedParents.has(group.parent_name)}
-                    onToggle={() => toggleParent(group.parent_name)}
-                  />
-                ))
+                filteredMaterials.map(material => {
+                  const markupDisplay = getMarkupDisplay(material.purchase_cost, material.unit_price);
+                  
+                  return (
+                    <TableRow key={material.sku} className="hover:bg-slate-50 border-b border-slate-100">
+                      <TableCell className="font-medium text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-4 h-4 text-slate-600" />
+                          <span>
+                            {material.material_name}
+                            {material.part_length && (
+                              <span className="text-blue-700 font-bold"> : {material.part_length}</span>
+                            )}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Tag className="w-3 h-3 text-slate-500" />
+                          <span className="text-sm font-mono text-slate-700">{material.sku}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {material.category && (
+                          <Badge variant="outline" className="font-medium">{material.category}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-orange-700">
+                        ${(material.purchase_cost || 0).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-green-700">
+                        ${(material.unit_price || 0).toFixed(2)}
+                      </TableCell>
+                      <TableCell className={`text-right font-bold ${markupDisplay.color} ${markupDisplay.bgColor} rounded px-2`}>
+                        {markupDisplay.markup.toFixed(1)}%
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -415,134 +441,4 @@ export function MaterialInventory() {
   );
 }
 
-function MaterialRow({ 
-  group, 
-  isExpanded, 
-  onToggle 
-}: { 
-  group: GroupedMaterial; 
-  isExpanded: boolean; 
-  onToggle: () => void;
-}) {
-  // Calculate average cost and price for parent row
-  const costs = group.items
-    .map(i => i.purchase_cost)
-    .filter((c): c is number => c !== null && c > 0);
-  const prices = group.items
-    .map(i => i.unit_price)
-    .filter((p): p is number => p !== null && p > 0);
-  
-  const avgCost = costs.length > 0 ? costs.reduce((a, b) => a + b, 0) / costs.length : 0;
-  const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
-  const avgMarkup = avgCost > 0 ? ((avgPrice - avgCost) / avgCost) * 100 : 0;
 
-  // Helper function to calculate markup and determine color
-  const getMarkupDisplay = (cost: number | null, price: number | null) => {
-    if (!cost || cost === 0 || !price) {
-      return { markup: 0, color: 'text-slate-400', bgColor: 'bg-slate-100' };
-    }
-    
-    const markup = ((price - cost) / cost) * 100;
-    
-    // Color coding based on margin
-    if (markup < 20) {
-      return { markup, color: 'text-red-700 font-bold', bgColor: 'bg-red-50' };
-    } else if (markup < 30) {
-      return { markup, color: 'text-orange-700 font-semibold', bgColor: 'bg-orange-50' };
-    } else {
-      return { markup, color: 'text-green-700', bgColor: 'bg-green-50' };
-    }
-  };
-
-  const parentMarkupDisplay = getMarkupDisplay(avgCost, avgPrice);
-
-  return (
-    <>
-      {/* Parent Row */}
-      <TableRow 
-        className="cursor-pointer hover:bg-slate-100 border-b border-slate-200"
-        onClick={onToggle}
-      >
-        <TableCell className="bg-slate-50">
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </TableCell>
-        <TableCell className="font-bold text-slate-900">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-slate-600" />
-            {group.parent_name}
-          </div>
-        </TableCell>
-        <TableCell className="text-slate-600">—</TableCell>
-        <TableCell>
-          {group.category && (
-            <Badge variant="outline" className="font-medium">{group.category}</Badge>
-          )}
-        </TableCell>
-        <TableCell className="text-right font-medium text-slate-700">
-          ${avgCost.toFixed(2)}
-        </TableCell>
-        <TableCell className="text-right font-medium text-slate-700">
-          ${avgPrice.toFixed(2)}
-        </TableCell>
-        <TableCell className={`text-right ${parentMarkupDisplay.color} ${parentMarkupDisplay.bgColor} rounded px-2`}>
-          {parentMarkupDisplay.markup.toFixed(1)}%
-        </TableCell>
-        <TableCell className="text-right">
-          <Badge className="bg-slate-900 text-white">{group.items.length}</Badge>
-        </TableCell>
-      </TableRow>
-
-      {/* Sub-Material Rows */}
-      {isExpanded && group.items.map(item => {
-        const itemMarkupDisplay = getMarkupDisplay(item.purchase_cost, item.unit_price);
-        
-        return (
-          <TableRow key={item.sku} className="bg-slate-50/50 hover:bg-slate-100 border-b border-slate-100">
-            <TableCell className="bg-slate-50"></TableCell>
-            <TableCell className="pl-8">
-              <div className="flex items-center gap-2">
-                <span className="text-slate-900 font-medium">
-                  {group.parent_name}
-                  {item.part_length && (
-                    <span className="text-blue-700 font-bold"> : {item.part_length}</span>
-                  )}
-                </span>
-              </div>
-            </TableCell>
-            <TableCell>
-              <div className="flex items-center gap-1">
-                <Tag className="w-3 h-3 text-slate-500" />
-                <span className="text-sm font-mono text-slate-700">{item.sku}</span>
-              </div>
-            </TableCell>
-            <TableCell>
-              {group.category && (
-                <span className="text-xs text-slate-500">{group.category}</span>
-              )}
-            </TableCell>
-            <TableCell className="text-right font-semibold text-orange-700">
-              ${(item.purchase_cost || 0).toFixed(2)}
-            </TableCell>
-            <TableCell className="text-right font-semibold text-green-700">
-              ${(item.unit_price || 0).toFixed(2)}
-            </TableCell>
-            <TableCell className={`text-right font-bold ${itemMarkupDisplay.color} ${itemMarkupDisplay.bgColor} rounded px-2`}>
-              {itemMarkupDisplay.markup.toFixed(1)}%
-            </TableCell>
-            <TableCell className="text-right">
-              {item.raw_metadata && Array.isArray(item.raw_metadata) && item.raw_metadata.length > 1 && (
-                <Badge variant="outline" className="text-xs">
-                  {item.raw_metadata.length} variants
-                </Badge>
-              )}
-            </TableCell>
-          </TableRow>
-        );
-      })}
-    </>
-  );
-}
