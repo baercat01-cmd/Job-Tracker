@@ -1877,7 +1877,6 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                       );
                     })()}
                   </Card>
-                  </Card>
                 );
               })}
             </div>
