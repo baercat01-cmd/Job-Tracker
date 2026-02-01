@@ -334,13 +334,11 @@ export function MaterialInventory() {
     
     const markup = ((price - cost) / cost) * 100;
     
-    // Color coding based on margin
-    if (markup < 20) {
+    // Only highlight negative markups in red
+    if (markup < 0) {
       return { markup, color: 'text-red-700 font-bold', bgColor: 'bg-red-50' };
-    } else if (markup < 30) {
-      return { markup, color: 'text-orange-700 font-semibold', bgColor: 'bg-orange-50' };
     } else {
-      return { markup, color: 'text-green-700', bgColor: 'bg-green-50' };
+      return { markup, color: 'text-black', bgColor: 'bg-transparent' };
     }
   };
 
@@ -417,8 +415,8 @@ export function MaterialInventory() {
                 <TableHead className="bg-slate-50 font-bold">SKU</TableHead>
                 <TableHead className="bg-slate-50 font-bold">Category</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Cost</TableHead>
-                <TableHead className="text-right bg-slate-50 font-bold">Price</TableHead>
                 <TableHead className="text-right bg-slate-50 font-bold">Markup %</TableHead>
+                <TableHead className="text-right bg-slate-50 font-bold">Price</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -455,14 +453,14 @@ export function MaterialInventory() {
                           <Badge variant="outline" className="font-medium">{material.category}</Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-orange-700">
+                      <TableCell className="text-right font-semibold text-black">
                         ${(material.purchase_cost || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-700">
-                        ${(material.unit_price || 0).toFixed(2)}
                       </TableCell>
                       <TableCell className={`text-right font-bold ${markupDisplay.color} ${markupDisplay.bgColor} rounded px-2`}>
                         {markupDisplay.markup.toFixed(1)}%
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-black">
+                        ${(material.unit_price || 0).toFixed(2)}
                       </TableCell>
                     </TableRow>
                   );
