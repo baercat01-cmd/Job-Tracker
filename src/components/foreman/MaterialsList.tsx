@@ -1307,31 +1307,46 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </div>
 
         <TabsContent value="all" className="space-y-3">
-          {/* Field Requests Filter Toggle */}
+          {/* Field Requests Filter Dropdown */}
           <Card className="border-2 border-orange-200 bg-orange-50">
             <CardContent className="py-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="field-requests-filter"
-                    checked={showFieldRequestsOnly}
-                    onChange={(e) => setShowFieldRequestsOnly(e.target.checked)}
-                    className="w-4 h-4 text-orange-600 bg-white border-orange-300 rounded focus:ring-orange-500 cursor-pointer"
-                  />
-                  <label htmlFor="field-requests-filter" className="text-sm font-semibold text-orange-900 cursor-pointer">
-                    🔧 Show My Field Requests Only
+                  <label className="text-sm font-semibold text-orange-900 whitespace-nowrap">
+                    View:
                   </label>
+                  <Select
+                    value={showFieldRequestsOnly ? 'field_requests' : 'all'}
+                    onValueChange={(value) => setShowFieldRequestsOnly(value === 'field_requests')}
+                  >
+                    <SelectTrigger className="h-10 bg-white border-orange-300 font-semibold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-4 h-4" />
+                          <span>All Materials</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="field_requests">
+                        <div className="flex items-center gap-2">
+                          <span>🔧</span>
+                          <span>My Field Requests Only</span>
+                          <Badge variant="secondary" className="ml-2 bg-orange-100 text-orange-800">
+                            {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                  {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length} requests
-                </Badge>
+                {showFieldRequestsOnly && (
+                  <p className="text-xs text-orange-700">
+                    Materials requested from the field are kept separate for tracking extra charges to the job
+                  </p>
+                )}
               </div>
-              {showFieldRequestsOnly && (
-                <p className="text-xs text-orange-700 mt-2">
-                  Materials requested from the field are kept separate for tracking extra charges to the job
-                </p>
-              )}
             </CardContent>
           </Card>
 
