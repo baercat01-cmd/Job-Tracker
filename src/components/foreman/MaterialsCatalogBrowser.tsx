@@ -979,7 +979,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 id="custom-length"
                 value={customMaterialLength}
                 onChange={(e) => setCustomMaterialLength(e.target.value)}
-                placeholder="e.g., 12', 6x6, 1/4\"..."
+                placeholder='e.g., 12&apos;, 6x6, 1/4"...'
                 className="h-12"
               />
             </div>
