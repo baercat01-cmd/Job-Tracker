@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Database, Search, Plus, Package, Edit, Camera, ChevronDown, ChevronRight } from 'lucide-react';
+import { Database, Search, Plus, Package, Edit, Camera, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -383,6 +383,64 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
   }
 
+  async function downloadFieldRequests() {
+    try {
+      if (fieldRequests.length === 0) {
+        toast.error('No field requests to download');
+        return;
+      }
+
+      // Create CSV content
+      const headers = [
+        'Material Name',
+        'Quantity',
+        'Length',
+        'Status',
+        'Category',
+        'Use Case',
+        'Notes',
+        'Ordered Date',
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      fieldRequests.forEach(material => {
+        const row = [
+          `"${material.name}"`,
+          material.quantity,
+          `"${material.length || ''}"`,
+          `"${getStatusLabel(material.status)}"`,
+          `"${material.category_name}"`,
+          `"${material.use_case || ''}"`,
+          `"${material.notes || ''}"`,
+          material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString() : '',
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = csvRows.join('\n');
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      const fileName = `${job.name.replace(/[^a-z0-9]/gi, '_')}_field_requests_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Downloaded ${fieldRequests.length} field requests`);
+    } catch (error: any) {
+      console.error('Error downloading field requests:', error);
+      toast.error('Failed to download field requests');
+    }
+  }
+
   async function addCustomMaterial() {
     if (!customMaterialName.trim()) {
       toast.error('Please enter a material name');
@@ -723,13 +781,26 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       ) : fieldRequests.length > 0 ? (
         <Card className="border-2 border-orange-200 bg-orange-50">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Package className="w-5 h-5 text-orange-700" />
-              Your Orders ({fieldRequests.length})
-            </CardTitle>
-            <p className="text-sm text-orange-700 mt-1">
-              Materials you've requested - update status as they move through the workflow
-            </p>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Package className="w-5 h-5 text-orange-700" />
+                  Your Orders ({fieldRequests.length})
+                </CardTitle>
+                <p className="text-sm text-orange-700 mt-1">
+                  Materials you've requested - update status as they move through the workflow
+                </p>
+              </div>
+              <Button
+                onClick={downloadFieldRequests}
+                variant="outline"
+                size="sm"
+                className="gap-2 border-orange-300 hover:bg-orange-100"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-orange-200">
