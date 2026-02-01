@@ -91,6 +91,56 @@ export function MaterialInventory() {
     return Array.from(cats).sort();
   }, [flatMaterials]);
 
+  // Format length with feet and inches notation
+  const formatLength = (length: string | null): string => {
+    if (!length) return '';
+    
+    // Handle already formatted lengths (e.g., "12' 6\"")
+    if (length.includes("'") || length.includes('"')) {
+      return length;
+    }
+    
+    // Parse various formats: "12.5", "12 6", "12-6", etc.
+    const cleaned = length.trim();
+    
+    // Try to parse as decimal (e.g., "12.5" -> 12' 6")
+    if (cleaned.includes('.')) {
+      const feet = Math.floor(parseFloat(cleaned));
+      const inches = Math.round((parseFloat(cleaned) - feet) * 12);
+      if (inches === 0) {
+        return `${feet}'`;
+      }
+      return `${feet}' ${inches}"`;
+    }
+    
+    // Try to parse as "feet inches" or "feet-inches"
+    const parts = cleaned.split(/[\s-]+/);
+    if (parts.length === 2) {
+      const feet = parseInt(parts[0]);
+      const inches = parseInt(parts[1]);
+      if (!isNaN(feet) && !isNaN(inches)) {
+        if (inches === 0) {
+          return `${feet}'`;
+        }
+        return `${feet}' ${inches}"`;
+      }
+    }
+    
+    // Single number - assume it's feet
+    const num = parseFloat(cleaned);
+    if (!isNaN(num)) {
+      const feet = Math.floor(num);
+      const inches = Math.round((num - feet) * 12);
+      if (inches === 0) {
+        return `${feet}'`;
+      }
+      return `${feet}' ${inches}"`;
+    }
+    
+    // If we can't parse it, return as-is
+    return length;
+  };
+
   // Filter materials
   const filteredMaterials = useMemo(() => {
     let filtered = flatMaterials;
@@ -392,7 +442,7 @@ export function MaterialInventory() {
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold text-blue-700">
-                        {material.part_length || ''}
+                        {formatLength(material.part_length)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
