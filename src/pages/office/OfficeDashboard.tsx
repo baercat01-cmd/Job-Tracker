@@ -378,6 +378,10 @@ export function OfficeDashboard() {
 
         {activeTab === 'materials' && (
           <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Material Inventory</h2>
+              <p className="text-yellow-400">Manage your master materials catalog from Smartbuild</p>
+            </div>
             <MaterialInventory />
           </div>
         )}
