@@ -93,7 +93,8 @@ export function MaterialInventory() {
           .replace(/Sales\s*[-:]?\s*/gi, '') // Remove Sales text
           .replace(/^[-:]\s*/, '')           // Remove leading dash/colon
           .trim();
-        if (cleaned) {
+        // Only add if it's not empty and not a pure number
+        if (cleaned && !/^\d+$/.test(cleaned)) {
           cats.add(cleaned);
         }
       }
