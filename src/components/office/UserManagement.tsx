@@ -29,7 +29,7 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   
   const [formUsername, setFormUsername] = useState('');
-  const [formRole, setFormRole] = useState<'crew' | 'foreman' | 'office' | 'shop' | 'payroll'>('crew');
+  const [formRole, setFormRole] = useState<'crew' | 'office' | 'shop' | 'payroll'>('crew');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -182,7 +182,6 @@ export function UserManagement() {
                   <p className="font-semibold">{user.username || 'Unnamed User'}</p>
                   <p className="text-sm text-muted-foreground capitalize">
                     {user.role === 'crew' ? 'Field Crew' : 
-                     user.role === 'foreman' ? 'Foreman' :
                      user.role === 'office' ? 'Office Staff' : 
                      user.role === 'shop' ? 'Shop User' : 
                      user.role === 'payroll' ? 'Payroll' : user.role}
@@ -190,12 +189,10 @@ export function UserManagement() {
                 </div>
                 <Badge variant={user.role === 'office' ? 'default' : 'secondary'} 
                   className={
-                    user.role === 'foreman' ? 'bg-blue-100 text-blue-700 border-blue-300' :
                     user.role === 'shop' ? 'bg-purple-100 text-purple-700 border-purple-300' : 
                     user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : ''
                   }>
                   {user.role === 'crew' ? 'Crew' : 
-                   user.role === 'foreman' ? 'Foreman' :
                    user.role === 'office' ? 'Office' : 
                    user.role === 'shop' ? 'Shop' : 
                    user.role === 'payroll' ? 'Payroll' : user.role}
@@ -250,7 +247,6 @@ export function UserManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="crew">Crew (Field Worker)</SelectItem>
-                  <SelectItem value="foreman">Foreman (All Jobs + Components)</SelectItem>
                   <SelectItem value="office">Office Staff (Admin)</SelectItem>
                   <SelectItem value="shop">Shop (Materials Processing)</SelectItem>
                   <SelectItem value="payroll">Payroll (Time Tracking)</SelectItem>

@@ -22,7 +22,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [formData, setFormData] = useState({
     username: '',
-    role: 'crew' as 'crew' | 'office' | 'payroll',
+    role: 'crew' as 'crew' | 'office' | 'payroll' | 'shop',
   });
 
   useEffect(() => {

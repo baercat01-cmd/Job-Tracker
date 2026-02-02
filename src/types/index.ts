@@ -202,7 +202,7 @@ export interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
-  event_type: 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other';
+  event_type: 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
   job_id: string | null;
   all_day: boolean;
   start_time: string | null;

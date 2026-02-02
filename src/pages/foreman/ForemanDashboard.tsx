@@ -54,7 +54,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [showGanttChart, setShowGanttChart] = useState(false);
   const [jobData, setJobData] = useState<Job | null>(selectedJob);
   const [showFleet, setShowFleet] = useState(false);
-  const isForeman = profile?.role === 'foreman';
+  const isForeman = false; // Legacy foreman role no longer used
 
   // Update jobData when selectedJob changes
   useEffect(() => {
