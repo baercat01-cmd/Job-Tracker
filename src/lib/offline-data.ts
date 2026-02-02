@@ -122,72 +122,72 @@ export async function fetchByIndexOfflineFirst<T>(
 
 export async function getJobs(): Promise<any[]> {
   return fetchOfflineFirst('jobs', async () => {
-    const result = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
-    return { data: result.data || [], error: result.error };
+    const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+    return { data: data || [], error };
   });
 }
 
 export async function getActiveJobs(): Promise<any[]> {
   return fetchByIndexOfflineFirst('jobs', 'status', 'active', async () => {
-    const result = await supabase.from('jobs').select('*').eq('status', 'active').order('created_at', { ascending: false });
-    return { data: result.data || [], error: result.error };
+    const { data, error } = await supabase.from('jobs').select('*').eq('status', 'active').order('created_at', { ascending: false });
+    return { data: data || [], error };
   });
 }
 
 export async function getComponents(): Promise<any[]> {
   return fetchOfflineFirst('components', async () => {
-    const result = await supabase.from('components').select('*').eq('archived', false).order('name');
-    return { data: result.data || [], error: result.error };
+    const { data, error } = await supabase.from('components').select('*').eq('archived', false).order('name');
+    return { data: data || [], error };
   });
 }
 
 export async function getWorkers(): Promise<any[]> {
   return fetchOfflineFirst('workers', async () => {
-    const result = await supabase.from('workers').select('*').eq('active', true).order('name');
-    return { data: result.data || [], error: result.error };
+    const { data, error } = await supabase.from('workers').select('*').eq('active', true).order('name');
+    return { data: data || [], error };
   });
 }
 
 export async function getTimeEntriesByJob(jobId: string): Promise<any[]> {
   return fetchByIndexOfflineFirst('time_entries', 'job_id', jobId, async () => {
-    const result = await supabase
+    const { data, error } = await supabase
       .from('time_entries')
       .select('*, component:components(*), user:user_profiles(*)')
       .eq('job_id', jobId)
       .order('start_time', { ascending: false });
-    return { data: result.data || [], error: result.error };
+    return { data: data || [], error };
   });
 }
 
 export async function getDailyLogsByJob(jobId: string): Promise<any[]> {
   return fetchByIndexOfflineFirst('daily_logs', 'job_id', jobId, async () => {
-    const result = await supabase
+    const { data, error } = await supabase
       .from('daily_logs')
       .select('*')
       .eq('job_id', jobId)
       .order('log_date', { ascending: false });
-    return { data: result.data || [], error: result.error };
+    return { data: data || [], error };
   });
 }
 
 export async function getPhotosByJob(jobId: string): Promise<any[]> {
   return fetchByIndexOfflineFirst('photos', 'job_id', jobId, async () => {
-    const result = await supabase
+    const { data, error } = await supabase
       .from('photos')
       .select('*')
       .eq('job_id', jobId)
       .order('photo_date', { ascending: false });
-    return { data: result.data || [], error: result.error };
+    return { data: data || [], error };
   });
 }
 
 export async function getActiveTimeEntries(userId: string): Promise<any[]> {
   return fetchByIndexOfflineFirst('time_entries', 'is_active', true, async () => {
-    const result = await supabase
+    const { data, error } = await supabase
       .from('time_entries')
       .select('*, job:jobs(*), component:components(*)')
       .eq('user_id', userId)
       .eq('is_active', true);
-    return { data: result.data || [], error: result.error };
+    return { data: data || [], error };
   });
 }
