@@ -232,11 +232,15 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       if (photosError) throw photosError;
 
       // 3. Get weather for job location
-      let weather: WeatherDetails | string | null = null;
+      let weather: WeatherDetails | null = null;
       try {
         const position = await getCurrentPosition();
         if (position) {
-          weather = await getWeatherForLocation(position.latitude, position.longitude);
+          const weatherData = await getWeatherForLocation(position.latitude, position.longitude);
+          // Ensure we get a WeatherDetails object
+          if (weatherData && typeof weatherData === 'object') {
+            weather = weatherData as WeatherDetails;
+          }
         }
       } catch (error) {
         console.error('Weather fetch failed:', error);

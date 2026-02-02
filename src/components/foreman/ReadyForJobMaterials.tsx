@@ -95,6 +95,7 @@ export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'at_
         quantity: m.quantity,
         length: m.length,
         use_case: m.use_case,
+        color: m.color,
         status: m.status,
         job_id: m.job_id,
         category_id: m.category_id,

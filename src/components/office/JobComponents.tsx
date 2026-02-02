@@ -33,15 +33,9 @@ import {
 import { ListChecks, Plus, Trash2, ToggleLeft, ToggleRight, Layers, Edit, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import type { Job, Component } from '@/types';
+import type { Job, Component, JobComponent as JobComponentType } from '@/types';
 
-interface JobComponent {
-  id: string;
-  name: string;
-  isActive: boolean;
-  isTask: boolean;
-  createdAt: string;
-}
+
 
 interface JobComponentsProps {
   job: Job;
@@ -71,7 +65,7 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
     jobs: number;
   } | null>(null);
 
-  const jobComponents: JobComponent[] = Array.isArray(job.components) ? job.components : [];
+  const jobComponents: JobComponentType[] = Array.isArray(job.components) ? job.components : [];
 
   useEffect(() => {
     if (showManageDialog) {
@@ -251,7 +245,7 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
 
     try {
       // Build job components array from selected global components
-      const updatedComponents: JobComponent[] = selectedComponents.map(compId => {
+      const updatedComponents: JobComponentType[] = selectedComponents.map(compId => {
         const existing = jobComponents.find(c => c.id === compId);
         const global = globalComponents.find(c => c.id === compId);
         

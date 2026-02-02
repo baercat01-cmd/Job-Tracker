@@ -92,7 +92,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
     try {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id, name, client_name')
+        .select('*')
         .eq('status', 'active')
         .order('name');
 

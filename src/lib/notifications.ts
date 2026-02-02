@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 interface CreateNotificationParams {
   jobId: string;
   createdBy: string;
-  type: 'daily_log' | 'photos' | 'material_request' | 'issue' | 'note' | 'material_status' | 'document_revision';
+  type: 'daily_log' | 'photos' | 'material_request' | 'issue' | 'note' | 'material_status' | 'document_revision' | 'task_completed' | 'time_entry';
   brief: string;
   referenceId?: string;
   referenceData?: any;
