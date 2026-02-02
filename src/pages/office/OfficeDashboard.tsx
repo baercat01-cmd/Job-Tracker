@@ -276,17 +276,6 @@ export function OfficeDashboard() {
 
           {/* Right Side Actions */}
           <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
-            {/* New Task Button */}
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setShowCreateTaskDialog(true)}
-              className="rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm border-2 border-blue-800 shadow-md"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              <span className="hidden sm:inline">New Task</span>
-            </Button>
-            
             {/* Quick Time Clock for Office Users */}
             <div className="hidden sm:block">
               <QuickTimeEntry 
@@ -522,6 +511,10 @@ export function OfficeDashboard() {
                   <ListTodo className="w-4 h-4 mr-2" />
                   Shop Tasks
                 </TabsTrigger>
+                <TabsTrigger value="office-tasks" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <ListTodo className="w-4 h-4 mr-2" />
+                  Office Tasks
+                </TabsTrigger>
                 <TabsTrigger value="quote-config" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Settings className="w-4 h-4 mr-2" />
                   Quote Config
@@ -570,6 +563,40 @@ export function OfficeDashboard() {
 
               <TabsContent value="shop-tasks" className="mt-6">
                 <ShopTasksManagement userId={profile?.id || ''} />
+              </TabsContent>
+
+              <TabsContent value="office-tasks" className="mt-6">
+                <div className="space-y-4">
+                  {/* Header with New Task Button */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Office Tasks Management</h3>
+                      <p className="text-sm text-slate-600">Create and manage tasks for all jobs</p>
+                    </div>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => setShowCreateTaskDialog(true)}
+                      className="rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold h-9 px-4 text-sm border-2 border-blue-800 shadow-md"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      New Task
+                    </Button>
+                  </div>
+                  
+                  {/* View All Task Calendar Button */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveTab('calendar')}
+                    className="rounded-none border-2 border-slate-300 hover:bg-slate-100 w-full sm:w-auto"
+                  >
+                    <Calendar className="w-4 h-4 mr-2" />
+                    View All Task Calendar
+                  </Button>
+                  
+                  {/* All Jobs Task Management */}
+                  <AllJobsTaskManagement />
+                </div>
               </TabsContent>
 
               <TabsContent value="quote-config" className="mt-6">
