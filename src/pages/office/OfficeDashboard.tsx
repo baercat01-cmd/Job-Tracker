@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -26,6 +26,7 @@ import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { MaterialInventory } from '@/components/office/MaterialInventory';
+import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
 import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
@@ -51,6 +52,7 @@ export function OfficeDashboard() {
   const [openMaterialsTab, setOpenMaterialsTab] = useState(false);
   const [materialsCount, setMaterialsCount] = useState(0);
   const [viewMode, setViewMode] = useState<'office' | 'field'>('office');
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
 
   // Save view state to localStorage and update URL
   // CRITICAL: Use replace: true to prevent scroll reset on URL changes
@@ -274,6 +276,17 @@ export function OfficeDashboard() {
 
           {/* Right Side Actions */}
           <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+            {/* New Task Button */}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setShowCreateTaskDialog(true)}
+              className="rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm border-2 border-blue-800 shadow-md"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">New Task</span>
+            </Button>
+            
             {/* Quick Time Clock for Office Users */}
             <div className="hidden sm:block">
               <QuickTimeEntry 
@@ -349,6 +362,12 @@ export function OfficeDashboard() {
           </div>
         </div>
       </header>
+
+      {/* Task Creation Dialog - Hidden component that only renders the dialog */}
+      <AllJobsTaskManagement
+        showCreateDialog={showCreateTaskDialog}
+        onCloseCreateDialog={() => setShowCreateTaskDialog(false)}
+      />
 
       {/* Main Content */}
       <main className="w-full px-1 sm:px-2 py-3 sm:py-6">
