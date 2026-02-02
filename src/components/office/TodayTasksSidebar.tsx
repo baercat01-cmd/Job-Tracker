@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Edit, Trash2 } from 'lucide-react';
+import { CheckCircle2, Calendar as CalendarIcon, AlertCircle, Clock, Briefcase, Eye, Edit, Trash2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateLocal, getTodayString, parseDateLocal } from '@/lib/date-utils';
@@ -50,9 +50,10 @@ interface CalendarEvent {
 
 interface TodayTasksSidebarProps {
   onJobSelect?: (jobId: string) => void;
+  onAddTask?: () => void;
 }
 
-export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
+export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarProps) {
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -370,18 +371,29 @@ export function TodayTasksSidebar({ onJobSelect }: TodayTasksSidebarProps) {
               });
             })()}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-2 border-yellow-400 shadow-md"
-            onClick={() => {
-              loadAllCalendarItems();
-              setShowCalendarView(true);
-            }}
-          >
-            <Eye className="w-4 h-4 mr-2" />
-            View All Tasks Calendar
-          </Button>
+          <div className="space-y-2 mt-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold border-2 border-blue-800 shadow-md"
+              onClick={onAddTask}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Task
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-2 border-yellow-400 shadow-md"
+              onClick={() => {
+                loadAllCalendarItems();
+                setShowCalendarView(true);
+              }}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              View All Tasks Calendar
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex-1 overflow-y-auto space-y-3">
           {totalItems === 0 ? (

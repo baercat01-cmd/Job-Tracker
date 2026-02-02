@@ -363,7 +363,11 @@ export function OfficeDashboard() {
         {activeTab === 'jobs' && (
           <div className="space-y-6">
             {/* Active Jobs Cards */}
-            <JobsView selectedJobId={selectedJobId} openMaterialsTab={openMaterialsTab} />
+            <JobsView 
+              selectedJobId={selectedJobId} 
+              openMaterialsTab={openMaterialsTab}
+              onAddTask={() => setShowCreateTaskDialog(true)}
+            />
             
             {/* Master Calendar - Full Width Below Jobs */}
             <MasterCalendar 

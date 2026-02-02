@@ -38,9 +38,10 @@ interface JobsViewProps {
   showArchived?: boolean;
   selectedJobId?: string | null;
   openMaterialsTab?: boolean; // New prop to auto-open materials tab
+  onAddTask?: () => void; // Callback to open task creation dialog
 }
 
-export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab = false }: JobsViewProps) {
+export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab = false, onAddTask }: JobsViewProps) {
   const { profile } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,7 +275,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         <div className="w-full lg:w-80 flex-shrink-0 overflow-hidden relative max-h-[400px] lg:max-h-[calc(100vh-12rem)]">
           {/* Gold accent border on the right */}
           <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-b from-yellow-500 via-yellow-600 to-yellow-700 opacity-80 rounded-full"></div>
-          <TodayTasksSidebar onJobSelect={(jobId) => setSelectedJobId(jobId)} />
+          <TodayTasksSidebar 
+            onJobSelect={(jobId) => setSelectedJobId(jobId)}
+            onAddTask={onAddTask}
+          />
         </div>
       )}
 
