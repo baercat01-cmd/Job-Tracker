@@ -107,9 +107,19 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
     priority: 'medium',
   });
 
+  // Check if being used in dialog-only mode (from header)
+  const isDialogOnlyMode = externalShowDialog !== undefined;
+
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!isDialogOnlyMode) {
+      loadData();
+    } else {
+      // In dialog-only mode, just load jobs and users for the form
+      loadJobs();
+      loadUsers();
+      setLoading(false);
+    }
+  }, [isDialogOnlyMode]);
 
   async function loadData() {
     try {
@@ -278,7 +288,9 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
       }
 
       setShowDialog(false);
-      loadTasks();
+      if (!isDialogOnlyMode) {
+        loadTasks();
+      }
     } catch (error: any) {
       console.error('Error saving task:', error);
       toast.error('Failed to save task');
@@ -430,12 +442,147 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
     );
   };
 
+  // If in dialog-only mode, only render the dialog
+  if (isDialogOnlyMode) {
+    return (
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="job">Job *</Label>
+              <Select
+                value={formData.job_id}
+                onValueChange={(value) => setFormData({ ...formData, job_id: value })}
+              >
+                <SelectTrigger id="job">
+                  <SelectValue placeholder="Select job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.name} - {job.client_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="title">Task Title *</Label>
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="e.g., Install temporary power"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Additional details about this task..."
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="task_type">Type</Label>
+                <Select
+                  value={formData.task_type}
+                  onValueChange={(value: any) => setFormData({ ...formData, task_type: value })}
+                >
+                  <SelectTrigger id="task_type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="field">Field</SelectItem>
+                    <SelectItem value="office">Office</SelectItem>
+                    <SelectItem value="shop">Shop</SelectItem>
+                    <SelectItem value="general">General</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority</Label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(value: any) => setFormData({ ...formData, priority: value })}
+                >
+                  <SelectTrigger id="priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="assigned_to">Assign To</Label>
+                <Select
+                  value={formData.assigned_to || 'unassigned'}
+                  onValueChange={(value) => setFormData({ ...formData, assigned_to: value === 'unassigned' ? '' : value })}
+                >
+                  <SelectTrigger id="assigned_to">
+                    <SelectValue placeholder="Select user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.username || user.email} ({user.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="due_date">Due Date *</Label>
+                <Input
+                  id="due_date"
+                  type="date"
+                  value={formData.due_date}
+                  onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Task will be added to calendar</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button onClick={handleSave} className="flex-1">
+                Create Task
+              </Button>
+              <Button variant="outline" onClick={() => setShowDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Full component view for regular usage
   const filteredTasks = tasks.filter(task => {
     if (task.status !== filterStatus) return false;
     if (filterJob !== 'all' && task.job_id !== filterJob) return false;
     return true;
   });
-  // Tasks are already sorted by priority in loadTasks()
 
   const tasksByStatus = {
     pending: tasks.filter(t => t.status === 'pending'),
@@ -538,7 +685,6 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          {/* Job Name - Prominent Display */}
                           {task.job && (
                             <div className="flex items-center gap-2 mb-2">
                               <Briefcase className={`w-4 h-4 flex-shrink-0 ${isOverdue ? 'text-red-900' : 'text-green-800'}`} />
