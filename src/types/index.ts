@@ -40,6 +40,7 @@ export interface JobComponent {
   id: string;
   name: string;
   isActive: boolean;
+  isTask?: boolean; // Added to support task-tracking components
   createdAt: string;
 }
 

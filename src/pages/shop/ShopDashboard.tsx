@@ -200,7 +200,7 @@ export function ShopDashboard() {
           </TabsContent>
 
           <TabsContent value="calendar">
-            <MasterCalendar />
+            <MasterCalendar onJobSelect={() => {}} />
           </TabsContent>
         </Tabs>
       </main>

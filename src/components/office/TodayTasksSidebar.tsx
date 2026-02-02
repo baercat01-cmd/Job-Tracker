@@ -26,6 +26,9 @@ interface Task {
   status: string;
   job_id: string;
   task_type: string;
+  assigned_to: string | null;
+  created_at: string;
+  completed_at: string | null;
   job?: {
     id: string;
     name: string;

@@ -1229,7 +1229,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         {/* Components Tab */}
         <TabsContent value="components" className="space-y-4 px-4 pt-4">
-          <JobComponents job={job} />
+          <JobComponents job={job} onUpdate={() => {}} />
         </TabsContent>
 
         {/* Schedule Tab */}
@@ -1239,7 +1239,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         {/* Documents Tab */}
         <TabsContent value="documents" className="space-y-4 px-4 pt-4">
-          <JobDocuments job={job} />
+          <JobDocuments job={job} onUpdate={() => {}} />
         </TabsContent>
 
         {/* Photos Tab */}
