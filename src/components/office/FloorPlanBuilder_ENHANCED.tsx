@@ -37,7 +37,7 @@ interface Wall {
 
 interface Opening {
   id: string;
-  opening_type: 'walkdoor';
+  opening_type: 'walkdoor' | 'window' | 'overhead_door' | 'other';
   size_detail: string;
   quantity: number;
   location: string;
