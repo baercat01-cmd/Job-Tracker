@@ -133,12 +133,29 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
           job:jobs(id, name, client_name),
           assigned_user:assigned_to(id, username, email)
         `)
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('priority', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTasks(data || []);
+      
+      // Sort tasks by priority (high → medium → low)
+      const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+      const sortedTasks = (data || []).sort((a, b) => {
+        // First, sort by priority
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+        
+        // Then by due date (overdue first, then by date)
+        if (a.due_date && b.due_date) {
+          return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+        }
+        if (a.due_date) return -1;
+        if (b.due_date) return 1;
+        
+        // Finally by creation date (newest first)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      
+      setTasks(sortedTasks);
     } catch (error: any) {
       console.error('Error loading tasks:', error);
       toast.error('Failed to load tasks');
@@ -417,25 +434,8 @@ export function AllJobsTaskManagement({ showCreateDialog: externalShowDialog, on
     if (task.status !== filterStatus) return false;
     if (filterJob !== 'all' && task.job_id !== filterJob) return false;
     return true;
-  }).sort((a, b) => {
-    // First, sort by overdue status (overdue tasks first)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const aOverdue = a.due_date && parseDateLocal(a.due_date) < today && a.status !== 'completed';
-    const bOverdue = b.due_date && parseDateLocal(b.due_date) < today && b.status !== 'completed';
-    
-    if (aOverdue && !bOverdue) return -1;
-    if (!aOverdue && bOverdue) return 1;
-    
-    // Then by due date
-    if (a.due_date && b.due_date) {
-      return parseDateLocal(a.due_date).getTime() - parseDateLocal(b.due_date).getTime();
-    }
-    
-    // Finally by priority
-    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
-    return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
+  // Tasks are already sorted by priority in loadTasks()
 
   const tasksByStatus = {
     pending: tasks.filter(t => t.status === 'pending'),

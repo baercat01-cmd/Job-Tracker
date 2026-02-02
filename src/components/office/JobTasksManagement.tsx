@@ -75,12 +75,29 @@ export function JobTasksManagement({ job, userId, userRole }: JobTasksManagement
           created_user:created_by(id, username, email, role)
         `)
         .eq('job_id', job.id)
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('priority', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTasks(data || []);
+      
+      // Sort tasks by priority (high → medium → low)
+      const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+      const sortedTasks = (data || []).sort((a, b) => {
+        // First, sort by priority
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+        
+        // Then by due date (overdue first, then by date)
+        if (a.due_date && b.due_date) {
+          return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+        }
+        if (a.due_date) return -1;
+        if (b.due_date) return 1;
+        
+        // Finally by creation date (newest first)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      
+      setTasks(sortedTasks);
     } catch (error: any) {
       console.error('Error loading tasks:', error);
       toast.error('Failed to load tasks');
