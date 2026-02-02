@@ -353,12 +353,10 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
     <>
       <Card className="h-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-50 border-2 border-slate-200 shadow-xl">
         <CardHeader className="pb-3 bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-t-lg border-b-4 border-yellow-500">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">
-              Office Tasks
-            </CardTitle>
-          </div>
-          <p className="text-sm text-slate-200 font-bold mt-2">
+          <CardTitle className="text-lg">
+            Office Tasks
+          </CardTitle>
+          <p className="text-sm text-slate-200 font-bold mt-1">
             {(() => {
               // Use the same date string that's used for the query to ensure consistency
               const parts = todayStr.split('-'); // todayStr is in YYYY-MM-DD format
@@ -374,11 +372,11 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
               });
             })()}
           </p>
-          <div className="space-y-2 mt-2">
+          <div className="grid grid-cols-2 gap-2 mt-2">
             <Button
               variant="default"
               size="sm"
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold border-2 border-blue-800 shadow-md"
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold border-2 border-blue-800 shadow-md"
               onClick={onAddTask}
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -387,14 +385,14 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
             <Button
               variant="outline"
               size="sm"
-              className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-2 border-yellow-400 shadow-md"
+              className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold border-2 border-yellow-400 shadow-md"
               onClick={() => {
                 loadAllCalendarItems();
                 setShowCalendarView(true);
               }}
             >
-              <Eye className="w-4 h-4 mr-2" />
-              View All Tasks Calendar
+              <CalendarIcon className="w-4 h-4 mr-2" />
+              Calendar
             </Button>
           </div>
         </CardHeader>
