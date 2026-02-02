@@ -87,7 +87,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
   const [floorDrains, setFloorDrains] = useState<FloorDrain[]>([]);
   const [cupolas, setCupolas] = useState<Cupola[]>([]);
   
-  const [mode, setMode] = useState<'select' | 'wall' | 'door' | 'window' | 'overhead' | 'room'>('select');
+  const [mode, setMode] = useState<'select' | 'window' | 'room' | 'door' | 'overhead'>('select');
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<Opening | null>(null);
