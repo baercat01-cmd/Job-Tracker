@@ -10,7 +10,6 @@ import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
-import { FleetLoginPage } from '@/pages/fleet/FleetLoginPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -118,10 +117,8 @@ function AppContent() {
     return <ForemanDashboard />;
   }
 
-  // Foreman users: full field interface with all jobs and component management
-  if (profile.role === 'foreman') {
-    return <ForemanDashboard />;
-  }
+  // Crew users also get foreman dashboard (same interface)
+  // This handles legacy 'foreman' role that was renamed to 'crew'
 
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {

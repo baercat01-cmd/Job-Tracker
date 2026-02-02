@@ -616,7 +616,7 @@ export default function BuildingEstimator3D({
                           <td className="px-4 py-3 text-[11px] text-emerald-600 font-bold font-mono">{item.sku}</td>
                           <td className="px-4 py-3 text-[11px] text-slate-700 font-mono">{item.desc}</td>
                           <td className="px-4 py-3 text-right text-[11px] text-slate-800 font-bold font-mono">
-                            ${(item.priceEA || (item.priceLF! * 16)).toFixed(2)}
+                            ${('priceEA' in item ? item.priceEA : item.priceLF * 16).toFixed(2)}
                           </td>
                           <td className="px-4 py-3 text-center text-[9px] text-slate-500 uppercase font-mono">EA</td>
                         </tr>

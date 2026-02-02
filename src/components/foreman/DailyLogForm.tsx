@@ -232,7 +232,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       if (photosError) throw photosError;
 
       // 3. Get weather for job location
-      let weather: WeatherDetails | null = null;
+      let weather: WeatherDetails | string | null = null;
       try {
         const position = await getCurrentPosition();
         if (position) {

@@ -276,7 +276,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           {/* Gold accent border on the right */}
           <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-b from-yellow-500 via-yellow-600 to-yellow-700 opacity-80 rounded-full"></div>
           <TodayTasksSidebar 
-            onJobSelect={(jobId) => setSelectedJobId(jobId)}
+            onJobSelect={(jobId) => setSelectedJob(jobs.find(j => j.id === jobId) || null)}
             onAddTask={onAddTask}
           />
         </div>

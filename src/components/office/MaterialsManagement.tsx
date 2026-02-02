@@ -34,7 +34,8 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+// import * as XLSX from 'xlsx';
+// Note: XLSX export functionality temporarily disabled - use CSV export instead
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { ExtrasManagement } from './ExtrasManagement';
