@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { Save, FileText, Home } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -234,6 +235,7 @@ export default function BuildingEstimator3D({
   initialPitch = 4,
   onSave
 }: BuildingEstimatorProps) {
+  const navigate = useNavigate();
   const [state, setState] = useState<BuildingState>({
     width: initialWidth,
     length: initialLength,
@@ -341,7 +343,12 @@ export default function BuildingEstimator3D({
       {/* Header */}
       <header className="bg-[#4179bc] text-white h-14 flex items-center px-4 justify-between shadow-md border-b border-black/10">
         <div className="flex items-center gap-4">
-          <Button variant="secondary" size="sm" className="gap-2">
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            className="gap-2"
+            onClick={() => navigate('/office?tab=jobs')}
+          >
             <Home className="w-4 h-4" />
             Home
           </Button>
