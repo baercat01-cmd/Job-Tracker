@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -366,7 +367,8 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
                 return <div key={`empty-${index}`} className="min-h-24 p-2 border rounded-lg bg-muted/30" />;
               }
 
-              const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+              const dateStr = date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
               const dayEvents = getEventsForDate(dateStr);
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               const isSelected = dateStr === selectedDate;
@@ -581,7 +583,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
 
       {/* Event Details Dialog */}
       <EventDetailsDialog
-       const eventToSave = { ...eventData } as any;
+        event={selectedEvent} // Pass the selected event to the dialog
         open={showEventDialog}
         onClose={() => {
           setShowEventDialog(false);
