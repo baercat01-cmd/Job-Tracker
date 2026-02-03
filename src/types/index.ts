@@ -197,12 +197,14 @@ export interface ActiveTimer {
   crew_count: number;
 }
 
+export type CalendarEventType = 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
+
 export interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
   event_date: string;
-  event_type: 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
+  event_type: CalendarEventType;
   job_id: string | null;
   all_day: boolean;
   start_time: string | null;

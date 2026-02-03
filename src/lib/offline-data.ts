@@ -15,7 +15,7 @@ export async function fetchOfflineFirst<T>(
 ): Promise<T[]> {
   try {
     // Always try IndexedDB first
-    const cachedData = await getAll<T>(tableName);
+    const cachedData = await getAll<T>(tableName as TableName);
 
     // If we have cached data and we're offline, return it
     if (cachedData.length > 0 && !isOnline()) {
@@ -24,7 +24,7 @@ export async function fetchOfflineFirst<T>(
     }
 
     // If we're online and data is stale, refresh from server
-    if (isOnline() && (cachedData.length === 0 || isDataStale(tableName))) {
+    if (isOnline() && (cachedData.length === 0 || isDataStale(tableName as TableName))) {
       console.log(`[OfflineData] Refreshing ${tableName} from server...`);
       
       const { data, error } = await fetchFromSupabase();
@@ -37,7 +37,7 @@ export async function fetchOfflineFirst<T>(
 
       // Update cache and return fresh data
       if (data) {
-        await syncTable(tableName as any);
+        await syncTable(tableName as TableName);
         return data;
       }
     }
@@ -59,7 +59,7 @@ export async function fetchByIdOfflineFirst<T>(
 ): Promise<T | null> {
   try {
     // Try IndexedDB first
-    const cachedItem = await getById<T>(tableName, id);
+    const cachedItem = await getById<T>(tableName as TableName, id);
 
     // If offline, return cached item
     if (!isOnline()) {
@@ -91,7 +91,7 @@ export async function fetchByIndexOfflineFirst<T>(
 ): Promise<T[]> {
   try {
     // Try IndexedDB first
-    const cachedData = await getByIndex<T>(tableName, indexName, value);
+    const cachedData = await getByIndex<T>(tableName as TableName, indexName, value);
 
     // If offline, return cached data
     if (!isOnline()) {
@@ -100,7 +100,7 @@ export async function fetchByIndexOfflineFirst<T>(
     }
 
     // If online and data might be stale, refresh
-    if (isDataStale(tableName)) {
+    if (isDataStale(tableName as TableName)) {
       const { data, error } = await fetchFromSupabase();
 
       if (error) {
