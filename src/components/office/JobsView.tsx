@@ -33,6 +33,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Package, Calendar as CalendarIcon } from 'lucide-react';
 import { TodayTasksSidebar } from './TodayTasksSidebar';
+import { ShopMaterialsDialog } from './ShopMaterialsDialog';
+import { Warehouse } from 'lucide-react';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -52,6 +54,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [stats, setStats] = useState<Record<string, any>>({});
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
   const [crewOrderCounts, setCrewOrderCounts] = useState<Record<string, number>>({});
+  const [showShopMaterialsDialog, setShowShopMaterialsDialog] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -292,14 +295,25 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
             </p>
           </div>
           {!showArchived && (
-            <Button 
-              onClick={() => setShowCreateDialog(true)} 
-              size="sm"
-              className="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400 w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Job
-            </Button>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button 
+                onClick={() => setShowShopMaterialsDialog(true)} 
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-initial bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white"
+              >
+                <Warehouse className="w-4 h-4 mr-2" />
+                Shop Materials
+              </Button>
+              <Button 
+                onClick={() => setShowCreateDialog(true)} 
+                size="sm"
+                className="flex-1 sm:flex-initial bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Job
+              </Button>
+            </div>
           )}
         </div>
 
@@ -1215,6 +1229,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           setShowEditDialog(false);
           loadJobs();
           reloadSelectedJob();
+        }}
+      />
+
+      {/* Shop Materials Dialog */}
+      <ShopMaterialsDialog
+        open={showShopMaterialsDialog}
+        onClose={() => setShowShopMaterialsDialog(false)}
+        onJobSelect={(jobId) => {
+          const job = jobs.find(j => j.id === jobId);
+          if (job) {
+            setSelectedJob(job);
+            setSelectedTab('materials');
+          }
         }}
       />
 
