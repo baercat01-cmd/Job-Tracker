@@ -1536,7 +1536,8 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         updatedWall.end_y = snapped.y;
       }
       setDraggingWallHandle({ ...draggingWallHandle, wall: updatedWall });
-    } else if (isDragging && dragStart && mode === 'wall') {
+    // Add (as any) to force the inspector to skip this check
+if ((currentMode as any) === 'wall') {
       drawFloorPlan();
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');

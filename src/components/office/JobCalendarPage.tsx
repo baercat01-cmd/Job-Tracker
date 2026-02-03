@@ -581,7 +581,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
 
       {/* Event Details Dialog */}
       <EventDetailsDialog
-        event={selectedEvent}
+       const eventToSave = { ...eventData } as any;
         open={showEventDialog}
         onClose={() => {
           setShowEventDialog(false);

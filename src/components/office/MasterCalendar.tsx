@@ -52,6 +52,15 @@ import {
 } from '@/components/ui/popover';
 
 import type { SharedCalendarEvent } from '@/types';
+export type CalendarEventType = 
+  | "task_completed" 
+  | "material_order" 
+  | "material_delivery" 
+  | "material_pull" 
+  | "task_deadline" 
+  | "subcontractor" 
+  | "material_pickup"
+  | "meeting"; // This tells the app 'meeting' is allowed
 
 // Extend the shared CalendarEvent interface with jobColor
 interface CalendarEvent extends SharedCalendarEvent {

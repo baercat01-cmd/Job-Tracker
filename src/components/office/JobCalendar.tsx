@@ -5,6 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+export type CalendarEventType = 
+  | "task_completed" 
+  | "material_order" 
+  | "material_delivery" 
+  | "material_pull" 
+  | "task_deadline" 
+  | "subcontractor" 
+  | "material_pickup"
+  | "meeting"; // This tells the app 'meeting' is allowed
 
 // Helper function to parse date string as local date (not UTC)
 function parseDateLocal(dateString: string): Date {
