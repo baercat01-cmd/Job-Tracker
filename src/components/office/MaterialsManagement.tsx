@@ -32,6 +32,8 @@ import {
   ChevronDown,
   GripVertical,
   DollarSign,
+  Camera,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // import * as XLSX from 'xlsx';
@@ -496,6 +498,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialColor, setMaterialColor] = useState('');
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
+  const [materialPhotos, setMaterialPhotos] = useState<File[]>([]);
+  const [existingPhotos, setExistingPhotos] = useState<any[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   // Material bundles
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
@@ -969,10 +974,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialColor('');
     setMaterialUseCase('');
     setMaterialStatus('not_ordered');
+    setMaterialPhotos([]);
+    setExistingPhotos([]);
     setShowMaterialModal(true);
   }
 
-  function openEditMaterial(material: Material) {
+  async function openEditMaterial(material: Material) {
     setSelectedCategoryId(material.category_id);
     setEditingMaterial(material);
     setMaterialName(material.name);
@@ -981,6 +988,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialColor(material.color || '');
     setMaterialUseCase((material as any).use_case || '');
     setMaterialStatus(material.status);
+    setMaterialPhotos([]);
+    
+    // Load existing photos
+    try {
+      const { data: photos, error } = await supabase
+        .from('material_photos')
+        .select('*')
+        .eq('material_id', material.id)
+        .order('timestamp', { ascending: false });
+      
+      if (!error) {
+        setExistingPhotos(photos || []);
+      }
+    } catch (error) {
+      console.error('Error loading material photos:', error);
+    }
+    
     setShowMaterialModal(true);
   }
 
@@ -996,6 +1020,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
 
     try {
+      let materialId: string;
+      
       if (editingMaterial) {
         // Update existing (including category)
         const { error } = await supabase
@@ -1013,6 +1039,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           .eq('id', editingMaterial.id);
 
         if (error) throw error;
+        materialId = editingMaterial.id;
         toast.success('Material updated');
       } else {
         // Create new - get max order_index for this category
@@ -1026,7 +1053,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
         const nextOrderIndex = (maxOrderData?.order_index ?? -1) + 1;
 
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('materials')
           .insert({
             job_id: job.id,
@@ -1040,10 +1067,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             created_by: userId,
             import_source: 'manual',
             order_index: nextOrderIndex,
-          });
+          })
+          .select()
+          .single();
 
         if (error) throw error;
+        materialId = data.id;
         toast.success('Material added');
+      }
+
+      // Upload photos if any
+      if (materialPhotos.length > 0) {
+        setUploadingPhotos(true);
+        await uploadMaterialPhotos(materialId);
       }
 
       setShowMaterialModal(false);
@@ -1051,6 +1087,75 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     } catch (error: any) {
       toast.error('Failed to save material');
       console.error(error);
+    } finally {
+      setUploadingPhotos(false);
+    }
+  }
+
+  async function uploadMaterialPhotos(materialId: string) {
+    try {
+      for (const file of materialPhotos) {
+        // Upload to storage
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${job.id}/${materialId}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('job-files')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('job-files')
+          .getPublicUrl(filePath);
+
+        // Save to material_photos table
+        const { error: dbError } = await supabase
+          .from('material_photos')
+          .insert({
+            material_id: materialId,
+            photo_url: publicUrl,
+            uploaded_by: userId,
+          });
+
+        if (dbError) throw dbError;
+      }
+      
+      if (materialPhotos.length > 0) {
+        toast.success(`${materialPhotos.length} photo(s) uploaded`);
+      }
+    } catch (error: any) {
+      console.error('Error uploading photos:', error);
+      toast.error('Failed to upload some photos');
+    }
+  }
+
+  async function deletePhoto(photoId: string, photoUrl: string) {
+    if (!confirm('Delete this photo?')) return;
+
+    try {
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('material_photos')
+        .delete()
+        .eq('id', photoId);
+
+      if (dbError) throw dbError;
+
+      // Delete from storage
+      const path = photoUrl.split('/job-files/')[1];
+      if (path) {
+        await supabase.storage.from('job-files').remove([path]);
+      }
+
+      // Update local state
+      setExistingPhotos(existingPhotos.filter(p => p.id !== photoId));
+      toast.success('Photo deleted');
+    } catch (error: any) {
+      console.error('Error deleting photo:', error);
+      toast.error('Failed to delete photo');
     }
   }
 
@@ -1615,11 +1720,81 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </Select>
             </div>
 
+            {/* Photo Upload */}
+            <div className="space-y-2">
+              <Label htmlFor="material-photos" className="flex items-center gap-2">
+                <Camera className="w-4 h-4" />
+                Photos
+              </Label>
+              <Input
+                id="material-photos"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  if (e.target.files) {
+                    setMaterialPhotos(Array.from(e.target.files));
+                  }
+                }}
+                className="cursor-pointer"
+              />
+              <p className="text-xs text-muted-foreground">Upload photos of this material</p>
+              
+              {/* Preview new photos */}
+              {materialPhotos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {materialPhotos.map((file, index) => (
+                    <div key={index} className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-green-500">
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={`New photo ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <Badge className="absolute top-0 right-0 bg-green-500 text-white text-xs">New</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Display existing photos */}
+              {existingPhotos.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Existing Photos:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {existingPhotos.map((photo) => (
+                      <div key={photo.id} className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-slate-300 group">
+                        <img
+                          src={photo.photo_url}
+                          alt="Material photo"
+                          className="w-full h-full object-cover"
+                        />
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deletePhoto(photo.id, photo.photo_url)}
+                          className="absolute inset-0 w-full h-full opacity-0 group-hover:opacity-90 transition-opacity flex items-center justify-center"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={saveMaterial} className="flex-1 gradient-primary">
-                {editingMaterial ? 'Update Material' : 'Add Material'}
+              <Button onClick={saveMaterial} disabled={uploadingPhotos} className="flex-1 gradient-primary">
+                {uploadingPhotos ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Uploading Photos...
+                  </>
+                ) : (
+                  <>{editingMaterial ? 'Update Material' : 'Add Material'}</>
+                )}
               </Button>
-              <Button variant="outline" onClick={() => setShowMaterialModal(false)}>
+              <Button variant="outline" onClick={() => setShowMaterialModal(false)} disabled={uploadingPhotos}>
                 Cancel
               </Button>
             </div>
