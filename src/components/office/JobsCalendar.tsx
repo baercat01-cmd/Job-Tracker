@@ -104,7 +104,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
           }
 
           // Pull by date
-          if (material.pull_by_date && material.status === 'at_shop') {
+          if (material.pull_by_date && material.status === 'ready_for_job') {
             events.push({
               id: `pull-${material.id}`,
               type: 'material_pull',

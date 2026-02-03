@@ -161,7 +161,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
               canEdit: true,
             });
           }
-          if (material.pull_by_date === date && material.status === 'at_shop') {
+          if (material.pull_by_date === date && material.status === 'ready_for_job') {
             systemEventsData.push({
               id: `pull-${material.id}`,
               type: 'material_pull',

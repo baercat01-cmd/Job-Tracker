@@ -111,7 +111,7 @@ export function getMaterialStatusBrief(materialName: string, oldStatus: string, 
   const statusLabels: Record<string, string> = {
     not_ordered: 'Not Ordered',
     ordered: 'Ordered',
-    at_shop: 'At Shop',
+    ready_for_job: 'Ready for Job',
     at_job: 'At Job',
     installed: 'Installed',
     missing: 'Missing',

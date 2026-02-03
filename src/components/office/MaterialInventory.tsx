@@ -458,7 +458,7 @@ export function MaterialInventory() {
         needed: 'Needed',
         not_ordered: 'Not Ordered',
         ordered: 'Ordered',
-        at_shop: 'At Shop',
+        ready_for_job: 'Ready for Job',
         ready_to_pull: 'Pull from Shop',
         at_job: 'At Job',
         installed: 'Installed',
