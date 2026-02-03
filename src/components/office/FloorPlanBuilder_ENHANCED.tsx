@@ -650,7 +650,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
 
   function placeOpening(x: number, y: number, type: 'walkdoor' | 'window' | 'overhead_door' | 'other') {
     setNewOpening({
-      opening_type: type,
+      opening_type: type as any,
       size_detail: type === 'walkdoor' ? "3' × 7'" : "3' × 4'",
       quantity: 1,
       location: '',

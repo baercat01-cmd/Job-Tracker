@@ -1362,7 +1362,7 @@ export function FloorPlanBuilder({ width, length, quoteId }: FloorPlanBuilderPro
         setMode('select');
         setWallPreview(null);
       }
-    } else if (mode === 'room' && pendingRoomPlacement) {
+    } else if ((mode as string) === 'room' && pendingRoomPlacement) {
       placeRoom(coords.x, coords.y);
     }
   }

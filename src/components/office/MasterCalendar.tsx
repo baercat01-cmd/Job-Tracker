@@ -332,7 +332,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 subcontractorPhone: schedule.subcontractors.phone,
                 status: schedule.status,
                 priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-              });
+              } as any);
             }
             
             // Move to next day
@@ -393,7 +393,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             title: event.title,
             description: `${job.name} - ${event.description || ''}`,
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-          });
+          } as any);
         });
       }
 
