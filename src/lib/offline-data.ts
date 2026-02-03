@@ -10,7 +10,7 @@ import { syncTable, isDataStale } from './offline-sync';
 type TableName = 'user_profiles' | 'jobs' | 'time_entries' | 'materials' | 'photos' | 'notifications' | 'components' | 'workers' | 'completed_tasks' | 'daily_logs' | 'materials_categories' | 'job_assignments';
 
 export async function fetchOfflineFirst<T>(
-  tableName: TableName,
+  tableName: string,
   fetchFromSupabase: () => Promise<{ data: T[] | null; error: any }>
 ): Promise<T[]> {
   try {
@@ -53,7 +53,7 @@ export async function fetchOfflineFirst<T>(
 
 // Fetch by ID with offline support
 export async function fetchByIdOfflineFirst<T>(
-  tableName: TableName,
+  tableName: string,
   id: string,
   fetchFromSupabase: () => Promise<{ data: T | null; error: any }>
 ): Promise<T | null> {
@@ -84,7 +84,7 @@ export async function fetchByIdOfflineFirst<T>(
 
 // Fetch by index with offline support
 export async function fetchByIndexOfflineFirst<T>(
-  tableName: TableName,
+  tableName: string,
   indexName: string,
   value: any,
   fetchFromSupabase: () => Promise<{ data: T[] | null; error: any }>
