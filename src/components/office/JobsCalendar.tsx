@@ -15,9 +15,11 @@ function parseDateLocal(dateString: string): Date {
   return new Date(year, month - 1, day);
 }
 
+import type { CalendarEventType } from '@/types';
+
 interface CalendarEvent {
   id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'material_pickup' | 'task_deadline' | 'task_completed' | 'subcontractor';
+  type: CalendarEventType;
   date: string;
   jobId: string;
   jobName: string;

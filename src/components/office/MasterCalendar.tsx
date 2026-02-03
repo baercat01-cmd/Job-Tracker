@@ -51,9 +51,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
+import type { CalendarEventType } from '@/types';
+
 interface CalendarEvent {
   id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'material_pickup' | 'task_deadline' | 'task_completed' | 'subcontractor';
+  type: CalendarEventType;
   date: string;
   jobId: string;
   jobName: string;
@@ -66,7 +68,7 @@ interface CalendarEvent {
   subcontractorName?: string;
   subcontractorPhone?: string;
   assignedUserName?: string;
-  subcontractorTrades?: string[]; // Added this to fix an issue later if needed
+  subcontractorTrades?: string[];
 }
 
 interface MasterCalendarProps {
