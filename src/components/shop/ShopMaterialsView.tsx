@@ -39,7 +39,7 @@ interface ShopMaterialsViewProps {
 
 const STATUS_OPTIONS = [
   { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
-  { value: 'ready_for_job', label: 'Ready for Job', color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'at_shop', label: 'Ready for Job', color: 'bg-blue-100 text-blue-700 border-blue-300' },
 ];
 
 function getStatusColor(status: string) {
@@ -345,7 +345,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                             <div className="flex justify-center">
                               <Button
                                 size="sm"
-                                onClick={() => updateMaterialStatus(material.id, 'ready_for_job')}
+                                onClick={() => updateMaterialStatus(material.id, 'at_shop')}
                                 className="gradient-primary"
                               >
                                 <CheckCircle2 className="w-4 h-4 mr-2" />

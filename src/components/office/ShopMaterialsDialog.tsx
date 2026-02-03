@@ -45,9 +45,9 @@ interface ShopMaterialsDialogProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-amber-100 text-amber-700 border-amber-300' },
-  { value: 'ready_for_job', label: 'Ready for Job', color: 'bg-green-100 text-green-700 border-green-300' },
-  { value: 'at_job', label: 'At Job', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
+  { value: 'at_job', label: 'At Job', color: 'bg-green-100 text-green-700 border-green-300' },
 ];
 
 function getStatusColor(status: string) {
@@ -55,7 +55,7 @@ function getStatusColor(status: string) {
 }
 
 export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterialsDialogProps) {
-  const [materialsReadyForJob, setMaterialsReadyForJob] = useState<Material[]>([]);
+  const [materialsAtShop, setMaterialsAtShop] = useState<Material[]>([]);
   const [materialsReadyToPull, setMaterialsReadyToPull] = useState<Material[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -70,22 +70,22 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       setLoading(true);
       console.log('Loading shop materials...');
 
-      // Load materials ready for job
-      const { data: readyForJobData, error: readyForJobError } = await supabase
+      // Load materials at shop
+      const { data: atShopData, error: atShopError } = await supabase
         .from('materials')
         .select(`
           *,
           job:jobs(id, name, client_name),
           category:materials_categories(name)
         `)
-        .eq('status', 'ready_for_job')
+        .eq('status', 'at_shop')
         .order('pull_by_date', { ascending: true, nulls: 'last' });
 
-      if (readyForJobError) {
-        console.error('Error loading ready_for_job materials:', readyForJobError);
-        throw readyForJobError;
+      if (atShopError) {
+        console.error('Error loading at_shop materials:', atShopError);
+        throw atShopError;
       }
-      console.log('Ready for job materials:', readyForJobData?.length || 0);
+      console.log('At shop materials:', atShopData?.length || 0);
 
       // Load materials ready to pull
       const { data: readyToPullData, error: readyToPullError } = await supabase
@@ -104,7 +104,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       }
       console.log('Ready to pull materials:', readyToPullData?.length || 0);
 
-      setMaterialsReadyForJob(readyForJobData || []);
+      setMaterialsAtShop(atShopData || []);
       setMaterialsReadyToPull(readyToPullData || []);
     } catch (error: any) {
       console.error('Error loading materials:', error);
@@ -134,7 +134,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
     }
   }
 
-  const totalReadyForJob = materialsReadyForJob.length;
+  const totalAtShop = materialsAtShop.length;
   const totalReadyToPull = materialsReadyToPull.length;
 
   // Group materials by job
@@ -158,7 +158,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   }
 
   const readyToPullByJob = groupMaterialsByJob(materialsReadyToPull);
-  const readyForJobByJob = groupMaterialsByJob(materialsReadyForJob);
+  const atShopByJob = groupMaterialsByJob(materialsAtShop);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -166,7 +166,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
-            Shop Materials
+            Shop Materials Overview
           </DialogTitle>
         </DialogHeader>
 
@@ -196,7 +196,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-semibold text-green-900">Ready for Job</p>
-                      <p className="text-3xl font-bold text-slate-900">{totalReadyForJob}</p>
+                      <p className="text-3xl font-bold text-slate-900">{totalAtShop}</p>
                     </div>
                     <Package className="w-8 h-8 text-green-600" />
                   </div>
@@ -249,21 +249,21 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-amber-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-2 px-3">
                                 <div className="space-y-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2">
                                     <Badge variant="outline" className="text-xs border-slate-300">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
                                     {material.pull_by_date && (
                                       <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-900 border border-amber-300">
-                                        {new Date(material.pull_by_date).toLocaleDateString()}
+                                        Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="font-bold text-sm text-slate-900 truncate">{material.name}</p>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                                  <p className="font-bold text-sm text-slate-900">{material.name}</p>
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                     <span>Qty: {material.quantity}</span>
-                                    {material.length && <span>• {material.length}</span>}
-                                    {material.color && <span>• {material.color}</span>}
+                                    {material.length && <span>Length: {material.length}</span>}
+                                    {material.color && <span>Color: {material.color}</span>}
                                   </div>
                                   <Select
                                     value={material.status}
@@ -296,18 +296,18 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                 <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-700 rounded-lg p-3">
                   <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
                     <Package className="w-5 h-5 text-green-700" />
-                    Ready for Job ({totalReadyForJob})
+                    Ready for Job ({totalAtShop})
                   </h3>
                 </div>
                 
-                {totalReadyForJob === 0 ? (
+                {totalAtShop === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p className="text-sm">No materials ready for job</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {Array.from(readyForJobByJob.entries()).map(([jobId, { job, materials }]) => (
+                    {Array.from(atShopByJob.entries()).map(([jobId, { job, materials }]) => (
                       <div key={jobId} className="space-y-2">
                         {/* Job Header */}
                         <div 
@@ -334,21 +334,21 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-green-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-2 px-3">
                                 <div className="space-y-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2">
                                     <Badge variant="outline" className="text-xs border-slate-300">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
                                     {material.pull_by_date && (
                                       <Badge variant="secondary" className="text-xs bg-green-100 text-green-900 border border-green-300">
-                                        {new Date(material.pull_by_date).toLocaleDateString()}
+                                        Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="font-bold text-sm text-slate-900 truncate">{material.name}</p>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                                  <p className="font-bold text-sm text-slate-900">{material.name}</p>
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                     <span>Qty: {material.quantity}</span>
-                                    {material.length && <span>• {material.length}</span>}
-                                    {material.color && <span>• {material.color}</span>}
+                                    {material.length && <span>Length: {material.length}</span>}
+                                    {material.color && <span>Color: {material.color}</span>}
                                   </div>
                                   <Select
                                     value={material.status}
@@ -378,7 +378,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
             </div>
 
             {/* Empty State */}
-            {totalReadyForJob === 0 && totalReadyToPull === 0 && (
+            {totalAtShop === 0 && totalReadyToPull === 0 && (
               <div className="text-center py-12">
                 <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
                 <p className="text-lg font-semibold mb-2">No Materials Found</p>

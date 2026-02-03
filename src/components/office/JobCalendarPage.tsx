@@ -97,7 +97,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
           }
 
           // Pull by date
-          if (material.pull_by_date && material.status === 'ready_for_job') {
+          if (material.pull_by_date && material.status === 'at_shop') {
             events.push({
               id: `pull-${material.id}`,
               type: 'material_pull',

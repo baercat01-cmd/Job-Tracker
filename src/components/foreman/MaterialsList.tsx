@@ -36,7 +36,7 @@ interface Material {
   name: string;
   quantity: number;
   length: string | null;
-  status: 'needed' | 'not_ordered' | 'ordered' | 'ready_to_pull' | 'ready_for_job' | 'at_job' | 'installed' | 'missing';
+  status: 'needed' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   notes: string | null;
   updated_at: string;
   use_case?: string;
@@ -85,7 +85,7 @@ interface MaterialPhoto {
   timestamp: string;
 }
 
-type StatusFilter = 'all' | 'needed' | 'not_ordered' | 'ordered' | 'ready_to_pull' | 'ready_for_job' | 'at_job' | 'installed' | 'missing';
+type StatusFilter = 'all' | 'needed' | 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
 
 interface MaterialsListProps {
   job: Job;
@@ -99,7 +99,7 @@ const STATUS_CONFIG = {
   needed: { label: 'Needed', color: 'bg-orange-500', bgClass: 'bg-orange-50 text-orange-800 border-orange-200' },
   not_ordered: { label: 'Not Ordered', color: 'bg-gray-500', bgClass: 'bg-gray-50 text-gray-700 border-gray-200' },
   ordered: { label: 'Ordered', color: 'bg-yellow-500', bgClass: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
-  ready_for_job: { label: 'Ready for Job', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-200' },
+  at_shop: { label: 'At Shop', color: 'bg-blue-500', bgClass: 'bg-blue-50 text-blue-800 border-blue-200' },
   ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-500', bgClass: 'bg-purple-50 text-purple-800 border-purple-200' },
   at_job: { label: 'At Job', color: 'bg-green-500', bgClass: 'bg-green-50 text-green-800 border-green-200' },
   installed: { label: 'Installed', color: 'bg-black', bgClass: 'bg-slate-100 text-slate-800 border-slate-200' },
@@ -261,7 +261,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         .from('materials')
         .select('id')
         .eq('job_id', job.id)
-        .eq('status', 'ready_for_job');
+        .eq('status', 'at_shop');
 
       if (atShopError) throw atShopError;
 
@@ -475,7 +475,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
   function handleMaterialStatusChange(material: Material, newStatusValue: Material['status']) {
     // Show date dialog for status changes that need date tracking
-    if (newStatusValue === 'ordered' || newStatusValue === 'ready_for_job' || newStatusValue === 'at_job') {
+    if (newStatusValue === 'ordered' || newStatusValue === 'at_shop' || newStatusValue === 'at_job') {
       setStatusChangeMaterial(material);
       setStatusChangeMaterialGroup(null);
       setNewStatus(newStatusValue);
@@ -496,7 +496,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       if (newStatusValue === 'ordered' && !material.order_by_date) {
         setOrderByDate(tomorrowStr);
         setDeliveryDate(tomorrowStr);
-      } else if (newStatusValue === 'ready_for_job' && !material.pull_by_date) {
+      } else if (newStatusValue === 'at_shop' && !material.pull_by_date) {
         setPullByDate(tomorrowStr);
       } else if (newStatusValue === 'at_job' && !material.actual_delivery_date) {
         setActualDeliveryDate(todayStr);
@@ -509,7 +509,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
   function handleGroupStatusChange(group: GroupedMaterial, newStatusValue: Material['status']) {
     // Show date dialog for status changes that need date tracking
-    if (newStatusValue === 'ordered' || newStatusValue === 'ready_for_job' || newStatusValue === 'at_job') {
+    if (newStatusValue === 'ordered' || newStatusValue === 'at_shop' || newStatusValue === 'at_job') {
       setStatusChangeMaterial(null);
       setStatusChangeMaterialGroup(group.materials);
       setNewStatus(newStatusValue);
@@ -609,7 +609,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         if (deliveryDate) updateData.delivery_date = deliveryDate;
         updateData.ordered_by = userId;
         updateData.order_requested_at = new Date().toISOString();
-      } else if (newStatus === 'ready_for_job') {
+      } else if (newStatus === 'at_shop') {
         if (pullByDate) updateData.pull_by_date = pullByDate;
       } else if (newStatus === 'at_job') {
         if (actualDeliveryDate) updateData.actual_delivery_date = actualDeliveryDate;
@@ -1144,7 +1144,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         if (sortBy === 'name') {
           return a.name.localeCompare(b.name);
         } else if (sortBy === 'status') {
-          const statusOrder = ['needed', 'not_ordered', 'ordered', 'ready_to_pull', 'ready_for_job', 'at_job', 'installed', 'missing'];
+          const statusOrder = ['needed', 'not_ordered', 'ordered', 'at_shop', 'ready_to_pull', 'at_job', 'installed', 'missing'];
           return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
         } else if (sortBy === 'date') {
           const aDate = a.delivery_date || a.order_by_date || a.updated_at;
@@ -1600,7 +1600,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
         {/* Remaining tabs unchanged - keeping them from original file */}
         <TabsContent value="ready">
-          <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="ready_for_job" />
+          <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="at_shop" />
         </TabsContent>
 
         <TabsContent value="pull">

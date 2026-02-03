@@ -66,7 +66,7 @@ interface ExtrasManagementProps {
 const STATUS_OPTIONS = [
   { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
-  { value: 'ready_for_job', label: 'Ready for Job', color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
   { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
   { value: 'at_job', label: 'At Job', color: 'bg-green-100 text-green-700 border-green-300' },
   { value: 'installed', label: 'Installed', color: 'bg-slate-800 text-white border-slate-800' },

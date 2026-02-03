@@ -195,7 +195,7 @@ export function EventDetailsDialog({ event, open, onClose, onUpdate }: EventDeta
                 <SelectContent>
                   <SelectItem value="not_ordered">Not Ordered</SelectItem>
                   <SelectItem value="ordered">Ordered</SelectItem>
-                  <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                  <SelectItem value="at_shop">At Shop</SelectItem>
                   <SelectItem value="at_job">At Job</SelectItem>
                 </SelectContent>
               </Select>

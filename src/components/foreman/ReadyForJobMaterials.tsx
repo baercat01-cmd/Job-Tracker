@@ -16,7 +16,7 @@ interface Material {
   length: string | null;
   use_case: string | null;
   color: string | null;
-  status: 'not_ordered' | 'ordered' | 'ready_to_pull' | 'ready_for_job' | 'at_job' | 'installed' | 'missing';
+  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   job_id: string;
   category_id: string;
 }
@@ -30,10 +30,10 @@ interface MaterialWithJob extends Material {
 interface ReadyForJobMaterialsProps {
   userId: string;
   currentJobId?: string;
-  statusFilter?: 'ready_for_job' | 'ready_to_pull';
+  statusFilter?: 'at_shop' | 'ready_to_pull';
 }
 
-export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'ready_for_job' }: ReadyForJobMaterialsProps) {
+export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'at_shop' }: ReadyForJobMaterialsProps) {
   const [materials, setMaterials] = useState<MaterialWithJob[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -67,7 +67,7 @@ export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'rea
       setLoading(true);
       
       // Get materials with specified status for current job only
-      const statuses = statusFilter === 'ready_for_job' ? ['ready_for_job'] : ['ready_to_pull'];
+      const statuses = statusFilter === 'at_shop' ? ['at_shop'] : ['ready_to_pull'];
       
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
@@ -156,10 +156,10 @@ export function ReadyForJobMaterials({ userId, currentJobId, statusFilter = 'rea
           <CardContent className="py-12 text-center">
             <Package className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-lg font-medium text-muted-foreground">
-              {statusFilter === 'ready_for_job' ? 'No materials ready for this job' : 'No materials to pull from shop'}
+              {statusFilter === 'at_shop' ? 'No materials ready for this job' : 'No materials to pull from shop'}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              {statusFilter === 'ready_for_job' 
+              {statusFilter === 'at_shop' 
                 ? 'Materials with "At Shop" status will appear here' 
                 : 'Materials with "Pull from Shop" status will appear here'
               }

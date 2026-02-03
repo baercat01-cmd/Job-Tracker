@@ -89,7 +89,7 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
             .from('materials')
             .select('id', { count: 'exact', head: true })
             .eq('job_id', job.id)
-            .eq('status', 'ready_for_job');
+            .eq('status', 'at_shop');
           
           const { count: pullCount } = await supabase
             .from('materials')
