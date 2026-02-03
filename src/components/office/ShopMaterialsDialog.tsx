@@ -6,10 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Package, Truck, ArrowRight, ExternalLink } from 'lucide-react';
+import { Package, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Select,
@@ -29,7 +28,6 @@ interface Material {
   job_id: string;
   category_id: string;
   pull_by_date?: string | null;
-  pickup_date?: string | null;
   job?: {
     id: string;
     name: string;
@@ -59,7 +57,6 @@ function getStatusColor(status: string) {
 export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterialsDialogProps) {
   const [materialsAtShop, setMaterialsAtShop] = useState<Material[]>([]);
   const [materialsReadyToPull, setMaterialsReadyToPull] = useState<Material[]>([]);
-  const [materialsAtJob, setMaterialsAtJob] = useState<Material[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -107,27 +104,8 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       }
       console.log('Ready to pull materials:', readyToPullData?.length || 0);
 
-      // Load materials at job (recently delivered)
-      const { data: atJobData, error: atJobError } = await supabase
-        .from('materials')
-        .select(`
-          *,
-          job:jobs(id, name, client_name),
-          category:materials_categories(name)
-        `)
-        .eq('status', 'at_job')
-        .order('pickup_date', { ascending: false, nulls: 'last' })
-        .limit(50); // Show recent 50
-
-      if (atJobError) {
-        console.error('Error loading at_job materials:', atJobError);
-        throw atJobError;
-      }
-      console.log('At job materials:', atJobData?.length || 0);
-
       setMaterialsAtShop(atShopData || []);
       setMaterialsReadyToPull(readyToPullData || []);
-      setMaterialsAtJob(atJobData || []);
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error(`Failed to load materials: ${error.message || 'Unknown error'}`);
@@ -158,7 +136,29 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
 
   const totalAtShop = materialsAtShop.length;
   const totalReadyToPull = materialsReadyToPull.length;
-  const totalAtJob = materialsAtJob.length;
+
+  // Group materials by job
+  function groupMaterialsByJob(materials: Material[]): Map<string, { job: any; materials: Material[] }> {
+    const grouped = new Map<string, { job: any; materials: Material[] }>();
+    
+    materials.forEach(material => {
+      if (!material.job) return;
+      
+      const jobId = material.job.id;
+      if (!grouped.has(jobId)) {
+        grouped.set(jobId, {
+          job: material.job,
+          materials: []
+        });
+      }
+      grouped.get(jobId)!.materials.push(material);
+    });
+    
+    return grouped;
+  }
+
+  const readyToPullByJob = groupMaterialsByJob(materialsReadyToPull);
+  const atShopByJob = groupMaterialsByJob(materialsAtShop);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -178,24 +178,12 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         ) : (
           <div className="space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-4">
-              <Card className="border-blue-200 bg-blue-50">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-blue-700">At Shop</p>
-                      <p className="text-3xl font-bold text-blue-900">{totalAtShop}</p>
-                    </div>
-                    <Package className="w-8 h-8 text-blue-500" />
-                  </div>
-                </CardContent>
-              </Card>
-
+            <div className="grid grid-cols-2 gap-4">
               <Card className="border-purple-200 bg-purple-50">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-purple-700">Ready to Pull</p>
+                      <p className="text-sm font-medium text-purple-700">Need to Pull</p>
                       <p className="text-3xl font-bold text-purple-900">{totalReadyToPull}</p>
                     </div>
                     <ArrowRight className="w-8 h-8 text-purple-500" />
@@ -203,239 +191,199 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                 </CardContent>
               </Card>
 
-              <Card className="border-green-200 bg-green-50">
+              <Card className="border-blue-200 bg-blue-50">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-green-700">At Job</p>
-                      <p className="text-3xl font-bold text-green-900">{totalAtJob}</p>
+                      <p className="text-sm font-medium text-blue-700">Ready for Job</p>
+                      <p className="text-3xl font-bold text-blue-900">{totalAtShop}</p>
                     </div>
-                    <Truck className="w-8 h-8 text-green-500" />
+                    <Package className="w-8 h-8 text-blue-500" />
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Materials Ready to Pull (Priority) */}
-            {totalReadyToPull > 0 && (
-              <Card className="border-purple-300 border-2">
-                <CardHeader className="bg-purple-50">
-                  <CardTitle className="flex items-center gap-2 text-purple-900">
+            {/* Two Column Layout */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Left Column: Need to Pull */}
+              <div className="space-y-4">
+                <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
+                  <h3 className="font-bold text-lg text-purple-900 flex items-center gap-2">
                     <ArrowRight className="w-5 h-5" />
-                    Ready to Pull ({totalReadyToPull})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="space-y-3">
-                    {materialsReadyToPull.map((material) => (
-                      <Card key={material.id} className="border-l-4 border-l-purple-500">
-                        <CardContent className="py-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {material.category?.name || 'Uncategorized'}
-                                </Badge>
-                                {material.pull_by_date && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="font-bold text-base mb-1">{material.name}</p>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <span>Qty: {material.quantity}</span>
-                                {material.length && <span>Length: {material.length}</span>}
-                                {material.color && <span>Color: {material.color}</span>}
-                              </div>
-                              {material.job && (
-                                <button
-                                  onClick={() => {
-                                    onJobSelect?.(material.job_id);
-                                    onClose();
-                                  }}
-                                  className="flex items-center gap-1 text-sm text-primary hover:underline mt-2"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  {material.job.name} - {material.job.client_name}
-                                </button>
-                              )}
+                    Need to Pull ({totalReadyToPull})
+                  </h3>
+                </div>
+                
+                {totalReadyToPull === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">No materials need to be pulled</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {Array.from(readyToPullByJob.entries()).map(([jobId, { job, materials }]) => (
+                      <div key={jobId} className="space-y-2">
+                        {/* Job Header */}
+                        <div 
+                          className="bg-purple-100 border-l-4 border-purple-500 p-2 cursor-pointer hover:bg-purple-200 transition-colors"
+                          onClick={() => {
+                            onJobSelect?.(jobId);
+                            onClose();
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-sm">{job.name}</p>
+                              <p className="text-xs text-muted-foreground">{job.client_name}</p>
                             </div>
-                            <div className="flex flex-col gap-2">
-                              <Select
-                                value={material.status}
-                                onValueChange={(value) => updateMaterialStatus(material.id, value)}
-                              >
-                                <SelectTrigger className={`w-48 h-8 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATUS_OPTIONS.map(opt => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                            <Badge variant="secondary" className="text-xs">
+                              {materials.length} item{materials.length !== 1 ? 's' : ''}
+                            </Badge>
                           </div>
-                        </CardContent>
-                      </Card>
+                        </div>
+                        
+                        {/* Materials for this job */}
+                        <div className="space-y-2 pl-2">
+                          {materials.map((material) => (
+                            <Card key={material.id} className="border-l-4 border-l-purple-400">
+                              <CardContent className="py-2 px-3">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      {material.category?.name || 'Uncategorized'}
+                                    </Badge>
+                                    {material.pull_by_date && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="font-bold text-sm">{material.name}</p>
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                    <span>Qty: {material.quantity}</span>
+                                    {material.length && <span>Length: {material.length}</span>}
+                                    {material.color && <span>Color: {material.color}</span>}
+                                  </div>
+                                  <Select
+                                    value={material.status}
+                                    onValueChange={(value) => updateMaterialStatus(material.id, value)}
+                                  >
+                                    <SelectTrigger className={`w-full h-7 font-medium border text-xs ${getStatusColor(material.status)}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STATUS_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </div>
 
-            {/* Materials At Shop */}
-            {totalAtShop > 0 && (
-              <Card className="border-blue-300 border-2">
-                <CardHeader className="bg-blue-50">
-                  <CardTitle className="flex items-center gap-2 text-blue-900">
+              {/* Right Column: Ready for Job */}
+              <div className="space-y-4">
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
+                  <h3 className="font-bold text-lg text-blue-900 flex items-center gap-2">
                     <Package className="w-5 h-5" />
-                    At Shop ({totalAtShop})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="space-y-3">
-                    {materialsAtShop.map((material) => (
-                      <Card key={material.id} className="border-l-4 border-l-blue-500">
-                        <CardContent className="py-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {material.category?.name || 'Uncategorized'}
-                                </Badge>
-                                {material.pull_by_date && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="font-bold text-base mb-1">{material.name}</p>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <span>Qty: {material.quantity}</span>
-                                {material.length && <span>Length: {material.length}</span>}
-                                {material.color && <span>Color: {material.color}</span>}
-                              </div>
-                              {material.job && (
-                                <button
-                                  onClick={() => {
-                                    onJobSelect?.(material.job_id);
-                                    onClose();
-                                  }}
-                                  className="flex items-center gap-1 text-sm text-primary hover:underline mt-2"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  {material.job.name} - {material.job.client_name}
-                                </button>
-                              )}
+                    Ready for Job ({totalAtShop})
+                  </h3>
+                </div>
+                
+                {totalAtShop === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">No materials ready for job</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {Array.from(atShopByJob.entries()).map(([jobId, { job, materials }]) => (
+                      <div key={jobId} className="space-y-2">
+                        {/* Job Header */}
+                        <div 
+                          className="bg-blue-100 border-l-4 border-blue-500 p-2 cursor-pointer hover:bg-blue-200 transition-colors"
+                          onClick={() => {
+                            onJobSelect?.(jobId);
+                            onClose();
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-sm">{job.name}</p>
+                              <p className="text-xs text-muted-foreground">{job.client_name}</p>
                             </div>
-                            <div className="flex flex-col gap-2">
-                              <Select
-                                value={material.status}
-                                onValueChange={(value) => updateMaterialStatus(material.id, value)}
-                              >
-                                <SelectTrigger className={`w-48 h-8 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATUS_OPTIONS.map(opt => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                            <Badge variant="secondary" className="text-xs">
+                              {materials.length} item{materials.length !== 1 ? 's' : ''}
+                            </Badge>
                           </div>
-                        </CardContent>
-                      </Card>
+                        </div>
+                        
+                        {/* Materials for this job */}
+                        <div className="space-y-2 pl-2">
+                          {materials.map((material) => (
+                            <Card key={material.id} className="border-l-4 border-l-blue-400">
+                              <CardContent className="py-2 px-3">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      {material.category?.name || 'Uncategorized'}
+                                    </Badge>
+                                    {material.pull_by_date && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="font-bold text-sm">{material.name}</p>
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                    <span>Qty: {material.quantity}</span>
+                                    {material.length && <span>Length: {material.length}</span>}
+                                    {material.color && <span>Color: {material.color}</span>}
+                                  </div>
+                                  <Select
+                                    value={material.status}
+                                    onValueChange={(value) => updateMaterialStatus(material.id, value)}
+                                  >
+                                    <SelectTrigger className={`w-full h-7 font-medium border text-xs ${getStatusColor(material.status)}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {STATUS_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Materials At Job */}
-            {totalAtJob > 0 && (
-              <Card className="border-green-300">
-                <CardHeader className="bg-green-50">
-                  <CardTitle className="flex items-center gap-2 text-green-900">
-                    <Truck className="w-5 h-5" />
-                    At Job ({totalAtJob})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="space-y-3">
-                    {materialsAtJob.map((material) => (
-                      <Card key={material.id} className="border-l-4 border-l-green-500">
-                        <CardContent className="py-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {material.category?.name || 'Uncategorized'}
-                                </Badge>
-                                {material.pickup_date && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Delivered: {new Date(material.pickup_date).toLocaleDateString()}
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="font-bold text-base mb-1">{material.name}</p>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <span>Qty: {material.quantity}</span>
-                                {material.length && <span>Length: {material.length}</span>}
-                                {material.color && <span>Color: {material.color}</span>}
-                              </div>
-                              {material.job && (
-                                <button
-                                  onClick={() => {
-                                    onJobSelect?.(material.job_id);
-                                    onClose();
-                                  }}
-                                  className="flex items-center gap-1 text-sm text-primary hover:underline mt-2"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  {material.job.name} - {material.job.client_name}
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <Select
-                                value={material.status}
-                                onValueChange={(value) => updateMaterialStatus(material.id, value)}
-                              >
-                                <SelectTrigger className={`w-48 h-8 font-medium border-2 text-xs ${getStatusColor(material.status)}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATUS_OPTIONS.map(opt => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </div>
+            </div>
 
             {/* Empty State */}
-            {totalAtShop === 0 && totalReadyToPull === 0 && totalAtJob === 0 && (
+            {totalAtShop === 0 && totalReadyToPull === 0 && (
               <div className="text-center py-12">
                 <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
                 <p className="text-lg font-semibold mb-2">No Materials Found</p>
                 <p className="text-sm text-muted-foreground">
-                  There are currently no materials at the shop, ready to pull, or at job sites
+                  There are currently no materials at the shop or ready to pull
                 </p>
               </div>
             )}
