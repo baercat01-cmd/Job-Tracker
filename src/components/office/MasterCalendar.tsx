@@ -51,24 +51,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-import type { CalendarEventType } from '@/types';
+import type { SharedCalendarEvent } from '@/types';
 
-interface CalendarEvent {
-  id: string;
-  type: CalendarEventType;
-  date: string;
-  jobId: string;
-  jobName: string;
+// Extend the shared CalendarEvent interface with jobColor
+interface CalendarEvent extends SharedCalendarEvent {
   jobColor: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  materialId?: string;
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-  assignedUserName?: string;
-  subcontractorTrades?: string[];
 }
 
 interface MasterCalendarProps {

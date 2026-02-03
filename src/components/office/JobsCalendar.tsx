@@ -15,22 +15,10 @@ function parseDateLocal(dateString: string): Date {
   return new Date(year, month - 1, day);
 }
 
-import type { CalendarEventType } from '@/types';
+import type { SharedCalendarEvent } from '@/types';
 
-interface CalendarEvent {
-  id: string;
-  type: CalendarEventType;
-  date: string;
-  jobId: string;
-  jobName: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-  assignedUserName?: string;
-}
+// Use the shared CalendarEvent interface
+type CalendarEvent = SharedCalendarEvent;
 
 interface JobsCalendarProps {
   onJobSelect?: (jobId: string) => void;

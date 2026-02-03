@@ -199,6 +199,25 @@ export interface ActiveTimer {
 
 export type CalendarEventType = 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
 
+// Shared CalendarEvent interface used across all calendar components
+export interface SharedCalendarEvent {
+  id: string;
+  type: CalendarEventType;
+  date: string;
+  jobId: string;
+  jobName: string;
+  jobColor?: string;
+  title: string;
+  description: string;
+  status?: string;
+  priority?: 'low' | 'medium' | 'high';
+  materialId?: string;
+  subcontractorName?: string;
+  subcontractorPhone?: string;
+  assignedUserName?: string;
+  subcontractorTrades?: string[];
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
