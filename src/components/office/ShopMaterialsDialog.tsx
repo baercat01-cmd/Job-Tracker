@@ -72,7 +72,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
     try {
       setLoading(true);
 
-      // Load materials at shop (from all jobs)
+      // Load materials at shop
       const { data: atShopData, error: atShopError } = await supabase
         .from('materials')
         .select(`
@@ -81,11 +81,12 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
           category:materials_categories(name)
         `)
         .eq('status', 'at_shop')
+        .in('jobs.status', ['active', 'prepping'])
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
       if (atShopError) throw atShopError;
 
-      // Load materials ready to pull (from all jobs)
+      // Load materials ready to pull
       const { data: readyToPullData, error: readyToPullError } = await supabase
         .from('materials')
         .select(`
@@ -94,11 +95,12 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
           category:materials_categories(name)
         `)
         .eq('status', 'ready_to_pull')
+        .in('jobs.status', ['active', 'prepping'])
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
       if (readyToPullError) throw readyToPullError;
 
-      // Load materials at job (recently delivered from all jobs)
+      // Load materials at job (recently delivered)
       const { data: atJobData, error: atJobError } = await supabase
         .from('materials')
         .select(`
@@ -107,8 +109,9 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
           category:materials_categories(name)
         `)
         .eq('status', 'at_job')
+        .in('jobs.status', ['active', 'prepping'])
         .order('pickup_date', { ascending: false, nullsFirst: false })
-        .limit(100); // Show recent 100 from all jobs
+        .limit(50); // Show recent 50
 
       if (atJobError) throw atJobError;
 
