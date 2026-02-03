@@ -71,53 +71,66 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   async function loadMaterials() {
     try {
       setLoading(true);
+      console.log('Loading shop materials...');
 
       // Load materials at shop
       const { data: atShopData, error: atShopError } = await supabase
         .from('materials')
         .select(`
           *,
-          job:jobs(id, name, client_name, status),
+          job:jobs(id, name, client_name),
           category:materials_categories(name)
         `)
         .eq('status', 'at_shop')
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
-      if (atShopError) throw atShopError;
+      if (atShopError) {
+        console.error('Error loading at_shop materials:', atShopError);
+        throw atShopError;
+      }
+      console.log('At shop materials:', atShopData?.length || 0);
 
       // Load materials ready to pull
       const { data: readyToPullData, error: readyToPullError } = await supabase
         .from('materials')
         .select(`
           *,
-          job:jobs(id, name, client_name, status),
+          job:jobs(id, name, client_name),
           category:materials_categories(name)
         `)
         .eq('status', 'ready_to_pull')
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
-      if (readyToPullError) throw readyToPullError;
+      if (readyToPullError) {
+        console.error('Error loading ready_to_pull materials:', readyToPullError);
+        throw readyToPullError;
+      }
+      console.log('Ready to pull materials:', readyToPullData?.length || 0);
 
       // Load materials at job (recently delivered)
       const { data: atJobData, error: atJobError } = await supabase
         .from('materials')
         .select(`
           *,
-          job:jobs(id, name, client_name, status),
+          job:jobs(id, name, client_name),
           category:materials_categories(name)
         `)
         .eq('status', 'at_job')
         .order('pickup_date', { ascending: false, nullsFirst: false })
         .limit(50); // Show recent 50
 
-      if (atJobError) throw atJobError;
+      if (atJobError) {
+        console.error('Error loading at_job materials:', atJobError);
+        throw atJobError;
+      }
+      console.log('At job materials:', atJobData?.length || 0);
 
       setMaterialsAtShop(atShopData || []);
       setMaterialsReadyToPull(readyToPullData || []);
       setMaterialsAtJob(atJobData || []);
     } catch (error: any) {
       console.error('Error loading materials:', error);
-      toast.error('Failed to load materials');
+      toast.error(`Failed to load materials: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
