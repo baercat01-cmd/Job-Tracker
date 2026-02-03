@@ -320,7 +320,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             if (dayOfWeek !== 0 && dayOfWeek !== 6) {
               events.push({
                 id: `sub-${schedule.id}-${dateStr}`,
-                type: 'subcontractor',
+                type: 'subcontractor' as CalendarEventType,
                 date: dateStr,
                 jobId: schedule.jobs.id,
                 jobName: schedule.jobs.name,
@@ -332,7 +332,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 subcontractorPhone: schedule.subcontractors.phone,
                 status: schedule.status,
                 priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-              } as any);
+              });
             }
             
             // Move to next day
@@ -385,7 +385,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           
           events.push({
             id: `calendar-${event.id}`,
-            type: eventType,
+            type: eventType as CalendarEventType,
             date: event.event_date,
             jobId: job.id,
             jobName: job.name,
@@ -393,7 +393,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
             title: event.title,
             description: `${job.name} - ${event.description || ''}`,
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-          } as any);
+          });
         });
       }
 

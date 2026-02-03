@@ -177,14 +177,14 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
           
           events.push({
             id: `calendar-${event.id}`,
-            type: eventType,
+            type: eventType as CalendarEventType,
             date: event.event_date,
             jobId: job.id,
             jobName: job.name,
             title: event.title,
             description: event.description || '',
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-          } as any);
+          });
         });
       }
 
