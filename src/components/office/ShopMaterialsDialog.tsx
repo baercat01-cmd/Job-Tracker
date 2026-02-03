@@ -77,11 +77,10 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         .from('materials')
         .select(`
           *,
-          job:jobs!inner(id, name, client_name, status),
+          job:jobs(id, name, client_name, status),
           category:materials_categories(name)
         `)
         .eq('status', 'at_shop')
-        .in('jobs.status', ['active', 'prepping'])
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
       if (atShopError) throw atShopError;
@@ -91,11 +90,10 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         .from('materials')
         .select(`
           *,
-          job:jobs!inner(id, name, client_name, status),
+          job:jobs(id, name, client_name, status),
           category:materials_categories(name)
         `)
         .eq('status', 'ready_to_pull')
-        .in('jobs.status', ['active', 'prepping'])
         .order('pull_by_date', { ascending: true, nullsFirst: false });
 
       if (readyToPullError) throw readyToPullError;
@@ -105,11 +103,10 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         .from('materials')
         .select(`
           *,
-          job:jobs!inner(id, name, client_name, status),
+          job:jobs(id, name, client_name, status),
           category:materials_categories(name)
         `)
         .eq('status', 'at_job')
-        .in('jobs.status', ['active', 'prepping'])
         .order('pickup_date', { ascending: false, nullsFirst: false })
         .limit(50); // Show recent 50
 
