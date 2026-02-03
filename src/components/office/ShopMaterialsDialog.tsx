@@ -224,39 +224,48 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                         <div className="space-y-2 pl-2">
                           {materials.map((material) => (
                             <Card key={material.id} className="border-l-4 border-l-purple-600 bg-white hover:shadow-md transition-shadow">
-                              <CardContent className="py-2 px-3">
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className="text-xs border-slate-300">
+                              <CardContent className="py-3 px-3">
+                                <div className="flex items-center gap-3">
+                                  {/* Left side: Category badge and pull by date */}
+                                  <div className="flex flex-col gap-1 flex-shrink-0">
+                                    <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
                                     {material.pull_by_date && (
-                                      <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-900 border border-purple-300">
+                                      <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-900 border border-purple-300 whitespace-nowrap">
                                         Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="font-bold text-sm text-slate-900">{material.name}</p>
-                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                    <span>Qty: {material.quantity}</span>
-                                    {material.length && <span>Length: {material.length}</span>}
-                                    {material.color && <span>Color: {material.color}</span>}
+                                  
+                                  {/* Middle: Material info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm text-slate-900 mb-1">{material.name}</p>
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                      <span className="font-semibold">Qty: {material.quantity}</span>
+                                      {material.length && <span>Length: {material.length}</span>}
+                                      {material.color && <span>Color: {material.color}</span>}
+                                    </div>
                                   </div>
-                                  <Select
-                                    value={material.status}
-                                    onValueChange={(value) => updateMaterialStatus(material.id, value)}
-                                  >
-                                    <SelectTrigger className={`w-full h-7 font-medium border text-xs ${getStatusColor(material.status)}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {STATUS_OPTIONS.map(opt => (
-                                        <SelectItem key={opt.value} value={opt.value}>
-                                          {opt.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  
+                                  {/* Right side: Compact status selector */}
+                                  <div className="flex-shrink-0 w-36">
+                                    <Select
+                                      value={material.status}
+                                      onValueChange={(value) => updateMaterialStatus(material.id, value)}
+                                    >
+                                      <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(material.status)}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {STATUS_OPTIONS.map(opt => (
+                                          <SelectItem key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
                                 </div>
                               </CardContent>
                             </Card>
@@ -309,39 +318,48 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                         <div className="space-y-2 pl-2">
                           {materials.map((material) => (
                             <Card key={material.id} className="border-l-4 border-l-blue-600 bg-white hover:shadow-md transition-shadow">
-                              <CardContent className="py-2 px-3">
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className="text-xs border-slate-300">
+                              <CardContent className="py-3 px-3">
+                                <div className="flex items-center gap-3">
+                                  {/* Left side: Category badge and pull by date */}
+                                  <div className="flex flex-col gap-1 flex-shrink-0">
+                                    <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
                                     {material.pull_by_date && (
-                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-900 border border-blue-300">
+                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-900 border border-blue-300 whitespace-nowrap">
                                         Pull by: {new Date(material.pull_by_date).toLocaleDateString()}
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="font-bold text-sm text-slate-900">{material.name}</p>
-                                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                    <span>Qty: {material.quantity}</span>
-                                    {material.length && <span>Length: {material.length}</span>}
-                                    {material.color && <span>Color: {material.color}</span>}
+                                  
+                                  {/* Middle: Material info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm text-slate-900 mb-1">{material.name}</p>
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                      <span className="font-semibold">Qty: {material.quantity}</span>
+                                      {material.length && <span>Length: {material.length}</span>}
+                                      {material.color && <span>Color: {material.color}</span>}
+                                    </div>
                                   </div>
-                                  <Select
-                                    value={material.status}
-                                    onValueChange={(value) => updateMaterialStatus(material.id, value)}
-                                  >
-                                    <SelectTrigger className={`w-full h-7 font-medium border text-xs ${getStatusColor(material.status)}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {STATUS_OPTIONS.map(opt => (
-                                        <SelectItem key={opt.value} value={opt.value}>
-                                          {opt.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  
+                                  {/* Right side: Compact status selector */}
+                                  <div className="flex-shrink-0 w-36">
+                                    <Select
+                                      value={material.status}
+                                      onValueChange={(value) => updateMaterialStatus(material.id, value)}
+                                    >
+                                      <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(material.status)}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {STATUS_OPTIONS.map(opt => (
+                                          <SelectItem key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
                                 </div>
                               </CardContent>
                             </Card>
