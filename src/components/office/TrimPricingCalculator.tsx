@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Calculator, Settings, Info, X, Eraser } from 'lucide-react';
+import { Calculator, Settings, Info, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const STORAGE_KEY_LF_COST = 'trim_calculator_lf_cost';
@@ -22,22 +22,15 @@ export function TrimPricingCalculator() {
   const [pricePerBend, setPricePerBend] = useState<string>('');
   const [markupPercent, setMarkupPercent] = useState<string>('32');
   
-  // Calculation inputs (6 width columns like Excel + bends + cut)
-  const [width1, setWidth1] = useState<string>('0');
-  const [width2, setWidth2] = useState<string>('0');
-  const [width3, setWidth3] = useState<string>('0');
-  const [width4, setWidth4] = useState<string>('0');
-  const [width5, setWidth5] = useState<string>('0');
-  const [width6, setWidth6] = useState<string>('0');
-  const [numberOfBends, setNumberOfBends] = useState<string>('0');
-  const [cutCount, setCutCount] = useState<string>('1');
+  // Calculation inputs
+  const [widthInches, setWidthInches] = useState<string>('');
+  const [numberOfBends, setNumberOfBends] = useState<string>('');
   
-  // Calculated results (always visible)
-  const [totalInches, setTotalInches] = useState(0);
-  const [pricePerInch, setPricePerInch] = useState(0);
-  const [totalBendCost, setTotalBendCost] = useState(0);
-  const [totalInchCost, setTotalInchCost] = useState(0);
-  const [sellingPrice, setSellingPrice] = useState(0);
+  // Results
+  const [materialPrice, setMaterialPrice] = useState(0);
+  const [bendPrice, setBendPrice] = useState(0);
+  const [totalPrice, setTotalPrice] = useState(0);
+  const [totalLinealFeet, setTotalLinealFeet] = useState(0);
   
   // Dialog states
   const [showSettings, setShowSettings] = useState(false);
@@ -99,60 +92,64 @@ export function TrimPricingCalculator() {
     toast.success('Settings saved successfully');
   }
 
-  // Calculate trim pricing (runs on every input change)
+  // Calculate trim pricing
   useEffect(() => {
-    const lfCost = parseFloat(sheetLFCost) || 0;
-    const bendPriceVal = parseFloat(pricePerBend) || 0;
-    const markup = parseFloat(markupPercent) || 0;
+    const lfCost = parseFloat(sheetLFCost);
+    const bendPriceVal = parseFloat(pricePerBend);
+    const markup = parseFloat(markupPercent);
+    const inches = parseFloat(widthInches);
+    const bends = parseInt(numberOfBends);
+
+    if (!lfCost || lfCost <= 0 || !bendPriceVal || bendPriceVal <= 0 || markup < 0) {
+      setMaterialPrice(0);
+      setBendPrice(0);
+      setTotalPrice(0);
+      setTotalLinealFeet(0);
+      return;
+    }
+
+    if (!inches || inches <= 0 || !bends || bends <= 0) {
+      setMaterialPrice(0);
+      setBendPrice(0);
+      setTotalPrice(0);
+      setTotalLinealFeet(0);
+      return;
+    }
+
+    // Total inches = number of bends × width in inches
+    const totalInches = bends * inches;
     
-    const w1 = parseFloat(width1) || 0;
-    const w2 = parseFloat(width2) || 0;
-    const w3 = parseFloat(width3) || 0;
-    const w4 = parseFloat(width4) || 0;
-    const w5 = parseFloat(width5) || 0;
-    const w6 = parseFloat(width6) || 0;
-    const bends = parseFloat(numberOfBends) || 0;
+    // Convert to lineal feet
+    const totalLF = totalInches / 12;
+    setTotalLinealFeet(totalLF);
 
-    // Total In = sum of all width inputs
-    const totalIn = w1 + w2 + w3 + w4 + w5 + w6;
-    setTotalInches(totalIn);
-
-    // $ per In = (sheet LF COST × (1 + markup%)) / 12 (convert LF to inches)
+    // Selling price per LF = sheet LF COST × (1 + markup%)
     const markupMultiplier = 1 + (markup / 100);
     const sellingPricePerLF = lfCost * markupMultiplier;
-    const pricePerIn = sellingPricePerLF / 12;
-    setPricePerInch(pricePerIn);
     
-    // Total Bend $ = Bends × $ Per Bend
-    const bendCost = bends * bendPriceVal;
-    setTotalBendCost(bendCost);
+    // Material price = total LF × selling price per LF
+    const matPrice = totalLF * sellingPricePerLF;
+    setMaterialPrice(matPrice);
     
-    // Total Inch $ = Total In × $ per In
-    const inchCost = totalIn * pricePerIn;
-    setTotalInchCost(inchCost);
+    // Bend price = number of bends × price per bend
+    const bPrice = bends * bendPriceVal;
+    setBendPrice(bPrice);
     
-    // Selling Price = Total Inch $ + Total Bend $
-    const finalPrice = inchCost + bendCost;
-    setSellingPrice(finalPrice);
-  }, [sheetLFCost, pricePerBend, markupPercent, width1, width2, width3, width4, width5, width6, numberOfBends]);
+    // Total price = material + bends
+    setTotalPrice(matPrice + bPrice);
+  }, [sheetLFCost, pricePerBend, markupPercent, widthInches, numberOfBends]);
 
   function clearCalculation() {
-    setWidth1('0');
-    setWidth2('0');
-    setWidth3('0');
-    setWidth4('0');
-    setWidth5('0');
-    setWidth6('0');
-    setNumberOfBends('0');
-    setCutCount('1');
+    setWidthInches('');
+    setNumberOfBends('');
   }
 
   const hasSettings = sheetLFCost && pricePerBend && markupPercent;
 
   return (
     <>
-      {/* Main Calculator - Excel Style Layout */}
-      <Card className="border-2 border-green-800 bg-gradient-to-br from-slate-900 to-black max-w-5xl mx-auto">
+      {/* Main Compact Calculator */}
+      <Card className="border-2 border-green-800 bg-gradient-to-br from-slate-900 to-black max-w-2xl mx-auto">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-yellow-500">
@@ -205,137 +202,74 @@ export function TrimPricingCalculator() {
             </div>
           ) : (
             <>
-              {/* Input Section - Excel Style */}
-              <div className="space-y-3">
-                {/* Header Row */}
-                <div className="grid grid-cols-9 gap-2 text-center">
-                  <div className="col-span-6 bg-teal-700 border border-teal-600 rounded p-2">
-                    <div className="text-xs font-bold text-white">STEEL</div>
-                    <div className="text-xs text-teal-200">Inches</div>
-                  </div>
-                  <div className="bg-teal-700 border border-teal-600 rounded p-2">
-                    <div className="text-xs font-bold text-white">Bends</div>
-                  </div>
-                  <div className="bg-teal-700 border border-teal-600 rounded p-2">
-                    <div className="text-xs font-bold text-white">Cut</div>
-                  </div>
-                  <div className="bg-teal-700 border border-teal-600 rounded p-2">
-                    <div className="text-xs font-bold text-white">Actions</div>
-                  </div>
+              {/* Input Fields */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="width-inches" className="text-sm font-semibold text-white">
+                    Width (inches)
+                  </Label>
+                  <Input
+                    id="width-inches"
+                    type="number"
+                    min="0"
+                    step="0.125"
+                    value={widthInches}
+                    onChange={(e) => setWidthInches(e.target.value)}
+                    placeholder="0"
+                    className="h-11 text-base bg-white border-green-800"
+                  />
                 </div>
 
-                {/* Input Row */}
-                <div className="grid grid-cols-9 gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="num-bends" className="text-sm font-semibold text-white">
+                    Number of Bends
+                  </Label>
                   <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width1}
-                    onChange={(e) => setWidth1(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width2}
-                    onChange={(e) => setWidth2(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width3}
-                    onChange={(e) => setWidth3(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width4}
-                    onChange={(e) => setWidth4(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width5}
-                    onChange={(e) => setWidth5(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={width6}
-                    onChange={(e) => setWidth6(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
-                  <Input
+                    id="num-bends"
                     type="number"
                     min="0"
                     step="1"
                     value={numberOfBends}
                     onChange={(e) => setNumberOfBends(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
+                    placeholder="0"
+                    className="h-11 text-base bg-white border-green-800"
                   />
-                  <Input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={cutCount}
-                    onChange={(e) => setCutCount(e.target.value)}
-                    className="h-12 text-center text-lg font-bold bg-cyan-50 border-green-800"
-                  />
+                </div>
+              </div>
+
+              {/* Results */}
+              {widthInches && numberOfBends && totalPrice > 0 && (
+                <div className="space-y-3 pt-2 border-t border-green-800">
+                  <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded-lg p-4">
+                    <div className="text-sm text-yellow-500 mb-1 font-semibold">TOTAL PRICE</div>
+                    <div className="text-4xl font-bold text-yellow-500">${totalPrice.toFixed(2)}</div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
+                      <div className="text-white/60">Material</div>
+                      <div className="text-white font-bold">${materialPrice.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
+                      <div className="text-white/60">Bends</div>
+                      <div className="text-white font-bold">${bendPrice.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
+                      <div className="text-white/60">Total LF</div>
+                      <div className="text-white font-bold">{totalLinealFeet.toFixed(2)}</div>
+                    </div>
+                  </div>
+
                   <Button
                     onClick={clearCalculation}
                     variant="outline"
-                    className="h-12 border-green-800 text-white hover:bg-green-900/20"
-                    title="Clear all inputs"
+                    className="w-full border-green-800 text-white hover:bg-green-900/20"
                   >
-                    <Eraser className="w-5 h-5" />
+                    <X className="w-4 h-4 mr-2" />
+                    Clear
                   </Button>
                 </div>
-              </div>
-
-              {/* Calculation Results - Always Visible */}
-              <div className="space-y-3 pt-4 border-t-2 border-green-800">
-                {/* Intermediate Calculations */}
-                <div className="grid grid-cols-5 gap-3 text-center">
-                  <div className="bg-cyan-100 border-2 border-slate-400 rounded p-3">
-                    <div className="text-xs text-slate-600 font-semibold mb-1">Total In</div>
-                    <div className="text-2xl font-bold text-slate-900">{totalInches.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-cyan-100 border-2 border-slate-400 rounded p-3">
-                    <div className="text-xs text-slate-600 font-semibold mb-1">Total Bend $</div>
-                    <div className="text-2xl font-bold text-slate-900">${totalBendCost.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-cyan-100 border-2 border-red-400 rounded p-3">
-                    <div className="text-xs text-red-700 font-semibold mb-1">$ per In</div>
-                    <div className="text-2xl font-bold text-red-700">${pricePerInch.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-cyan-100 border-2 border-red-400 rounded p-3">
-                    <div className="text-xs text-red-700 font-semibold mb-1">$ Per Bend</div>
-                    <div className="text-2xl font-bold text-red-700">${(parseFloat(pricePerBend) || 0).toFixed(2)}</div>
-                  </div>
-                  <div className="bg-cyan-100 border-2 border-green-600 rounded p-3">
-                    <div className="text-xs text-green-800 font-semibold mb-1">Total Inch $</div>
-                    <div className="text-2xl font-bold text-green-800">${totalInchCost.toFixed(2)}</div>
-                  </div>
-                </div>
-
-                {/* Final Selling Price */}
-                <div className="bg-teal-700 border-2 border-teal-600 rounded-lg p-6">
-                  <div className="text-sm text-teal-200 mb-2 font-semibold text-center">SELLING PRICE</div>
-                  <div className="text-5xl font-bold text-white text-center">${sellingPrice.toFixed(2)}</div>
-                  <div className="text-sm text-teal-200 mt-3 text-center">
-                    = Total Inch $ (${totalInchCost.toFixed(2)}) + Total Bend $ (${totalBendCost.toFixed(2)})
-                  </div>
-                </div>
-              </div>
+              )}
             </>
           )}
         </CardContent>
