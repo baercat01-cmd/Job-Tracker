@@ -230,25 +230,26 @@ export function CrewOrdersManagement() {
     setShowProcessDialog(true);
   }
 
-  async function approveOrders() {
+  async function approveOrders(targetStatus: 'ordered' | 'ready_to_pull') {
     if (processingOrders.length === 0) return;
 
     setSaving(true);
     try {
-      // Update all selected orders to "ordered" status
+      // Update all selected orders to target status
       const orderIds = processingOrders.map(o => o.id);
       
       const { error } = await supabase
         .from('materials')
         .update({
-          status: 'ordered',
+          status: targetStatus,
           updated_at: new Date().toISOString(),
         })
         .in('id', orderIds);
 
       if (error) throw error;
 
-      toast.success(`${orderIds.length} order(s) approved and moved to main materials list`);
+      const statusLabel = targetStatus === 'ordered' ? 'Ordered' : 'Pull from Shop';
+      toast.success(`${orderIds.length} order(s) approved as "${statusLabel}" and moved to main materials list`);
       setShowProcessDialog(false);
       loadCrewOrders();
     } catch (error: any) {
@@ -356,16 +357,18 @@ export function CrewOrdersManagement() {
                         </div>
                         <div className="text-xs text-orange-600">Total Value</div>
                       </div>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openProcessDialog(group.orders);
-                        }}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Approve All ({group.orders.length})
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openProcessDialog(group.orders);
+                          }}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Approve All ({group.orders.length})
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
@@ -544,12 +547,14 @@ export function CrewOrdersManagement() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="font-semibold text-blue-900 mb-2">What happens next:</h4>
+              <h4 className="font-semibold text-blue-900 mb-2">Choose approval status:</h4>
+              <p className="text-sm text-blue-800 mb-3">
+                Select the status these materials should move to. They will leave the Crew Orders list and appear in the main Materials view.
+              </p>
               <ul className="text-sm text-blue-800 space-y-1 list-disc ml-5">
-                <li>Orders will be marked as "Ordered"</li>
-                <li>They will appear in the main Materials list</li>
+                <li><strong>Ordered:</strong> Materials that need to be ordered from suppliers</li>
+                <li><strong>Pull from Shop:</strong> Materials ready to be pulled from your shop inventory</li>
                 <li>EXTRA materials will be tagged and appear in Extras Management</li>
-                <li>You can track them through the normal material workflow</li>
               </ul>
             </div>
 
@@ -588,21 +593,44 @@ export function CrewOrdersManagement() {
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={approveOrders} disabled={saving} className="flex-1 bg-green-600 hover:bg-green-700 h-12 text-base">
-                {saving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-5 h-5 mr-2" />
-                    Approve {processingOrders.length} Order{processingOrders.length !== 1 ? 's' : ''}
-                  </>
-                )}
-              </Button>
-              <Button variant="outline" onClick={() => setShowProcessDialog(false)} className="h-12">
+            <div className="space-y-3 pt-4 border-t">
+              <div className="grid grid-cols-2 gap-3">
+                <Button 
+                  onClick={() => approveOrders('ordered')} 
+                  disabled={saving} 
+                  className="h-12 text-base bg-yellow-600 hover:bg-yellow-700"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5 mr-2" />
+                      Order ({processingOrders.length})
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  onClick={() => approveOrders('ready_to_pull')} 
+                  disabled={saving} 
+                  className="h-12 text-base bg-purple-600 hover:bg-purple-700"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5 mr-2" />
+                      Pull from Shop ({processingOrders.length})
+                    </>
+                  )}
+                </Button>
+              </div>
+              <Button variant="outline" onClick={() => setShowProcessDialog(false)} className="w-full h-10">
                 Cancel
               </Button>
             </div>

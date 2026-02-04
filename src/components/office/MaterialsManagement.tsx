@@ -580,7 +580,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         parent_id: (cat as any).parent_id,
         order_index: cat.order_index,
         sheet_image_url: (cat as any).sheet_image_url,
-        materials: enrichedMaterials.filter((m: any) => m.category_id === cat.id),
+        // Filter out crew orders with status 'not_ordered' from main materials view
+        materials: enrichedMaterials.filter((m: any) => {
+          const isCategoryMatch = m.category_id === cat.id;
+          const isCrewOrderPending = (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered';
+          return isCategoryMatch && !isCrewOrderPending;
+        }),
       }));
 
       setCategories(categoriesWithMaterials);
@@ -1341,9 +1346,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               >
                 <PackagePlus className="w-5 h-5" />
                 <span className="text-xs sm:text-base">Crew Orders</span>
-                {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length > 0 && (
+                {categories.flatMap(c => c.materials).filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered').length > 0 && (
                   <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                    {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length}
+                    {categories.flatMap(c => c.materials).filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered').length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -1514,11 +1519,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                   Crew Orders
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Materials requested by crew from the field - tracked separately for job cost management
+                  Materials requested by crew - approve and set status to move to main materials list
                 </p>
               </CardHeader>
               <CardContent className="pt-3">
-                {categories.flatMap(c => c.materials).filter(m => m.import_source === 'field_catalog').length === 0 ? (
+                {categories.flatMap(c => c.materials).filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered').length === 0 ? (
                   <div className="text-center py-12">
                     <PackagePlus className="w-16 h-16 mx-auto mb-4 opacity-50 text-muted-foreground" />
                     <p className="text-muted-foreground">No crew orders yet</p>
@@ -1529,9 +1534,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 ) : (
                   <div className="space-y-4">
                     {categories
-                      .filter(cat => cat.materials.some(m => m.import_source === 'field_catalog'))
+                      .filter(cat => cat.materials.some(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered'))
                       .map(category => {
-                        const fieldMaterials = category.materials.filter(m => m.import_source === 'field_catalog');
+                        const fieldMaterials = category.materials.filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered');
                         return (
                           <Card key={category.id} className="border-2 border-orange-200 bg-orange-50">
                             <CardHeader className="pb-3">
@@ -1552,6 +1557,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       <th className="text-center p-2 text-xs font-semibold text-orange-900">Ordered By</th>
                                       <th className="text-center p-2 text-xs font-semibold text-orange-900">When</th>
                                       <th className="text-center p-2 text-xs font-semibold text-orange-900">Status</th>
+                                      <th className="text-right p-2 text-xs font-semibold text-orange-900">Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -1584,24 +1590,42 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           {material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString() : '-'}
                                         </td>
                                         <td className="p-2">
-                                          <div className="flex justify-center">
-                                            <Select
-                                              value={material.status}
-                                              onValueChange={(newStatus) => handleQuickStatusChange(material.id, newStatus)}
+                                          <div className="flex justify-center gap-2">
+                                            <Button
+                                              size="sm"
+                                              onClick={() => handleQuickStatusChange(material.id, 'ordered')}
+                                              className="bg-yellow-600 hover:bg-yellow-700 h-8 text-xs"
                                             >
-                                              <SelectTrigger className={`w-full h-8 font-medium border-2 text-xs whitespace-nowrap ${getStatusColor(material.status)}`}>
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {STATUS_OPTIONS.map(opt => (
-                                                  <SelectItem key={opt.value} value={opt.value}>
-                                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs whitespace-nowrap ${opt.color}`}>
-                                                      {opt.label}
-                                                    </span>
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
+                                              Order
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              onClick={() => handleQuickStatusChange(material.id, 'ready_to_pull')}
+                                              className="bg-purple-600 hover:bg-purple-700 h-8 text-xs"
+                                            >
+                                              Pull from Shop
+                                            </Button>
+                                          </div>
+                                        </td>
+                                        <td className="p-2">
+                                          <div className="flex items-center justify-end gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => openEditMaterial(material)}
+                                              title="Edit material"
+                                            >
+                                              <Edit className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => deleteMaterial(material.id)}
+                                              className="text-destructive"
+                                              title="Delete material"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </Button>
                                           </div>
                                         </td>
                                       </tr>
