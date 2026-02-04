@@ -653,68 +653,58 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="space-y-4">
-      {/* Header with Search at Top */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Database className="w-5 h-5 text-primary" />
-            Order Materials
-          </CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Search catalog and manage your material orders
-          </p>
-        </CardHeader>
-        <CardContent className="pb-3">
-          {/* Search Bar - Always Visible at Top */}
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search materials by name or SKU..."
-                value={catalogSearch}
-                onChange={(e) => setCatalogSearch(e.target.value)}
-                className="pl-10 h-12 text-base"
-                autoFocus
-              />
-            </div>
-            
-            {/* Custom Material Button */}
-            <Button
-              onClick={() => setShowCustomMaterialDialog(true)}
-              variant="outline"
-              className="w-full h-12 border-2 border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-900 font-semibold"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Add Custom Material
-            </Button>
-          </div>
+      {/* Custom Material Button - Top */}
+      <Button
+        onClick={() => setShowCustomMaterialDialog(true)}
+        variant="outline"
+        className="w-full h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold"
+      >
+        <Plus className="w-5 h-5 mr-2" />
+        Add Custom Material
+      </Button>
 
-          {/* Category Filter - Only show when searching */}
-          {catalogSearch && (
-            <div className="flex gap-2 overflow-x-auto pb-2 mt-3">
-              <Button
-                variant={catalogCategory === null ? "default" : "outline"}
-                size="sm"
-                onClick={() => setCatalogCategory(null)}
-                className="whitespace-nowrap flex-shrink-0"
-              >
-                All
-              </Button>
-              {catalogCategories.map(cat => (
-                <Button
-                  key={cat}
-                  variant={catalogCategory === cat ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCatalogCategory(cat)}
-                  className="whitespace-nowrap flex-shrink-0"
-                >
-                  {cat}
-                </Button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search materials by name or SKU..."
+          value={catalogSearch}
+          onChange={(e) => setCatalogSearch(e.target.value)}
+          className="pl-10 h-12 text-base border-2 border-slate-300"
+          autoFocus
+        />
+      </div>
+
+      {/* Category Filter - Always Visible */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        <Button
+          variant={catalogCategory === null ? "default" : "outline"}
+          size="sm"
+          onClick={() => setCatalogCategory(null)}
+          className={`whitespace-nowrap flex-shrink-0 font-semibold ${
+            catalogCategory === null 
+              ? 'bg-green-900 hover:bg-green-800 text-white' 
+              : 'border-slate-300 text-green-900 hover:bg-slate-100'
+          }`}
+        >
+          All
+        </Button>
+        {catalogCategories.map(cat => (
+          <Button
+            key={cat}
+            variant={catalogCategory === cat ? "default" : "outline"}
+            size="sm"
+            onClick={() => setCatalogCategory(cat)}
+            className={`whitespace-nowrap flex-shrink-0 font-semibold ${
+              catalogCategory === cat 
+                ? 'bg-green-900 hover:bg-green-800 text-white' 
+                : 'border-slate-300 text-green-900 hover:bg-slate-100'
+            }`}
+          >
+            {cat}
+          </Button>
+        ))}
+      </div>
 
       {/* Catalog Search Results - Show directly under search when searching */}
       {catalogSearch && catalogLoading ? (
