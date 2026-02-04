@@ -98,6 +98,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [addMaterialQuantity, setAddMaterialQuantity] = useState<number | ''>('');
   const [addMaterialNotes, setAddMaterialNotes] = useState('');
   const [addMaterialColor, setAddMaterialColor] = useState('');
+  const [materialIsExtra, setMaterialIsExtra] = useState(false);
   const [addingMaterial, setAddingMaterial] = useState(false);
   const [customLengthFeet, setCustomLengthFeet] = useState<number | ''>('');
   const [customLengthInches, setCustomLengthInches] = useState<number | ''>('');
@@ -247,6 +248,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddMaterialQuantity('');
     setAddMaterialNotes('');
     setAddMaterialColor('');
+    setMaterialIsExtra(false);
     setCustomLengthFeet('');
     setCustomLengthInches('');
     setMaterialPieces([]);
@@ -433,7 +435,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           ordered_by: userId,
           order_requested_at: new Date().toISOString(),
           import_source: 'field_catalog',
-          is_extra: true,
+          is_extra: materialIsExtra,
           unit_cost: piece.costPerPiece,
           total_cost: piece.costPerPiece * piece.quantity,
         }));
@@ -487,7 +489,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             ordered_by: userId,
             order_requested_at: new Date().toISOString(),
             import_source: 'field_catalog',
-            is_extra: true,
+            is_extra: materialIsExtra,
             unit_cost,
             total_cost,
           });
@@ -541,7 +543,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             ordered_by: userId,
             order_requested_at: new Date().toISOString(),
             import_source: 'field_catalog',
-            is_extra: true,
+            is_extra: materialIsExtra,
             unit_cost,
             total_cost,
           });
@@ -710,7 +712,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           ordered_by: userId,
           order_requested_at: new Date().toISOString(),
           import_source: 'field_custom',
-          is_extra: true,
+          is_extra: false,
           unit_cost: 0,
           total_cost: 0,
         })
@@ -1548,6 +1550,27 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   className="h-10 sm:h-11 text-base"
                 />
                 <p className="text-xs text-muted-foreground">Leave blank if not applicable</p>
+              </div>
+
+              {/* Extra Material Checkbox */}
+              <div className="space-y-1.5 sm:space-y-2 border-2 border-orange-200 bg-orange-50 p-3 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="material-is-extra"
+                    checked={materialIsExtra}
+                    onChange={(e) => setMaterialIsExtra(e.target.checked)}
+                    className="mt-1 w-5 h-5 rounded border-orange-300 text-orange-600 focus:ring-orange-500 focus:ring-2 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="material-is-extra" className="text-sm sm:text-base font-semibold text-orange-900 cursor-pointer">
+                      This is EXTRA material (not in original estimate)
+                    </Label>
+                    <p className="text-xs sm:text-sm text-orange-700 mt-1">
+                      Check this box if this material is beyond the original job scope and should be billed separately.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Notes */}
