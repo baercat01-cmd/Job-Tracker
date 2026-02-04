@@ -61,6 +61,14 @@ interface MaterialPiece {
   costPerPiece: number;
 }
 
+interface MaterialVariant {
+  sku: string;
+  length: string;
+  quantity: number;
+  unitPrice: number;
+  purchaseCost: number;
+}
+
 const STATUS_OPTIONS = [
   { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
@@ -97,6 +105,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [fieldRequests, setFieldRequests] = useState<FieldRequestMaterial[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [materialPieces, setMaterialPieces] = useState<MaterialPiece[]>([]);
+  const [materialVariants, setMaterialVariants] = useState<MaterialVariant[]>([]);
+  const [selectedVariants, setSelectedVariants] = useState<Map<string, number>>(new Map());
   
   // Custom material state
   const [showCustomMaterialDialog, setShowCustomMaterialDialog] = useState(false);
@@ -235,9 +245,55 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setCustomLengthFeet(0);
     setCustomLengthInches(0);
     setMaterialPieces([]); // Reset pieces list
+    setSelectedVariants(new Map()); // Reset variant selections
+    
     // Show custom length input if material doesn't have a pre-defined length
-    setShowCustomLength(!material.part_length || material.part_length.trim() === '');
+    const hasPreDefinedLength = material.part_length && material.part_length.trim() !== '';
+    setShowCustomLength(!hasPreDefinedLength);
+    
+    // Find all variants of this material (same base name, different lengths)
+    if (hasPreDefinedLength) {
+      const baseName = extractBaseMaterialName(material.material_name);
+      const variants = catalogMaterials
+        .filter(m => {
+          const mBaseName = extractBaseMaterialName(m.material_name);
+          return mBaseName === baseName && m.part_length && m.part_length.trim() !== '';
+        })
+        .map(m => ({
+          sku: m.sku,
+          length: cleanMaterialValue(m.part_length || ''),
+          quantity: 0,
+          unitPrice: m.unit_price || 0,
+          purchaseCost: m.purchase_cost || 0,
+        }))
+        .sort((a, b) => parseLengthForSorting(a.length) - parseLengthForSorting(b.length));
+      
+      setMaterialVariants(variants);
+      
+      // Pre-select the clicked variant with quantity 1
+      const clickedVariant = variants.find(v => v.sku === material.sku);
+      if (clickedVariant) {
+        const initialSelection = new Map<string, number>();
+        initialSelection.set(material.sku, 1);
+        setSelectedVariants(initialSelection);
+      }
+    } else {
+      setMaterialVariants([]);
+    }
+    
     setShowAddMaterialDialog(true);
+  }
+  
+  // Extract base material name (remove length specifications)
+  function extractBaseMaterialName(name: string): string {
+    // Remove common length patterns: 10', 12', 4x4, etc.
+    return name
+      .replace(/\d+['"]?\s*x?\s*\d*['"]?/gi, '') // Remove dimensions like 10', 4x4, 12' x 1"
+      .replace(/\d+\s*ft/gi, '') // Remove "10 ft"
+      .replace(/\d+\s*inch/gi, '') // Remove "12 inch"
+      .replace(/[\d\/]+"/gi, '') // Remove fractions like 1/4"
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
   }
 
   function addPieceToList() {
@@ -295,12 +351,43 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return materialPieces.reduce((sum, piece) => sum + (piece.costPerPiece * piece.quantity), 0);
   }
 
+  function updateVariantQuantity(sku: string, quantity: number) {
+    const newSelection = new Map(selectedVariants);
+    if (quantity > 0) {
+      newSelection.set(sku, quantity);
+    } else {
+      newSelection.delete(sku);
+    }
+    setSelectedVariants(newSelection);
+  }
+  
+  function getTotalVariantsCount(): number {
+    return Array.from(selectedVariants.values()).reduce((sum, qty) => sum + qty, 0);
+  }
+  
+  function getTotalVariantsCost(): number {
+    let total = 0;
+    selectedVariants.forEach((qty, sku) => {
+      const variant = materialVariants.find(v => v.sku === sku);
+      if (variant) {
+        total += (variant.purchaseCost || 0) * qty;
+      }
+    });
+    return total;
+  }
+
   async function addMaterialToJob() {
     if (!selectedCatalogMaterial) return;
 
     // For custom length materials, require at least one piece in the list
     if (showCustomLength && materialPieces.length === 0) {
       toast.error('Please add at least one piece to your order');
+      return;
+    }
+    
+    // For variant materials, require at least one variant selected
+    if (!showCustomLength && materialVariants.length > 0 && selectedVariants.size === 0) {
+      toast.error('Please select at least one length with quantity');
       return;
     }
 
@@ -378,8 +465,69 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         });
 
         toast.success(`Added ${getTotalPiecesCount()} pieces in ${materialPieces.length} different lengths`);
+      } else if (materialVariants.length > 0) {
+        // Multi-variant material (same material, different lengths)
+        const materialsToInsert = [];
+        const variantDetails = [];
+        
+        for (const [sku, quantity] of selectedVariants.entries()) {
+          const variant = materialVariants.find(v => v.sku === sku);
+          if (!variant || quantity <= 0) continue;
+          
+          const catalogMaterial = catalogMaterials.find(m => m.sku === sku);
+          if (!catalogMaterial) continue;
+          
+          const unit_cost = catalogMaterial.purchase_cost || 0;
+          const total_cost = unit_cost * quantity;
+          
+          materialsToInsert.push({
+            category_id: categoryId,
+            job_id: job.id,
+            name: catalogMaterial.material_name,
+            quantity,
+            length: catalogMaterial.part_length || null,
+            status: 'needed',
+            notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
+            created_by: userId,
+            ordered_by: userId,
+            order_requested_at: new Date().toISOString(),
+            import_source: 'field_catalog',
+            is_extra: true,
+            unit_cost,
+            total_cost,
+          });
+          
+          variantDetails.push(`${quantity}x ${variant.length}`);
+        }
+        
+        if (materialsToInsert.length === 0) {
+          toast.error('No materials to add');
+          return;
+        }
+        
+        const { error: materialError } = await supabase
+          .from('materials')
+          .insert(materialsToInsert);
+
+        if (materialError) throw materialError;
+
+        await createNotification({
+          jobId: job.id,
+          createdBy: userId,
+          type: 'material_request',
+          brief: `Field request: ${extractBaseMaterialName(selectedCatalogMaterial.material_name)} (${getTotalVariantsCount()} pieces, ${selectedVariants.size} lengths)`,
+          referenceData: {
+            materialName: extractBaseMaterialName(selectedCatalogMaterial.material_name),
+            totalPieces: getTotalVariantsCount(),
+            uniqueLengths: selectedVariants.size,
+            variants: variantDetails.join(', '),
+            notes: addMaterialNotes,
+          },
+        });
+
+        toast.success(`Added ${getTotalVariantsCount()} pieces in ${selectedVariants.size} different lengths`);
       } else {
-        // Standard material with pre-defined length - single entry
+        // Standard material with pre-defined length - single entry (no variants found)
         const unit_cost = selectedCatalogMaterial.purchase_cost || 0;
         const total_cost = unit_cost * addMaterialQuantity;
 
@@ -1148,8 +1296,103 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 </div>
               )}
 
-              {/* Standard material quantity (non-custom length) */}
-              {!showCustomLength && (
+              {/* Multi-Variant Selection (for materials with multiple lengths) */}
+              {!showCustomLength && materialVariants.length > 1 && (
+                <div className="space-y-3">
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Package className="w-4 h-4 text-blue-700" />
+                      <Label className="text-sm font-semibold text-blue-900">
+                        Select Lengths & Quantities
+                      </Label>
+                    </div>
+                    <p className="text-xs text-blue-700 mb-3">
+                      Found {materialVariants.length} available lengths for this material. Select all you need:
+                    </p>
+                    
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {materialVariants.map((variant) => {
+                        const quantity = selectedVariants.get(variant.sku) || 0;
+                        const cost = (variant.purchaseCost || 0) * quantity;
+                        
+                        return (
+                          <div
+                            key={variant.sku}
+                            className={`bg-white rounded-lg p-3 border-2 transition-all ${
+                              quantity > 0
+                                ? 'border-green-500 bg-green-50'
+                                : 'border-slate-300 hover:border-blue-400'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <p className="font-bold text-green-900">
+                                  {variant.length}
+                                </p>
+                                {variant.purchaseCost > 0 && (
+                                  <p className="text-xs text-green-700">
+                                    ${variant.purchaseCost.toFixed(2)} each
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => updateVariantQuantity(variant.sku, Math.max(0, quantity - 1))}
+                                  disabled={quantity === 0}
+                                  className="h-8 w-8 p-0 rounded-none"
+                                >
+                                  -
+                                </Button>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  value={quantity}
+                                  onChange={(e) => updateVariantQuantity(variant.sku, Math.max(0, parseInt(e.target.value) || 0))}
+                                  className="h-8 w-16 text-center font-bold rounded-none"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => updateVariantQuantity(variant.sku, quantity + 1)}
+                                  className="h-8 w-8 p-0 rounded-none"
+                                >
+                                  +
+                                </Button>
+                              </div>
+                            </div>
+                            {quantity > 0 && cost > 0 && (
+                              <p className="text-xs text-green-700 mt-1 text-right">
+                                Subtotal: ${cost.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {selectedVariants.size > 0 && (
+                      <div className="bg-white border-2 border-green-500 rounded p-3 mt-3">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-green-900">Total Order:</span>
+                          <span className="text-xl font-bold text-green-700">
+                            {getTotalVariantsCost() > 0 ? `$${getTotalVariantsCost().toFixed(2)}` : '-'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-green-700 mt-1">
+                          {getTotalVariantsCount()} total pieces • {selectedVariants.size} different {selectedVariants.size === 1 ? 'length' : 'lengths'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Standard material quantity (single variant or no variants) */}
+              {!showCustomLength && materialVariants.length <= 1 && (
                 <div className="space-y-2">
                   <Label htmlFor="quantity">Quantity (pieces) *</Label>
                   <Input
@@ -1202,7 +1445,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               <div className="flex flex-col gap-3 pt-4 border-t">
                 <Button
                   onClick={addMaterialToJob}
-                  disabled={addingMaterial || (showCustomLength && materialPieces.length === 0)}
+                  disabled={addingMaterial || (showCustomLength && materialPieces.length === 0) || (!showCustomLength && materialVariants.length > 0 && selectedVariants.size === 0)}
                   className="h-12"
                 >
                   {addingMaterial ? (
@@ -1214,6 +1457,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     <>
                       <Package className="w-5 h-5 mr-2" />
                       Submit Order ({getTotalPiecesCount()} {getTotalPiecesCount() === 1 ? 'piece' : 'pieces'})
+                    </>
+                  ) : materialVariants.length > 1 ? (
+                    <>
+                      <Package className="w-5 h-5 mr-2" />
+                      Submit Order ({getTotalVariantsCount()} {getTotalVariantsCount() === 1 ? 'piece' : 'pieces'})
                     </>
                   ) : (
                     <>
