@@ -32,7 +32,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, CalendarEvent, CalendarEventType } from '@/types';
+import type { Job, CalendarEventDB, CalendarEventType } from '@/types';
 
 interface DayViewDialogProps {
   date: string | null;
@@ -65,12 +65,12 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
-  const [userEvents, setUserEvents] = useState<CalendarEvent[]>([]);
+  const [userEvents, setUserEvents] = useState<CalendarEventDB[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   
   // Form state for adding/editing events
   const [showEventForm, setShowEventForm] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<CalendarEventDB | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -254,7 +254,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
     }
   }
 
-  function openEventForm(event?: CalendarEvent) {
+  function openEventForm(event?: CalendarEventDB) {
     if (event) {
       setEditingEvent(event);
       setFormData({

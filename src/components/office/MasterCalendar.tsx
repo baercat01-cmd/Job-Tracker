@@ -51,7 +51,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-import type { CalendarEvent, CalendarEventType, SharedCalendarEvent } from '@/types';
+import type { SharedCalendarEvent, CalendarEventType } from '@/types';
 
 interface MasterCalendarProps {
   onJobSelect: (jobId: string) => void;
@@ -81,10 +81,10 @@ function getJobColor(jobName: string): string {
 
 export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<SharedCalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [showDayDialog, setShowDayDialog] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
@@ -96,7 +96,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [openDialog, setOpenDialog] = useState<'to_order' | 'deliveries' | 'subcontractors' | null>(null);
   const [displayUnavailableDates, setDisplayUnavailableDates] = useState(false);
   const [unavailableDates, setUnavailableDates] = useState<any[]>([]);
-  const [editingEventDate, setEditingEventDate] = useState<CalendarEvent | null>(null);
+  const [editingEventDate, setEditingEventDate] = useState<SharedCalendarEvent | null>(null);
   const [newEventDate, setNewEventDate] = useState('');
   const [savingDate, setSavingDate] = useState(false);
   const [completingEvent, setCompletingEvent] = useState(false);
@@ -182,7 +182,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   async function loadCalendarEvents() {
     try {
       setLoading(true);
-      const events: CalendarEvent[] = [];
+      const events: SharedCalendarEvent[] = [];
 
       // Load material events for all active and prepping jobs
       let materialsQuery = supabase
@@ -484,7 +484,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   }
 
-  function getEventsForDate(dateStr: string): CalendarEvent[] {
+  function getEventsForDate(dateStr: string): SharedCalendarEvent[] {
     // Filter by trade if filterTrade is not 'all'
     const filteredByTrade = filterTrade === 'all'
       ? events

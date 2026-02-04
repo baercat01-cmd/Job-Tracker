@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, CalendarEvent, CalendarEventType, SharedCalendarEvent } from '@/types';
+import type { Job, SharedCalendarEvent, CalendarEventType } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 import { DayViewDialog } from '../foreman/DayViewDialog';
 
@@ -21,11 +21,11 @@ interface JobsCalendarProps {
 
 export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<SharedCalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [showDayView, setShowDayView] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
   async function loadCalendarEvents() {
     try {
       setLoading(true);
-      const events: CalendarEvent[] = [];
+      const events: SharedCalendarEvent[] = [];
 
       // Get all active jobs
       const { data: jobs, error: jobsError } = await supabase
@@ -266,7 +266,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   }
 
-  function getEventsForDate(dateStr: string): CalendarEvent[] {
+  function getEventsForDate(dateStr: string): SharedCalendarEvent[] {
     return events.filter(event => event.date === dateStr);
   }
 
