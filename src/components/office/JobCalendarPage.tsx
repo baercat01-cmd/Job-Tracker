@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, SharedCalendarEvent, CalendarEventType } from '@/types';
+import type { Job, SharedCalendarEvent, CalendarEventType, CalendarEvent } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 
 // Helper function to parse date string as local date (not UTC)

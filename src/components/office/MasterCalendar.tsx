@@ -51,7 +51,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-import type { SharedCalendarEvent, CalendarEventType } from '@/types';
+import type { SharedCalendarEvent, CalendarEventType, CalendarEvent } from '@/types';
 
 interface MasterCalendarProps {
   onJobSelect: (jobId: string) => void;
@@ -369,7 +369,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
           const job = event.jobs;
           const jobColor = getJobColor(job.name);
           
-          let eventType: CalendarEvent['type'] = 'material_pickup';
+          let eventType: CalendarEventType = 'material_pickup';
           if (event.event_type === 'material_delivery') {
             eventType = 'material_delivery';
           } else if (event.event_type === 'material_order_reminder') {

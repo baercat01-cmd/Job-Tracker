@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, SharedCalendarEvent, CalendarEventType } from '@/types';
+import type { Job, SharedCalendarEvent, CalendarEventType, CalendarEvent } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 import { DayViewDialog } from '../foreman/DayViewDialog';
 
@@ -161,7 +161,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
         calendarEvents.forEach((event: any) => {
           const job = event.jobs;
           
-          let eventType: CalendarEvent['type'] = 'material_pickup';
+          let eventType: CalendarEventType = 'material_pickup';
           if (event.event_type === 'material_delivery') {
             eventType = 'material_delivery';
           } else if (event.event_type === 'material_order_reminder') {
