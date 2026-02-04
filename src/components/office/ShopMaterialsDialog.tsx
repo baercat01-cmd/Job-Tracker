@@ -83,7 +83,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
           category:materials_categories(name)
         `)
         .eq('status', 'at_shop')
-        .order('pull_by_date', { ascending: true, nulls: 'last' });
+        .order('pull_by_date', { ascending: true });
 
       if (atShopError) {
         console.error('Error loading at_shop materials:', atShopError);
@@ -100,7 +100,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
           category:materials_categories(name)
         `)
         .eq('status', 'ready_to_pull')
-        .order('pull_by_date', { ascending: true, nulls: 'last' });
+        .order('pull_by_date', { ascending: true });
 
       if (readyToPullError) {
         console.error('Error loading ready_to_pull materials:', readyToPullError);

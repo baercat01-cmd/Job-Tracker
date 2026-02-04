@@ -182,7 +182,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
               subcontractorPhone: schedule.subcontractors.phone,
               status: schedule.status,
               priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-            });
+            } as any);
             
             // Move to next day
             currentDate.setDate(currentDate.getDate() + 1);

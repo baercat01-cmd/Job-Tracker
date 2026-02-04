@@ -341,7 +341,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 subcontractorPhone: schedule.subcontractors.phone,
                 status: schedule.status,
                 priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-              });
+              } as any);
             }
             
             // Move to next day
