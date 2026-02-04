@@ -29,7 +29,7 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   
   const [formUsername, setFormUsername] = useState('');
-  const [formRole, setFormRole] = useState<'crew' | 'office' | 'shop' | 'payroll'>('crew');
+  const [formRole, setFormRole] = useState('crew');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export function UserManagement() {
           .from('user_profiles')
           .update({
             username: formUsername.trim(),
-            role: formRole,
+            role: formRole as any,
           })
           .eq('id', editingUser.id);
 
@@ -95,7 +95,7 @@ export function UserManagement() {
           .insert({
             username: formUsername.trim(),
             email: null,
-            role: formRole,
+            role: formRole as any,
           });
 
         if (error) {

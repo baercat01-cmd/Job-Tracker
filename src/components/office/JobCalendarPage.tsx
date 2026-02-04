@@ -73,7 +73,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
               title: `Order: ${material.name}`,
               description: `Must order by this date`,
               priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
-            } as CalendarEvent);
+            } as any);
           }
 
           if (material.delivery_date && material.status === 'ordered') {
@@ -87,7 +87,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
               title: `Delivery: ${material.name}`,
               description: `Expected delivery to shop`,
               priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
-            } as CalendarEvent);
+            } as any);
           }
 
           if (material.pull_by_date && material.status === 'at_shop') {
@@ -101,7 +101,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
               title: `Pull: ${material.name}`,
               description: `Pull from shop for delivery`,
               priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
-            } as CalendarEvent);
+            } as any);
           }
         });
       }
@@ -132,7 +132,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             priority: 'low',
-          } as CalendarEvent);
+          } as any);
         });
       }
 

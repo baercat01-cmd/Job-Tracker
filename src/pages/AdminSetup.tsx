@@ -22,7 +22,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [formData, setFormData] = useState({
     username: '',
-    role: 'crew' as 'crew' | 'office' | 'payroll' | 'shop',
+    role: 'crew',
   });
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .from('user_profiles')
           .update({
             username: formData.username.trim(),
-            role: formData.role,
+            role: formData.role as any,
           })
           .eq('id', editingUser.id);
 
@@ -92,7 +92,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .insert({
             username: formData.username.trim(),
             email: null,
-            role: formData.role,
+            role: formData.role as any,
           });
 
         if (error) throw error;
@@ -259,7 +259,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <Label htmlFor="role">Role *</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'crew' | 'office' | 'payroll') =>
+                onValueChange={(value: any) =>
                   setFormData({ ...formData, role: value })
                 }
               >

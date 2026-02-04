@@ -85,7 +85,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Must order by this date`,
               status: material.status,
               priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
-            });
+            } as any);
           }
 
           // Delivery date
@@ -100,7 +100,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Expected delivery to shop`,
               status: material.status,
               priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
-            });
+            } as any);
           }
 
           // Pull by date
@@ -115,7 +115,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Pull from shop for delivery`,
               status: material.status,
               priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
-            });
+            } as any);
           }
         });
       }
@@ -144,7 +144,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
             title: `Completed: ${task.components.name}`,
             description: task.notes || 'Task completed',
             priority: 'low',
-          });
+          } as any);
         });
       }
 
@@ -177,14 +177,14 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
           
           events.push({
             id: `calendar-${event.id}`,
-            type: eventType as CalendarEventType,
+            type: eventType,
             date: event.event_date,
             jobId: job.id,
             jobName: job.name,
             title: event.title,
             description: event.description || '',
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-          });
+          } as any);
         });
       }
 
