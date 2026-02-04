@@ -122,6 +122,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [firstWorkDate, setFirstWorkDate] = useState<string | null>(null);
   const [lastWorkDate, setLastWorkDate] = useState<string | null>(null);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [crewOrdersCount, setCrewOrdersCount] = useState(0);
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -189,7 +190,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
     loadNotifications();
     
     // Subscribe to new notifications
-    const subscription = supabase
+    const notificationsChannel = supabase
       .channel('job_notifications')
       .on('postgres_changes', 
         { 
@@ -204,8 +205,25 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       )
       .subscribe();
 
+    // Subscribe to crew orders (material changes)
+    const materialsChannel = supabase
+      .channel('job_materials_changes')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'materials',
+          filter: `job_id=eq.${job.id}`
+        },
+        () => {
+          loadJobStats(); // Reload stats to update crew orders count
+        }
+      )
+      .subscribe();
+
     return () => {
-      subscription.unsubscribe();
+      supabase.removeChannel(notificationsChannel);
+      supabase.removeChannel(materialsChannel);
     };
   }, [job.id]);
 
@@ -240,6 +258,15 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         .select('id')
         .eq('job_id', job.id);
       setMaterialCount(materialsData?.length || 0);
+
+      // Load crew orders count (pending field requests)
+      const { data: crewOrdersData } = await supabase
+        .from('materials')
+        .select('id')
+        .eq('job_id', job.id)
+        .in('import_source', ['field_catalog', 'field_custom'])
+        .eq('status', 'not_ordered');
+      setCrewOrdersCount(crewOrdersData?.length || 0);
 
       // Load issues from daily logs
       const { data: logsData } = await supabase
@@ -809,10 +836,18 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             </TabsTrigger>
             <TabsTrigger 
               value="materials" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all relative"
             >
               <Package className="w-5 h-5 mr-2" />
               Materials
+              {crewOrdersCount > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="ml-2 bg-red-600 text-white font-bold animate-pulse"
+                >
+                  {crewOrdersCount}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger 
               value="photos" 

@@ -59,6 +59,25 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   useEffect(() => {
     loadJobs();
     loadCrewOrderCounts();
+
+    // Subscribe to material changes to update crew order counts in real-time
+    const materialsChannel = supabase
+      .channel('materials_changes_for_counts')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'materials'
+        },
+        () => {
+          loadCrewOrderCounts(); // Reload counts when materials change
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(materialsChannel);
+    };
   }, []);
 
   // Auto-scroll to selected job when selectedJobId changes
@@ -233,12 +252,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
   async function loadCrewOrderCounts() {
     try {
-      // Only count field-requested materials that are still in 'ordered' status (not yet processed)
+      // Count pending crew orders (not yet processed by office)
       const { data, error } = await supabase
         .from('materials')
         .select('job_id')
-        .eq('import_source', 'field_catalog')
-        .eq('status', 'ordered'); // Only count unprocessed orders
+        .in('import_source', ['field_catalog', 'field_custom'])
+        .eq('status', 'not_ordered'); // Pending orders that haven't been approved yet
 
       if (error) throw error;
 
