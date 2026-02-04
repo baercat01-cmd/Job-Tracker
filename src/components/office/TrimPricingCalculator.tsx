@@ -22,15 +22,24 @@ export function TrimPricingCalculator() {
   const [pricePerBend, setPricePerBend] = useState<string>('');
   const [markupPercent, setMarkupPercent] = useState<string>('32');
   
-  // Calculation inputs
-  const [widthInches, setWidthInches] = useState<string>('');
+  // Calculation inputs - 7 inch columns like Excel
+  const [inch1, setInch1] = useState<string>('');
+  const [inch2, setInch2] = useState<string>('');
+  const [inch3, setInch3] = useState<string>('');
+  const [inch4, setInch4] = useState<string>('');
+  const [inch5, setInch5] = useState<string>('');
+  const [inch6, setInch6] = useState<string>('');
+  const [inch7, setInch7] = useState<string>('');
   const [numberOfBends, setNumberOfBends] = useState<string>('');
+  const [numberOfCuts, setNumberOfCuts] = useState<string>('');
   
-  // Results
-  const [materialPrice, setMaterialPrice] = useState(0);
-  const [bendPrice, setBendPrice] = useState(0);
-  const [totalPrice, setTotalPrice] = useState(0);
-  const [totalLinealFeet, setTotalLinealFeet] = useState(0);
+  // Results (always calculated, shown even if 0)
+  const [totalInches, setTotalInches] = useState(0);
+  const [totalBendCost, setTotalBendCost] = useState(0);
+  const [costPerInch, setCostPerInch] = useState(0);
+  const [costPerBend, setCostPerBend] = useState(0);
+  const [totalInchCost, setTotalInchCost] = useState(0);
+  const [sellingPrice, setSellingPrice] = useState(0);
   
   // Dialog states
   const [showSettings, setShowSettings] = useState(false);
@@ -57,7 +66,6 @@ export function TrimPricingCalculator() {
       setMarkupPercent(savedMarkupPercent);
       setTempMarkupPercent(savedMarkupPercent);
     } else {
-      // Default to 32% if not set
       setMarkupPercent('32');
       setTempMarkupPercent('32');
     }
@@ -92,56 +100,70 @@ export function TrimPricingCalculator() {
     toast.success('Settings saved successfully');
   }
 
-  // Calculate trim pricing
+  // Calculate trim pricing - matches Excel formulas
   useEffect(() => {
     const lfCost = parseFloat(sheetLFCost);
     const bendPriceVal = parseFloat(pricePerBend);
     const markup = parseFloat(markupPercent);
-    const inches = parseFloat(widthInches);
-    const bends = parseInt(numberOfBends);
+    const bends = parseInt(numberOfBends) || 0;
 
-    if (!lfCost || lfCost <= 0 || !bendPriceVal || bendPriceVal <= 0 || markup < 0) {
-      setMaterialPrice(0);
-      setBendPrice(0);
-      setTotalPrice(0);
-      setTotalLinealFeet(0);
-      return;
-    }
-
-    if (!inches || inches <= 0 || !bends || bends <= 0) {
-      setMaterialPrice(0);
-      setBendPrice(0);
-      setTotalPrice(0);
-      setTotalLinealFeet(0);
-      return;
-    }
-
-    // Total inches = number of bends × width in inches
-    const totalInches = bends * inches;
+    // Sum all inch inputs
+    const i1 = parseFloat(inch1) || 0;
+    const i2 = parseFloat(inch2) || 0;
+    const i3 = parseFloat(inch3) || 0;
+    const i4 = parseFloat(inch4) || 0;
+    const i5 = parseFloat(inch5) || 0;
+    const i6 = parseFloat(inch6) || 0;
+    const i7 = parseFloat(inch7) || 0;
     
-    // Convert to lineal feet
-    const totalLF = totalInches / 12;
-    setTotalLinealFeet(totalLF);
+    const totalIn = i1 + i2 + i3 + i4 + i5 + i6 + i7;
+    setTotalInches(totalIn);
 
-    // Selling price per LF = sheet LF COST × (1 + markup%)
+    // If no settings configured, show 0s
+    if (!lfCost || lfCost <= 0 || !bendPriceVal || bendPriceVal <= 0 || markup < 0) {
+      setCostPerInch(0);
+      setCostPerBend(0);
+      setTotalBendCost(0);
+      setTotalInchCost(0);
+      setSellingPrice(0);
+      return;
+    }
+
+    // Calculate cost per inch from the 42" wide sheet
+    // Sheet is 42" wide, 10' long = 120" long
+    // Cost per LF with markup
     const markupMultiplier = 1 + (markup / 100);
     const sellingPricePerLF = lfCost * markupMultiplier;
     
-    // Material price = total LF × selling price per LF
-    const matPrice = totalLF * sellingPricePerLF;
-    setMaterialPrice(matPrice);
+    // Cost per inch = (selling price per LF / 12 inches)
+    const pricePerInch = sellingPricePerLF / 12;
+    setCostPerInch(pricePerInch);
     
-    // Bend price = number of bends × price per bend
-    const bPrice = bends * bendPriceVal;
-    setBendPrice(bPrice);
+    // Cost per bend
+    setCostPerBend(bendPriceVal);
     
-    // Total price = material + bends
-    setTotalPrice(matPrice + bPrice);
-  }, [sheetLFCost, pricePerBend, markupPercent, widthInches, numberOfBends]);
+    // Total bend cost = bends × price per bend
+    const bendCost = bends * bendPriceVal;
+    setTotalBendCost(bendCost);
+    
+    // Total inch cost = total inches × price per inch
+    const inchCost = totalIn * pricePerInch;
+    setTotalInchCost(inchCost);
+    
+    // Selling price = total inch cost + total bend cost
+    setSellingPrice(inchCost + bendCost);
+  }, [sheetLFCost, pricePerBend, markupPercent, inch1, inch2, inch3, inch4, inch5, inch6, inch7, numberOfBends, numberOfCuts]);
 
   function clearCalculation() {
-    setWidthInches('');
+    setInch1('');
+    setInch2('');
+    setInch3('');
+    setInch4('');
+    setInch5('');
+    setInch6('');
+    setInch7('');
     setNumberOfBends('');
+    setNumberOfCuts('');
   }
 
   const hasSettings = sheetLFCost && pricePerBend && markupPercent;
@@ -149,12 +171,12 @@ export function TrimPricingCalculator() {
   return (
     <>
       {/* Main Compact Calculator */}
-      <Card className="border-2 border-green-800 bg-gradient-to-br from-slate-900 to-black max-w-2xl mx-auto">
+      <Card className="border-2 border-green-800 bg-gradient-to-br from-slate-900 to-black max-w-4xl mx-auto">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-yellow-500">
               <Calculator className="w-6 h-6" />
-              Trim Pricing Calculator
+              Flat Panel Trim Calculator
             </CardTitle>
             <div className="flex gap-2">
               <Button
@@ -202,74 +224,167 @@ export function TrimPricingCalculator() {
             </div>
           ) : (
             <>
-              {/* Input Fields */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="width-inches" className="text-sm font-semibold text-white">
-                    Width (inches)
-                  </Label>
-                  <Input
-                    id="width-inches"
-                    type="number"
-                    min="0"
-                    step="0.125"
-                    value={widthInches}
-                    onChange={(e) => setWidthInches(e.target.value)}
-                    placeholder="0"
-                    className="h-11 text-base bg-white border-green-800"
-                  />
+              {/* Steel Section - Inch Inputs (7 columns like Excel) */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-wider">Steel</h3>
+                <div className="grid grid-cols-7 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch1}
+                      onChange={(e) => setInch1(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch2}
+                      onChange={(e) => setInch2(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch3}
+                      onChange={(e) => setInch3(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch4}
+                      onChange={(e) => setInch4(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch5}
+                      onChange={(e) => setInch5(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch6}
+                      onChange={(e) => setInch6(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Inches</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.125"
+                      value={inch7}
+                      onChange={(e) => setInch7(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="num-bends" className="text-sm font-semibold text-white">
-                    Number of Bends
-                  </Label>
-                  <Input
-                    id="num-bends"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={numberOfBends}
-                    onChange={(e) => setNumberOfBends(e.target.value)}
-                    placeholder="0"
-                    className="h-11 text-base bg-white border-green-800"
-                  />
+                {/* Bends and Cut */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Bends</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={numberOfBends}
+                      onChange={(e) => setNumberOfBends(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-white/80">Cut</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={numberOfCuts}
+                      onChange={(e) => setNumberOfCuts(e.target.value)}
+                      placeholder="0"
+                      className="h-10 text-center bg-cyan-100 border-green-800 font-bold"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Results */}
-              {widthInches && numberOfBends && totalPrice > 0 && (
-                <div className="space-y-3 pt-2 border-t border-green-800">
-                  <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded-lg p-4">
-                    <div className="text-sm text-yellow-500 mb-1 font-semibold">TOTAL PRICE</div>
-                    <div className="text-4xl font-bold text-yellow-500">${totalPrice.toFixed(2)}</div>
+              {/* Results Section - Always Visible */}
+              <div className="space-y-3 pt-3 border-t-2 border-green-800">
+                {/* Calculation Details */}
+                <div className="grid grid-cols-5 gap-2 text-xs">
+                  <div className="bg-cyan-50 border border-cyan-300 rounded p-2 text-center">
+                    <div className="text-cyan-700 font-semibold mb-1">Total In</div>
+                    <div className="text-lg font-bold text-cyan-900">{totalInches.toFixed(2)}</div>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
-                      <div className="text-white/60">Material</div>
-                      <div className="text-white font-bold">${materialPrice.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
-                      <div className="text-white/60">Bends</div>
-                      <div className="text-white font-bold">${bendPrice.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-green-900/30 border border-green-800 rounded p-2">
-                      <div className="text-white/60">Total LF</div>
-                      <div className="text-white font-bold">{totalLinealFeet.toFixed(2)}</div>
-                    </div>
+                  <div className="bg-cyan-50 border border-cyan-300 rounded p-2 text-center">
+                    <div className="text-cyan-700 font-semibold mb-1">Total Bend $</div>
+                    <div className="text-lg font-bold text-cyan-900">${totalBendCost.toFixed(2)}</div>
                   </div>
-
-                  <Button
-                    onClick={clearCalculation}
-                    variant="outline"
-                    className="w-full border-green-800 text-white hover:bg-green-900/20"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Clear
-                  </Button>
+                  <div className="bg-cyan-50 border border-cyan-300 rounded p-2 text-center">
+                    <div className="text-cyan-700 font-semibold mb-1">$ per In</div>
+                    <div className="text-lg font-bold text-cyan-900">${costPerInch.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-cyan-50 border border-cyan-300 rounded p-2 text-center">
+                    <div className="text-cyan-700 font-semibold mb-1">$ Per Bend</div>
+                    <div className="text-lg font-bold text-cyan-900">${costPerBend.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-cyan-50 border border-cyan-300 rounded p-2 text-center">
+                    <div className="text-cyan-700 font-semibold mb-1">Total Inch $</div>
+                    <div className="text-lg font-bold text-cyan-900">${totalInchCost.toFixed(2)}</div>
+                  </div>
                 </div>
-              )}
+
+                {/* Final Selling Price */}
+                <div className="bg-gradient-to-r from-teal-600 to-cyan-600 rounded-lg p-4 text-center">
+                  <div className="text-white/90 text-sm font-semibold mb-1">SELLING PRICE</div>
+                  <div className="text-5xl font-bold text-white">${sellingPrice.toFixed(2)}</div>
+                </div>
+
+                {/* Clear Button */}
+                <Button
+                  onClick={clearCalculation}
+                  variant="outline"
+                  className="w-full border-green-800 text-white hover:bg-green-900/20"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All
+                </Button>
+              </div>
             </>
           )}
         </CardContent>
@@ -386,25 +501,25 @@ export function TrimPricingCalculator() {
           </DialogHeader>
           <div className="space-y-4 text-white">
             <div className="space-y-2">
-              <h4 className="font-semibold text-yellow-500">Calculation Formula:</h4>
-              <div className="space-y-1 text-sm bg-black/30 p-3 rounded border border-green-800/50 font-mono">
-                <p>1. Total Inches = Bends × Width</p>
-                <p>2. Total LF = Total Inches ÷ 12</p>
-                <p>3. Selling Price/LF = Cost/LF × (1 + Markup%/100)</p>
-                <p>4. Material Price = Total LF × Selling Price/LF</p>
-                <p>5. Bend Price = Bends × Price/Bend</p>
-                <p>6. Total = Material + Bend Price</p>
+              <h4 className="font-semibold text-yellow-500">How It Works:</h4>
+              <div className="space-y-1 text-sm bg-black/30 p-3 rounded border border-green-800/50">
+                <p><strong>Steel Section:</strong> Enter measurements in the 7 "Inches" columns</p>
+                <p><strong>Total In:</strong> Sum of all inch columns</p>
+                <p><strong>$ per In:</strong> (Sheet Cost/LF × Markup) ÷ 12</p>
+                <p><strong>Total Inch $:</strong> Total Inches × $ per In</p>
+                <p><strong>Total Bend $:</strong> Number of Bends × Price/Bend</p>
+                <p><strong>Selling Price:</strong> Total Inch $ + Total Bend $</p>
               </div>
             </div>
 
             <div className="space-y-2">
               <h4 className="font-semibold text-yellow-500">Key Details:</h4>
               <ul className="list-disc list-inside space-y-1 text-sm text-white/80">
-                <li>Sheet width: 42 inches</li>
-                <li>Standard pieces: 10 feet long</li>
+                <li>Base sheet: 42" wide × 10' long (120")</li>
                 <li>Configurable markup percentage on material cost</li>
-                <li>Separate charge for labor (bending)</li>
-                <li>Price calculated by cutting 10' strips to specified width × number of bends</li>
+                <li>Separate labor charge per bend</li>
+                <li>Enter individual inch measurements across 7 columns</li>
+                <li>All calculation boxes update in real-time</li>
               </ul>
             </div>
 
