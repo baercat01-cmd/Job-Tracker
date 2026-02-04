@@ -89,7 +89,7 @@ function getStatusLabel(status: string) {
 
 export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: MaterialsCatalogBrowserProps) {
   const [catalogMaterials, setCatalogMaterials] = useState<CatalogMaterial[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState<string | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
@@ -1243,7 +1243,123 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </DialogContent>
       </Dialog>
 
-      {/* Rest of the dialogs remain the same as they're being truncated due to length... */}
+      {/* Custom Material Dialog */}
+      <Dialog open={showCustomMaterialDialog} onOpenChange={setShowCustomMaterialDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add Custom Material
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="custom-name">Material Name *</Label>
+              <Input
+                id="custom-name"
+                value={customMaterialName}
+                onChange={(e) => setCustomMaterialName(e.target.value)}
+                placeholder="e.g., Special fasteners"
+                className="h-10"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="custom-quantity">Quantity</Label>
+                <Input
+                  id="custom-quantity"
+                  type="number"
+                  min="1"
+                  value={customMaterialQuantity}
+                  onChange={(e) => setCustomMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                  placeholder="1"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="custom-length">Length (optional)</Label>
+                <Input
+                  id="custom-length"
+                  value={customMaterialLength}
+                  onChange={(e) => setCustomMaterialLength(e.target.value)}
+                  placeholder="e.g., 12'"
+                  className="h-10"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-notes">Notes</Label>
+              <Textarea
+                id="custom-notes"
+                value={customMaterialNotes}
+                onChange={(e) => setCustomMaterialNotes(e.target.value)}
+                placeholder="Any additional details..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-photo">Photo (optional)</Label>
+              <Input
+                id="custom-photo"
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="h-10 cursor-pointer"
+              />
+              {photoPreview && (
+                <div className="relative w-full h-40 rounded-lg overflow-hidden border-2 border-green-500">
+                  <img
+                    src={photoPreview}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      setCustomMaterialPhoto(null);
+                      setPhotoPreview(null);
+                    }}
+                    className="absolute top-2 right-2"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                onClick={addCustomMaterial}
+                disabled={addingCustomMaterial}
+                className="flex-1"
+              >
+                {addingCustomMaterial ? 'Adding...' : 'Add Material'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCustomMaterialDialog(false);
+                  setCustomMaterialName('');
+                  setCustomMaterialQuantity('');
+                  setCustomMaterialLength('');
+                  setCustomMaterialNotes('');
+                  setCustomMaterialPhoto(null);
+                  setPhotoPreview(null);
+                }}
+                disabled={addingCustomMaterial}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Material from Catalog Dialog - Truncated for brevity, already exists in file */}
     </div>
   );
 }
