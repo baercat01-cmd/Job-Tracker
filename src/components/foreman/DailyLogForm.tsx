@@ -232,7 +232,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       if (photosError) throw photosError;
 
       // 3. Get weather for job location
-      let weather: any = null;
+      let weather: WeatherDetails | null = null;
       try {
         const position = await getCurrentPosition();
         if (position) {
@@ -283,16 +283,16 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
         });
       });
 
-      const componentsWorkedArray = Array.from(componentMap.values()) as any;
+      const componentsWorkedArray = Array.from(componentMap.values());
 
       // 5. Process photos
-      const photosLoggedArray = (photos || []).map((photo: any) => ({
+      const photosLoggedArray: PhotoLogged[] = (photos || []).map((photo: any) => ({
         url: photo.photo_url,
         uploadedBy: profile?.username || profile?.email || 'Unknown',
         uploadedAt: photo.created_at,
         componentId: photo.component_id,
         componentName: photo.components?.name,
-      })) as any;
+      }));
 
       // 6. Generate auto summary
       const summary = generateAutoSummary(

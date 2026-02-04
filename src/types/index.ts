@@ -1,119 +1,181 @@
-// ============================================
-// CALENDAR TYPES
-// ============================================
-
-export type CalendarEventType = 
-  | 'meeting' 
-  | 'delivery' 
-  | 'inspection' 
-  | 'deadline' 
-  | 'other' 
-  | 'task_completed' 
-  | 'material_order' 
-  | 'material_delivery' 
-  | 'material_pull' 
-  | 'task_deadline' 
-  | 'subcontractor' 
-  | 'material_pickup';
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  event_date: string; // The database uses this
-  date?: string;       // Mapping helper for UI
-  event_type: CalendarEventType;
-  type?: CalendarEventType; // Mapping helper for UI
-  job_id: string | null;
-  jobId?: string;           // Mapping helper for UI
-  jobName?: string;
-  jobColor?: string;
-  all_day: boolean;
-  start_time: string | null;
-  end_time: string | null;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  // Metadata for different event types
-  priority?: 'low' | 'medium' | 'high';
-  materialId?: string;
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-  assignedUserName?: string;
-  status?: string;
-}
-
-// Shared calendar event type for cross-component consistency
-export type SharedCalendarEvent = CalendarEvent;
-
-// ============================================
-// USER TYPES
-// ============================================
+export type UserRole = 'crew' | 'office' | 'payroll' | 'shop';
 
 export interface UserProfile {
   id: string;
   username: string | null;
-  email: string | null;
-  role: string | null;
+  email: string;
+  role: 'crew' | 'office' | 'payroll' | 'shop'; // Must be exactly 'crew', 'office', 'payroll', or 'shop'
   phone: string | null;
   created_at: string;
-  pin_hash: string | null;
-  webauthn_credentials: any;
-  is_admin: boolean | null;
+  pin_hash?: string | null;
+  webauthn_credentials?: any[] | null;
+  is_admin?: boolean;
 }
 
-// ============================================
-// JOB TYPES
-// ============================================
+export interface Component {
+  id: string;
+  name: string;
+  description: string | null;
+  archived: boolean;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface DocumentFile {
+  id: string;
+  name: string;
+  url: string;
+  type: string;
+  size?: number;
+  createdAt: string;
+}
+
+export interface DocumentFolder {
+  id: string;
+  name: string;
+  files: DocumentFile[];
+}
+
+export interface JobComponent {
+  id: string;
+  name: string;
+  isActive: boolean;
+  isTask?: boolean; // Added to support task-tracking components
+  createdAt: string;
+}
 
 export interface Job {
   id: string;
-  job_number: string | null;
   name: string;
   client_name: string;
   address: string;
   description: string | null;
   gps_lat: number | null;
   gps_lng: number | null;
+  documents: DocumentFolder[];
+  components: JobComponent[];
   notes: string | null;
-  status: string | null;
+  status: 'quoting' | 'prepping' | 'active' | 'completed' | 'on_hold' | 'archived';
   created_at: string;
-  created_by: string | null;
-  documents: any;
   updated_at: string;
-  components: any;
-  estimated_hours: number | null;
-  projected_start_date: string | null;
-  projected_end_date: string | null;
-  is_internal: boolean;
-}
-
-export interface JobWithProgress extends Job {
-  progress?: number;
-  total_components?: number;
-  completed_components?: number;
-}
-
-// ============================================
-// COMPONENT TYPES
-// ============================================
-
-export interface Component {
-  id: string;
-  name: string;
-  description: string | null;
-  archived: boolean | null;
-  created_at: string;
   created_by: string | null;
+  job_number?: string; // Legacy field, will be removed
+  estimated_hours?: number;
+  is_internal?: boolean; // For internal jobs like Shop that don't show as cards
+  projected_start_date?: string | null; // When job becomes visible to field crew
+  projected_end_date?: string | null; // Projected completion date
 }
 
-export interface JobComponent {
+export interface JobAssignment {
+  id: string;
+  job_id: string;
+  user_id: string;
+  assigned_at: string;
+  assigned_by: string | null;
+}
+
+export interface TimeEntry {
+  id: string;
+  job_id: string;
+  component_id: string;
+  user_id: string;
+  start_time: string;
+  end_time: string | null;
+  total_hours: number | null;
+  crew_count: number;
+  is_manual: boolean;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimeEntryWithDetails extends TimeEntry {
+  component_name?: string;
+  job_number?: string;
+  user_name?: string;
+}
+
+export interface WeatherDetails {
+  temp: string;
+  conditions: string;
+  wind?: string;
+  precipitation?: string;
+}
+
+export interface ComponentWorked {
   id: string;
   name: string;
-  description?: string | null;
-  order_index?: number;
-  is_completed?: boolean;
-  completed_at?: string | null;
+  hours: number;
+}
+
+export interface TimeSummaryEntry {
+  componentName: string;
+  totalHours: number;
+  method: 'timer' | 'manual';
+  crewCount: number;
+  uploadedBy: string;
+}
+
+export interface PhotoLogged {
+  url: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  componentId?: string;
+  componentName?: string;
+}
+
+export interface Issue {
+  description: string;
+  reportedBy: string;
+  severity: 'low' | 'medium' | 'high';
+  timestamp: string;
+}
+
+export interface MaterialRequest {
+  item: string;
+  quantity: string;
+  priority: 'low' | 'medium' | 'high';
+  notes?: string;
+}
+
+export interface DailyLog {
+  id: string;
+  job_id: string;
+  log_date: string;
+  weather: string | null; // Legacy text field
+  weather_details: WeatherDetails | null;
+  crew_count: number | null;
+  components_worked: ComponentWorked[];
+  time_summary: TimeSummaryEntry[];
+  photos_logged: PhotoLogged[];
+  issues: Issue[];
+  material_requests_structured: MaterialRequest[];
+  auto_summary_text: string | null;
+  final_notes: string | null;
+  client_summary: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  // Legacy fields
+  legacy_work_performed?: string | null;
+  legacy_issues?: string | null;
+  legacy_materials?: string | null;
+}
+
+export interface Photo {
+  id: string;
+  job_id: string;
+  daily_log_id: string | null;
+  component_id: string | null;
+  photo_url: string;
+  photo_date: string;
+  gps_lat: number | null;
+  gps_lng: number | null;
+  timestamp: string;
+  uploaded_by: string;
+  caption: string | null;
+  created_at: string;
 }
 
 export interface CompletedTask {
@@ -126,131 +188,65 @@ export interface CompletedTask {
   created_at: string;
 }
 
-// ============================================
-// TIME TRACKING TYPES
-// ============================================
-
 export interface ActiveTimer {
   id: string;
   job_id: string;
-  component_id: string | null;
-  component_name: string;
-  start_time: string;
-  crew_count: number;
-}
-
-export interface TimeEntry {
-  id: string;
-  job_id: string;
-  component_id: string | null;
-  user_id: string;
-  start_time: string;
-  end_time: string | null;
-  total_hours: number | null;
-  crew_count: number;
-  is_manual: boolean | null;
-  is_active: boolean | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  worker_names: any;
-}
-
-// ============================================
-// DAILY LOG TYPES
-// ============================================
-
-export interface ComponentWorked {
   component_id: string;
   component_name: string;
-  hours_worked: number;
-  notes?: string;
+  start_time: string;
+  crew_count: number;
 }
 
-export interface TimeSummaryEntry {
-  user_id: string;
-  user_name: string;
-  hours_worked: number;
-  components: string[];
-}
+export type CalendarEventType = 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
 
-export interface PhotoLogged {
-  photo_id: string;
-  photo_url: string;
-  caption?: string;
-  timestamp: string;
-}
-
-export interface Issue {
-  description: string;
-  severity: 'low' | 'medium' | 'high';
-  resolved: boolean;
-}
-
-export interface MaterialRequest {
-  material_name: string;
-  quantity: number;
-  priority: 'low' | 'medium' | 'high';
-  notes?: string;
-}
-
-export interface WeatherDetails {
-  temperature?: number;
-  conditions?: string;
-  precipitation?: string;
-}
-
-export interface DailyLog {
+// Shared CalendarEvent interface used across all calendar components
+export interface SharedCalendarEvent {
   id: string;
-  job_id: string;
-  log_date: string;
-  weather: string | null;
-  legacy_work_performed: string | null;
-  legacy_issues: string | null;
-  legacy_materials: string | null;
-  crew_count: number | null;
-  client_summary: string | null;
+  type: CalendarEventType;
+  date: string;
+  jobId: string;
+  jobName: string;
+  jobColor?: string;
+  title: string;
+  description: string;
+  status?: string;
+  priority?: 'low' | 'medium' | 'high';
+  materialId?: string;
+  subcontractorName?: string;
+  subcontractorPhone?: string;
+  assignedUserName?: string;
+  subcontractorTrades?: string[];
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  event_type: CalendarEventType;
+  job_id: string | null;
+  all_day: boolean;
+  start_time: string | null;
+  end_time: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
-  components_worked: ComponentWorked[];
-  time_summary: TimeSummaryEntry[];
-  photos_logged: PhotoLogged[];
-  auto_summary_text: string | null;
-  final_notes: string | null;
-  issues: Issue[];
-  material_requests_structured: MaterialRequest[];
-  weather_details: WeatherDetails | null;
 }
-
-// ============================================
-// TASK TYPES
-// ============================================
 
 export interface JobTask {
   id: string;
   job_id: string;
   title: string;
   description: string | null;
-  task_type: string;
+  task_type: 'field' | 'office' | 'shop' | 'general';
   assigned_to: string | null;
   created_by: string;
   due_date: string | null;
-  priority: string;
-  status: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
   blocked_reason: string | null;
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
   updated_at: string;
-}
-
-// ============================================
-// DOCUMENT TYPES
-// ============================================
-
-export interface DocumentFolder {
-  id: string;
-  name: string;
-  documents: any[];
 }
