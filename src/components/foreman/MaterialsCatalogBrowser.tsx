@@ -845,7 +845,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   });
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4 w-full max-w-full overflow-x-hidden">
       <Button
         onClick={() => setShowCustomMaterialDialog(true)}
         variant="outline"
@@ -911,7 +911,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           </CardContent>
         </Card>
       ) : catalogSearch ? (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden w-full max-w-full">
           <CardHeader className="pb-2 px-3 sm:px-6">
             <CardTitle className="text-sm sm:text-base flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -921,15 +921,15 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Sorted by length</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y overflow-x-hidden">
+          <CardContent className="p-0 overflow-x-hidden">
+            <div className="divide-y w-full max-w-full overflow-x-hidden">
               {filteredCatalogMaterials.map(material => (
                 <div
                   key={material.sku}
-                  className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 transition-colors"
+                  className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 transition-colors w-full max-w-full"
                 >
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2">{material.material_name}</h4>
+                  <div className="flex-1 min-w-0 space-y-1 max-w-[calc(100%-4rem)]">
+                    <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">{material.material_name}</h4>
                     {material.part_length && (
                       <div className="text-base sm:text-lg font-bold text-primary">
                         {cleanMaterialValue(material.part_length)}
@@ -959,9 +959,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           </CardContent>
         </Card>
       ) : fieldRequests.length > 0 ? (
-        <Card className="border-2 border-orange-200 bg-orange-50 overflow-hidden">
+        <Card className="border-2 border-orange-200 bg-orange-50 overflow-hidden w-full max-w-full">
           <CardHeader className="pb-3 px-3 sm:px-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full max-w-full">
               <div className="flex-1 min-w-0">
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   <Package className="w-5 h-5 text-orange-700" />
@@ -982,23 +982,23 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="p-0 overflow-x-hidden">
-            <div className="divide-y divide-orange-200">
+          <CardContent className="p-0 overflow-x-hidden w-full max-w-full">
+            <div className="divide-y divide-orange-200 w-full max-w-full">
               {fieldRequests.map(material => {
                 const isExpanded = expandedRequestIds.has(material.id);
                 return (
                   <div
                     key={material.id}
-                    className="bg-white hover:bg-orange-50/50 transition-colors"
+                    className="bg-white hover:bg-orange-50/50 transition-colors w-full max-w-full overflow-x-hidden"
                   >
                     <div
-                      className="p-3 sm:p-4 cursor-pointer"
+                      className="p-3 sm:p-4 cursor-pointer w-full max-w-full"
                       onClick={() => toggleRequestExpanded(material.id)}
                     >
-                      <div className="flex items-start gap-2 sm:gap-3">
-                        <div className="flex-1 min-w-0 space-y-2">
-                          <div className="space-y-1">
-                            <h4 className="font-semibold text-base sm:text-lg leading-tight break-words">{material.name}</h4>
+                      <div className="flex items-start gap-2 sm:gap-3 w-full max-w-full">
+                        <div className="flex-1 min-w-0 space-y-2 max-w-[calc(100%-2rem)]">
+                          <div className="space-y-1 w-full">
+                            <h4 className="font-semibold text-base sm:text-lg leading-tight break-words w-full">{material.name}</h4>
                             {material.length && (
                               <div className="text-xs sm:text-sm text-muted-foreground">
                                 {cleanMaterialValue(material.length)}
@@ -1028,9 +1028,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     </div>
 
                     {isExpanded && (
-                      <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3 border-t border-orange-200 bg-white overflow-x-hidden">
-                        <div className="space-y-1.5 text-sm">
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3 border-t border-orange-200 bg-white overflow-x-hidden w-full max-w-full">
+                        <div className="space-y-1.5 text-sm w-full max-w-full">
+                          <div className="flex items-center gap-1.5 flex-wrap w-full">
                             <Badge variant="secondary" className="text-xs">
                               {material.category_name}
                             </Badge>
@@ -1131,7 +1131,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           </CardContent>
         </Card>
       ) : !catalogSearch ? (
-        <Card className="border-2 border-blue-200 bg-blue-50">
+        <Card className="border-2 border-blue-200 bg-blue-50 w-full max-w-full overflow-x-hidden">
           <CardContent className="py-6 text-center">
             <Package className="w-12 h-12 mx-auto mb-3 text-blue-700 opacity-50" />
             <p className="text-sm text-blue-900 font-semibold">No orders yet</p>
