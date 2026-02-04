@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package } from 'lucide-react';
+import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package, ShoppingCart } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Job } from '@/types';
 
 interface JobSelectorProps {
@@ -131,6 +132,32 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
 
   // Jobs are already filtered (no internal jobs)
   const filteredJobs = jobs;
+
+  async function handleOrderMaterials(job: Job) {
+    try {
+      // Create a notification for the office
+      const { error } = await supabase
+        .from('notifications')
+        .insert({
+          job_id: job.id,
+          created_by: userId,
+          type: 'material_request',
+          brief: `Material request for ${job.name}`,
+          reference_data: {
+            job_name: job.name,
+            client_name: job.client_name,
+            requested_by: userId
+          }
+        });
+
+      if (error) throw error;
+
+      toast.success(`Material request sent to office for ${job.name}`);
+    } catch (error: any) {
+      console.error('Error creating material request:', error);
+      toast.error('Failed to send material request');
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -268,8 +295,9 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                 </CardContent>
               </div>
               
-              {/* Separate button for address link - requires deliberate action */}
-              <CardContent className="pt-0 pb-3 border-t border-slate-300 bg-slate-50">
+              {/* Action buttons at bottom */}
+              <CardContent className="pt-0 pb-3 border-t border-slate-300 bg-slate-50 space-y-2">
+                {/* Address link button */}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -287,6 +315,20 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                     <span className="flex-1 text-left line-clamp-2">{job.address}</span>
                     <ExternalLink className="w-3 h-3 flex-shrink-0 text-green-900" />
                   </a>
+                </Button>
+                
+                {/* Order Materials button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-center text-xs h-auto py-2 rounded-none border-green-900 text-green-900 hover:bg-green-900 hover:text-white font-semibold"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOrderMaterials(job);
+                  }}
+                >
+                  <ShoppingCart className="w-4 h-4 mr-2" />
+                  Request Materials from Office
                 </Button>
               </CardContent>
             </Card>
