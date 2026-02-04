@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, CalendarEvent } from '@/types';
+import type { Job, CalendarEvent, CalendarEventType, SharedCalendarEvent } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 
 // Helper function to parse date string as local date (not UTC)
@@ -166,7 +166,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
               subcontractorPhone: schedule.subcontractors.phone,
               status: schedule.status,
               priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-            } as any);
+            } as SharedCalendarEvent);
             
             // Move to next day
             currentDate.setDate(currentDate.getDate() + 1);

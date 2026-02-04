@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, CalendarEvent } from '@/types';
+import type { Job, CalendarEvent, CalendarEventType, SharedCalendarEvent } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 import { DayViewDialog } from '../foreman/DayViewDialog';
 
@@ -215,7 +215,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
             
             events.push({
               id: `sub-${schedule.id}-${dateStr}`,
-              type: 'subcontractor',
+              type: 'subcontractor' as CalendarEventType,
               date: dateStr,
               jobId: schedule.jobs.id,
               jobName: schedule.jobs.name,
@@ -225,7 +225,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               subcontractorPhone: schedule.subcontractors.phone,
               status: schedule.status,
               priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-            });
+            } as SharedCalendarEvent);
             
             // Move to next day
             currentDate.setDate(currentDate.getDate() + 1);

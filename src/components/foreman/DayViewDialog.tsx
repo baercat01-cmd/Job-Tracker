@@ -32,7 +32,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job, CalendarEvent } from '@/types';
+import type { Job, CalendarEvent, CalendarEventType } from '@/types';
 
 interface DayViewDialogProps {
   date: string | null;
@@ -74,7 +74,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    event_type: 'other' as CalendarEvent['event_type'],
+    event_type: 'other' as CalendarEventType,
     job_id: '',
     all_day: true,
     start_time: '',
@@ -463,7 +463,7 @@ export function DayViewDialog({ date, open, onClose, onUpdate }: DayViewDialogPr
                   <Label htmlFor="event-type">Type</Label>
                   <Select
                     value={formData.event_type}
-                    onValueChange={(value: CalendarEvent['event_type']) =>
+                    onValueChange={(value: CalendarEventType) =>
                       setFormData({ ...formData, event_type: value })
                     }
                   >

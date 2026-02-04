@@ -232,10 +232,12 @@ export interface CalendarEventDB {
   created_by: string;
   created_at: string;
   updated_at: string;
+  completed_at?: string | null;
+  completed_by?: string | null;
 }
 
-// UI-friendly calendar event (used in all calendar components)
-export type CalendarEvent = SharedCalendarEvent;
+// UI-friendly calendar event (includes both database fields and computed fields)
+export type CalendarEvent = CalendarEventDB;
 
 export interface JobTask {
   id: string;

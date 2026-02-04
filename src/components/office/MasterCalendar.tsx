@@ -51,7 +51,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-import type { CalendarEvent } from '@/types';
+import type { CalendarEvent, CalendarEventType, SharedCalendarEvent } from '@/types';
 
 interface MasterCalendarProps {
   onJobSelect: (jobId: string) => void;
@@ -327,7 +327,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 subcontractorPhone: schedule.subcontractors.phone,
                 status: schedule.status,
                 priority: schedule.status === 'cancelled' ? 'low' : isPastDue(schedule.start_date) && schedule.status === 'scheduled' ? 'high' : 'medium',
-              } as any);
+              } as SharedCalendarEvent);
             }
             
             // Move to next day
