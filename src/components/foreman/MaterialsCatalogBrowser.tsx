@@ -97,6 +97,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [selectedCatalogMaterial, setSelectedCatalogMaterial] = useState<CatalogMaterial | null>(null);
   const [addMaterialQuantity, setAddMaterialQuantity] = useState<number | ''>('');
   const [addMaterialNotes, setAddMaterialNotes] = useState('');
+  const [addMaterialColor, setAddMaterialColor] = useState('');
   const [addingMaterial, setAddingMaterial] = useState(false);
   const [customLengthFeet, setCustomLengthFeet] = useState<number | ''>('');
   const [customLengthInches, setCustomLengthInches] = useState<number | ''>('');
@@ -245,6 +246,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setSelectedCatalogMaterial(material);
     setAddMaterialQuantity('');
     setAddMaterialNotes('');
+    setAddMaterialColor('');
     setCustomLengthFeet('');
     setCustomLengthInches('');
     setMaterialPieces([]);
@@ -424,6 +426,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: selectedCatalogMaterial.material_name,
           quantity: piece.quantity,
           length: piece.displayLength,
+          color: addMaterialColor.trim() || null,
           status: 'not_ordered' as const,
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
@@ -477,6 +480,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             name: catalogMaterial.material_name,
             quantity,
             length: catalogMaterial.part_length || null,
+            color: addMaterialColor.trim() || null,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
             created_by: userId,
@@ -530,6 +534,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             name: selectedCatalogMaterial.material_name,
             quantity: qty,
             length: selectedCatalogMaterial.part_length || null,
+            color: addMaterialColor.trim() || null,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
             created_by: userId,
@@ -1359,23 +1364,23 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </DialogContent>
       </Dialog>
 
-      {/* Add Material from Catalog Dialog */}
+      {/* Add Material from Catalog Dialog - Mobile Optimized */}
       <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              Order Material: {selectedCatalogMaterial?.material_name}
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto p-3 sm:p-6">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="flex items-start gap-2 text-base sm:text-lg leading-tight">
+              <Package className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span className="break-words">{selectedCatalogMaterial?.material_name}</span>
             </DialogTitle>
           </DialogHeader>
           {selectedCatalogMaterial && (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Material Info */}
-              <div className="bg-muted/50 p-3 rounded-lg">
-                <div className="font-semibold">{selectedCatalogMaterial.material_name}</div>
-                <div className="text-sm text-muted-foreground mt-1">SKU: {selectedCatalogMaterial.sku}</div>
+              <div className="bg-muted/50 p-2 sm:p-3 rounded-lg">
+                <div className="font-semibold text-sm sm:text-base break-words">{selectedCatalogMaterial.material_name}</div>
+                <div className="text-xs sm:text-sm text-muted-foreground mt-1">SKU: {selectedCatalogMaterial.sku}</div>
                 {selectedCatalogMaterial.part_length && (
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-xs sm:text-sm text-muted-foreground">
                     Length: {cleanMaterialValue(selectedCatalogMaterial.part_length)}
                   </div>
                 )}
@@ -1388,22 +1393,23 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
               {/* Custom Length Section */}
               {showCustomLength && (
-                <div className="space-y-4 border-2 border-blue-200 bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-blue-900">Add Custom Length Pieces</h4>
+                <div className="space-y-3 sm:space-y-4 border-2 border-blue-200 bg-blue-50 p-3 sm:p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 text-sm sm:text-base">Add Custom Length Pieces</h4>
                   
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label>Length (Feet)</Label>
+                  <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                    <div className="space-y-1.5 sm:space-y-2">
+                      <Label className="text-xs sm:text-sm">Length (Feet)</Label>
                       <Input
                         type="number"
                         min="0"
                         value={customLengthFeet}
                         onChange={(e) => setCustomLengthFeet(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
                         placeholder="0"
+                        className="h-10 sm:h-11 text-base"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Length (Inches)</Label>
+                    <div className="space-y-1.5 sm:space-y-2">
+                      <Label className="text-xs sm:text-sm">Length (Inches)</Label>
                       <Input
                         type="number"
                         min="0"
@@ -1411,55 +1417,57 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                         value={customLengthInches}
                         onChange={(e) => setCustomLengthInches(e.target.value === '' ? '' : Math.max(0, Math.min(11, parseFloat(e.target.value) || 0)))}
                         placeholder="0"
+                        className="h-10 sm:h-11 text-base"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Quantity for this length</Label>
+                  <div className="space-y-1.5 sm:space-y-2">
+                    <Label className="text-xs sm:text-sm">Quantity for this length</Label>
                     <Input
                       type="number"
                       min="1"
                       value={addMaterialQuantity}
                       onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
                       placeholder="1"
+                      className="h-10 sm:h-11 text-base"
                     />
                   </div>
 
                   <Button
                     onClick={addPieceToList}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    className="w-full bg-blue-600 hover:bg-blue-700 h-11 sm:h-12 text-sm sm:text-base"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                     Add Piece to Order
                   </Button>
 
                   {materialPieces.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      <h5 className="font-semibold text-blue-900">Pieces in Order:</h5>
+                    <div className="mt-3 sm:mt-4 space-y-2">
+                      <h5 className="font-semibold text-blue-900 text-sm sm:text-base">Pieces in Order:</h5>
                       <div className="space-y-2">
                         {materialPieces.map((piece, index) => (
-                          <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
-                            <div>
-                              <span className="font-semibold">{piece.quantity}x</span>
-                              <span className="ml-2">{piece.displayLength}</span>
-                              <span className="ml-2 text-sm text-muted-foreground">
+                          <div key={index} className="flex items-center justify-between bg-white p-2 sm:p-3 rounded border">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold text-sm sm:text-base">{piece.quantity}x</span>
+                              <span className="ml-1 sm:ml-2 text-sm sm:text-base">{piece.displayLength}</span>
+                              <div className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                                 @ ${piece.costPerPiece.toFixed(2)} each
-                              </span>
+                              </div>
                             </div>
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => removePiece(index)}
-                              className="text-destructive"
+                              className="text-destructive flex-shrink-0 h-8 w-8 p-0"
                             >
                               <X className="w-4 h-4" />
                             </Button>
                           </div>
                         ))}
                       </div>
-                      <div className="bg-green-50 border border-green-200 p-3 rounded">
-                        <div className="text-sm font-semibold text-green-900">
+                      <div className="bg-green-50 border border-green-200 p-2 sm:p-3 rounded">
+                        <div className="text-sm sm:text-base font-semibold text-green-900">
                           Total: {getTotalPiecesCount()} pieces • ${getTotalCost().toFixed(2)}
                         </div>
                       </div>
@@ -1470,20 +1478,20 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
               {/* Variant Selection Section */}
               {!showCustomLength && materialVariants.length > 0 && (
-                <div className="space-y-4 border-2 border-purple-200 bg-purple-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-purple-900">Select Lengths & Quantities</h4>
-                  <p className="text-sm text-purple-700">Choose the lengths you need and enter quantities for each</p>
+                <div className="space-y-3 sm:space-y-4 border-2 border-purple-200 bg-purple-50 p-3 sm:p-4 rounded-lg">
+                  <h4 className="font-semibold text-purple-900 text-sm sm:text-base">Select Lengths & Quantities</h4>
+                  <p className="text-xs sm:text-sm text-purple-700">Choose the lengths you need and enter quantities for each</p>
                   
                   <div className="space-y-2">
                     {materialVariants.map((variant) => (
-                      <div key={variant.sku} className="flex items-center gap-3 bg-white p-3 rounded border">
-                        <div className="flex-1">
-                          <div className="font-semibold">{variant.length}</div>
-                          <div className="text-sm text-muted-foreground">
+                      <div key={variant.sku} className="flex items-center gap-2 sm:gap-3 bg-white p-2 sm:p-3 rounded border">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm sm:text-base">{variant.length}</div>
+                          <div className="text-xs sm:text-sm text-muted-foreground">
                             ${variant.purchaseCost.toFixed(2)} per piece
                           </div>
                         </div>
-                        <div className="w-24">
+                        <div className="w-20 sm:w-24">
                           <Input
                             type="number"
                             min="0"
@@ -1493,6 +1501,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                               updateVariantQuantity(variant.sku, qty);
                             }}
                             placeholder="0"
+                            className="h-10 sm:h-11 text-base text-center"
                           />
                         </div>
                       </div>
@@ -1500,8 +1509,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   </div>
 
                   {selectedVariants.size > 0 && (
-                    <div className="bg-green-50 border border-green-200 p-3 rounded">
-                      <div className="text-sm font-semibold text-green-900">
+                    <div className="bg-green-50 border border-green-200 p-2 sm:p-3 rounded">
+                      <div className="text-sm sm:text-base font-semibold text-green-900">
                         Total: {getTotalVariantsCount()} pieces • ${getTotalVariantsCost().toFixed(2)}
                       </div>
                     </div>
@@ -1511,44 +1520,62 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
               {/* Simple Quantity (fallback for materials without variants or custom length) */}
               {!showCustomLength && materialVariants.length === 0 && (
-                <div className="space-y-2">
-                  <Label>Quantity</Label>
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label className="text-xs sm:text-sm">Quantity</Label>
                   <Input
                     type="number"
                     min="1"
                     value={addMaterialQuantity}
                     onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
                     placeholder="1"
+                    className="h-10 sm:h-11 text-base"
                   />
                 </div>
               )}
 
+              {/* Color Field - For Metal, Trim, Fasteners */}
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className="text-xs sm:text-sm flex items-center gap-2">
+                  Color
+                  <Badge variant="outline" className="text-xs">For Metal/Trim/Fasteners</Badge>
+                </Label>
+                <Input
+                  type="text"
+                  value={addMaterialColor}
+                  onChange={(e) => setAddMaterialColor(e.target.value)}
+                  placeholder="e.g., Galvalume, White, Brown"
+                  className="h-10 sm:h-11 text-base"
+                />
+                <p className="text-xs text-muted-foreground">Leave blank if not applicable</p>
+              </div>
+
               {/* Notes */}
-              <div className="space-y-2">
-                <Label>Notes (optional)</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className="text-xs sm:text-sm">Notes (optional)</Label>
                 <Textarea
                   value={addMaterialNotes}
                   onChange={(e) => setAddMaterialNotes(e.target.value)}
                   placeholder="Any additional notes about this order..."
                   rows={2}
+                  className="text-base resize-none"
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-3 sm:pt-4 border-t">
                 <Button
                   onClick={addMaterialToJob}
                   disabled={addingMaterial}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-green-600 hover:bg-green-700 h-11 sm:h-12 text-sm sm:text-base font-semibold"
                 >
                   {addingMaterial ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                       Adding...
                     </>
                   ) : (
                     <>
-                      <Plus className="w-4 h-4 mr-2" />
+                      <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                       Add to Order
                     </>
                   )}
@@ -1557,6 +1584,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   variant="outline"
                   onClick={() => setShowAddMaterialDialog(false)}
                   disabled={addingMaterial}
+                  className="h-11 sm:h-12 text-sm sm:text-base"
                 >
                   Cancel
                 </Button>
