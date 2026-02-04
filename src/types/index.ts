@@ -236,8 +236,8 @@ export interface CalendarEventDB {
   completed_by?: string | null;
 }
 
-// UI-friendly calendar event (includes both database fields and computed fields)
-export type CalendarEvent = CalendarEventDB;
+// UI-friendly calendar event (alias for SharedCalendarEvent for backward compatibility)
+export type CalendarEvent = SharedCalendarEvent;
 
 export interface JobTask {
   id: string;
