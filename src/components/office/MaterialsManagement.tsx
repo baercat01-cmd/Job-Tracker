@@ -82,6 +82,7 @@ interface Material {
   actual_delivery_date?: string | null;
   ordered_by?: string | null;
   order_requested_at?: string | null;
+  ordered_by_name?: string | null;
   pickup_by?: string | null;
   pickup_date?: string | null;
   actual_pickup_date?: string | null;
@@ -210,7 +211,12 @@ function SortableMaterialRow({
               📦 {material.bundle_name}
             </Badge>
           )}
-          {material.import_source === 'field_catalog' && (
+          {material.import_source === 'field_catalog' && material.status === 'not_ordered' && (
+            <Badge variant="destructive" className="text-xs font-bold animate-pulse">
+              🔔 NEW ORDER - {material.ordered_by_name || 'Unknown'}
+            </Badge>
+          )}
+          {material.import_source === 'field_catalog' && material.status !== 'not_ordered' && (
             <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300 font-semibold">
               🔧 Field Request
             </Badge>
@@ -545,19 +551,26 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       const { data: materialsData, error: materialsError } = await supabase
         .from('materials')
-        .select('*')
+        .select(`
+          *,
+          ordered_by_user:ordered_by(username, email)
+        `)
         .eq('job_id', job.id)
         .order('order_index')
         .order('name');
 
       if (materialsError) throw materialsError;
 
-      // Enrich materials with bundle information
+      // Enrich materials with bundle information and user names
       const enrichedMaterials = (materialsData || []).map((material: any) => {
         const bundleInfo = materialBundleMap.get(material.id);
+        const orderedByName = material.ordered_by_user
+          ? (material.ordered_by_user.username || material.ordered_by_user.email)
+          : null;
         return {
           ...material,
           bundle_name: bundleInfo?.bundleName,
+          ordered_by_name: orderedByName,
         };
       });
 
@@ -1561,9 +1574,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                         </td>
                                         <td className="p-2 text-center font-semibold">{material.quantity}</td>
                                         <td className="p-2 text-center text-sm">
-                                          {material.ordered_by ? (
-                                            <Badge variant="outline" className="text-xs">
-                                              User ID: {material.ordered_by.substring(0, 8)}...
+                                          {material.ordered_by_name ? (
+                                            <Badge variant="outline" className="text-xs font-semibold text-orange-700 border-orange-300">
+                                              {material.ordered_by_name}
                                             </Badge>
                                           ) : '-'}
                                         </td>
