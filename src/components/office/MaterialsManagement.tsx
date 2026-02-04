@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { ExtrasManagement } from './ExtrasManagement';
+import { CrewOrdersManagement } from './CrewOrdersManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement, cleanMaterialValue } from '@/lib/utils';
 import {
@@ -1512,136 +1513,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </TabsContent>
 
           <TabsContent value="field-orders" className="space-y-2">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <PackagePlus className="w-5 h-5 text-orange-600" />
-                  Crew Orders
-                </CardTitle>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Materials requested by crew - approve and set status to move to main materials list
-                </p>
-              </CardHeader>
-              <CardContent className="pt-3">
-                {categories.flatMap(c => c.materials).filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered').length === 0 ? (
-                  <div className="text-center py-12">
-                    <PackagePlus className="w-16 h-16 mx-auto mb-4 opacity-50 text-muted-foreground" />
-                    <p className="text-muted-foreground">No crew orders yet</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Crew can order materials from their Order tab in the field
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {categories
-                      .filter(cat => cat.materials.some(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered'))
-                      .map(category => {
-                        const fieldMaterials = category.materials.filter(m => (m.import_source === 'field_catalog' || m.import_source === 'field_custom') && m.status === 'not_ordered');
-                        return (
-                          <Card key={category.id} className="border-2 border-orange-200 bg-orange-50">
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-base text-orange-900 flex items-center justify-between">
-                                <span>{category.name}</span>
-                                <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                                  {fieldMaterials.length} {fieldMaterials.length === 1 ? 'order' : 'orders'}
-                                </Badge>
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="bg-white rounded-lg border border-orange-200">
-                                <table className="w-full">
-                                  <thead className="bg-orange-100 border-b border-orange-200">
-                                    <tr>
-                                      <th className="text-left p-2 text-xs font-semibold text-orange-900">Material</th>
-                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Qty</th>
-                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Ordered By</th>
-                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">When</th>
-                                      <th className="text-center p-2 text-xs font-semibold text-orange-900">Status</th>
-                                      <th className="text-right p-2 text-xs font-semibold text-orange-900">Actions</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {fieldMaterials.map((material, index) => (
-                                      <tr key={material.id} className={index % 2 === 0 ? 'bg-white' : 'bg-orange-50/30'}>
-                                        <td className="p-2">
-                                          <div>
-                                            <div className="font-medium text-sm">{cleanMaterialValue(material.name)}</div>
-                                            {material.length && (
-                                              <div className="text-xs text-muted-foreground">
-                                                {cleanMaterialValue(material.length)}
-                                              </div>
-                                            )}
-                                            {material.notes && (
-                                              <div className="text-xs text-muted-foreground mt-1">
-                                                {material.notes}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td className="p-2 text-center font-semibold">{material.quantity}</td>
-                                        <td className="p-2 text-center text-sm">
-                                          {material.ordered_by_name ? (
-                                            <Badge variant="outline" className="text-xs font-semibold text-orange-700 border-orange-300">
-                                              {material.ordered_by_name}
-                                            </Badge>
-                                          ) : '-'}
-                                        </td>
-                                        <td className="p-2 text-center text-xs text-muted-foreground">
-                                          {material.order_requested_at ? new Date(material.order_requested_at).toLocaleDateString() : '-'}
-                                        </td>
-                                        <td className="p-2">
-                                          <div className="flex justify-center gap-2">
-                                            <Button
-                                              size="sm"
-                                              onClick={() => handleQuickStatusChange(material.id, 'ordered')}
-                                              className="bg-yellow-600 hover:bg-yellow-700 h-8 text-xs"
-                                            >
-                                              Order
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              onClick={() => handleQuickStatusChange(material.id, 'ready_to_pull')}
-                                              className="bg-purple-600 hover:bg-purple-700 h-8 text-xs"
-                                            >
-                                              Pull from Shop
-                                            </Button>
-                                          </div>
-                                        </td>
-                                        <td className="p-2">
-                                          <div className="flex items-center justify-end gap-1">
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              onClick={() => openEditMaterial(material)}
-                                              title="Edit material"
-                                            >
-                                              <Edit className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              onClick={() => deleteMaterial(material.id)}
-                                              className="text-destructive"
-                                              title="Delete material"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })
-                    }
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <CrewOrdersManagement />
           </TabsContent>
 
           <TabsContent value="extras" className="space-y-2">
