@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Database, Search, Plus, Package, Edit, Camera, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Database, Search, Plus, Package, Edit, Camera, ChevronDown, ChevronRight, Download, X } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -53,6 +53,14 @@ interface FieldRequestMaterial {
   use_case?: string;
 }
 
+interface MaterialPiece {
+  lengthFeet: number;
+  lengthInches: number;
+  quantity: number;
+  displayLength: string;
+  costPerPiece: number;
+}
+
 const STATUS_OPTIONS = [
   { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
   { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
@@ -62,13 +70,6 @@ const STATUS_OPTIONS = [
   { value: 'installed', label: 'Installed', color: 'bg-slate-800 text-white border-slate-800' },
   { value: 'missing', label: 'Missing', color: 'bg-red-100 text-red-700 border-red-300' },
   { value: 'needed', label: 'Needed', color: 'bg-orange-100 text-orange-700 border-orange-300' },
-  { value: 'not_ordered', label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300' },
-  { value: 'ordered', label: 'Ordered', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
-  { value: 'at_shop', label: 'At Shop', color: 'bg-blue-100 text-blue-700 border-blue-300' },
-  { value: 'ready_to_pull', label: 'Pull from Shop', color: 'bg-purple-100 text-purple-700 border-purple-300' },
-  { value: 'at_job', label: 'At Job', color: 'bg-green-100 text-green-700 border-green-300' },
-  { value: 'installed', label: 'Installed', color: 'bg-slate-800 text-white border-slate-800' },
-  { value: 'missing', label: 'Missing', color: 'bg-red-100 text-red-700 border-red-300' },
 ];
 
 function getStatusColor(status: string) {
@@ -95,6 +96,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   const [showCustomLength, setShowCustomLength] = useState(false);
   const [fieldRequests, setFieldRequests] = useState<FieldRequestMaterial[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  const [materialPieces, setMaterialPieces] = useState<MaterialPiece[]>([]);
   
   // Custom material state
   const [showCustomMaterialDialog, setShowCustomMaterialDialog] = useState(false);
@@ -164,7 +166,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           materials_categories!inner(name)
         `)
         .eq('job_id', job.id)
-        .eq('import_source', 'field_catalog')
+        .in('import_source', ['field_catalog', 'field_custom'])
         .order('order_requested_at', { ascending: false });
 
       if (error) throw error;
@@ -232,13 +234,75 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddMaterialNotes('');
     setCustomLengthFeet(0);
     setCustomLengthInches(0);
+    setMaterialPieces([]); // Reset pieces list
     // Show custom length input if material doesn't have a pre-defined length
     setShowCustomLength(!material.part_length || material.part_length.trim() === '');
     setShowAddMaterialDialog(true);
   }
 
+  function addPieceToList() {
+    if (!selectedCatalogMaterial) return;
+    
+    const totalFeet = customLengthFeet + (customLengthInches / 12);
+    
+    if (totalFeet <= 0) {
+      toast.error('Please specify a length greater than 0');
+      return;
+    }
+
+    if (addMaterialQuantity <= 0) {
+      toast.error('Quantity must be greater than 0');
+      return;
+    }
+
+    // Format length display
+    const feet = Math.floor(totalFeet);
+    const inches = Math.round((totalFeet - feet) * 12);
+    const displayLength = inches > 0 ? `${feet}' ${inches}\"` : `${feet}'`;
+
+    // Calculate cost
+    const pricePerFoot = selectedCatalogMaterial.purchase_cost || 0;
+    const costPerPiece = pricePerFoot * totalFeet;
+
+    const newPiece: MaterialPiece = {
+      lengthFeet: customLengthFeet,
+      lengthInches: customLengthInches,
+      quantity: addMaterialQuantity,
+      displayLength,
+      costPerPiece,
+    };
+
+    setMaterialPieces([...materialPieces, newPiece]);
+    
+    // Reset inputs for next piece
+    setCustomLengthFeet(0);
+    setCustomLengthInches(0);
+    setAddMaterialQuantity(1);
+    
+    toast.success('Piece added to order');
+  }
+
+  function removePiece(index: number) {
+    setMaterialPieces(materialPieces.filter((_, i) => i !== index));
+    toast.success('Piece removed from order');
+  }
+
+  function getTotalPiecesCount(): number {
+    return materialPieces.reduce((sum, piece) => sum + piece.quantity, 0);
+  }
+
+  function getTotalCost(): number {
+    return materialPieces.reduce((sum, piece) => sum + (piece.costPerPiece * piece.quantity), 0);
+  }
+
   async function addMaterialToJob() {
     if (!selectedCatalogMaterial) return;
+
+    // For custom length materials, require at least one piece in the list
+    if (showCustomLength && materialPieces.length === 0) {
+      toast.error('Please add at least one piece to your order');
+      return;
+    }
 
     setAddingMaterial(true);
 
@@ -272,83 +336,90 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         categoryId = newCategory.id;
       }
 
-      // Calculate length and cost based on whether it's a custom length material
-      let finalLength = selectedCatalogMaterial.part_length || null;
-      let unit_cost = selectedCatalogMaterial.purchase_cost || 0;
-      let total_cost = 0;
-
       if (showCustomLength) {
-        // Calculate total feet from feet + inches
-        const totalFeet = customLengthFeet + (customLengthInches / 12);
-        
-        if (totalFeet <= 0) {
-          toast.error('Please specify a length greater than 0');
-          setAddingMaterial(false);
-          return;
-        }
-
-        // Format length as feet and inches
-        const feet = Math.floor(totalFeet);
-        const inches = Math.round((totalFeet - feet) * 12);
-        finalLength = inches > 0 ? `${feet}' ${inches}\"` : `${feet}'`;
-
-        // Calculate cost: unit_price is per foot, so multiply by total feet and quantity
-        const pricePerFoot = selectedCatalogMaterial.purchase_cost || 0;
-        const costPerPiece = pricePerFoot * totalFeet;
-        unit_cost = costPerPiece; // Store the cost per piece
-        total_cost = costPerPiece * addMaterialQuantity;
-      } else {
-        // Standard material with pre-defined length
-        unit_cost = selectedCatalogMaterial.purchase_cost || 0;
-        total_cost = unit_cost * addMaterialQuantity;
-      }
-
-      const { error: materialError } = await supabase
-        .from('materials')
-        .insert({
+        // Create a separate material entry for each piece
+        const materialsToInsert = materialPieces.map(piece => ({
           category_id: categoryId,
           job_id: job.id,
           name: selectedCatalogMaterial.material_name,
-          quantity: addMaterialQuantity,
-          length: finalLength,
-          status: 'needed',
+          quantity: piece.quantity,
+          length: piece.displayLength,
+          status: 'needed' as const,
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
           ordered_by: userId,
           order_requested_at: new Date().toISOString(),
           import_source: 'field_catalog',
           is_extra: true,
-          unit_cost,
-          total_cost,
+          unit_cost: piece.costPerPiece,
+          total_cost: piece.costPerPiece * piece.quantity,
+        }));
+
+        const { error: materialError } = await supabase
+          .from('materials')
+          .insert(materialsToInsert);
+
+        if (materialError) throw materialError;
+
+        // Create notification for office
+        await createNotification({
+          jobId: job.id,
+          createdBy: userId,
+          type: 'material_request',
+          brief: `Field request: ${selectedCatalogMaterial.material_name} (${getTotalPiecesCount()} pieces, ${materialPieces.length} different lengths)`,
+          referenceData: {
+            materialName: selectedCatalogMaterial.material_name,
+            sku: selectedCatalogMaterial.sku,
+            totalPieces: getTotalPiecesCount(),
+            uniqueLengths: materialPieces.length,
+            pieces: materialPieces.map(p => `${p.quantity}x ${p.displayLength}`).join(', '),
+            notes: addMaterialNotes,
+          },
         });
 
-      if (materialError) throw materialError;
+        toast.success(`Added ${getTotalPiecesCount()} pieces in ${materialPieces.length} different lengths`);
+      } else {
+        // Standard material with pre-defined length - single entry
+        const unit_cost = selectedCatalogMaterial.purchase_cost || 0;
+        const total_cost = unit_cost * addMaterialQuantity;
 
-      // Create notification for office with material ID reference
-      const { data: newMaterialData } = await supabase
-        .from('materials')
-        .select('id')
-        .eq('category_id', categoryId)
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        const { error: materialError } = await supabase
+          .from('materials')
+          .insert({
+            category_id: categoryId,
+            job_id: job.id,
+            name: selectedCatalogMaterial.material_name,
+            quantity: addMaterialQuantity,
+            length: selectedCatalogMaterial.part_length || null,
+            status: 'needed',
+            notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
+            created_by: userId,
+            ordered_by: userId,
+            order_requested_at: new Date().toISOString(),
+            import_source: 'field_catalog',
+            is_extra: true,
+            unit_cost,
+            total_cost,
+          });
 
-      await createNotification({
-        jobId: job.id,
-        createdBy: userId,
-        type: 'material_request',
-        brief: `Field request: ${selectedCatalogMaterial.material_name} (Qty: ${addMaterialQuantity})`,
-        referenceId: newMaterialData?.id || null,
-        referenceData: {
-          materialName: selectedCatalogMaterial.material_name,
-          sku: selectedCatalogMaterial.sku,
-          quantity: addMaterialQuantity,
-          notes: addMaterialNotes,
-        },
-      });
+        if (materialError) throw materialError;
 
-      toast.success('Material request sent to office');
+        await createNotification({
+          jobId: job.id,
+          createdBy: userId,
+          type: 'material_request',
+          brief: `Field request: ${selectedCatalogMaterial.material_name} (Qty: ${addMaterialQuantity})`,
+          referenceData: {
+            materialName: selectedCatalogMaterial.material_name,
+            sku: selectedCatalogMaterial.sku,
+            quantity: addMaterialQuantity,
+            notes: addMaterialNotes,
+          },
+        });
+
+        toast.success('Material request sent to office');
+      }
+
       setShowAddMaterialDialog(false);
       setSelectedCatalogMaterial(null);
       
@@ -920,11 +991,11 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
       {/* Add Material Dialog */}
       <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="w-5 h-5" />
-              Add Material to Job
+              {showCustomLength ? 'Order Metal Pieces' : 'Add Material to Job'}
             </DialogTitle>
           </DialogHeader>
           {selectedCatalogMaterial && (
@@ -950,80 +1021,147 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 </div>
               </div>
 
-              {/* Custom Length Input - Only for materials without pre-defined length */}
+              {/* Custom Length Input - Multi-piece ordering */}
               {showCustomLength && (
-                <div className="space-y-3 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Edit className="w-4 h-4 text-blue-700" />
-                    <Label className="text-sm font-semibold text-blue-900">Specify Length *</Label>
-                  </div>
-                  <p className="text-xs text-blue-800 mb-3">
-                    This material is priced per foot. Enter the length you need:
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3">
+                  {/* Current Piece Input */}
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Edit className="w-4 h-4 text-blue-700" />
+                      <Label className="text-sm font-semibold text-blue-900">
+                        {materialPieces.length === 0 ? 'Add First Piece' : 'Add Another Piece'}
+                      </Label>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="feet" className="text-xs font-semibold text-blue-900">Feet</Label>
+                        <Input
+                          id="feet"
+                          type="number"
+                          min="0"
+                          value={customLengthFeet}
+                          onChange={(e) => setCustomLengthFeet(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="h-11 text-lg font-bold border-blue-300 bg-white"
+                          placeholder="0"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inches" className="text-xs font-semibold text-blue-900">Inches</Label>
+                        <Input
+                          id="inches"
+                          type="number"
+                          min="0"
+                          max="11"
+                          value={customLengthInches}
+                          onChange={(e) => setCustomLengthInches(Math.max(0, Math.min(11, parseInt(e.target.value) || 0)))}
+                          className="h-11 text-lg font-bold border-blue-300 bg-white"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="feet" className="text-xs font-semibold text-blue-900">Feet</Label>
+                      <Label htmlFor="quantity" className="text-xs font-semibold text-blue-900">Quantity</Label>
                       <Input
-                        id="feet"
+                        id="quantity"
                         type="number"
-                        min="0"
-                        value={customLengthFeet}
-                        onChange={(e) => setCustomLengthFeet(Math.max(0, parseInt(e.target.value) || 0))}
+                        min="1"
+                        value={addMaterialQuantity}
+                        onChange={(e) => setAddMaterialQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                         className="h-11 text-lg font-bold border-blue-300 bg-white"
-                        placeholder="0"
-                        autoFocus
+                        placeholder="1"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="inches" className="text-xs font-semibold text-blue-900">Inches</Label>
-                      <Input
-                        id="inches"
-                        type="number"
-                        min="0"
-                        max="11"
-                        value={customLengthInches}
-                        onChange={(e) => setCustomLengthInches(Math.max(0, Math.min(11, parseInt(e.target.value) || 0)))}
-                        className="h-11 text-lg font-bold border-blue-300 bg-white"
-                        placeholder="0"
-                      />
-                    </div>
+
+                    {(customLengthFeet > 0 || customLengthInches > 0) && selectedCatalogMaterial.purchase_cost && (
+                      <div className="bg-white border-2 border-green-500 rounded p-3">
+                        <p className="text-xs font-semibold text-green-900 mb-1">Cost:</p>
+                        <p className="text-sm text-green-800">
+                          {addMaterialQuantity}x {customLengthFeet > 0 && `${customLengthFeet}'`}{customLengthInches > 0 && ` ${customLengthInches}"`}
+                          {' '}= <span className="font-bold text-green-700">
+                            ${((customLengthFeet + customLengthInches / 12) * selectedCatalogMaterial.purchase_cost * addMaterialQuantity).toFixed(2)}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={addPieceToList}
+                      disabled={(customLengthFeet === 0 && customLengthInches === 0) || addMaterialQuantity <= 0}
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-700"
+                      type="button"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add This Piece to Order
+                    </Button>
                   </div>
-                  {(customLengthFeet > 0 || customLengthInches > 0) && selectedCatalogMaterial.purchase_cost && (
-                    <div className="bg-white border-2 border-green-500 rounded p-3 mt-3">
-                      <p className="text-xs font-semibold text-green-900 mb-1">Cost Calculation:</p>
-                      <p className="text-sm text-green-800">
-                        {customLengthFeet > 0 && `${customLengthFeet}'`}
-                        {customLengthInches > 0 && ` ${customLengthInches}"`}
-                        {' '}× ${selectedCatalogMaterial.purchase_cost.toFixed(2)}/ft
-                        {' '}= <span className="font-bold text-green-700">
-                          ${((customLengthFeet + customLengthInches / 12) * selectedCatalogMaterial.purchase_cost).toFixed(2)}
-                        </span> per piece
-                      </p>
+
+                  {/* List of Added Pieces */}
+                  {materialPieces.length > 0 && (
+                    <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold text-green-900">Order Summary</Label>
+                        <Badge className="bg-green-700 text-white">
+                          {getTotalPiecesCount()} pieces
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {materialPieces.map((piece, index) => (
+                          <div key={index} className="flex items-center justify-between bg-white rounded p-3 border border-green-300">
+                            <div className="flex-1">
+                              <p className="font-bold text-green-900">
+                                {piece.quantity}x {piece.displayLength}
+                              </p>
+                              <p className="text-xs text-green-700">
+                                ${piece.costPerPiece.toFixed(2)} each = ${(piece.costPerPiece * piece.quantity).toFixed(2)}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removePiece(index)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              type="button"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="bg-white border-2 border-green-500 rounded p-3">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-green-900">Total Order:</span>
+                          <span className="text-xl font-bold text-green-700">
+                            ${getTotalCost().toFixed(2)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-green-700 mt-1">
+                          {getTotalPiecesCount()} total pieces • {materialPieces.length} different {materialPieces.length === 1 ? 'length' : 'lengths'}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity (pieces) *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  min="1"
-                  value={addMaterialQuantity}
-                  onChange={(e) => setAddMaterialQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="h-12"
-                />
-                {showCustomLength && (customLengthFeet > 0 || customLengthInches > 0) && selectedCatalogMaterial.purchase_cost && (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Total: {addMaterialQuantity} piece{addMaterialQuantity !== 1 ? 's' : ''} × $
-                    {((customLengthFeet + customLengthInches / 12) * selectedCatalogMaterial.purchase_cost).toFixed(2)}
-                    {' '}= <span className="font-bold text-green-700">
-                      ${((customLengthFeet + customLengthInches / 12) * selectedCatalogMaterial.purchase_cost * addMaterialQuantity).toFixed(2)}
-                    </span>
-                  </p>
-                )}
-              </div>
+              {/* Standard material quantity (non-custom length) */}
+              {!showCustomLength && (
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity (pieces) *</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={addMaterialQuantity}
+                    onChange={(e) => setAddMaterialQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="h-12"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
@@ -1036,28 +1174,46 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-900 font-semibold mb-1">
-                  📋 Field Request Process:
-                </p>
-                <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
-                  <li>Added to "Field Requests" category</li>
-                  <li>Marked as "Needed" - office will be notified</li>
-                  <li>Tracked separately for job cost tracking</li>
-                  <li>Your name will be recorded as requester</li>
-                </ul>
-              </div>
+              {!showCustomLength && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-900 font-semibold mb-1">
+                    📋 Field Request Process:
+                  </p>
+                  <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
+                    <li>Added to "Field Requests" category</li>
+                    <li>Marked as "Needed" - office will be notified</li>
+                    <li>Tracked separately for job cost tracking</li>
+                    <li>Your name will be recorded as requester</li>
+                  </ul>
+                </div>
+              )}
+
+              {showCustomLength && materialPieces.length > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                  <p className="text-sm text-purple-900 font-semibold mb-1">
+                    ✓ Ready to Submit
+                  </p>
+                  <p className="text-xs text-purple-800">
+                    Each piece will be created as a separate material entry for accurate tracking and inventory management.
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 pt-4 border-t">
                 <Button
                   onClick={addMaterialToJob}
-                  disabled={addingMaterial}
+                  disabled={addingMaterial || (showCustomLength && materialPieces.length === 0)}
                   className="h-12"
                 >
                   {addingMaterial ? (
                     <>
                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Adding...
+                      Submitting...
+                    </>
+                  ) : showCustomLength ? (
+                    <>
+                      <Package className="w-5 h-5 mr-2" />
+                      Submit Order ({getTotalPiecesCount()} {getTotalPiecesCount() === 1 ? 'piece' : 'pieces'})
                     </>
                   ) : (
                     <>
