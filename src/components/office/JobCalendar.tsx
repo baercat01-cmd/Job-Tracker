@@ -31,6 +31,16 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
       setLoading(true);
       const events: SharedCalendarEvent[] = [];
 
+      // Get job info for this job
+      const { data: job, error: jobError } = await supabase
+        .from('jobs')
+        .select('id, name')
+        .eq('id', jobId)
+        .single();
+
+      if (jobError) throw jobError;
+      if (!job) return;
+
       // Get material order dates for this job
       const { data: materials, error: materialsError } = await supabase
         .from('materials')
@@ -46,6 +56,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
               id: `order-${material.id}`,
               type: 'material_order',
               date: material.order_by_date,
+              jobId: job.id,
+              jobName: job.name,
               title: `Order: ${material.name}`,
               description: `Must order by this date`,
               status: material.status,
@@ -59,6 +71,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
               id: `delivery-${material.id}`,
               type: 'material_delivery',
               date: material.delivery_date,
+              jobId: job.id,
+              jobName: job.name,
               title: `Delivery: ${material.name}`,
               description: `Expected delivery to shop`,
               status: material.status,
@@ -72,6 +86,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
               id: `pull-${material.id}`,
               type: 'material_pull',
               date: material.pull_by_date,
+              jobId: job.id,
+              jobName: job.name,
               title: `Pull: ${material.name}`,
               description: `Pull from shop for delivery`,
               status: material.status,
@@ -99,6 +115,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
             id: `task-${task.id}`,
             type: 'task_completed',
             date: task.completed_date,
+            jobId: job.id,
+            jobName: job.name,
             title: `Completed: ${task.components.name}`,
             description: task.notes || 'Task completed',
             priority: 'low',
@@ -128,6 +146,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
             id: `calendar-${event.id}`,
             type: eventType,
             date: event.event_date,
+            jobId: job.id,
+            jobName: job.name,
             title: event.title,
             description: event.description || '',
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
@@ -171,6 +191,8 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
                 id: `sub-${schedule.id}-${dateStr}`,
                 type: 'subcontractor',
                 date: dateStr,
+                jobId: job.id,
+                jobName: job.name,
                 title: `${schedule.subcontractors.name}${dateRangeStr}`,
                 description: `${schedule.subcontractors.trades && schedule.subcontractors.trades.length > 0 ? schedule.subcontractors.trades.join(', ') : 'Subcontractor'}: ${schedule.work_description || 'Scheduled work'}`,
                 subcontractorName: schedule.subcontractors.name,

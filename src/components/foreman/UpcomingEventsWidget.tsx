@@ -81,6 +81,7 @@ export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidg
               jobId: job.id,
               jobName: job.name,
               title: material.name,
+              description: 'Must order by this date',
               priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
             });
           }
@@ -93,6 +94,7 @@ export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidg
               jobId: job.id,
               jobName: job.name,
               title: material.name,
+              description: 'Expected delivery to shop',
               priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
             });
           }
@@ -105,6 +107,7 @@ export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidg
               jobId: job.id,
               jobName: job.name,
               title: material.name,
+              description: 'Pull from shop for delivery',
               priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
             });
           }
