@@ -843,33 +843,33 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <Button
         onClick={() => setShowCustomMaterialDialog(true)}
         variant="outline"
-        className="w-full h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold"
+        className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
       >
         <Plus className="w-5 h-5 mr-2" />
         Add Custom Material
       </Button>
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
         <Input
-          placeholder="Search materials by name or SKU..."
+          placeholder="Search materials..."
           value={catalogSearch}
           onChange={(e) => setCatalogSearch(e.target.value)}
-          className="pl-10 h-12 text-base border-2 border-slate-300"
+          className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
           autoFocus
         />
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
         <Button
           variant={catalogCategory === null ? "default" : "outline"}
           size="sm"
           onClick={() => setCatalogCategory(null)}
-          className={`whitespace-nowrap flex-shrink-0 font-semibold ${
+          className={`whitespace-nowrap flex-shrink-0 font-semibold h-11 px-4 text-sm ${
             catalogCategory === null 
               ? 'bg-green-900 hover:bg-green-800 text-white' 
               : 'border-slate-300 text-green-900 hover:bg-slate-100'
@@ -883,7 +883,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             variant={catalogCategory === cat ? "default" : "outline"}
             size="sm"
             onClick={() => setCatalogCategory(cat)}
-            className={`whitespace-nowrap flex-shrink-0 font-semibold ${
+            className={`whitespace-nowrap flex-shrink-0 font-semibold h-11 px-4 text-sm ${
               catalogCategory === cat 
                 ? 'bg-green-900 hover:bg-green-800 text-white' 
                 : 'border-slate-300 text-green-900 hover:bg-slate-100'
@@ -898,25 +898,25 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         <Card>
           <CardContent className="py-12 text-center">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading catalog...</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Loading catalog...</p>
           </CardContent>
         </Card>
       ) : catalogSearch && filteredCatalogMaterials.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p>No materials found matching "{catalogSearch}"</p>
+            <p className="text-sm sm:text-base">No materials found matching "{catalogSearch}"</p>
           </CardContent>
         </Card>
       ) : catalogSearch ? (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center justify-between">
+          <CardHeader className="pb-2 px-3 sm:px-6">
+            <CardTitle className="text-sm sm:text-base flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4" />
                 Results ({filteredCatalogMaterials.length})
               </div>
-              <span className="text-xs text-muted-foreground font-normal">Sorted by length</span>
+              <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Sorted by length</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -924,15 +924,15 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               {filteredCatalogMaterials.map(material => (
                 <div
                   key={material.sku}
-                  className="flex items-center justify-between gap-3 p-3 hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between gap-2 sm:gap-3 p-3 sm:p-4 hover:bg-muted/50 transition-colors min-h-[60px]"
                 >
-                  <div className="flex-1 min-w-0 flex items-center gap-3">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-sm leading-tight">{material.material_name}</h4>
+                  <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-sm sm:text-base leading-tight break-words">{material.material_name}</h4>
                     </div>
-                    <div className="flex-shrink-0 text-right">
+                    <div className="flex-shrink-0 text-left sm:text-right">
                       {material.part_length ? (
-                        <span className="text-base font-bold text-primary">
+                        <span className="text-base sm:text-lg font-bold text-primary">
                           {cleanMaterialValue(material.part_length)}
                         </span>
                       ) : (
@@ -943,9 +943,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   <Button
                     onClick={() => openAddMaterialDialog(material)}
                     size="sm"
-                    className="flex-shrink-0 h-8"
+                    className="flex-shrink-0 h-11 w-11 sm:h-9 sm:w-auto sm:px-4 p-0"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline ml-2">Add</span>
                   </Button>
                 </div>
               ))}
@@ -958,19 +959,19 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         <Card>
           <CardContent className="py-8 text-center">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading your orders...</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Loading your orders...</p>
           </CardContent>
         </Card>
       ) : fieldRequests.length > 0 ? (
         <Card className="border-2 border-orange-200 bg-orange-50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+          <CardHeader className="pb-3 px-3 sm:px-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex-1">
-                <CardTitle className="text-base flex items-center gap-2">
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   <Package className="w-5 h-5 text-orange-700" />
                   Your Orders ({fieldRequests.length})
                 </CardTitle>
-                <p className="text-sm text-orange-700 mt-1">
+                <p className="text-xs sm:text-sm text-orange-700 mt-1">
                   Materials you've requested - update status as they move through the workflow
                 </p>
               </div>
@@ -978,10 +979,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 onClick={downloadFieldRequests}
                 variant="outline"
                 size="sm"
-                className="gap-2 border-orange-300 hover:bg-orange-100"
+                className="gap-2 border-orange-300 hover:bg-orange-100 h-11 px-4"
               >
                 <Download className="w-4 h-4" />
-                Export
+                <span className="hidden sm:inline">Export</span>
               </Button>
             </div>
           </CardHeader>
@@ -995,20 +996,20 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     className="bg-white hover:bg-orange-50/50 transition-colors"
                   >
                     <div
-                      className="p-4 cursor-pointer"
+                      className="p-3 sm:p-4 cursor-pointer min-h-[72px]"
                       onClick={() => toggleRequestExpanded(material.id)}
                     >
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center justify-between gap-2 sm:gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2 flex-wrap mb-2">
-                            <h4 className="font-semibold text-base">{material.name}</h4>
+                          <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2 mb-2">
+                            <h4 className="font-semibold text-base sm:text-lg leading-tight">{material.name}</h4>
                             {material.length && (
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-xs sm:text-sm text-muted-foreground">
                                 {cleanMaterialValue(material.length)}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                             <Badge variant="outline" className="text-xs font-semibold">
                               Qty: {material.quantity}
                             </Badge>
@@ -1020,20 +1021,20 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                             </Badge>
                           </div>
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="flex-shrink-0 pl-2">
                           {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-orange-700" />
+                            <ChevronDown className="w-6 h-6 sm:w-5 sm:h-5 text-orange-700" />
                           ) : (
-                            <ChevronRight className="w-5 h-5 text-orange-700" />
+                            <ChevronRight className="w-6 h-6 sm:w-5 sm:h-5 text-orange-700" />
                           )}
                         </div>
                       </div>
                     </div>
 
                     {isExpanded && (
-                      <div className="px-4 pb-4 space-y-3 border-t border-orange-200 bg-white">
-                        <div className="space-y-1 text-sm">
-                          <div className="flex items-center gap-2">
+                      <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3 border-t border-orange-200 bg-white">
+                        <div className="space-y-1.5 text-sm">
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                             <Badge variant="secondary" className="text-xs">
                               {material.category_name}
                             </Badge>
@@ -1042,7 +1043,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                             </Badge>
                           </div>
                           {material.use_case && (
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-xs sm:text-sm text-muted-foreground">
                               Use: {material.use_case}
                             </p>
                           )}
@@ -1053,12 +1054,12 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                           )}
                           {material.order_requested_at && (
                             <p className="text-xs text-muted-foreground">
-                              Ordered: {new Date(material.order_requested_at).toLocaleString()}
+                              Ordered: {new Date(material.order_requested_at).toLocaleDateString()}
                             </p>
                           )}
                         </div>
 
-                        <div className="flex gap-2 pt-2">
+                        <div className="flex flex-col sm:flex-row gap-2 pt-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -1071,7 +1072,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                               setEditNotes(material.notes || '');
                               setShowEditDialog(true);
                             }}
-                            className="flex-1"
+                            className="flex-1 h-11"
                           >
                             <Edit className="w-4 h-4 mr-2" />
                             Edit
@@ -1096,7 +1097,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                                 toast.error('Failed to delete material');
                               }
                             }}
-                            className="flex-1"
+                            className="flex-1 h-11"
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
                             Delete
@@ -1104,20 +1105,20 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                         </div>
                         
                         <div className="pt-2">
-                          <Label className="text-xs font-semibold text-orange-900 mb-2 block">
+                          <Label className="text-xs sm:text-sm font-semibold text-orange-900 mb-2 block">
                             Update Status
                           </Label>
                           <Select
                             value={material.status}
                             onValueChange={(newStatus) => updateMaterialStatus(material.id, newStatus as FieldRequestMaterial['status'])}
                           >
-                            <SelectTrigger className={`w-full h-11 font-semibold border-2 ${getStatusColor(material.status)}`}>
+                            <SelectTrigger className={`w-full h-12 sm:h-11 font-semibold border-2 text-sm ${getStatusColor(material.status)}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               {STATUS_OPTIONS.map(opt => (
                                 <SelectItem key={opt.value} value={opt.value}>
-                                  <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold ${opt.color}`}>
+                                  <span className={`inline-flex items-center px-3 py-1.5 rounded font-semibold text-xs sm:text-sm ${opt.color}`}>
                                     {opt.label}
                                   </span>
                                 </SelectItem>
