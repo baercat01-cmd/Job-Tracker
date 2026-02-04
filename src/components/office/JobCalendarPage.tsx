@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job } from '@/types';
+import type { Job, CalendarEvent } from '@/types';
 import { EventDetailsDialog } from './EventDetailsDialog';
 
 // Helper function to parse date string as local date (not UTC)
@@ -15,22 +15,6 @@ function parseDateLocal(dateString: string): Date {
   return new Date(year, month - 1, day);
 }
 
-import type { CalendarEventType } from '@/types';
-
-interface JobCalendarEventLocal {
-  id: string;
-  type: CalendarEventType;
-  date: string;
-  jobId: string;
-  jobName: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  materialId?: string;
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-}
 
 interface JobCalendarPageProps {
   job: Job;
@@ -39,12 +23,12 @@ interface JobCalendarPageProps {
 
 export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [events, setEvents] = useState<JobCalendarEventLocal[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<JobCalendarEventLocal | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDialog, setShowEventDialog] = useState(false);
-  const [draggedEvent, setDraggedEvent] = useState<JobCalendarEventLocal | null>(null);
+  const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
 
   useEffect(() => {
     loadCalendarEvents();
@@ -53,7 +37,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
   async function loadCalendarEvents() {
     try {
       setLoading(true);
-      const events: JobCalendarEventLocal[] = [];
+      const events: CalendarEvent[] = [];
 
       // Get material order dates for this specific job
       const { data: materials, error: materialsError } = await supabase
@@ -223,7 +207,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   }
 
-  function getEventsForDate(dateStr: string): JobCalendarEventLocal[] {
+  function getEventsForDate(dateStr: string): CalendarEvent[] {
     return events.filter(event => event.date === dateStr);
   }
 
@@ -239,7 +223,7 @@ export function JobCalendarPage({ job, onBack }: JobCalendarPageProps) {
     setCurrentDate(new Date());
   }
 
-  async function handleDateDrop(event: JobCalendarEventLocal, newDateStr: string) {
+  async function handleDateDrop(event: CalendarEvent, newDateStr: string) {
     if (!event.materialId) {
       toast.error('Only material events can be moved');
       return;

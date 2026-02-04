@@ -218,7 +218,8 @@ export interface SharedCalendarEvent {
   subcontractorTrades?: string[];
 }
 
-export interface CalendarEvent {
+// Database schema for calendar_events table
+export interface CalendarEventDB {
   id: string;
   title: string;
   description: string | null;
@@ -232,6 +233,9 @@ export interface CalendarEvent {
   created_at: string;
   updated_at: string;
 }
+
+// UI-friendly calendar event (used in all calendar components)
+export type CalendarEvent = SharedCalendarEvent;
 
 export interface JobTask {
   id: string;
