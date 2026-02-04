@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -26,6 +26,7 @@ import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { MaterialInventory } from '@/components/office/MaterialInventory';
+import { TrimPricingCalculator } from '@/components/office/TrimPricingCalculator';
 import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
 import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
@@ -272,6 +273,19 @@ export function OfficeDashboard() {
               <Package className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Materials</span>
             </Button>
+            <Button
+              variant={activeTab === 'trim-calculator' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('trim-calculator')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'trim-calculator'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Calculator className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Trim Calculator</span>
+            </Button>
           </div>
 
           {/* Right Side Actions */}
@@ -463,6 +477,16 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Manage your master materials catalog</p>
             </div>
             <MaterialInventory />
+          </div>
+        )}
+
+        {activeTab === 'trim-calculator' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Trim Pricing Calculator</h2>
+              <p className="text-yellow-400">Calculate custom trim pricing with bend and cut specifications</p>
+            </div>
+            <TrimPricingCalculator />
           </div>
         )}
 
