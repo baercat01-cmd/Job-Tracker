@@ -20,22 +20,10 @@ import {
 import { Package, Truck, ListChecks, AlertCircle, Calendar as CalendarIcon, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseDateLocal } from '@/lib/date-utils';
-
-interface CalendarEvent {
-  id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'task_completed';
-  date: string;
-  jobId: string;
-  jobName: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  materialId?: string;
-}
+import type { SharedCalendarEvent } from '@/types';
 
 interface EventDetailsDialogProps {
-  event: CalendarEvent | null;
+  event: SharedCalendarEvent | null;
   open: boolean;
   onClose: () => void;
   onUpdate: () => void;

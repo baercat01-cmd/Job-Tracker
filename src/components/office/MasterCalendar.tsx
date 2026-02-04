@@ -982,7 +982,7 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 (() => {
                   const subEvents = events.filter(e => e.type === 'subcontractor');
                   // Create unique key for each subcontractor-job combination
-                  const grouped = new Map<string, CalendarEvent[]>();
+                  const grouped = new Map<string, SharedCalendarEvent[]>();
                   
                   subEvents.forEach(event => {
                     const key = `${event.subcontractorName}-${event.jobId}`;

@@ -5,33 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, Package, ListChecks, Truck, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-export type CalendarEventType = 
-  | "task_completed" 
-  | "material_order" 
-  | "material_delivery" 
-  | "material_pull" 
-  | "task_deadline" 
-  | "subcontractor" 
-  | "material_pickup"
-  | "meeting"; // This tells the app 'meeting' is allowed
+import type { SharedCalendarEvent } from '@/types';
 
 // Helper function to parse date string as local date (not UTC)
 function parseDateLocal(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
   return new Date(year, month - 1, day);
-}
-
-interface CalendarEvent {
-  id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull' | 'material_pickup' | 'task_deadline' | 'task_completed' | 'subcontractor';
-  date: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-  assignedUserName?: string;
 }
 
 interface JobCalendarProps {
@@ -40,7 +19,7 @@ interface JobCalendarProps {
 }
 
 export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,7 +29,7 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
   async function loadJobEvents() {
     try {
       setLoading(true);
-      const events: CalendarEvent[] = [];
+      const events: SharedCalendarEvent[] = [];
 
       // Get material order dates for this job
       const { data: materials, error: materialsError } = await supabase
@@ -136,7 +115,7 @@ export function JobCalendar({ jobId, showTitle = true }: JobCalendarProps) {
 
       if (!calendarEventsError && calendarEvents) {
         calendarEvents.forEach((event: any) => {
-          let eventType: CalendarEvent['type'] = 'material_pickup';
+          let eventType: SharedCalendarEvent['type'] = 'material_pickup';
           if (event.event_type === 'material_delivery') {
             eventType = 'material_delivery';
           } else if (event.event_type === 'material_order_reminder') {

@@ -36,14 +36,10 @@ interface Task {
   };
 }
 
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  event_date: string;
-  event_type: string;
-  job_id: string;
-  completed_at: string | null;
+// Using CalendarEventDB type from types file
+import type { CalendarEventDB } from '@/types';
+
+interface CalendarEventWithJob extends CalendarEventDB {
   job?: {
     id: string;
     name: string;
@@ -59,16 +55,16 @@ interface TodayTasksSidebarProps {
 export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarProps) {
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<CalendarEventWithJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescheduleItem, setRescheduleItem] = useState<{ type: 'task' | 'event'; item: any } | null>(null);
   const [newDate, setNewDate] = useState<Date | undefined>(undefined);
   const [showCalendarView, setShowCalendarView] = useState(false);
   const [calendarTasks, setCalendarTasks] = useState<Task[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEventWithJob[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEventWithJob | null>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showEventDialog, setShowEventDialog] = useState(false);
   const [users, setUsers] = useState<any[]>([]);

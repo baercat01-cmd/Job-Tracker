@@ -4,17 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarIcon, Package, Truck, AlertCircle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Job } from '@/types';
-
-interface CalendarEvent {
-  id: string;
-  type: 'material_order' | 'material_delivery' | 'material_pull';
-  date: string;
-  jobId: string;
-  jobName: string;
-  title: string;
-  priority?: 'low' | 'medium' | 'high';
-}
+import type { Job, SharedCalendarEvent } from '@/types';
 
 interface UpcomingEventsWidgetProps {
   userId: string;
@@ -22,7 +12,7 @@ interface UpcomingEventsWidgetProps {
 }
 
 export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidgetProps) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,7 +22,7 @@ export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidg
   async function loadUpcomingEvents() {
     try {
       setLoading(true);
-      const events: CalendarEvent[] = [];
+      const events: SharedCalendarEvent[] = [];
 
       // Get user's assigned jobs or all active jobs
       const { data: assignments } = await supabase
@@ -145,7 +135,7 @@ export function UpcomingEventsWidget({ userId, onJobSelect }: UpcomingEventsWidg
     return date >= today && date <= upcoming;
   }
 
-  async function handleEventClick(event: CalendarEvent) {
+  async function handleEventClick(event: SharedCalendarEvent) {
     if (!onJobSelect) return;
 
     try {
