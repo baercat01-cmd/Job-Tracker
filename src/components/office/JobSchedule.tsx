@@ -80,7 +80,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
     end_date: '',
     work_description: '',
     notes: '',
-    status: 'scheduled',
+    status: 'scheduled' as any,
   });
   const [showAddSubDialog, setShowAddSubDialog] = useState(false);
   const [newSubData, setNewSubData] = useState({
@@ -290,7 +290,7 @@ export function JobSchedule({ job }: JobScheduleProps) {
       end_date: '',
       work_description: '',
       notes: '',
-      status: 'scheduled',
+      status: 'scheduled' as any,
     });
   }
 

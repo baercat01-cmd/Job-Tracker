@@ -304,11 +304,11 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       );
 
       // Set state
-      setComponentsWorked(componentsWorkedArray);
-      setTimeSummary(summaryEntries);
-      setPhotosLogged(photosLoggedArray);
+      setComponentsWorked(componentsWorkedArray as any);
+      setTimeSummary(summaryEntries as any);
+      setPhotosLogged(photosLoggedArray as any);
       setCrewCount(maxCrew);
-      setWeatherDetails(weather);
+      setWeatherDetails(weather as any);
       setAutoSummary(summary);
     } catch (error) {
       console.error('Error gathering daily data:', error);

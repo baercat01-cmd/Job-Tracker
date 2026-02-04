@@ -73,7 +73,7 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
         materials.forEach((material: any) => {
           const job = material.jobs;
           
-          // Order by date - CAST AS ANY
+          // Order by date
           if (material.order_by_date && material.status === 'not_ordered') {
             events.push({
               id: `order-${material.id}`,
@@ -85,10 +85,10 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Must order by this date`,
               status: material.status,
               priority: isPastDue(material.order_by_date) ? 'high' : isUpcoming(material.order_by_date) ? 'medium' : 'low',
-            } as any);
+            });
           }
 
-          // Delivery date - CAST AS ANY
+          // Delivery date
           if (material.delivery_date && material.status === 'ordered') {
             events.push({
               id: `delivery-${material.id}`,
@@ -100,10 +100,10 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Expected delivery to shop`,
               status: material.status,
               priority: isPastDue(material.delivery_date) ? 'high' : isUpcoming(material.delivery_date) ? 'medium' : 'low',
-            } as any);
+            });
           }
 
-          // Pull by date - CAST AS ANY
+          // Pull by date
           if (material.pull_by_date && material.status === 'at_shop') {
             events.push({
               id: `pull-${material.id}`,
@@ -115,12 +115,12 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
               description: `Pull from shop for delivery`,
               status: material.status,
               priority: isPastDue(material.pull_by_date) ? 'high' : isUpcoming(material.pull_by_date) ? 'medium' : 'low',
-            } as any);
+            });
           }
         });
       }
 
-      // Get completed tasks - CAST AS ANY
+      // Get completed tasks
       const { data: completedTasks, error: tasksError } = await supabase
         .from('completed_tasks')
         .select(`
@@ -144,11 +144,11 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
             title: `Completed: ${task.components.name}`,
             description: task.notes || 'Task completed',
             priority: 'low',
-          } as any);
+          });
         });
       }
 
-      // Get calendar events (pickups, deliveries, order reminders) - CAST AS ANY
+      // Get calendar events (pickups, deliveries, order reminders)
       const { data: calendarEvents, error: calendarEventsError } = await supabase
         .from('calendar_events')
         .select(`
@@ -177,18 +177,18 @@ export function JobsCalendar({ onJobSelect }: JobsCalendarProps) {
           
           events.push({
             id: `calendar-${event.id}`,
-            type: eventType as any,
+            type: eventType as CalendarEventType,
             date: event.event_date,
             jobId: job.id,
             jobName: job.name,
             title: event.title,
             description: event.description || '',
             priority: isPastDue(event.event_date) ? 'high' : isUpcoming(event.event_date) ? 'medium' : 'low',
-          } as any);
+          });
         });
       }
 
-      // Get subcontractor schedules - CAST AS ANY
+      // Get subcontractor schedules
       const { data: subcontractorSchedules, error: subError } = await supabase
         .from('subcontractor_schedules')
         .select(`

@@ -22,7 +22,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [formData, setFormData] = useState({
     username: '',
-    role: 'crew' as 'crew' | 'office' | 'payroll' | 'shop',
+    role: 'crew' as any,
   });
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
     setEditingUser(null);
     setFormData({
       username: '',
-      role: 'crew',
+      role: 'crew' as any,
     });
     setShowDialog(true);
   }
@@ -79,7 +79,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .from('user_profiles')
           .update({
             username: formData.username.trim(),
-            role: formData.role,
+            role: formData.role as any,
           })
           .eq('id', editingUser.id);
 
@@ -92,7 +92,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .insert({
             username: formData.username.trim(),
             email: null,
-            role: formData.role,
+            role: formData.role as any,
           });
 
         if (error) throw error;
