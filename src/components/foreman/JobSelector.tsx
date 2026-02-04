@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package, ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
 import { MaterialsCatalogBrowser } from './MaterialsCatalogBrowser';
@@ -167,15 +168,38 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
       {/* Material Request Dialog */}
       {selectedJobForRequest && (
         <MaterialsCatalogBrowser
-          open={showMaterialRequest}
-          onClose={() => {
+          job={selectedJobForRequest}
+          userId={userId}
+          onMaterialAdded={() => {
             setShowMaterialRequest(false);
             setSelectedJobForRequest(null);
+            loadJobs(); // Reload to update material counts
           }}
-          jobId={selectedJobForRequest.id}
-          userId={userId}
         />
       )}
+
+      {/* Dialog wrapper for the catalog browser */}
+      <Dialog open={showMaterialRequest} onOpenChange={(open) => {
+        if (!open) {
+          setShowMaterialRequest(false);
+          setSelectedJobForRequest(null);
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Order Materials - {selectedJobForRequest?.name}</DialogTitle>
+          </DialogHeader>
+          {selectedJobForRequest && (
+            <MaterialsCatalogBrowser
+              job={selectedJobForRequest}
+              userId={userId}
+              onMaterialAdded={() => {
+                loadJobs(); // Reload to update material counts
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-4">
       {loading ? (
