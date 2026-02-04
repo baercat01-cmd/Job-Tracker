@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Search, MapPin, ExternalLink, Target, Calendar as CalendarIcon, Package, ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
+import { MaterialsCatalogBrowser } from './MaterialsCatalogBrowser';
 import type { Job } from '@/types';
 
 interface JobSelectorProps {
@@ -33,6 +34,8 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
   const [loading, setLoading] = useState(true);
   const [totalReadyMaterials, setTotalReadyMaterials] = useState(0);
   const [totalPullMaterials, setTotalPullMaterials] = useState(0);
+  const [showMaterialRequest, setShowMaterialRequest] = useState(false);
+  const [selectedJobForRequest, setSelectedJobForRequest] = useState<Job | null>(null);
 
   useEffect(() => {
     loadJobs();
@@ -160,7 +163,21 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
   }
 
   return (
-    <div className="space-y-4">
+    <>
+      {/* Material Request Dialog */}
+      {selectedJobForRequest && (
+        <MaterialsCatalogBrowser
+          open={showMaterialRequest}
+          onClose={() => {
+            setShowMaterialRequest(false);
+            setSelectedJobForRequest(null);
+          }}
+          jobId={selectedJobForRequest.id}
+          userId={userId}
+        />
+      )}
+
+      <div className="space-y-4">
       {loading ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
@@ -189,42 +206,55 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                       <p className="text-base font-medium text-black">
                         {job.client_name}
                       </p>
-                      {((job.ready_materials_count || 0) > 0 || (job.pull_from_shop_count || 0) > 0) && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {(job.ready_materials_count || 0) > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-auto p-0 hover:bg-transparent"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectJobForMaterials?.(job);
-                              }}
-                            >
-                              <Badge className="bg-blue-700 text-white hover:bg-blue-800 cursor-pointer rounded-none border border-slate-300">
-                                <Package className="w-3 h-3 mr-1" />
-                                {job.ready_materials_count} ready for job
-                              </Badge>
-                            </Button>
-                          )}
-                          {(job.pull_from_shop_count || 0) > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-auto p-0 hover:bg-transparent"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectJobForPullMaterials?.(job);
-                              }}
-                            >
-                              <Badge className="bg-purple-700 text-white hover:bg-purple-800 cursor-pointer rounded-none border border-slate-300">
-                                <Package className="w-3 h-3 mr-1" />
-                                {job.pull_from_shop_count} pull from shop
-                              </Badge>
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(job.ready_materials_count || 0) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 hover:bg-transparent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectJobForMaterials?.(job);
+                            }}
+                          >
+                            <Badge className="bg-blue-700 text-white hover:bg-blue-800 cursor-pointer rounded-none border border-slate-300">
+                              <Package className="w-3 h-3 mr-1" />
+                              {job.ready_materials_count} ready for job
+                            </Badge>
+                          </Button>
+                        )}
+                        {(job.pull_from_shop_count || 0) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 hover:bg-transparent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectJobForPullMaterials?.(job);
+                            }}
+                          >
+                            <Badge className="bg-purple-700 text-white hover:bg-purple-800 cursor-pointer rounded-none border border-slate-300">
+                              <Package className="w-3 h-3 mr-1" />
+                              {job.pull_from_shop_count} pull from shop
+                            </Badge>
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-0 hover:bg-transparent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJobForRequest(job);
+                            setShowMaterialRequest(true);
+                          }}
+                        >
+                          <Badge className="bg-green-700 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
+                            <ShoppingCart className="w-3 h-3 mr-1" />
+                            Request Materials
+                          </Badge>
+                        </Button>
+                      </div>
                     </div>
                     {/* Calendar icon - prevent propagation to not trigger job selection */}
                     <Button
@@ -317,24 +347,12 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                   </a>
                 </Button>
                 
-                {/* Order Materials button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-center text-xs h-auto py-2 rounded-none border-green-900 text-green-900 hover:bg-green-900 hover:text-white font-semibold"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOrderMaterials(job);
-                  }}
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  Request Materials from Office
-                </Button>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
