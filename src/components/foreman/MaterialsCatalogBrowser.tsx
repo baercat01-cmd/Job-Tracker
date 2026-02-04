@@ -77,7 +77,7 @@ const STATUS_OPTIONS = [
   { value: 'at_job', label: 'At Job', color: 'bg-green-100 text-green-700 border-green-300' },
   { value: 'installed', label: 'Installed', color: 'bg-slate-800 text-white border-slate-800' },
   { value: 'missing', label: 'Missing', color: 'bg-red-100 text-red-700 border-red-300' },
-  { value: 'needed', label: 'Needed', color: 'bg-orange-100 text-orange-700 border-orange-300' },
+
 ];
 
 function getStatusColor(status: string) {
@@ -431,7 +431,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: selectedCatalogMaterial.material_name,
           quantity: piece.quantity,
           length: piece.displayLength,
-          status: 'needed' as const,
+          status: 'not_ordered' as const,
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           created_by: userId,
           ordered_by: userId,
@@ -486,7 +486,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             name: catalogMaterial.material_name,
             quantity,
             length: catalogMaterial.part_length || null,
-            status: 'needed',
+            status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
             created_by: userId,
             ordered_by: userId,
@@ -539,7 +539,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             name: selectedCatalogMaterial.material_name,
             quantity: addMaterialQuantity,
             length: selectedCatalogMaterial.part_length || null,
-            status: 'needed',
+            status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
             created_by: userId,
             ordered_by: userId,
@@ -714,7 +714,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           name: customMaterialName,
           quantity: customMaterialQuantity,
           length: customMaterialLength || null,
-          status: 'needed',
+          status: 'not_ordered',
           notes: customMaterialNotes || 'Custom material added from field',
           created_by: userId,
           ordered_by: userId,
@@ -1424,7 +1424,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   </p>
                   <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                     <li>Added to "Field Requests" category</li>
-                    <li>Marked as "Needed" - office will be notified</li>
+                    <li>Marked as "Not Ordered" - office will be notified</li>
                     <li>Tracked separately for job cost tracking</li>
                     <li>Your name will be recorded as requester</li>
                   </ul>
@@ -1594,7 +1594,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               </p>
               <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
                 <li>Added to "Field Requests" category</li>
-                <li>Marked as "Needed" - office will be notified</li>
+                <li>Marked as "Not Ordered" - office will be notified</li>
                 <li>Office can source and price the material</li>
                 <li>Photo helps office identify exact product needed</li>
               </ul>
