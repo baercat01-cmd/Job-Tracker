@@ -14,11 +14,13 @@ import { toast } from 'sonner';
 
 const STORAGE_KEY_LF_COST = 'trim_calculator_lf_cost';
 const STORAGE_KEY_BEND_PRICE = 'trim_calculator_bend_price';
+const STORAGE_KEY_MARKUP_PERCENT = 'trim_calculator_markup_percent';
 
 export function TrimPricingCalculator() {
   // Persistent settings
   const [sheetLFCost, setSheetLFCost] = useState<string>('');
   const [pricePerBend, setPricePerBend] = useState<string>('');
+  const [markupPercent, setMarkupPercent] = useState<string>('32');
   
   // Calculation inputs
   const [widthInches, setWidthInches] = useState<string>('');
@@ -35,11 +37,13 @@ export function TrimPricingCalculator() {
   const [showInfo, setShowInfo] = useState(false);
   const [tempLFCost, setTempLFCost] = useState('');
   const [tempBendPrice, setTempBendPrice] = useState('');
+  const [tempMarkupPercent, setTempMarkupPercent] = useState('32');
 
   // Load saved values on mount
   useEffect(() => {
     const savedLFCost = localStorage.getItem(STORAGE_KEY_LF_COST);
     const savedBendPrice = localStorage.getItem(STORAGE_KEY_BEND_PRICE);
+    const savedMarkupPercent = localStorage.getItem(STORAGE_KEY_MARKUP_PERCENT);
     
     if (savedLFCost) {
       setSheetLFCost(savedLFCost);
@@ -49,12 +53,21 @@ export function TrimPricingCalculator() {
       setPricePerBend(savedBendPrice);
       setTempBendPrice(savedBendPrice);
     }
+    if (savedMarkupPercent) {
+      setMarkupPercent(savedMarkupPercent);
+      setTempMarkupPercent(savedMarkupPercent);
+    } else {
+      // Default to 32% if not set
+      setMarkupPercent('32');
+      setTempMarkupPercent('32');
+    }
   }, []);
 
   // Save settings to localStorage
   function saveSettings() {
     const lfCost = parseFloat(tempLFCost);
     const bendPrice = parseFloat(tempBendPrice);
+    const markup = parseFloat(tempMarkupPercent);
     
     if (!lfCost || lfCost <= 0) {
       toast.error('Please enter a valid sheet cost per LF');
@@ -64,11 +77,17 @@ export function TrimPricingCalculator() {
       toast.error('Please enter a valid price per bend');
       return;
     }
+    if (markup < 0) {
+      toast.error('Please enter a valid markup percentage (0 or higher)');
+      return;
+    }
     
     localStorage.setItem(STORAGE_KEY_LF_COST, tempLFCost);
     localStorage.setItem(STORAGE_KEY_BEND_PRICE, tempBendPrice);
+    localStorage.setItem(STORAGE_KEY_MARKUP_PERCENT, tempMarkupPercent);
     setSheetLFCost(tempLFCost);
     setPricePerBend(tempBendPrice);
+    setMarkupPercent(tempMarkupPercent);
     setShowSettings(false);
     toast.success('Settings saved successfully');
   }
@@ -77,10 +96,11 @@ export function TrimPricingCalculator() {
   useEffect(() => {
     const lfCost = parseFloat(sheetLFCost);
     const bendPriceVal = parseFloat(pricePerBend);
+    const markup = parseFloat(markupPercent);
     const inches = parseFloat(widthInches);
     const bends = parseInt(numberOfBends);
 
-    if (!lfCost || lfCost <= 0 || !bendPriceVal || bendPriceVal <= 0) {
+    if (!lfCost || lfCost <= 0 || !bendPriceVal || bendPriceVal <= 0 || markup < 0) {
       setMaterialPrice(0);
       setBendPrice(0);
       setTotalPrice(0);
@@ -103,8 +123,9 @@ export function TrimPricingCalculator() {
     const totalLF = totalInches / 12;
     setTotalLinealFeet(totalLF);
 
-    // Selling price per LF = sheet LF COST × 132% (cost + 32% markup)
-    const sellingPricePerLF = lfCost * 1.32;
+    // Selling price per LF = sheet LF COST × (1 + markup%)
+    const markupMultiplier = 1 + (markup / 100);
+    const sellingPricePerLF = lfCost * markupMultiplier;
     
     // Material price = total LF × selling price per LF
     const matPrice = totalLF * sellingPricePerLF;
@@ -116,14 +137,14 @@ export function TrimPricingCalculator() {
     
     // Total price = material + bends
     setTotalPrice(matPrice + bPrice);
-  }, [sheetLFCost, pricePerBend, widthInches, numberOfBends]);
+  }, [sheetLFCost, pricePerBend, markupPercent, widthInches, numberOfBends]);
 
   function clearCalculation() {
     setWidthInches('');
     setNumberOfBends('');
   }
 
-  const hasSettings = sheetLFCost && pricePerBend;
+  const hasSettings = sheetLFCost && pricePerBend && markupPercent;
 
   return (
     <>
@@ -148,6 +169,7 @@ export function TrimPricingCalculator() {
                 onClick={() => {
                   setTempLFCost(sheetLFCost);
                   setTempBendPrice(pricePerBend);
+                  setTempMarkupPercent(markupPercent);
                   setShowSettings(true);
                 }}
                 size="sm"
@@ -169,6 +191,7 @@ export function TrimPricingCalculator() {
                 onClick={() => {
                   setTempLFCost(sheetLFCost);
                   setTempBendPrice(pricePerBend);
+                  setTempMarkupPercent(markupPercent);
                   setShowSettings(true);
                 }}
                 className="mt-3 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
@@ -267,7 +290,7 @@ export function TrimPricingCalculator() {
                 Sheet Cost per LF (42" wide) *
               </Label>
               <p className="text-xs text-white/60">
-                Enter your COST per lineal foot (before markup). A 32% markup will be applied automatically.
+                Enter your COST per lineal foot (before markup). Your markup percentage will be applied automatically.
               </p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
@@ -282,11 +305,33 @@ export function TrimPricingCalculator() {
                   className="pl-7 h-11 text-base bg-white border-green-800"
                 />
               </div>
-              {tempLFCost && (
+              {tempLFCost && tempMarkupPercent && (
                 <p className="text-xs text-green-500 font-semibold">
-                  Selling price: ${(parseFloat(tempLFCost) * 1.32).toFixed(2)}/LF (with 32% markup)
+                  Selling price: ${(parseFloat(tempLFCost) * (1 + parseFloat(tempMarkupPercent) / 100)).toFixed(2)}/LF (with {tempMarkupPercent}% markup)
                 </p>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="markup-percent" className="text-sm font-semibold text-white">
+                Markup Percentage *
+              </Label>
+              <p className="text-xs text-white/60">
+                Enter your markup percentage on material cost (e.g., 32 for 32%).
+              </p>
+              <div className="relative">
+                <Input
+                  id="markup-percent"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={tempMarkupPercent}
+                  onChange={(e) => setTempMarkupPercent(e.target.value)}
+                  placeholder="32"
+                  className="pr-8 h-11 text-base bg-white border-green-800"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -345,9 +390,10 @@ export function TrimPricingCalculator() {
               <div className="space-y-1 text-sm bg-black/30 p-3 rounded border border-green-800/50 font-mono">
                 <p>1. Total Inches = Bends × Width</p>
                 <p>2. Total LF = Total Inches ÷ 12</p>
-                <p>3. Material Price = Total LF × (Cost/LF × 1.32)</p>
-                <p>4. Bend Price = Bends × Price/Bend</p>
-                <p>5. Total = Material + Bend Price</p>
+                <p>3. Selling Price/LF = Cost/LF × (1 + Markup%/100)</p>
+                <p>4. Material Price = Total LF × Selling Price/LF</p>
+                <p>5. Bend Price = Bends × Price/Bend</p>
+                <p>6. Total = Material + Bend Price</p>
               </div>
             </div>
 
@@ -356,8 +402,9 @@ export function TrimPricingCalculator() {
               <ul className="list-disc list-inside space-y-1 text-sm text-white/80">
                 <li>Sheet width: 42 inches</li>
                 <li>Standard pieces: 10 feet long</li>
-                <li>Automatic 32% markup on material cost</li>
+                <li>Configurable markup percentage on material cost</li>
                 <li>Separate charge for labor (bending)</li>
+                <li>Price calculated by cutting 10' strips to specified width × number of bends</li>
               </ul>
             </div>
 
