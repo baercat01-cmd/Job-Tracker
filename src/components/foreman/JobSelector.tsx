@@ -251,7 +251,7 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                         >
                           <Badge className="bg-green-700 text-white hover:bg-green-800 cursor-pointer rounded-none border border-slate-300">
                             <ShoppingCart className="w-3 h-3 mr-1" />
-                            Request Materials
+                            Order Materials
                           </Badge>
                         </Button>
                       </div>
