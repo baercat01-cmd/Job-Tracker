@@ -68,7 +68,14 @@ export function CrewOrdersManagement() {
   // Edit dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingOrder, setEditingOrder] = useState<CrewOrder | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editQuantity, setEditQuantity] = useState('');
+  const [editLength, setEditLength] = useState('');
+  const [editColor, setEditColor] = useState('');
+  const [editUseCase, setEditUseCase] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editExtraNotes, setEditExtraNotes] = useState('');
+  const [editIsExtra, setEditIsExtra] = useState(false);
   const [editUnitCost, setEditUnitCost] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -170,7 +177,14 @@ export function CrewOrdersManagement() {
 
   function openEditDialog(order: CrewOrder) {
     setEditingOrder(order);
+    setEditName(order.name);
+    setEditQuantity(order.quantity.toString());
+    setEditLength(order.length || '');
+    setEditColor('');
+    setEditUseCase('');
     setEditNotes(order.notes || '');
+    setEditExtraNotes(order.extra_notes || '');
+    setEditIsExtra(order.is_extra);
     setEditUnitCost(order.unit_cost?.toString() || '');
     setShowEditDialog(true);
   }
@@ -178,15 +192,34 @@ export function CrewOrdersManagement() {
   async function saveEdit() {
     if (!editingOrder) return;
 
+    // Validation
+    if (!editName.trim()) {
+      toast.error('Material name is required');
+      return;
+    }
+
+    const quantity = parseFloat(editQuantity);
+    if (!quantity || quantity <= 0) {
+      toast.error('Quantity must be greater than 0');
+      return;
+    }
+
     setSaving(true);
     try {
       const unit_cost = editUnitCost ? parseFloat(editUnitCost) : null;
-      const total_cost = unit_cost ? unit_cost * editingOrder.quantity : null;
+      const total_cost = unit_cost ? unit_cost * quantity : null;
 
       const { error } = await supabase
         .from('materials')
         .update({
+          name: editName.trim(),
+          quantity,
+          length: editLength.trim() || null,
+          color: editColor.trim() || null,
+          use_case: editUseCase.trim() || null,
           notes: editNotes.trim() || null,
+          extra_notes: editExtraNotes.trim() || null,
+          is_extra: editIsExtra,
           unit_cost,
           total_cost,
           updated_at: new Date().toISOString(),
@@ -195,7 +228,7 @@ export function CrewOrdersManagement() {
 
       if (error) throw error;
 
-      toast.success('Order updated');
+      toast.success('Order updated successfully');
       setShowEditDialog(false);
       loadCrewOrders();
     } catch (error: any) {
@@ -480,25 +513,77 @@ export function CrewOrdersManagement() {
 
       {/* Edit Order Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="w-5 h-5" />
-              Edit Order Details
+              Edit Crew Order - Full Details
             </DialogTitle>
           </DialogHeader>
           {editingOrder && (
             <div className="space-y-4">
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="font-semibold">{editingOrder.name}</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Qty: {editingOrder.quantity} {editingOrder.length ? `× ${editingOrder.length}` : ''}
+              {/* Material Info */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Material Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g., 2x4 Lumber"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-quantity">Quantity *</Label>
+                  <Input
+                    id="edit-quantity"
+                    type="number"
+                    value={editQuantity}
+                    onChange={(e) => setEditQuantity(e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-length">Length</Label>
+                  <Input
+                    id="edit-length"
+                    value={editLength}
+                    onChange={(e) => setEditLength(e.target.value)}
+                    placeholder="e.g., 12'"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-color">Color</Label>
+                  <Input
+                    id="edit-color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    placeholder="e.g., Galvalume"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-use-case">Use Case / Location</Label>
+                  <Input
+                    id="edit-use-case"
+                    value={editUseCase}
+                    onChange={(e) => setEditUseCase(e.target.value)}
+                    placeholder="e.g., Wall framing"
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Unit Cost ($)</Label>
+                <Label htmlFor="edit-unit-cost">Unit Cost ($)</Label>
                 <Input
+                  id="edit-unit-cost"
                   type="number"
                   value={editUnitCost}
                   onChange={(e) => setEditUnitCost(e.target.value)}
@@ -506,28 +591,77 @@ export function CrewOrdersManagement() {
                   min="0"
                   step="0.01"
                 />
-                {editUnitCost && (
-                  <p className="text-xs text-muted-foreground">
-                    Total: ${(parseFloat(editUnitCost) * editingOrder.quantity).toFixed(2)}
+                {editUnitCost && editQuantity && (
+                  <p className="text-sm text-muted-foreground">
+                    Total Cost: <strong>${(parseFloat(editUnitCost) * parseFloat(editQuantity)).toFixed(2)}</strong>
                   </p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label>Notes</Label>
+                <Label htmlFor="edit-notes">Notes</Label>
                 <Textarea
+                  id="edit-notes"
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="Add notes about this order..."
-                  rows={3}
+                  placeholder="General notes about this material..."
+                  rows={2}
                 />
               </div>
 
+              {/* Extra Material Section */}
+              <div className="space-y-3 border-2 border-orange-200 bg-orange-50 p-4 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="edit-is-extra"
+                    checked={editIsExtra}
+                    onChange={(e) => setEditIsExtra(e.target.checked)}
+                    className="mt-1 w-5 h-5 rounded border-orange-300 text-orange-600 focus:ring-orange-500 focus:ring-2 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="edit-is-extra" className="text-base font-semibold text-orange-900 cursor-pointer flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5" />
+                      This is EXTRA material (not in original estimate)
+                    </Label>
+                    <p className="text-sm text-orange-700 mt-1">
+                      Check this box if this material is beyond the original job scope and should be billed separately.
+                    </p>
+                  </div>
+                </div>
+
+                {editIsExtra && (
+                  <div className="space-y-2 mt-3 border-t border-orange-200 pt-3">
+                    <Label htmlFor="edit-extra-notes" className="text-orange-900 font-semibold">
+                      Extra Material Explanation *
+                    </Label>
+                    <Textarea
+                      id="edit-extra-notes"
+                      value={editExtraNotes}
+                      onChange={(e) => setEditExtraNotes(e.target.value)}
+                      placeholder="Why is this material extra? (e.g., client requested upgrade, unexpected damage repair, design change)"
+                      rows={2}
+                      className="border-orange-300 focus:border-orange-500 focus:ring-orange-500"
+                    />
+                    <p className="text-xs text-orange-700">
+                      This explanation will be shown to clients on invoices for extra charges.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3 pt-4 border-t">
-                <Button onClick={saveEdit} disabled={saving} className="flex-1">
-                  {saving ? 'Saving...' : 'Save Changes'}
+                <Button onClick={saveEdit} disabled={saving} className="flex-1 gradient-primary">
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save All Changes'
+                  )}
                 </Button>
-                <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={saving}>
                   Cancel
                 </Button>
               </div>
