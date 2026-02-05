@@ -434,12 +434,30 @@ export function TrimPricingCalculator() {
         ctx.fillText('Click on a line to edit it', CANVAS_WIDTH / 2, 30);
         ctx.textAlign = 'left';
       }
-    } else if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
+    } else if (isDrawingMode && !drawing.currentPoint) {
       ctx.fillStyle = '#3b82f6';
-      ctx.font = 'bold 24px sans-serif';
+      ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      if (drawing.segments.length === 0) {
+        ctx.fillText('Click anywhere to start your first line', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      } else {
+        ctx.fillText('Click an endpoint to continue, or anywhere to start new line', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      }
       ctx.textAlign = 'left';
+      
+      // Highlight all endpoints when in drawing mode
+      ctx.fillStyle = '#10b981';
+      drawing.segments.forEach(seg => {
+        // Highlight start point
+        ctx.beginPath();
+        ctx.arc(seg.start.x * scale, seg.start.y * scale, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Highlight end point
+        ctx.beginPath();
+        ctx.arc(seg.end.x * scale, seg.end.y * scale, 8, 0, Math.PI * 2);
+        ctx.fill();
+      });
     }
 
     // Draw segments
@@ -644,17 +662,47 @@ export function TrimPricingCalculator() {
     }
     
     // Drawing mode - add new points
-    // Snap to grid
-    const snappedX = Math.round(clickX / gridSize) * gridSize;
-    const snappedY = Math.round(clickY / gridSize) * gridSize;
+    // First check if user clicked near an existing endpoint to snap to it
+    let snappedToEndpoint = false;
+    let point: Point = { x: 0, y: 0 };
     
-    const point: Point = { x: snappedX, y: snappedY };
+    if (!drawing.currentPoint) {
+      // Check all segment endpoints for snapping
+      for (const seg of drawing.segments) {
+        // Check start point
+        const distToStart = Math.sqrt(
+          (clickX - seg.start.x) ** 2 + (clickY - seg.start.y) ** 2
+        );
+        if (distToStart < 0.25) { // Within 0.25" snap to endpoint
+          point = { x: seg.start.x, y: seg.start.y };
+          snappedToEndpoint = true;
+          break;
+        }
+        
+        // Check end point
+        const distToEnd = Math.sqrt(
+          (clickX - seg.end.x) ** 2 + (clickY - seg.end.y) ** 2
+        );
+        if (distToEnd < 0.25) { // Within 0.25" snap to endpoint
+          point = { x: seg.end.x, y: seg.end.y };
+          snappedToEndpoint = true;
+          break;
+        }
+      }
+    }
+    
+    // If not snapped to endpoint, snap to grid
+    if (!snappedToEndpoint) {
+      const snappedX = Math.round(clickX / gridSize) * gridSize;
+      const snappedY = Math.round(clickY / gridSize) * gridSize;
+      point = { x: snappedX, y: snappedY };
+    }
     
     if (!drawing.currentPoint) {
       // Start new line
       setDrawing(prev => ({ ...prev, currentPoint: point }));
     } else {
-      // Complete line
+      // Complete line and EXIT drawing mode
       const newSegment: LineSegment = {
         id: Date.now().toString(),
         start: drawing.currentPoint,
@@ -666,10 +714,15 @@ export function TrimPricingCalculator() {
       
       setDrawing(prev => ({
         segments: [...prev.segments, newSegment],
-        currentPoint: point, // Continue from this point
+        currentPoint: null, // Clear current point
         selectedSegmentId: null,
         nextLabel: prev.nextLabel + 1
       }));
+      
+      // Exit drawing mode after completing one line
+      setIsDrawingMode(false);
+      setDrawingLocked(true);
+      toast.success('Line completed - click "Draw" to add another');
     }
   }
 
@@ -782,7 +835,9 @@ export function TrimPricingCalculator() {
 
   function stopDrawing() {
     setDrawing(prev => ({ ...prev, currentPoint: null }));
-    toast.success('Drawing stopped - click to start a new line');
+    setIsDrawingMode(false);
+    setDrawingLocked(true);
+    toast.success('Drawing cancelled');
   }
 
   function startHemPreview() {
@@ -1291,23 +1346,23 @@ export function TrimPricingCalculator() {
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-700 font-bold">Drawing Active</span>
+                    <span className="text-green-700 font-bold text-xs">
+                      {drawing.currentPoint ? 'Click to finish line' : 'Click endpoint or anywhere to start'}
+                    </span>
                   </div>
                   
-                  <Button
-                    onClick={() => {
-                      setIsDrawingMode(false);
-                      setDrawingLocked(true);
-                      setDrawing(prev => ({ ...prev, currentPoint: null }));
-                      toast.success('Drawing finished - click lines to edit');
-                    }}
-                    size="sm"
-                    className="h-7 px-3 bg-blue-600 text-white hover:bg-blue-700 border border-blue-400 text-xs font-bold"
-                  >
-                    Finish Drawing
-                  </Button>
+                  {drawing.currentPoint && (
+                    <Button
+                      onClick={stopDrawing}
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 border border-red-500 text-red-600 hover:bg-red-50 text-xs font-bold"
+                    >
+                      Cancel Line
+                    </Button>
+                  )}
                 </>
-              )}
+              )}              
               
               <Button
                 onClick={clearDrawing}
