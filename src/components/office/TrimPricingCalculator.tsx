@@ -123,7 +123,7 @@ export function TrimPricingCalculator() {
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const BASE_CANVAS_WIDTH = 1400;
-  const BASE_CANVAS_HEIGHT = 550;
+  const BASE_CANVAS_HEIGHT = 700;
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
   const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
 
@@ -306,53 +306,61 @@ export function TrimPricingCalculator() {
 
       // Don't draw endpoint dots - removed as per request
 
-      // Draw hem if exists (U-shaped)
+      // Draw hem if exists (U-shaped fold - no exposed edge)
       if (segment.hasHem) {
         const hemPoint = segment.hemAtStart ? segment.start : segment.end;
         const otherPoint = segment.hemAtStart ? segment.end : segment.start;
         
-        // Calculate direction vector
+        // Calculate direction vector of the main segment
         const dx = otherPoint.x - hemPoint.x;
         const dy = otherPoint.y - hemPoint.y;
         const length = Math.sqrt(dx * dx + dy * dy);
         const unitX = dx / length;
         const unitY = dy / length;
         
-        // Perpendicular vector (to the left of the line)
+        // Perpendicular vector (90° to the right of the line direction)
         const perpX = -unitY;
         const perpY = unitX;
         
-        // U-shape hem: goes perpendicular 0.5", then back parallel 0.5", then back perpendicular 0.5"
-        const hemWidth = 0.5;
+        // Hem dimensions
+        const hemDepth = 0.5; // How far the hem extends perpendicular
         
-        // First leg: perpendicular outward
+        // Create U-shaped fold (closed shape):
+        // P1: Starting point (on the main line)
         const p1x = hemPoint.x * scale;
         const p1y = hemPoint.y * scale;
-        const p2x = (hemPoint.x + perpX * hemWidth) * scale;
-        const p2y = (hemPoint.y + perpY * hemWidth) * scale;
         
-        // Second leg: parallel to main line (backward)
-        const p3x = (hemPoint.x + perpX * hemWidth - unitX * hemWidth) * scale;
-        const p3y = (hemPoint.y + perpY * hemWidth - unitY * hemWidth) * scale;
+        // P2: First fold - go perpendicular outward (0.5")
+        const p2x = (hemPoint.x + perpX * hemDepth) * scale;
+        const p2y = (hemPoint.y + perpY * hemDepth) * scale;
         
-        // Third leg: perpendicular back to main line
-        const p4x = (hemPoint.x - unitX * hemWidth) * scale;
-        const p4y = (hemPoint.y - unitY * hemWidth) * scale;
+        // P3: Second fold - go parallel back along the line (0.5")
+        const p3x = (hemPoint.x + perpX * hemDepth - unitX * hemDepth) * scale;
+        const p3y = (hemPoint.y + perpY * hemDepth - unitY * hemDepth) * scale;
         
-        // Draw U-shaped hem
-        ctx.strokeStyle = '#dc2626';
+        // P4: Third fold - come back perpendicular to meet the line (creating enclosed U)
+        const p4x = (hemPoint.x - unitX * hemDepth) * scale;
+        const p4y = (hemPoint.y - unitY * hemDepth) * scale;
+        
+        // Draw the U-shaped hem as a closed, filled path to show it's a fold
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.2)'; // Light red fill
+        ctx.strokeStyle = '#dc2626'; // Red outline
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(p1x, p1y);
-        ctx.lineTo(p2x, p2y); // Out
-        ctx.lineTo(p3x, p3y); // Back
-        ctx.lineTo(p4x, p4y); // In
-        ctx.stroke();
+        ctx.lineTo(p2x, p2y); // Out perpendicular
+        ctx.lineTo(p3x, p3y); // Back parallel
+        ctx.lineTo(p4x, p4y); // Back perpendicular
+        ctx.closePath(); // Close the shape
+        ctx.fill(); // Fill to show it's a fold
+        ctx.stroke(); // Outline
         
         // Draw hem label
         ctx.fillStyle = '#dc2626';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('HEM', p2x - 20, p2y - 5);
+        ctx.font = 'bold 12px sans-serif';
+        const labelX = (p2x + p3x) / 2;
+        const labelY = (p2y + p3y) / 2;
+        ctx.fillText('HEM', labelX - 15, labelY + 4);
       }
 
       // Calculate measurements first
@@ -818,12 +826,18 @@ export function TrimPricingCalculator() {
         .single();
       
       if (error) {
-        console.error('Error loading settings:', error);
-        // Use defaults if no settings found
-        setMarkupPercent('32');
-        setTempMarkupPercent('32');
-        setCutPrice('1.00');
-        setTempCutPrice('1.00');
+        if (error.code === 'PGRST116') {
+          // No settings found - use defaults
+          console.log('No settings found, using defaults');
+          const defaultMarkup = '32';
+          const defaultCut = '1.00';
+          setMarkupPercent(defaultMarkup);
+          setTempMarkupPercent(defaultMarkup);
+          setCutPrice(defaultCut);
+          setTempCutPrice(defaultCut);
+        } else {
+          console.error('Error loading settings:', error);
+        }
         return;
       }
       
@@ -832,6 +846,8 @@ export function TrimPricingCalculator() {
         const bendPrice = data.price_per_bend?.toString() || '';
         const markup = data.markup_percent?.toString() || '32';
         const cut = data.cut_price?.toString() || '1.00';
+        
+        console.log('Loaded settings from database:', { lfCost, bendPrice, markup, cut });
         
         setSheetLFCost(lfCost);
         setTempLFCost(lfCost);
@@ -930,12 +946,14 @@ export function TrimPricingCalculator() {
       
       if (error) throw error;
       
+      console.log('Settings saved to database:', settingsData);
+      
       setSheetLFCost(tempLFCost);
       setPricePerBend(tempBendPrice);
       setMarkupPercent(tempMarkupPercent);
       setCutPrice(tempCutPrice);
       setShowSettings(false);
-      toast.success('Settings saved for all users');
+      toast.success('Settings saved successfully!');
     } catch (error) {
       console.error('Error saving settings:', error);
       toast.error('Failed to save settings');
@@ -1125,7 +1143,7 @@ export function TrimPricingCalculator() {
 
   return (
     <>
-    <div className="grid grid-cols-[1.6fr,1fr] gap-3 max-w-full mx-auto h-[calc(100vh-100px)] overflow-hidden">
+    <div className="grid grid-cols-[1.6fr,1fr] gap-3 max-w-full mx-auto h-[calc(100vh-80px)] overflow-hidden p-2">
       {/* Drawing Tool - Left Side */}
       <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full overflow-hidden">
         <CardHeader className="pb-2 border-b-2 border-yellow-500 py-2">
