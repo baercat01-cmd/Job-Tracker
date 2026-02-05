@@ -111,9 +111,12 @@ export function TrimPricingCalculator() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [gridSize] = useState(0.125); // 1/8" snap precision
   const [majorGridSize] = useState(0.5); // 1/2" major grid blocks
-  const [scale] = useState(80); // pixels per inch (doubled for better visibility)
-  const CANVAS_WIDTH = 1600;
-  const CANVAS_HEIGHT = 1000;
+  const [scale, setScale] = useState(80); // pixels per inch (adjustable with zoom)
+  const [mousePos, setMousePos] = useState<Point | null>(null);
+  const BASE_CANVAS_WIDTH = 1600;
+  const BASE_CANVAS_HEIGHT = 1000;
+  const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
+  const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
 
   // Auto-enable drawing mode when dialog opens
   useEffect(() => {
@@ -184,6 +187,29 @@ export function TrimPricingCalculator() {
       ctx.stroke();
     }
 
+    // Draw preview line from current point to mouse position
+    if (drawing.currentPoint && mousePos && isDrawingMode) {
+      const startX = drawing.currentPoint.x * scale;
+      const startY = drawing.currentPoint.y * scale;
+      const endX = mousePos.x * scale;
+      const endY = mousePos.y * scale;
+      
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Show preview endpoint
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(endX, endY, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // Draw "Ready" indicator if in drawing mode and no points yet
     if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
       ctx.fillStyle = '#666666';
@@ -210,6 +236,8 @@ export function TrimPricingCalculator() {
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
+
+      // Don't draw endpoint dots - removed as per request
 
       // Draw hem if exists
       if (segment.hasHem) {
@@ -242,15 +270,6 @@ export function TrimPricingCalculator() {
         ctx.fillText('HEM', hemEndX - 15, hemEndY - 5);
       }
 
-      // Draw endpoints
-      ctx.fillStyle = isSelected ? '#EAB308' : '#000000';
-      ctx.beginPath();
-      ctx.arc(startX, startY, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(endX, endY, 6, 0, Math.PI * 2);
-      ctx.fill();
-
       // Draw label
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
@@ -279,13 +298,22 @@ export function TrimPricingCalculator() {
       }
     });
 
-    // Draw current point (while drawing)
+    // Draw current point (while drawing) - make it more visible
     if (drawing.currentPoint) {
       const x = drawing.currentPoint.x * scale;
       const y = drawing.currentPoint.y * scale;
+      
+      // Outer ring
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Inner fill
       ctx.fillStyle = '#3b82f6';
       ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -306,7 +334,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos]);
 
   function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
@@ -322,6 +350,20 @@ export function TrimPricingCalculator() {
     if (diff > 360) diff -= 360;
     
     return diff;
+  }
+
+  function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!canvasRef.current) return;
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / scale;
+    const y = (e.clientY - rect.top) / scale;
+    
+    // Snap to grid
+    const snappedX = Math.round(x / gridSize) * gridSize;
+    const snappedY = Math.round(y / gridSize) * gridSize;
+    
+    setMousePos({ x: snappedX, y: snappedY });
   }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -416,6 +458,33 @@ export function TrimPricingCalculator() {
       )
     }));
     toast.success('Hem removed');
+  }
+
+  function zoomIn() {
+    setScale(prev => Math.min(prev + 20, 200));
+  }
+
+  function zoomOut() {
+    setScale(prev => Math.max(prev - 20, 40));
+  }
+
+  function resetZoom() {
+    setScale(80);
+  }
+
+  function closeDrawing() {
+    if (drawing.segments.length > 0) {
+      if (!confirm('Close drawing? Your progress will be lost unless you apply it to the calculator first.')) {
+        return;
+      }
+    }
+    setShowDrawing(false);
+    setDrawing({
+      segments: [],
+      selectedSegmentId: null,
+      currentPoint: null,
+      nextLabel: 65
+    });
   }
 
   function clearDrawing() {
@@ -1235,18 +1304,30 @@ export function TrimPricingCalculator() {
                   </div>
                 </div>
               ) : (
-                <canvas
-                  ref={canvasRef}
-                  width={CANVAS_WIDTH}
-                  height={CANVAS_HEIGHT}
-                  onClick={handleCanvasClick}
-                  className="cursor-crosshair"
-                  style={{ display: 'block' }}
-                />
+                <div className="overflow-auto max-h-[80vh]">
+                  <canvas
+                    ref={canvasRef}
+                    width={CANVAS_WIDTH}
+                    height={CANVAS_HEIGHT}
+                    onClick={handleCanvasClick}
+                    onMouseMove={handleCanvasMouseMove}
+                    className="cursor-crosshair"
+                    style={{ display: 'block' }}
+                  />
+                </div>
               )}
               
+              {/* Top-Right Exit Button */}
+              <button
+                onClick={closeDrawing}
+                className="absolute top-4 right-4 w-12 h-12 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white z-10 transition-all hover:scale-110"
+                title="Close Drawing Tool"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
               {/* Top Controls - Overlaid on Canvas */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-3 bg-white/95 backdrop-blur-sm p-3 rounded-lg border-2 border-gray-300 shadow-lg">
+              <div className="absolute top-4 left-4 right-20 flex items-center justify-between gap-3 bg-white/95 backdrop-blur-sm p-3 rounded-lg border-2 border-gray-300 shadow-lg">
                 <div className="flex gap-2">
                   <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border-2 border-green-500 rounded">
                     <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
@@ -1262,6 +1343,54 @@ export function TrimPricingCalculator() {
                     <Trash className="w-4 h-4 mr-2" />
                     Clear All
                   </Button>
+                  
+                  {/* Hem Controls - Always Available */}
+                  {drawing.selectedSegmentId && (
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => addHemToSelected(true)}
+                        size="sm"
+                        className="bg-purple-600 text-white hover:bg-purple-700"
+                      >
+                        Hem (Start)
+                      </Button>
+                      <Button
+                        onClick={() => addHemToSelected(false)}
+                        size="sm"
+                        className="bg-purple-600 text-white hover:bg-purple-700"
+                      >
+                        Hem (End)
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Zoom Controls */}
+                <div className="flex gap-2 bg-gray-100 px-3 py-2 rounded border-2 border-gray-300">
+                  <Button
+                    onClick={zoomOut}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3"
+                  >
+                    <span className="text-lg font-bold">-</span>
+                  </Button>
+                  <Button
+                    onClick={resetZoom}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 text-xs"
+                  >
+                    {Math.round((scale / 80) * 100)}%
+                  </Button>
+                  <Button
+                    onClick={zoomIn}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3"
+                  >
+                    <span className="text-lg font-bold">+</span>
+                  </Button>
                 </div>
                 
                 <div className="text-gray-800 text-sm font-bold bg-gray-100 px-4 py-2 rounded border-2 border-gray-300">
@@ -1269,44 +1398,37 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
 
-              {/* Selected Segment Controls - Overlaid */}
-              {drawing.selectedSegmentId && (
-                <div className="absolute top-20 left-4 bg-yellow-50/95 backdrop-blur-sm border-2 border-yellow-500 rounded-lg p-3 shadow-lg max-w-md">
-                  <p className="text-yellow-800 font-bold mb-2">
-                    Selected: {drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.label}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => addHemToSelected(true)}
-                      size="sm"
-                      className="bg-green-600 text-white hover:bg-green-700"
-                    >
-                      Add Hem (Start)
-                    </Button>
-                    <Button
-                      onClick={() => addHemToSelected(false)}
-                      size="sm"
-                      className="bg-green-600 text-white hover:bg-green-700"
-                    >
-                      Add Hem (End)
-                    </Button>
-                    <Button
-                      onClick={removeHemFromSelected}
-                      size="sm"
-                      variant="outline"
-                      className="border-red-500 text-red-600 hover:bg-red-50"
-                    >
-                      Remove Hem
-                    </Button>
-                    <Button
-                      onClick={deleteSelectedSegment}
-                      size="sm"
-                      variant="outline"
-                      className="border-red-500 text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Delete
-                    </Button>
+              {/* Segment Selection List - Left Side */}
+              {drawing.segments.length > 0 && (
+                <div className="absolute top-20 left-4 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-3 shadow-lg max-w-xs">
+                  <p className="text-gray-800 font-bold mb-2 text-sm">Segments:</p>
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {drawing.segments.map(seg => (
+                      <div
+                        key={seg.id}
+                        onClick={() => selectSegment(seg.id)}
+                        className={`px-3 py-2 rounded cursor-pointer text-sm font-medium transition-colors ${
+                          seg.id === drawing.selectedSegmentId
+                            ? 'bg-yellow-400 text-black'
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                        }`}
+                      >
+                        {seg.label} {seg.hasHem && '(HEM)'}
+                        {seg.id === drawing.selectedSegmentId && (
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteSelectedSegment();
+                            }}
+                            size="sm"
+                            variant="ghost"
+                            className="ml-2 h-6 px-2 text-red-600 hover:bg-red-100"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1321,10 +1443,10 @@ export function TrimPricingCalculator() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setShowDrawing(false)}
+                  onClick={closeDrawing}
                   className="border-2 border-gray-400 text-gray-700 hover:bg-gray-100 py-6 px-8"
                 >
-                  Close
+                  Cancel
                 </Button>
               </div>
             </div>
