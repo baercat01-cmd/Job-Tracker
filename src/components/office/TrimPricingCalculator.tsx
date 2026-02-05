@@ -20,10 +20,7 @@ import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, 
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
-const STORAGE_KEY_LF_COST = 'trim_calculator_lf_cost';
-const STORAGE_KEY_BEND_PRICE = 'trim_calculator_bend_price';
-const STORAGE_KEY_MARKUP_PERCENT = 'trim_calculator_markup_percent';
-const STORAGE_KEY_CUT_PRICE = 'trim_calculator_cut_price';
+// Settings are now stored in database, not localStorage
 
 interface InchInput {
   id: string;
@@ -470,39 +467,50 @@ export function TrimPricingCalculator() {
     setShowDrawing(false);
   }
 
-  // Load saved values on mount
+  // Load saved values from database on mount
   useEffect(() => {
-    const savedLFCost = localStorage.getItem(STORAGE_KEY_LF_COST);
-    const savedBendPrice = localStorage.getItem(STORAGE_KEY_BEND_PRICE);
-    const savedMarkupPercent = localStorage.getItem(STORAGE_KEY_MARKUP_PERCENT);
-    const savedCutPrice = localStorage.getItem(STORAGE_KEY_CUT_PRICE);
-    
-    if (savedLFCost) {
-      setSheetLFCost(savedLFCost);
-      setTempLFCost(savedLFCost);
-    }
-    if (savedBendPrice) {
-      setPricePerBend(savedBendPrice);
-      setTempBendPrice(savedBendPrice);
-    }
-    if (savedMarkupPercent) {
-      setMarkupPercent(savedMarkupPercent);
-      setTempMarkupPercent(savedMarkupPercent);
-    } else {
-      setMarkupPercent('32');
-      setTempMarkupPercent('32');
-    }
-    if (savedCutPrice) {
-      setCutPrice(savedCutPrice);
-      setTempCutPrice(savedCutPrice);
-    } else {
-      setCutPrice('1.00');
-      setTempCutPrice('1.00');
-    }
-    
+    loadSettings();
     loadJobs();
     loadSavedConfigs();
   }, []);
+
+  async function loadSettings() {
+    try {
+      const { data, error } = await supabase
+        .from('trim_calculator_settings')
+        .select('*')
+        .limit(1)
+        .single();
+      
+      if (error) {
+        console.error('Error loading settings:', error);
+        // Use defaults if no settings found
+        setMarkupPercent('32');
+        setTempMarkupPercent('32');
+        setCutPrice('1.00');
+        setTempCutPrice('1.00');
+        return;
+      }
+      
+      if (data) {
+        const lfCost = data.sheet_lf_cost?.toString() || '';
+        const bendPrice = data.price_per_bend?.toString() || '';
+        const markup = data.markup_percent?.toString() || '32';
+        const cut = data.cut_price?.toString() || '1.00';
+        
+        setSheetLFCost(lfCost);
+        setTempLFCost(lfCost);
+        setPricePerBend(bendPrice);
+        setTempBendPrice(bendPrice);
+        setMarkupPercent(markup);
+        setTempMarkupPercent(markup);
+        setCutPrice(cut);
+        setTempCutPrice(cut);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  }
 
   async function loadJobs() {
     try {
@@ -531,7 +539,7 @@ export function TrimPricingCalculator() {
     }
   }
 
-  function saveSettings() {
+  async function saveSettings() {
     const lfCost = parseFloat(tempLFCost);
     const bendPrice = parseFloat(tempBendPrice);
     const markup = parseFloat(tempMarkupPercent);
@@ -554,16 +562,49 @@ export function TrimPricingCalculator() {
       return;
     }
     
-    localStorage.setItem(STORAGE_KEY_LF_COST, tempLFCost);
-    localStorage.setItem(STORAGE_KEY_BEND_PRICE, tempBendPrice);
-    localStorage.setItem(STORAGE_KEY_MARKUP_PERCENT, tempMarkupPercent);
-    localStorage.setItem(STORAGE_KEY_CUT_PRICE, tempCutPrice);
-    setSheetLFCost(tempLFCost);
-    setPricePerBend(tempBendPrice);
-    setMarkupPercent(tempMarkupPercent);
-    setCutPrice(tempCutPrice);
-    setShowSettings(false);
-    toast.success('Settings saved successfully');
+    try {
+      // Check if settings exist
+      const { data: existing } = await supabase
+        .from('trim_calculator_settings')
+        .select('id')
+        .limit(1)
+        .single();
+      
+      const settingsData = {
+        sheet_lf_cost: lfCost,
+        price_per_bend: bendPrice,
+        markup_percent: markup,
+        cut_price: cut,
+        updated_at: new Date().toISOString()
+      };
+      
+      let error;
+      
+      if (existing?.id) {
+        // Update existing settings
+        ({ error } = await supabase
+          .from('trim_calculator_settings')
+          .update(settingsData)
+          .eq('id', existing.id));
+      } else {
+        // Insert new settings
+        ({ error } = await supabase
+          .from('trim_calculator_settings')
+          .insert([settingsData]));
+      }
+      
+      if (error) throw error;
+      
+      setSheetLFCost(tempLFCost);
+      setPricePerBend(tempBendPrice);
+      setMarkupPercent(tempMarkupPercent);
+      setCutPrice(tempCutPrice);
+      setShowSettings(false);
+      toast.success('Settings saved for all users');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast.error('Failed to save settings');
+    }
   }
 
   // Calculate trim pricing
