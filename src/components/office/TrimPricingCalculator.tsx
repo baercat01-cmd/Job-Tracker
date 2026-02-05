@@ -112,10 +112,11 @@ export function TrimPricingCalculator() {
   });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
-  const [gridSize] = useState(0.125); // 1/8" grid for precision
-  const [scale] = useState(40); // pixels per inch (increased for better precision)
-  const CANVAS_WIDTH = 1400;
-  const CANVAS_HEIGHT = 900;
+  const [gridSize] = useState(0.125); // 1/8" snap precision
+  const [majorGridSize] = useState(0.5); // 1/2" major grid blocks
+  const [scale] = useState(80); // pixels per inch (doubled for better visibility)
+  const CANVAS_WIDTH = 1600;
+  const CANVAS_HEIGHT = 1000;
 
   // Auto-enable drawing mode when dialog opens
   useEffect(() => {
@@ -142,21 +143,44 @@ export function TrimPricingCalculator() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw grid - light grey
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 0.5;
-    const gridSpacing = gridSize * scale; // pixels
+    // Draw grid - two levels: major (1/2") and minor (1/8")
+    const minorGridSpacing = gridSize * scale; // 1/8" in pixels
+    const majorGridSpacing = majorGridSize * scale; // 1/2" in pixels
     
-    // Vertical lines
-    for (let x = 0; x <= CANVAS_WIDTH; x += gridSpacing) {
+    // Draw minor grid lines (1/8") - very light grey
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 0.5;
+    
+    // Vertical minor lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += minorGridSpacing) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
       ctx.stroke();
     }
     
-    // Horizontal lines
-    for (let y = 0; y <= CANVAS_HEIGHT; y += gridSpacing) {
+    // Horizontal minor lines
+    for (let y = 0; y <= CANVAS_HEIGHT; y += minorGridSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(CANVAS_WIDTH, y);
+      ctx.stroke();
+    }
+    
+    // Draw major grid lines (1/2") - darker grey, thicker
+    ctx.strokeStyle = '#c0c0c0';
+    ctx.lineWidth = 2;
+    
+    // Vertical major lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += majorGridSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CANVAS_HEIGHT);
+      ctx.stroke();
+    }
+    
+    // Horizontal major lines
+    for (let y = 0; y <= CANVAS_HEIGHT; y += majorGridSpacing) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
@@ -285,7 +309,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
 
   function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
@@ -1163,7 +1187,7 @@ export function TrimPricingCalculator() {
             {/* Canvas with Controls Overlay */}
             <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl">
               {!canvasReady ? (
-                <div className="w-full h-[900px] flex items-center justify-center bg-gray-100">
+                <div className="w-full h-[1000px] flex items-center justify-center bg-gray-100">
                   <div className="text-center">
                     <div className="w-12 h-12 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-gray-700 font-semibold">Loading Canvas...</p>
@@ -1185,7 +1209,7 @@ export function TrimPricingCalculator() {
                 <div className="flex gap-2">
                   <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border-2 border-green-500 rounded">
                     <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-700 font-bold text-sm">Drawing Active (1/8" Grid)</span>
+                    <span className="text-green-700 font-bold text-sm">Drawing Active (1/2" blocks, 1/8" snap)</span>
                   </div>
                   
                   <Button
