@@ -34,6 +34,7 @@ interface SavedConfig {
   job_name: string | null;
   inches: number[];
   bends: number;
+  drawing_segments?: LineSegment[];
   created_at: string;
 }
 
@@ -121,8 +122,8 @@ export function TrimPricingCalculator() {
   const [scale, setScale] = useState(80); // pixels per inch (adjustable with zoom)
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
-  const BASE_CANVAS_WIDTH = 1600;
-  const BASE_CANVAS_HEIGHT = 1000;
+  const BASE_CANVAS_WIDTH = 2000;
+  const BASE_CANVAS_HEIGHT = 700;
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
   const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
 
@@ -941,6 +942,19 @@ export function TrimPricingCalculator() {
     }
   }
 
+  // Auto-update calculator from drawing in real-time
+  useEffect(() => {
+    if (drawing.segments.length > 0) {
+      const totalLength = calculateTotalLength();
+      const bends = Math.max(0, drawing.segments.length - 1) + 
+                    drawing.segments.filter(s => s.hasHem).length;
+      
+      // Update calculator inputs automatically
+      setInchInputs([{ id: '1', value: totalLength.toFixed(2) }]);
+      setNumberOfBends(bends.toString());
+    }
+  }, [drawing.segments]);
+
   // Calculate trim pricing
   useEffect(() => {
     const lfCost = parseFloat(sheetLFCost);
@@ -1044,6 +1058,7 @@ export function TrimPricingCalculator() {
         job_name: jobName,
         inches,
         bends,
+        drawing_segments: drawing.segments.length > 0 ? drawing.segments : undefined,
         created_at: new Date().toISOString(),
       };
 
@@ -1074,8 +1089,20 @@ export function TrimPricingCalculator() {
     // Load bends
     setNumberOfBends(config.bends.toString());
     
+    // Load drawing if it exists
+    if (config.drawing_segments && config.drawing_segments.length > 0) {
+      setDrawing({
+        segments: config.drawing_segments,
+        selectedSegmentId: null,
+        currentPoint: null,
+        nextLabel: 65 + config.drawing_segments.length
+      });
+      toast.success(`Loaded configuration with drawing: ${config.name}`);
+    } else {
+      toast.success(`Loaded configuration: ${config.name}`);
+    }
+    
     setShowLoadDialog(false);
-    toast.success(`Loaded configuration: ${config.name}`);
   }
 
   function deleteConfiguration(configId: string) {
@@ -1091,16 +1118,16 @@ export function TrimPricingCalculator() {
 
   return (
     <>
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 max-w-[1800px] mx-auto">
+    <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4 max-w-[2000px] mx-auto h-[calc(100vh-120px)]">
       {/* Drawing Tool - Left Side */}
-      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl">
-        <CardHeader className="pb-4 border-b-2 border-yellow-500">
+      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full">
+        <CardHeader className="pb-3 border-b-2 border-yellow-500">
           <CardTitle className="flex items-center gap-3 text-yellow-500">
             <Pencil className="w-7 h-7" />
-            <span className="text-2xl font-bold">2D Drawing Tool</span>
+            <span className="text-xl font-bold">2D Drawing Tool</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-4">
+        <CardContent className="p-3 flex-1 flex flex-col overflow-hidden">
           <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl bg-white">
             {!canvasReady ? (
               <div className="w-full h-[600px] flex items-center justify-center bg-gray-100">
@@ -1110,7 +1137,7 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-auto" style={{ maxHeight: '600px' }}>
+              <div className="overflow-auto" style={{ maxHeight: '480px' }}>
                 <canvas
                   ref={canvasRef}
                   width={CANVAS_WIDTH}
@@ -1271,24 +1298,22 @@ export function TrimPricingCalculator() {
             </div>
           </div>
           
-          {/* Apply Button */}
-          <Button
-            onClick={applyDrawingToCalculator}
-            className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
-            disabled={drawing.segments.length === 0}
-          >
-            Apply Drawing to Calculator →
-          </Button>
+          {/* Real-time Status */}
+          {drawing.segments.length > 0 && (
+            <div className="mt-3 bg-green-900/40 border-2 border-green-600 rounded-lg p-2 text-center">
+              <div className="text-green-400 text-xs font-bold">✓ Auto-synced to Calculator</div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Calculator - Right Side */}
-      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl">
-        <CardHeader className="pb-4 border-b-2 border-yellow-500">
+      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl flex flex-col h-full overflow-auto">
+        <CardHeader className="pb-3 border-b-2 border-yellow-500">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-3 text-yellow-500">
               <Calculator className="w-7 h-7" />
-              <span className="text-2xl font-bold">Flat Panel Trim Calculator</span>
+              <span className="text-xl font-bold">Trim Calculator</span>
             </CardTitle>
             <div className="flex gap-2">
               <Button
@@ -1314,7 +1339,7 @@ export function TrimPricingCalculator() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3 pt-4 p-4">
+        <CardContent className="space-y-3 pt-3 p-3 flex-1 overflow-auto">
           {!hasSettings ? (
             <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded-lg p-4 text-center">
               <p className="text-yellow-500 font-bold text-base mb-2">
@@ -1401,7 +1426,7 @@ export function TrimPricingCalculator() {
                 {/* Final Selling Price - Smaller */}
                 <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-3 text-center border-2 border-yellow-400 shadow-lg">
                   <div className="text-black font-bold text-xs">SELLING PRICE</div>
-                  <div className="text-3xl font-black text-black">${sellingPrice.toFixed(2)}</div>
+                  <div className="text-2xl font-black text-black">${sellingPrice.toFixed(2)}</div>
                   <div className="text-xs text-black/70">Material + Bends + Cut</div>
                 </div>
 
@@ -1665,6 +1690,9 @@ export function TrimPricingCalculator() {
                       <div className="mt-2 text-white/80 text-sm">
                         <p>Total Inches: {config.inches.reduce((sum, val) => sum + val, 0).toFixed(2)}"</p>
                         <p>Bends: {config.bends}</p>
+                        {config.drawing_segments && config.drawing_segments.length > 0 && (
+                          <p className="text-green-400">📐 Includes Drawing ({config.drawing_segments.length} segments)</p>
+                        )}
                         <p className="text-white/40 text-xs mt-1">
                           Saved: {new Date(config.created_at).toLocaleDateString()}
                         </p>
