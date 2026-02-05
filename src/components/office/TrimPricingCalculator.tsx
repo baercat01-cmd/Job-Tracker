@@ -124,12 +124,13 @@ export function TrimPricingCalculator() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    // Clear canvas with dark green background
+    ctx.fillStyle = '#0a1f0a';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     // Draw grid
-    ctx.strokeStyle = '#1a3a1a';
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = isDrawingMode ? '#2d5a2d' : '#1a3a1a';
+    ctx.lineWidth = 1;
     const gridSpacing = gridSize * scale; // pixels
     
     // Vertical lines
@@ -261,7 +262,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT]);
+  }, [drawing, showDrawing, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
 
   function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
@@ -1210,16 +1211,24 @@ export function TrimPricingCalculator() {
             )}
 
             {/* Canvas */}
-            <div className="border-4 border-yellow-500 rounded bg-black overflow-hidden">
+            <div className={`border-4 rounded overflow-hidden ${
+              isDrawingMode ? 'border-yellow-500 shadow-lg shadow-yellow-500/50' : 'border-green-800'
+            }`}>
               <canvas
                 ref={canvasRef}
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT}
                 onClick={handleCanvasClick}
-                className="cursor-crosshair"
+                className={isDrawingMode ? 'cursor-crosshair' : 'cursor-not-allowed'}
                 style={{ display: 'block' }}
               />
             </div>
+            
+            {!isDrawingMode && (
+              <div className="text-center text-yellow-500 font-semibold bg-yellow-500/10 border-2 border-yellow-500 rounded p-2">
+                ⚠️ Click "Start Drawing" to begin placing points
+              </div>
+            )}
 
             {/* Instructions */}
             <div className="bg-black/30 border-2 border-green-800 rounded p-3 text-sm text-white/80">
