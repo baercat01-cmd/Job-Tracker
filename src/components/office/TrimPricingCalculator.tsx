@@ -50,6 +50,7 @@ interface LineSegment {
   label: string;
   hasHem: boolean;
   hemAtStart: boolean;
+  hemSide?: 'left' | 'right'; // Which side the hem is on
 }
 
 interface DrawingState {
@@ -63,6 +64,10 @@ interface EditMode {
   segmentId: string;
   measurement: string;
   angle: string;
+}
+
+interface HemPreviewMode {
+  segmentId: string;
 }
 
 export function TrimPricingCalculator() {
@@ -122,10 +127,99 @@ export function TrimPricingCalculator() {
   const [scale, setScale] = useState(80); // pixels per inch (adjustable with zoom)
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
+  const [hemPreviewMode, setHemPreviewMode] = useState<HemPreviewMode | null>(null);
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
   const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
+
+  // Helper function to draw a hem
+  function drawHem(
+    ctx: CanvasRenderingContext2D, 
+    segment: LineSegment, 
+    scale: number, 
+    isPreview: boolean = false,
+    previewSide?: 'left' | 'right'
+  ) {
+    const hemPoint = segment.hemAtStart ? segment.start : segment.end;
+    const otherPoint = segment.hemAtStart ? segment.end : segment.start;
+    
+    // Calculate direction vector of the main segment
+    const dx = otherPoint.x - hemPoint.x;
+    const dy = otherPoint.y - hemPoint.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const unitX = dx / length;
+    const unitY = dy / length;
+    
+    // Perpendicular vectors (both left and right)
+    const perpRightX = -unitY;
+    const perpRightY = unitX;
+    const perpLeftX = unitY;
+    const perpLeftY = -unitX;
+    
+    // Determine which side to use
+    const side = isPreview ? previewSide : segment.hemSide || 'right';
+    const perpX = side === 'right' ? perpRightX : perpLeftX;
+    const perpY = side === 'right' ? perpRightY : perpLeftY;
+    
+    // Hem dimensions
+    const hemDepth = 0.5;
+    
+    // Create U-shaped fold that doubles back flush against the segment:
+    // P1: Starting point (on the main line)
+    const p1x = hemPoint.x * scale;
+    const p1y = hemPoint.y * scale;
+    
+    // P2: Go perpendicular outward (0.5")
+    const p2x = (hemPoint.x + perpX * hemDepth) * scale;
+    const p2y = (hemPoint.y + perpY * hemDepth) * scale;
+    
+    // P3: Go parallel back along the line (0.5") - doubles back flush
+    const p3x = (hemPoint.x + perpX * hemDepth - unitX * hemDepth) * scale;
+    const p3y = (hemPoint.y + perpY * hemDepth - unitY * hemDepth) * scale;
+    
+    // P4: Go back perpendicular to meet the line (creating enclosed U flush against segment)
+    const p4x = (hemPoint.x - unitX * hemDepth) * scale;
+    const p4y = (hemPoint.y - unitY * hemDepth) * scale;
+    
+    // Draw the U-shaped hem
+    if (isPreview) {
+      ctx.fillStyle = 'rgba(147, 51, 234, 0.3)'; // Purple preview fill
+      ctx.strokeStyle = '#9333ea'; // Purple outline
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+    } else {
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.2)'; // Light red fill
+      ctx.strokeStyle = '#dc2626'; // Red outline
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+    }
+    
+    ctx.beginPath();
+    ctx.moveTo(p1x, p1y);
+    ctx.lineTo(p2x, p2y); // Out perpendicular
+    ctx.lineTo(p3x, p3y); // Back parallel (flush against segment)
+    ctx.lineTo(p4x, p4y); // Back perpendicular
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Draw label
+    if (isPreview) {
+      ctx.fillStyle = '#9333ea';
+      ctx.font = 'bold 14px sans-serif';
+      const labelX = (p2x + p3x) / 2;
+      const labelY = (p2y + p3y) / 2;
+      ctx.fillText(`${side.toUpperCase()}?`, labelX - 20, labelY + 5);
+    } else {
+      ctx.fillStyle = '#dc2626';
+      ctx.font = 'bold 12px sans-serif';
+      const labelX = (p2x + p3x) / 2;
+      const labelY = (p2y + p3y) / 2;
+      ctx.fillText('HEM', labelX - 15, labelY + 4);
+    }
+  }
 
   // Initialize canvas when showing drawing
   useEffect(() => {
@@ -308,59 +402,7 @@ export function TrimPricingCalculator() {
 
       // Draw hem if exists (U-shaped fold - no exposed edge)
       if (segment.hasHem) {
-        const hemPoint = segment.hemAtStart ? segment.start : segment.end;
-        const otherPoint = segment.hemAtStart ? segment.end : segment.start;
-        
-        // Calculate direction vector of the main segment
-        const dx = otherPoint.x - hemPoint.x;
-        const dy = otherPoint.y - hemPoint.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        const unitX = dx / length;
-        const unitY = dy / length;
-        
-        // Perpendicular vector (90° to the right of the line direction)
-        const perpX = -unitY;
-        const perpY = unitX;
-        
-        // Hem dimensions
-        const hemDepth = 0.5; // How far the hem extends perpendicular
-        
-        // Create U-shaped fold (closed shape):
-        // P1: Starting point (on the main line)
-        const p1x = hemPoint.x * scale;
-        const p1y = hemPoint.y * scale;
-        
-        // P2: First fold - go perpendicular outward (0.5")
-        const p2x = (hemPoint.x + perpX * hemDepth) * scale;
-        const p2y = (hemPoint.y + perpY * hemDepth) * scale;
-        
-        // P3: Second fold - go parallel back along the line (0.5")
-        const p3x = (hemPoint.x + perpX * hemDepth - unitX * hemDepth) * scale;
-        const p3y = (hemPoint.y + perpY * hemDepth - unitY * hemDepth) * scale;
-        
-        // P4: Third fold - come back perpendicular to meet the line (creating enclosed U)
-        const p4x = (hemPoint.x - unitX * hemDepth) * scale;
-        const p4y = (hemPoint.y - unitY * hemDepth) * scale;
-        
-        // Draw the U-shaped hem as a closed, filled path to show it's a fold
-        ctx.fillStyle = 'rgba(220, 38, 38, 0.2)'; // Light red fill
-        ctx.strokeStyle = '#dc2626'; // Red outline
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(p1x, p1y);
-        ctx.lineTo(p2x, p2y); // Out perpendicular
-        ctx.lineTo(p3x, p3y); // Back parallel
-        ctx.lineTo(p4x, p4y); // Back perpendicular
-        ctx.closePath(); // Close the shape
-        ctx.fill(); // Fill to show it's a fold
-        ctx.stroke(); // Outline
-        
-        // Draw hem label
-        ctx.fillStyle = '#dc2626';
-        ctx.font = 'bold 12px sans-serif';
-        const labelX = (p2x + p3x) / 2;
-        const labelY = (p2y + p3y) / 2;
-        ctx.fillText('HEM', labelX - 15, labelY + 4);
+        drawHem(ctx, segment, scale, false);
       }
 
       // Calculate measurements first
@@ -413,6 +455,16 @@ export function TrimPricingCalculator() {
       }
     });
 
+    // Draw hem previews if in preview mode
+    if (hemPreviewMode) {
+      const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
+      if (segment) {
+        // Draw preview on both sides
+        drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left');
+        drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right');
+      }
+    }
+
     // Draw current point (while drawing) - make it more visible
     if (drawing.currentPoint) {
       const x = drawing.currentPoint.x * scale;
@@ -449,7 +501,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode]);
 
   function pointToLineDistance(point: Point, lineStart: Point, lineEnd: Point): number {
     const dx = lineEnd.x - lineStart.x;
@@ -671,67 +723,50 @@ export function TrimPricingCalculator() {
     toast.success('Drawing stopped - click to start a new line');
   }
 
-  function addHemToSelected(atStart: boolean) {
-    if (!drawing.selectedSegmentId) {
-      toast.error('No segment selected');
+  function startHemPreview() {
+    const segmentId = drawing.selectedSegmentId || drawing.segments[drawing.segments.length - 1]?.id;
+    
+    if (!segmentId) {
+      toast.error('No segment available for hem');
       return;
     }
+    
+    const segment = drawing.segments.find(s => s.id === segmentId);
+    if (segment?.hasHem) {
+      // Remove hem if already exists
+      setDrawing(prev => ({
+        ...prev,
+        segments: prev.segments.map(seg => 
+          seg.id === segmentId
+            ? { ...seg, hasHem: false, hemAtStart: false, hemSide: undefined }
+            : seg
+        )
+      }));
+      toast.success('Hem removed');
+      return;
+    }
+    
+    setHemPreviewMode({ segmentId });
+    toast.info('Click on LEFT or RIGHT preview to choose hem side');
+  }
+
+  function addHemToSide(side: 'left' | 'right') {
+    if (!hemPreviewMode) return;
     
     setDrawing(prev => ({
       ...prev,
       segments: prev.segments.map(seg => 
-        seg.id === prev.selectedSegmentId
-          ? { ...seg, hasHem: true, hemAtStart: atStart }
+        seg.id === hemPreviewMode.segmentId
+          ? { ...seg, hasHem: true, hemAtStart: false, hemSide: side }
           : seg
       )
     }));
-    toast.success('Hem added');
+    setHemPreviewMode(null);
+    toast.success(`Hem added to ${side} side`);
   }
 
-  function addHemToLastSegment() {
-    if (drawing.segments.length === 0) {
-      toast.error('No segments drawn yet');
-      return;
-    }
-    
-    const lastSegment = drawing.segments[drawing.segments.length - 1];
-    if (lastSegment.hasHem) {
-      toast.error('Last segment already has a hem');
-      return;
-    }
-    
-    setDrawing(prev => ({
-      ...prev,
-      segments: prev.segments.map((seg, idx) => 
-        idx === prev.segments.length - 1
-          ? { ...seg, hasHem: true, hemAtStart: false }
-          : seg
-      )
-    }));
-    toast.success('Hem added to last segment');
-  }
-
-  function removeHemFromSelected() {
-    if (!drawing.selectedSegmentId) {
-      toast.error('No segment selected');
-      return;
-    }
-    
-    const segment = drawing.segments.find(s => s.id === drawing.selectedSegmentId);
-    if (!segment?.hasHem) {
-      toast.error('Selected segment has no hem');
-      return;
-    }
-    
-    setDrawing(prev => ({
-      ...prev,
-      segments: prev.segments.map(seg => 
-        seg.id === prev.selectedSegmentId
-          ? { ...seg, hasHem: false, hemAtStart: false }
-          : seg
-      )
-    }));
-    toast.success('Hem removed');
+  function cancelHemPreview() {
+    setHemPreviewMode(null);
   }
 
   function zoomIn() {
@@ -1222,32 +1257,53 @@ export function TrimPricingCalculator() {
               </Button>
               
               {/* Add Hem Button - Available when segment selected or last segment exists */}
-              {(drawing.selectedSegmentId || drawing.segments.length > 0) && (
+              {!hemPreviewMode && (drawing.selectedSegmentId || drawing.segments.length > 0) && (
                 <Button
-                  onClick={() => {
-                    if (drawing.selectedSegmentId) {
-                      // Add hem to selected segment
-                      const seg = drawing.segments.find(s => s.id === drawing.selectedSegmentId);
-                      if (seg?.hasHem) {
-                        removeHemFromSelected();
-                      } else {
-                        addHemToSelected(false);
-                      }
-                    } else {
-                      addHemToLastSegment();
-                    }
-                  }}
+                  onClick={startHemPreview}
                   size="sm"
                   className={`h-7 px-2 text-xs font-bold ${
-                    drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem
+                    (drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem) ||
+                    (!drawing.selectedSegmentId && drawing.segments[drawing.segments.length - 1]?.hasHem)
                       ? 'bg-red-600 hover:bg-red-700 text-white'
                       : 'bg-purple-600 hover:bg-purple-700 text-white'
                   }`}
                 >
-                  {drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem
+                  {((drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem) ||
+                    (!drawing.selectedSegmentId && drawing.segments[drawing.segments.length - 1]?.hasHem))
                     ? '- Remove Hem'
                     : '+ Add Hem'}
                 </Button>
+              )}
+              
+              {/* Hem Preview Choice Buttons */}
+              {hemPreviewMode && (
+                <>
+                  <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 border-2 border-purple-500 rounded">
+                    <span className="text-purple-700 font-bold text-xs">Choose Hem Side:</span>
+                  </div>
+                  <Button
+                    onClick={() => addHemToSide('left')}
+                    size="sm"
+                    className="h-7 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs"
+                  >
+                    ← LEFT
+                  </Button>
+                  <Button
+                    onClick={() => addHemToSide('right')}
+                    size="sm"
+                    className="h-7 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs"
+                  >
+                    RIGHT →
+                  </Button>
+                  <Button
+                    onClick={cancelHemPreview}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 border border-gray-400 text-gray-600 hover:bg-gray-100 text-xs"
+                  >
+                    Cancel
+                  </Button>
+                </>
               )}
               
               {/* Zoom Controls */}
@@ -1280,7 +1336,7 @@ export function TrimPricingCalculator() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span>{seg.label} {seg.hasHem && '(HEM)'}</span>
+                        <span>{seg.label} {seg.hasHem && `(HEM-${seg.hemSide?.toUpperCase()})`}</span>
                         {seg.id === drawing.selectedSegmentId && (
                           <div className="flex gap-1">
                             <Button
