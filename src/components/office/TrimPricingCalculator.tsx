@@ -165,32 +165,34 @@ export function TrimPricingCalculator() {
     // Hem dimensions
     const hemDepth = 0.5; // 1/2" hem depth
     const steelThickness = 0.0625; // 1/16" steel thickness offset
-    const bendRadius = 0.03125; // 1/32" tight bend radius for metal brake
+    const bendRadius = 0.125; // 1/8" rounded bend radius for smooth U-shape
     
-    // Create true U-shaped hem with 180-degree return bend:
-    // 1. Go perpendicular out from endpoint by hem depth
-    // 2. Add tight 180-degree bend
+    // Create true U-shaped hem with smooth 180-degree return bend:
+    // 1. Go perpendicular out from endpoint by (hem depth - bend radius)
+    // 2. Add smooth 180-degree arc
     // 3. Return parallel, offset by steel thickness
     
     // P1: Starting point (endpoint of segment) - outer edge
     const p1x = hemPoint.x * scale;
     const p1y = hemPoint.y * scale;
     
-    // P2: End of outward perpendicular leg (before bend)
-    const p2x = (hemPoint.x + perpX * hemDepth) * scale;
-    const p2y = (hemPoint.y + perpY * hemDepth) * scale;
+    // P2: End of outward perpendicular leg (before bend starts)
+    const outwardLength = hemDepth - bendRadius;
+    const p2x = (hemPoint.x + perpX * outwardLength) * scale;
+    const p2y = (hemPoint.y + perpY * outwardLength) * scale;
     
-    // Bend center point for 180-degree arc
-    const bendCenterX = (hemPoint.x + perpX * hemDepth - unitX * bendRadius) * scale;
-    const bendCenterY = (hemPoint.y + perpY * hemDepth - unitY * bendRadius) * scale;
+    // Bend center point for smooth 180-degree arc
+    const bendCenterX = (hemPoint.x + perpX * hemDepth) * scale;
+    const bendCenterY = (hemPoint.y + perpY * hemDepth) * scale;
     
     // P3: Start of return leg (after bend) - offset by steel thickness
-    const p3x = (hemPoint.x + perpX * (hemDepth - steelThickness) - unitX * (bendRadius * 2)) * scale;
-    const p3y = (hemPoint.y + perpY * (hemDepth - steelThickness) - unitY * (bendRadius * 2)) * scale;
+    const inwardLength = hemDepth - bendRadius - steelThickness;
+    const p3x = (hemPoint.x + perpX * inwardLength) * scale;
+    const p3y = (hemPoint.y + perpY * inwardLength) * scale;
     
-    // P4: End of return leg - back at segment, offset by steel thickness
-    const p4x = (hemPoint.x + perpX * (hemDepth - steelThickness)) * scale;
-    const p4y = (hemPoint.y + perpY * (hemDepth - steelThickness)) * scale;
+    // P4: End of return leg - back near segment, offset by steel thickness
+    const p4x = (hemPoint.x + perpX * steelThickness) * scale;
+    const p4y = (hemPoint.y + perpY * steelThickness) * scale;
     
     // Drawing style
     if (isPreview) {
@@ -205,46 +207,57 @@ export function TrimPricingCalculator() {
       ctx.fillStyle = 'rgba(220, 38, 38, 0.15)'; // Light red fill
     }
     
-    // Draw outer hem leg (main flange)
+    // Calculate angle for the arc
+    const startAngle = Math.atan2(perpY, perpX);
+    const endAngle = startAngle + Math.PI;
+    
+    // Draw outer hem leg (going out)
     ctx.beginPath();
     ctx.moveTo(p1x, p1y);
     ctx.lineTo(p2x, p2y);
-    ctx.stroke();
     
-    // Draw tight 180-degree bend arc
-    const startAngle = Math.atan2(perpY, perpX);
-    ctx.beginPath();
+    // Draw smooth 180-degree outer arc
     ctx.arc(
       bendCenterX,
       bendCenterY,
       bendRadius * scale,
-      startAngle,
-      startAngle + Math.PI,
+      startAngle - Math.PI / 2,
+      endAngle - Math.PI / 2,
       false
     );
-    ctx.stroke();
     
-    // Draw inner return leg (showing doubled-back metal) - slightly thinner to show it's behind
-    ctx.lineWidth = isPreview ? 1.5 : 2;
-    ctx.beginPath();
-    ctx.moveTo(p3x, p3y);
+    // Connect to return leg
     ctx.lineTo(p4x, p4y);
     ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Draw inner return leg (showing doubled-back metal) - slightly thinner
+    ctx.lineWidth = isPreview ? 1.5 : 2;
+    ctx.strokeStyle = isPreview ? 'rgba(147, 51, 234, 0.6)' : 'rgba(220, 38, 38, 0.6)';
+    
+    const innerBendRadius = bendRadius - steelThickness;
+    ctx.beginPath();
+    ctx.moveTo(p4x, p4y);
+    ctx.lineTo(p3x, p3y);
     
     // Draw inner arc (showing the inside of the fold)
-    const innerBendRadius = Math.max(bendRadius - steelThickness, 0.01);
-    ctx.beginPath();
-    ctx.arc(
-      bendCenterX,
-      bendCenterY,
-      innerBendRadius * scale,
-      startAngle,
-      startAngle + Math.PI,
-      false
-    );
+    if (innerBendRadius > 0) {
+      const innerCenterX = (hemPoint.x + perpX * (hemDepth - steelThickness)) * scale;
+      const innerCenterY = (hemPoint.y + perpY * (hemDepth - steelThickness)) * scale;
+      ctx.arc(
+        innerCenterX,
+        innerCenterY,
+        innerBendRadius * scale,
+        startAngle - Math.PI / 2,
+        endAngle - Math.PI / 2,
+        false
+      );
+    }
     ctx.stroke();
     
-    ctx.setLineDash([]);
+    // Reset stroke style
+    ctx.strokeStyle = isPreview ? '#9333ea' : '#dc2626';
+    ctx.lineWidth = isPreview ? 2 : 3;
     
     // Fill the hem area to show it's folded material
     ctx.beginPath();
