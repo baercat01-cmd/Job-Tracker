@@ -48,19 +48,15 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-      // For foremen: show all active jobs (including those with future start dates)
-      // For crew: only show active, non-internal jobs on or after projected_start_date
+      // For all crew members: show all active, non-internal jobs
+      // Show jobs that either have no start date OR have started (on or before today)
       let jobsQuery = supabase
         .from('jobs')
         .select('*')
         .eq('status', 'active') // Only active jobs - no quoting or on_hold
-        .eq('is_internal', false)
-        .order('created_at', { ascending: false });
-
-      // If not a foreman, filter by projected start date
-      if (userRole !== 'foreman') {
-        jobsQuery = jobsQuery.or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`);
-      }
+        .or('is_internal.is.null,is_internal.eq.false') // Show jobs where is_internal is false OR null
+        .or(`projected_start_date.is.null,projected_start_date.lte.${todayStr}`) // Show jobs with no start date OR started already
+        .order('name', { ascending: true }); // Sort by name alphabetically
 
       const { data: jobsData, error: jobsError } = await jobsQuery;
 
