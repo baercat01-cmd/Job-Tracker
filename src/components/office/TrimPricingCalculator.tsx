@@ -163,64 +163,123 @@ export function TrimPricingCalculator() {
     const perpY = side === 'right' ? perpRightY : perpLeftY;
     
     // Hem dimensions
-    const hemDepth = 0.5;
+    const hemDepth = 0.5; // 1/2" hem depth
+    const steelThickness = 0.0625; // 1/16" steel thickness offset
+    const bendRadius = 0.03125; // 1/32" tight bend radius for metal brake
     
-    // Create U-shaped hem that doubles back along the segment:
-    // Goes perpendicular out, then doubles back parallel to the segment
+    // Create true U-shaped hem with 180-degree return bend:
+    // 1. Go perpendicular out from endpoint by hem depth
+    // 2. Add tight 180-degree bend
+    // 3. Return parallel, offset by steel thickness
     
-    // P1: Starting point (endpoint of segment)
+    // P1: Starting point (endpoint of segment) - outer edge
     const p1x = hemPoint.x * scale;
     const p1y = hemPoint.y * scale;
     
-    // P2: Go perpendicular out to the chosen side by 0.5"
+    // P2: End of outward perpendicular leg (before bend)
     const p2x = (hemPoint.x + perpX * hemDepth) * scale;
     const p2y = (hemPoint.y + perpY * hemDepth) * scale;
     
-    // P3: Double back parallel to segment (opposite direction) by 0.5"
-    // This moves away from the endpoint, along the perpendicular line
-    const p3x = (hemPoint.x + perpX * hemDepth - unitX * hemDepth) * scale;
-    const p3y = (hemPoint.y + perpY * hemDepth - unitY * hemDepth) * scale;
+    // Bend center point for 180-degree arc
+    const bendCenterX = (hemPoint.x + perpX * hemDepth - unitX * bendRadius) * scale;
+    const bendCenterY = (hemPoint.y + perpY * hemDepth - unitY * bendRadius) * scale;
     
-    // P4: Return perpendicular back to the segment line, creating the closed U
-    const p4x = (hemPoint.x - unitX * hemDepth) * scale;
-    const p4y = (hemPoint.y - unitY * hemDepth) * scale;
+    // P3: Start of return leg (after bend) - offset by steel thickness
+    const p3x = (hemPoint.x + perpX * (hemDepth - steelThickness) - unitX * (bendRadius * 2)) * scale;
+    const p3y = (hemPoint.y + perpY * (hemDepth - steelThickness) - unitY * (bendRadius * 2)) * scale;
     
-    // Draw the U-shaped hem
+    // P4: End of return leg - back at segment, offset by steel thickness
+    const p4x = (hemPoint.x + perpX * (hemDepth - steelThickness)) * scale;
+    const p4y = (hemPoint.y + perpY * (hemDepth - steelThickness)) * scale;
+    
+    // Drawing style
     if (isPreview) {
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.3)'; // Purple preview fill
       ctx.strokeStyle = '#9333ea'; // Purple outline
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
+      ctx.fillStyle = 'rgba(147, 51, 234, 0.2)'; // Purple preview fill
     } else {
-      ctx.fillStyle = 'rgba(220, 38, 38, 0.2)'; // Light red fill
       ctx.strokeStyle = '#dc2626'; // Red outline
       ctx.lineWidth = 3;
       ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.15)'; // Light red fill
     }
     
+    // Draw outer hem leg (main flange)
     ctx.beginPath();
     ctx.moveTo(p1x, p1y);
-    ctx.lineTo(p2x, p2y); // Out perpendicular
-    ctx.lineTo(p3x, p3y); // Back parallel (flush against segment)
-    ctx.lineTo(p4x, p4y); // Back perpendicular
+    ctx.lineTo(p2x, p2y);
+    ctx.stroke();
+    
+    // Draw tight 180-degree bend arc
+    const startAngle = Math.atan2(perpY, perpX);
+    ctx.beginPath();
+    ctx.arc(
+      bendCenterX,
+      bendCenterY,
+      bendRadius * scale,
+      startAngle,
+      startAngle + Math.PI,
+      false
+    );
+    ctx.stroke();
+    
+    // Draw inner return leg (showing doubled-back metal) - slightly thinner to show it's behind
+    ctx.lineWidth = isPreview ? 1.5 : 2;
+    ctx.beginPath();
+    ctx.moveTo(p3x, p3y);
+    ctx.lineTo(p4x, p4y);
+    ctx.stroke();
+    
+    // Draw inner arc (showing the inside of the fold)
+    const innerBendRadius = Math.max(bendRadius - steelThickness, 0.01);
+    ctx.beginPath();
+    ctx.arc(
+      bendCenterX,
+      bendCenterY,
+      innerBendRadius * scale,
+      startAngle,
+      startAngle + Math.PI,
+      false
+    );
+    ctx.stroke();
+    
+    ctx.setLineDash([]);
+    
+    // Fill the hem area to show it's folded material
+    ctx.beginPath();
+    ctx.moveTo(p1x, p1y);
+    ctx.lineTo(p2x, p2y);
+    ctx.arc(
+      bendCenterX,
+      bendCenterY,
+      bendRadius * scale,
+      startAngle,
+      startAngle + Math.PI,
+      false
+    );
+    ctx.lineTo(p4x, p4y);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
-    ctx.setLineDash([]);
     
     // Draw label
     if (isPreview) {
       ctx.fillStyle = '#9333ea';
       ctx.font = 'bold 14px sans-serif';
-      const labelX = (p2x + p3x) / 2;
-      const labelY = (p2y + p3y) / 2;
+      const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
+      const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
       ctx.fillText(`${side.toUpperCase()}?`, labelX - 20, labelY + 5);
     } else {
       ctx.fillStyle = '#dc2626';
       ctx.font = 'bold 12px sans-serif';
-      const labelX = (p2x + p3x) / 2;
-      const labelY = (p2y + p3y) / 2;
+      const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
+      const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
       ctx.fillText('HEM', labelX - 15, labelY + 4);
+      
+      // Add measurement annotation
+      ctx.fillStyle = '#666666';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('0.5"', labelX - 10, labelY + 16);
     }
   }
 
@@ -819,9 +878,10 @@ export function TrimPricingCalculator() {
       const length = Math.sqrt(dx * dx + dy * dy);
       total += length;
       
-      // Add hem length
+      // Add hem length - true 1/2" U-shaped hem adds to material take-off
+      // Hem includes: 0.5" out + 180° bend + 0.5" back = 0.5" to total girth
       if (segment.hasHem) {
-        total += 0.5; // Hem is always 0.5"
+        total += 0.5; // Hem adds exactly 0.5" to total material needed
       }
     });
     
