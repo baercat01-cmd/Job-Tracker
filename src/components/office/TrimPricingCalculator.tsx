@@ -1752,13 +1752,10 @@ export function TrimPricingCalculator() {
             </div>
           </div>
         </DialogContent>
-      </Dialog> */}
+      </Dialog>
 
-      {/* Edit Segment Dialog */}
-      {/* Keeping this as it's still needed */}
-    </>
-  );
-}
+      {/* Edit Segment Measurement/Angle Dialog */}
+      <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
         <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
