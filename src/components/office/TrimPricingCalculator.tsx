@@ -263,12 +263,12 @@ export function TrimPricingCalculator() {
     }
 
     // Draw mode indicator
-    if (drawingLocked) {
+    if (!isDrawingMode) {
       if (drawing.segments.length === 0) {
         ctx.fillStyle = '#666666';
         ctx.font = 'bold 24px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('🔒 Unlock to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.fillText('Click "Draw" button to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
         ctx.textAlign = 'left';
       } else if (!drawing.selectedSegmentId) {
         ctx.fillStyle = '#666666';
@@ -277,11 +277,11 @@ export function TrimPricingCalculator() {
         ctx.fillText('Click on a line to edit it', CANVAS_WIDTH / 2, 30);
         ctx.textAlign = 'left';
       }
-    } else if (!drawingLocked && drawing.segments.length === 0 && !drawing.currentPoint) {
-      ctx.fillStyle = '#666666';
+    } else if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
+      ctx.fillStyle = '#3b82f6';
       ctx.font = 'bold 24px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('✓ UNLOCKED - Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      ctx.fillText('Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
       ctx.textAlign = 'left';
     }
 
@@ -354,23 +354,42 @@ export function TrimPricingCalculator() {
         ctx.fillText('HEM', p2x - 20, p2y - 5);
       }
 
-      // Draw label
-      const midX = (startX + endX) / 2;
-      const midY = (startY + endY) / 2;
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText(segment.label, midX - 5, midY - 12);
-
-      // Calculate and draw measurement
+      // Calculate measurements first
       const dx = segment.end.x - segment.start.x;
       const dy = segment.end.y - segment.start.y;
       const lengthInInches = Math.sqrt(dx * dx + dy * dy);
       
+      // Calculate line angle for positioning text
+      const lineAngle = Math.atan2(dy, dx);
+      const isVerticalish = Math.abs(Math.cos(lineAngle)) < 0.5; // More vertical than horizontal
+      
+      // Mid point
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      
+      // Draw label (letter) - position based on line orientation
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 16px sans-serif';
+      if (isVerticalish) {
+        // Vertical line - put label to the left
+        ctx.fillText(segment.label, midX - 20, midY);
+      } else {
+        // Horizontal line - put label above
+        ctx.fillText(segment.label, midX - 5, midY - 25);
+      }
+
+      // Draw measurement - opposite side from label
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 14px sans-serif';
-      ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX + 10, midY + 5);
+      if (isVerticalish) {
+        // Vertical line - put measurement to the right
+        ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX + 10, midY);
+      } else {
+        // Horizontal line - put measurement below
+        ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX - 5, midY + 20);
+      }
 
-      // Calculate and draw angle (if not first segment)
+      // Calculate and draw angle at start point (if not first segment)
       const segmentIndex = drawing.segments.indexOf(segment);
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
@@ -378,7 +397,10 @@ export function TrimPricingCalculator() {
         
         ctx.fillStyle = '#6b21a8';
         ctx.font = 'bold 13px sans-serif';
-        ctx.fillText(`${Math.round(angle)}°`, startX + 15, startY - 5);
+        // Position angle away from the line
+        const angleOffsetX = isVerticalish ? -35 : 15;
+        const angleOffsetY = isVerticalish ? -10 : -15;
+        ctx.fillText(`${Math.round(angle)}°`, startX + angleOffsetX, startY + angleOffsetY);
       }
     });
 
@@ -472,8 +494,8 @@ export function TrimPricingCalculator() {
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current) return;
     
-    // If locked (not drawing mode), check if user clicked on a segment to select it
-    if (drawingLocked) {
+    // If not in drawing mode, check if user clicked on a segment to select it
+    if (!isDrawingMode) {
       const rect = canvasRef.current.getBoundingClientRect();
       const clickX = (e.clientX - rect.left) / scale;
       const clickY = (e.clientY - rect.top) / scale;
@@ -1109,43 +1131,37 @@ export function TrimPricingCalculator() {
             
             {/* Top Controls - Overlaid on Canvas */}
             <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
-              {/* Lock/Unlock Drawing Button */}
-              <Button
-                onClick={() => {
-                  setDrawingLocked(!drawingLocked);
-                  if (!drawingLocked) {
-                    // Locking - stop drawing
-                    setIsDrawingMode(false);
-                    setDrawing(prev => ({ ...prev, currentPoint: null }));
-                  }
-                }}
-                size="sm"
-                className={`h-7 px-3 font-bold text-xs ${
-                  drawingLocked 
-                    ? 'bg-red-600 hover:bg-red-700 text-white' 
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
-              >
-                {drawingLocked ? '🔒 Locked (Click to Edit)' : '🔓 Drawing Mode'}
-              </Button>
-              
-              {!drawingLocked && (
+              {/* Draw/Finish Button */}
+              {!isDrawingMode ? (
+                <Button
+                  onClick={() => {
+                    setIsDrawingMode(true);
+                    setDrawingLocked(false);
+                  }}
+                  size="sm"
+                  className="h-7 px-4 font-bold text-xs bg-green-600 hover:bg-green-700 text-white"
+                >
+                  Draw
+                </Button>
+              ) : (
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <span className="text-green-700 font-bold">Drawing Active</span>
                   </div>
                   
-                  {drawing.currentPoint && (
-                    <Button
-                      onClick={stopDrawing}
-                      size="sm"
-                      className="h-7 px-2 bg-orange-600 text-white hover:bg-orange-700 border border-orange-400 text-xs"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Stop
-                    </Button>
-                  )}
+                  <Button
+                    onClick={() => {
+                      setIsDrawingMode(false);
+                      setDrawingLocked(true);
+                      setDrawing(prev => ({ ...prev, currentPoint: null }));
+                      toast.success('Drawing finished - click lines to edit');
+                    }}
+                    size="sm"
+                    className="h-7 px-3 bg-blue-600 text-white hover:bg-blue-700 border border-blue-400 text-xs font-bold"
+                  >
+                    Finish Drawing
+                  </Button>
                 </>
               )}
               
