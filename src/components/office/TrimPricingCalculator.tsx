@@ -114,6 +114,7 @@ export function TrimPricingCalculator() {
     nextLabel: 65 // ASCII 'A'
   });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [drawingLocked, setDrawingLocked] = useState(true);
   const [canvasReady, setCanvasReady] = useState(false);
   const [gridSize] = useState(0.125); // 1/8" snap precision
   const [majorGridSize] = useState(0.5); // 1/2" major grid blocks
@@ -125,15 +126,13 @@ export function TrimPricingCalculator() {
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
   const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
 
-  // Auto-enable drawing mode when dialog opens
+  // Initialize canvas when showing drawing
   useEffect(() => {
     if (showDrawing) {
-      setIsDrawingMode(true);
       setCanvasReady(false);
       // Small delay to ensure canvas is mounted
       setTimeout(() => setCanvasReady(true), 100);
     } else {
-      setIsDrawingMode(false);
       setCanvasReady(false);
     }
   }, [showDrawing]);
@@ -263,12 +262,26 @@ export function TrimPricingCalculator() {
       ctx.textAlign = 'left';
     }
 
-    // Draw "Ready" indicator if in drawing mode and no points yet
-    if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
+    // Draw mode indicator
+    if (drawingLocked) {
+      if (drawing.segments.length === 0) {
+        ctx.fillStyle = '#666666';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🔒 Unlock to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.textAlign = 'left';
+      } else if (!drawing.selectedSegmentId) {
+        ctx.fillStyle = '#666666';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Click on a line to edit it', CANVAS_WIDTH / 2, 30);
+        ctx.textAlign = 'left';
+      }
+    } else if (!drawingLocked && drawing.segments.length === 0 && !drawing.currentPoint) {
       ctx.fillStyle = '#666666';
       ctx.font = 'bold 24px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('✓ READY - Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      ctx.fillText('✓ UNLOCKED - Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
       ctx.textAlign = 'left';
     }
 
@@ -292,43 +305,53 @@ export function TrimPricingCalculator() {
 
       // Don't draw endpoint dots - removed as per request
 
-      // Draw hem if exists
+      // Draw hem if exists (U-shaped)
       if (segment.hasHem) {
         const hemPoint = segment.hemAtStart ? segment.start : segment.end;
         const otherPoint = segment.hemAtStart ? segment.end : segment.start;
         
-        // Calculate direction vector (reversed for hem)
+        // Calculate direction vector
         const dx = otherPoint.x - hemPoint.x;
         const dy = otherPoint.y - hemPoint.y;
         const length = Math.sqrt(dx * dx + dy * dy);
         const unitX = dx / length;
         const unitY = dy / length;
         
-        // Calculate perpendicular offset for gap (0.0625" = 1/16")
-        const offsetX = -unitY * 0.0625;
-        const offsetY = unitX * 0.0625;
+        // Perpendicular vector (to the left of the line)
+        const perpX = -unitY;
+        const perpY = unitX;
         
-        // Hem start point (with gap offset)
-        const hemStartX = (hemPoint.x - unitX * 0.0625 + offsetX) * scale;
-        const hemStartY = (hemPoint.y - unitY * 0.0625 + offsetY) * scale;
+        // U-shape hem: goes perpendicular 0.5", then back parallel 0.5", then back perpendicular 0.5"
+        const hemWidth = 0.5;
         
-        // Hem goes back 0.5" in opposite direction
-        const hemEndX = (hemPoint.x - unitX * 0.5 + offsetX) * scale;
-        const hemEndY = (hemPoint.y - unitY * 0.5 + offsetY) * scale;
+        // First leg: perpendicular outward
+        const p1x = hemPoint.x * scale;
+        const p1y = hemPoint.y * scale;
+        const p2x = (hemPoint.x + perpX * hemWidth) * scale;
+        const p2y = (hemPoint.y + perpY * hemWidth) * scale;
         
+        // Second leg: parallel to main line (backward)
+        const p3x = (hemPoint.x + perpX * hemWidth - unitX * hemWidth) * scale;
+        const p3y = (hemPoint.y + perpY * hemWidth - unitY * hemWidth) * scale;
+        
+        // Third leg: perpendicular back to main line
+        const p4x = (hemPoint.x - unitX * hemWidth) * scale;
+        const p4y = (hemPoint.y - unitY * hemWidth) * scale;
+        
+        // Draw U-shaped hem
         ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 3;
-        ctx.setLineDash([6, 6]);
         ctx.beginPath();
-        ctx.moveTo(hemStartX, hemStartY);
-        ctx.lineTo(hemEndX, hemEndY);
+        ctx.moveTo(p1x, p1y);
+        ctx.lineTo(p2x, p2y); // Out
+        ctx.lineTo(p3x, p3y); // Back
+        ctx.lineTo(p4x, p4y); // In
         ctx.stroke();
-        ctx.setLineDash([]);
         
         // Draw hem label
         ctx.fillStyle = '#dc2626';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('HEM', hemEndX - 15, hemEndY - 5);
+        ctx.fillText('HEM', p2x - 20, p2y - 5);
       }
 
       // Draw label
@@ -395,7 +418,26 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked]);
+
+  function pointToLineDistance(point: Point, lineStart: Point, lineEnd: Point): number {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    
+    if (length === 0) return Math.sqrt(
+      (point.x - lineStart.x) ** 2 + (point.y - lineStart.y) ** 2
+    );
+    
+    const t = Math.max(0, Math.min(1, (
+      (point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy
+    ) / (length * length)));
+    
+    const projX = lineStart.x + t * dx;
+    const projY = lineStart.y + t * dy;
+    
+    return Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
+  }
 
   function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
@@ -428,7 +470,36 @@ export function TrimPricingCalculator() {
   }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!canvasRef.current || !isDrawingMode) return;
+    if (!canvasRef.current) return;
+    
+    // If locked (not drawing mode), check if user clicked on a segment to select it
+    if (drawingLocked) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) / scale;
+      const clickY = (e.clientY - rect.top) / scale;
+      
+      // Find if user clicked near any segment
+      for (let i = drawing.segments.length - 1; i >= 0; i--) {
+        const seg = drawing.segments[i];
+        const dist = pointToLineDistance(
+          { x: clickX, y: clickY },
+          seg.start,
+          seg.end
+        );
+        
+        if (dist < 0.5) { // Within 0.5" of the line
+          selectSegment(seg.id);
+          return;
+        }
+      }
+      
+      // Deselect if clicked on empty space
+      setDrawing(prev => ({ ...prev, selectedSegmentId: null }));
+      return;
+    }
+    
+    // Drawing mode - add new points
+    if (!isDrawingMode) return;
     
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / scale;
@@ -1038,20 +1109,44 @@ export function TrimPricingCalculator() {
             
             {/* Top Controls - Overlaid on Canvas */}
             <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
-              <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-green-700 font-bold">Active</span>
-              </div>
+              {/* Lock/Unlock Drawing Button */}
+              <Button
+                onClick={() => {
+                  setDrawingLocked(!drawingLocked);
+                  if (!drawingLocked) {
+                    // Locking - stop drawing
+                    setIsDrawingMode(false);
+                    setDrawing(prev => ({ ...prev, currentPoint: null }));
+                  }
+                }}
+                size="sm"
+                className={`h-7 px-3 font-bold text-xs ${
+                  drawingLocked 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                {drawingLocked ? '🔒 Locked (Click to Edit)' : '🔓 Drawing Mode'}
+              </Button>
               
-              {drawing.currentPoint && (
-                <Button
-                  onClick={stopDrawing}
-                  size="sm"
-                  className="h-7 px-2 bg-orange-600 text-white hover:bg-orange-700 border border-orange-400 text-xs"
-                >
-                  <X className="w-3 h-3 mr-1" />
-                  Stop
-                </Button>
+              {!drawingLocked && (
+                <>
+                  <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-green-700 font-bold">Drawing Active</span>
+                  </div>
+                  
+                  {drawing.currentPoint && (
+                    <Button
+                      onClick={stopDrawing}
+                      size="sm"
+                      className="h-7 px-2 bg-orange-600 text-white hover:bg-orange-700 border border-orange-400 text-xs"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Stop
+                    </Button>
+                  )}
+                </>
               )}
               
               <Button
@@ -1064,16 +1159,34 @@ export function TrimPricingCalculator() {
                 Clear
               </Button>
               
-              {/* Add Hem Button - Always Available */}
-              <Button
-                onClick={addHemToLastSegment}
-                size="sm"
-                disabled={drawing.segments.length === 0}
-                className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold"
-                title="Add hem to last drawn segment"
-              >
-                + Add Hem
-              </Button>
+              {/* Add Hem Button - Available when segment selected or last segment exists */}
+              {(drawing.selectedSegmentId || drawing.segments.length > 0) && (
+                <Button
+                  onClick={() => {
+                    if (drawing.selectedSegmentId) {
+                      // Add hem to selected segment
+                      const seg = drawing.segments.find(s => s.id === drawing.selectedSegmentId);
+                      if (seg?.hasHem) {
+                        removeHemFromSelected();
+                      } else {
+                        addHemToSelected(false);
+                      }
+                    } else {
+                      addHemToLastSegment();
+                    }
+                  }}
+                  size="sm"
+                  className={`h-7 px-2 text-xs font-bold ${
+                    drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  }`}
+                >
+                  {drawing.selectedSegmentId && drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.hasHem
+                    ? '- Remove Hem'
+                    : '+ Add Hem'}
+                </Button>
+              )}
               
               {/* Zoom Controls */}
               <div className="flex gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300 ml-auto">
