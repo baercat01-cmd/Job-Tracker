@@ -165,22 +165,25 @@ export function TrimPricingCalculator() {
     // Hem dimensions
     const hemDepth = 0.5;
     
-    // Create U-shaped fold that doubles back flush against the segment:
-    // P1: Starting point (on the main line)
+    // Create U-shaped hem that doubles back along the segment:
+    // The hem extends along the line direction, then folds perpendicular, then comes back
+    
+    // P1: Starting point (endpoint of segment)
     const p1x = hemPoint.x * scale;
     const p1y = hemPoint.y * scale;
     
-    // P2: Go perpendicular outward (0.5")
-    const p2x = (hemPoint.x + perpX * hemDepth) * scale;
-    const p2y = (hemPoint.y + perpY * hemDepth) * scale;
+    // P2: Extend outward along the segment direction (away from the segment) by 0.5"
+    // This is the opposite direction of unitX/unitY since we're going away from otherPoint
+    const p2x = (hemPoint.x - unitX * hemDepth) * scale;
+    const p2y = (hemPoint.y - unitY * hemDepth) * scale;
     
-    // P3: Go parallel back along the line (0.5") - doubles back flush
-    const p3x = (hemPoint.x + perpX * hemDepth - unitX * hemDepth) * scale;
-    const p3y = (hemPoint.y + perpY * hemDepth - unitY * hemDepth) * scale;
+    // P3: Fold perpendicular to the chosen side by 0.5"
+    const p3x = (hemPoint.x - unitX * hemDepth + perpX * hemDepth) * scale;
+    const p3y = (hemPoint.y - unitY * hemDepth + perpY * hemDepth) * scale;
     
-    // P4: Go back perpendicular to meet the line (creating enclosed U flush against segment)
-    const p4x = (hemPoint.x - unitX * hemDepth) * scale;
-    const p4y = (hemPoint.y - unitY * hemDepth) * scale;
+    // P4: Come back along the segment direction by 0.5" (doubles back)
+    const p4x = (hemPoint.x + perpX * hemDepth) * scale;
+    const p4y = (hemPoint.y + perpY * hemDepth) * scale;
     
     // Draw the U-shaped hem
     if (isPreview) {
