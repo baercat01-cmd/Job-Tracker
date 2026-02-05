@@ -111,14 +111,28 @@ export function TrimPricingCalculator() {
     nextLabel: 65 // ASCII 'A'
   });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
   const [gridSize] = useState(0.5); // 1/2" grid
   const [scale] = useState(20); // pixels per inch
   const CANVAS_WIDTH = 800;
   const CANVAS_HEIGHT = 600;
 
+  // Auto-enable drawing mode when dialog opens
+  useEffect(() => {
+    if (showDrawing) {
+      setIsDrawingMode(true);
+      setCanvasReady(false);
+      // Small delay to ensure canvas is mounted
+      setTimeout(() => setCanvasReady(true), 100);
+    } else {
+      setIsDrawingMode(false);
+      setCanvasReady(false);
+    }
+  }, [showDrawing]);
+
   // Draw canvas
   useEffect(() => {
-    if (!canvasRef.current || !showDrawing) return;
+    if (!canvasRef.current || !showDrawing || !canvasReady) return;
     
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -128,9 +142,9 @@ export function TrimPricingCalculator() {
     ctx.fillStyle = '#0a1f0a';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw grid
-    ctx.strokeStyle = isDrawingMode ? '#2d5a2d' : '#1a3a1a';
-    ctx.lineWidth = 1;
+    // Draw grid - make it more visible
+    ctx.strokeStyle = '#2d5a2d';
+    ctx.lineWidth = 0.5;
     const gridSpacing = gridSize * scale; // pixels
     
     // Vertical lines
@@ -147,6 +161,15 @@ export function TrimPricingCalculator() {
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
       ctx.stroke();
+    }
+
+    // Draw "Ready" indicator if in drawing mode and no points yet
+    if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✓ READY - Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      ctx.textAlign = 'left';
     }
 
     // Draw segments
@@ -262,7 +285,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode]);
 
   function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
     const dx1 = seg1.end.x - seg1.start.x;
@@ -1140,17 +1163,10 @@ export function TrimPricingCalculator() {
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-3 bg-black/30 p-3 rounded border-2 border-green-800">
               <div className="flex gap-2">
-                <Button
-                  onClick={() => setIsDrawingMode(!isDrawingMode)}
-                  className={`${
-                    isDrawingMode
-                      ? 'bg-yellow-500 text-black hover:bg-yellow-600'
-                      : 'bg-green-800 text-yellow-400 hover:bg-green-700'
-                  } font-bold border-2 border-yellow-500`}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  {isDrawingMode ? 'Drawing...' : 'Start Drawing'}
-                </Button>
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-500/20 border-2 border-green-500 rounded">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-green-400 font-bold">Drawing Active</span>
+                </div>
                 
                 <Button
                   onClick={clearDrawing}
@@ -1211,24 +1227,25 @@ export function TrimPricingCalculator() {
             )}
 
             {/* Canvas */}
-            <div className={`border-4 rounded overflow-hidden ${
-              isDrawingMode ? 'border-yellow-500 shadow-lg shadow-yellow-500/50' : 'border-green-800'
-            }`}>
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_WIDTH}
-                height={CANVAS_HEIGHT}
-                onClick={handleCanvasClick}
-                className={isDrawingMode ? 'cursor-crosshair' : 'cursor-not-allowed'}
-                style={{ display: 'block' }}
-              />
+            <div className="border-4 border-green-500 rounded overflow-hidden shadow-lg shadow-green-500/30">
+              {!canvasReady ? (
+                <div className="w-full h-[600px] flex items-center justify-center bg-gray-900">
+                  <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-yellow-400 font-semibold">Loading Canvas...</p>
+                  </div>
+                </div>
+              ) : (
+                <canvas
+                  ref={canvasRef}
+                  width={CANVAS_WIDTH}
+                  height={CANVAS_HEIGHT}
+                  onClick={handleCanvasClick}
+                  className="cursor-crosshair"
+                  style={{ display: 'block' }}
+                />
+              )}
             </div>
-            
-            {!isDrawingMode && (
-              <div className="text-center text-yellow-500 font-semibold bg-yellow-500/10 border-2 border-yellow-500 rounded p-2">
-                ⚠️ Click "Start Drawing" to begin placing points
-              </div>
-            )}
 
             {/* Instructions */}
             <div className="bg-black/30 border-2 border-green-800 rounded p-3 text-sm text-white/80">
