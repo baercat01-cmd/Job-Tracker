@@ -304,15 +304,23 @@ export function TrimPricingCalculator() {
         const unitX = dx / length;
         const unitY = dy / length;
         
+        // Calculate perpendicular offset for gap (0.0625" = 1/16")
+        const offsetX = -unitY * 0.0625;
+        const offsetY = unitX * 0.0625;
+        
+        // Hem start point (with gap offset)
+        const hemStartX = (hemPoint.x - unitX * 0.0625 + offsetX) * scale;
+        const hemStartY = (hemPoint.y - unitY * 0.0625 + offsetY) * scale;
+        
         // Hem goes back 0.5" in opposite direction
-        const hemEndX = (hemPoint.x - unitX * 0.5) * scale;
-        const hemEndY = (hemPoint.y - unitY * 0.5) * scale;
+        const hemEndX = (hemPoint.x - unitX * 0.5 + offsetX) * scale;
+        const hemEndY = (hemPoint.y - unitY * 0.5 + offsetY) * scale;
         
         ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 3;
         ctx.setLineDash([6, 6]);
         ctx.beginPath();
-        ctx.moveTo(hemPoint.x * scale, hemPoint.y * scale);
+        ctx.moveTo(hemStartX, hemStartY);
         ctx.lineTo(hemEndX, hemEndY);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -582,6 +590,29 @@ export function TrimPricingCalculator() {
       )
     }));
     toast.success('Hem added');
+  }
+
+  function addHemToLastSegment() {
+    if (drawing.segments.length === 0) {
+      toast.error('No segments drawn yet');
+      return;
+    }
+    
+    const lastSegment = drawing.segments[drawing.segments.length - 1];
+    if (lastSegment.hasHem) {
+      toast.error('Last segment already has a hem');
+      return;
+    }
+    
+    setDrawing(prev => ({
+      ...prev,
+      segments: prev.segments.map((seg, idx) => 
+        idx === prev.segments.length - 1
+          ? { ...seg, hasHem: true, hemAtStart: false }
+          : seg
+      )
+    }));
+    toast.success('Hem added to last segment');
   }
 
   function removeHemFromSelected() {
@@ -1032,24 +1063,16 @@ export function TrimPricingCalculator() {
                 Clear
               </Button>
               
-              {drawing.selectedSegmentId && (
-                <>
-                  <Button
-                    onClick={() => addHemToSelected(true)}
-                    size="sm"
-                    className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 text-xs"
-                  >
-                    Hem (Start)
-                  </Button>
-                  <Button
-                    onClick={() => addHemToSelected(false)}
-                    size="sm"
-                    className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 text-xs"
-                  >
-                    Hem (End)
-                  </Button>
-                </>
-              )}
+              {/* Add Hem Button - Always Available */}
+              <Button
+                onClick={addHemToLastSegment}
+                size="sm"
+                disabled={drawing.segments.length === 0}
+                className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold"
+                title="Add hem to last drawn segment"
+              >
+                + Add Hem
+              </Button>
               
               {/* Zoom Controls */}
               <div className="flex gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300 ml-auto">
@@ -1629,25 +1652,16 @@ export function TrimPricingCalculator() {
                     Clear All
                   </Button>
                   
-                  {/* Hem Controls - Always Available */}
-                  {drawing.selectedSegmentId && (
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => addHemToSelected(true)}
-                        size="sm"
-                        className="bg-purple-600 text-white hover:bg-purple-700"
-                      >
-                        Hem (Start)
-                      </Button>
-                      <Button
-                        onClick={() => addHemToSelected(false)}
-                        size="sm"
-                        className="bg-purple-600 text-white hover:bg-purple-700"
-                      >
-                        Hem (End)
-                      </Button>
-                    </div>
-                  )}
+                  {/* Add Hem Button - Always Available */}
+                  <Button
+                    onClick={addHemToLastSegment}
+                    size="sm"
+                    disabled={drawing.segments.length === 0}
+                    className="bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-bold"
+                    title="Add hem to last drawn segment"
+                  >
+                    + Add Hem
+                  </Button>
                 </div>
                 
                 {/* Zoom Controls */}
