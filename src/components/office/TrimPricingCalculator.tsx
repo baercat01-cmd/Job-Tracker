@@ -105,7 +105,7 @@ export function TrimPricingCalculator() {
   const [saving, setSaving] = useState(false);
 
   // Drawing feature states
-  const [showDrawing, setShowDrawing] = useState(false);
+  const [showDrawing, setShowDrawing] = useState(true); // Always show drawing
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [drawing, setDrawing] = useState<DrawingState>({
     segments: [],
@@ -972,9 +972,171 @@ export function TrimPricingCalculator() {
   const hasSettings = sheetLFCost && pricePerBend && markupPercent;
 
   return (
-    <>
-      {/* Main Calculator */}
-      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 max-w-4xl mx-auto shadow-2xl">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 max-w-[1800px] mx-auto">
+      {/* Drawing Tool - Left Side */}
+      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl">
+        <CardHeader className="pb-4 border-b-2 border-yellow-500">
+          <CardTitle className="flex items-center gap-3 text-yellow-500">
+            <Pencil className="w-7 h-7" />
+            <span className="text-2xl font-bold">2D Drawing Tool</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl bg-white">
+            {!canvasReady ? (
+              <div className="w-full h-[600px] flex items-center justify-center bg-gray-100">
+                <div className="text-center">
+                  <div className="w-12 h-12 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-gray-700 font-semibold">Loading Canvas...</p>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-auto" style={{ maxHeight: '600px' }}>
+                <canvas
+                  ref={canvasRef}
+                  width={CANVAS_WIDTH}
+                  height={CANVAS_HEIGHT}
+                  onClick={handleCanvasClick}
+                  onMouseMove={handleCanvasMouseMove}
+                  className="cursor-crosshair"
+                  style={{ display: 'block' }}
+                />
+              </div>
+            )}
+            
+            {/* Top Controls - Overlaid on Canvas */}
+            <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
+              <div className="flex items-center gap-2 px-2 py-1 bg-green-100 border-2 border-green-500 rounded">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-green-700 font-bold">Active</span>
+              </div>
+              
+              {drawing.currentPoint && (
+                <Button
+                  onClick={stopDrawing}
+                  size="sm"
+                  className="h-7 px-2 bg-orange-600 text-white hover:bg-orange-700 border border-orange-400 text-xs"
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Stop
+                </Button>
+              )}
+              
+              <Button
+                onClick={clearDrawing}
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 border border-red-500 text-red-600 hover:bg-red-50 text-xs"
+              >
+                <Trash className="w-3 h-3 mr-1" />
+                Clear
+              </Button>
+              
+              {drawing.selectedSegmentId && (
+                <>
+                  <Button
+                    onClick={() => addHemToSelected(true)}
+                    size="sm"
+                    className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 text-xs"
+                  >
+                    Hem (Start)
+                  </Button>
+                  <Button
+                    onClick={() => addHemToSelected(false)}
+                    size="sm"
+                    className="h-7 px-2 bg-purple-600 text-white hover:bg-purple-700 text-xs"
+                  >
+                    Hem (End)
+                  </Button>
+                </>
+              )}
+              
+              {/* Zoom Controls */}
+              <div className="flex gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300 ml-auto">
+                <Button onClick={zoomOut} size="sm" variant="outline" className="h-6 w-6 p-0">
+                  <span className="text-sm font-bold">-</span>
+                </Button>
+                <Button onClick={resetZoom} size="sm" variant="outline" className="h-6 px-2 text-xs">
+                  {Math.round((scale / 80) * 100)}%
+                </Button>
+                <Button onClick={zoomIn} size="sm" variant="outline" className="h-6 w-6 p-0">
+                  <span className="text-sm font-bold">+</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Segment Selection List - Bottom Left */}
+            {drawing.segments.length > 0 && (
+              <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-2 shadow-lg max-w-xs">
+                <p className="text-gray-800 font-bold mb-1 text-xs">Segments:</p>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {drawing.segments.map(seg => (
+                    <div
+                      key={seg.id}
+                      onClick={() => selectSegment(seg.id)}
+                      className={`px-2 py-1 rounded cursor-pointer text-xs font-medium transition-colors ${
+                        seg.id === drawing.selectedSegmentId
+                          ? 'bg-yellow-400 text-black'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>{seg.label} {seg.hasHem && '(HEM)'}</span>
+                        {seg.id === drawing.selectedSegmentId && (
+                          <div className="flex gap-1">
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditMode(seg.id);
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 text-blue-600 hover:bg-blue-100"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSelectedSegment();
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 text-red-600 hover:bg-red-100"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stats - Bottom Right */}
+            <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-2 shadow-lg">
+              <div className="text-gray-800 text-xs font-bold">
+                <div>Total: {calculateTotalLength().toFixed(3)}"</div>
+                <div>Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}</div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Apply Button */}
+          <Button
+            onClick={applyDrawingToCalculator}
+            className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
+            disabled={drawing.segments.length === 0}
+          >
+            Apply Drawing to Calculator →
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Calculator - Right Side */}
+      <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl">
         <CardHeader className="pb-4 border-b-2 border-yellow-500">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-3 text-yellow-500">
@@ -1107,18 +1269,7 @@ export function TrimPricingCalculator() {
                 </Button>
               </div>
 
-              {/* Drawing Tool Button */}
-              <div className="pt-4 border-t-2 border-green-800">
-                <Button
-                  onClick={() => setShowDrawing(true)}
-                  className="w-full bg-gradient-to-r from-purple-700 to-purple-800 hover:from-purple-600 hover:to-purple-700 text-yellow-400 font-bold border-2 border-yellow-500"
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  2D Drawing Tool
-                </Button>
-              </div>
-
-              {/* Save/Load Buttons - Moved to Bottom */}
+              {/* Save/Load Buttons */}
               <div className="flex gap-3 pt-4 border-t-2 border-green-800">
                 <Button
                   onClick={() => setShowSaveDialog(true)}
@@ -1139,13 +1290,275 @@ export function TrimPricingCalculator() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
 
-      {/* Settings Dialog - truncated for brevity */}
-      {/* Info Dialog - truncated for brevity */}
-      {/* Save/Load Dialogs - truncated for brevity */}
+      {/* Settings Dialog */}
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <Settings className="w-6 h-6" />
+              Calculator Settings
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="lf-cost" className="text-yellow-400 font-semibold">
+                Sheet Cost per LF (42" wide)
+              </Label>
+              <Input
+                id="lf-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={tempLFCost}
+                onChange={(e) => setTempLFCost(e.target.value)}
+                placeholder="Enter cost per linear foot"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+              />
+            </div>
 
-      {/* 2D Drawing Dialog */}
-      <Dialog open={showDrawing} onOpenChange={setShowDrawing}>
+            <div className="space-y-2">
+              <Label htmlFor="bend-price" className="text-yellow-400 font-semibold">
+                Price per Bend
+              </Label>
+              <Input
+                id="bend-price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={tempBendPrice}
+                onChange={(e) => setTempBendPrice(e.target.value)}
+                placeholder="Enter price per bend"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="markup" className="text-yellow-400 font-semibold">
+                Markup Percentage (%)
+              </Label>
+              <Input
+                id="markup"
+                type="number"
+                min="0"
+                step="0.1"
+                value={tempMarkupPercent}
+                onChange={(e) => setTempMarkupPercent(e.target.value)}
+                placeholder="Enter markup percentage"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cut-price" className="text-yellow-400 font-semibold">
+                Cut Price (Fixed)
+              </Label>
+              <Input
+                id="cut-price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={tempCutPrice}
+                onChange={(e) => setTempCutPrice(e.target.value)}
+                placeholder="Enter cut price"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={saveSettings}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+              >
+                Save Settings
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowSettings(false)}
+                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Info Dialog */}
+      <Dialog open={showInfo} onOpenChange={setShowInfo}>
+        <DialogContent className="sm:max-w-lg bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <Info className="w-6 h-6" />
+              How the Calculator Works
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-white/90 text-sm">
+            <div>
+              <h4 className="font-bold text-yellow-400 mb-1">Pricing Formula:</h4>
+              <p>Selling Price = (Total Inches × Cost per Inch) + (Bends × Price per Bend) + Cut Cost</p>
+            </div>
+            <div>
+              <h4 className="font-bold text-yellow-400 mb-1">Cost per Inch Calculation:</h4>
+              <p>Sheet Cost per LF × (1 + Markup%) ÷ 12 inches</p>
+            </div>
+            <div>
+              <h4 className="font-bold text-yellow-400 mb-1">Settings:</h4>
+              <ul className="list-disc list-inside space-y-1">
+                <li><strong>Sheet Cost per LF:</strong> Your material cost for a 42" wide sheet</li>
+                <li><strong>Price per Bend:</strong> Labor/equipment cost per bend</li>
+                <li><strong>Markup %:</strong> Your profit margin (default 32%)</li>
+                <li><strong>Cut Price:</strong> Fixed cost per cut (default $1.00)</li>
+              </ul>
+            </div>
+          </div>
+          <Button
+            onClick={() => setShowInfo(false)}
+            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+          >
+            Got It
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Configuration Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <Save className="w-6 h-6" />
+              Save Configuration
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="config-name" className="text-yellow-400 font-semibold">
+                Configuration Name
+              </Label>
+              <Input
+                id="config-name"
+                value={configName}
+                onChange={(e) => setConfigName(e.target.value)}
+                placeholder="Enter a name for this configuration"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="job-select" className="text-yellow-400 font-semibold">
+                Link to Job (Optional)
+              </Label>
+              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                <SelectTrigger className="bg-white border-2 border-green-700 focus:border-yellow-500">
+                  <SelectValue placeholder="Select a job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Job</SelectItem>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.job_number ? `${job.job_number} - ` : ''}{job.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={saveConfiguration}
+                disabled={saving}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setConfigName('');
+                  setSelectedJobId('');
+                }}
+                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Load Configuration Dialog */}
+      <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
+        <DialogContent className="sm:max-w-2xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <FolderOpen className="w-6 h-6" />
+              Load Saved Configuration
+            </DialogTitle>
+          </DialogHeader>
+          {savedConfigs.length === 0 ? (
+            <div className="text-center py-8 text-white/60">
+              <p>No saved configurations yet.</p>
+              <p className="text-sm mt-2">Save your first configuration to see it here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {savedConfigs.map((config) => (
+                <div
+                  key={config.id}
+                  className="bg-black/30 border-2 border-green-800 rounded-lg p-4 hover:border-yellow-500 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="text-yellow-400 font-bold">{config.name}</h4>
+                      {config.job_name && (
+                        <p className="text-white/60 text-sm">Job: {config.job_name}</p>
+                      )}
+                      <div className="mt-2 text-white/80 text-sm">
+                        <p>Total Inches: {config.inches.reduce((sum, val) => sum + val, 0).toFixed(2)}"</p>
+                        <p>Bends: {config.bends}</p>
+                        <p className="text-white/40 text-xs mt-1">
+                          Saved: {new Date(config.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => loadConfiguration(config)}
+                        size="sm"
+                        className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+                      >
+                        Load
+                      </Button>
+                      <Button
+                        onClick={() => deleteConfiguration(config.id)}
+                        size="sm"
+                        variant="outline"
+                        className="border-2 border-red-500 text-red-400 hover:bg-red-900/20"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button
+            onClick={() => setShowLoadDialog(false)}
+            variant="outline"
+            className="w-full border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
+          >
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Segment Dialog */}
+      <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
         <DialogContent className="max-w-6xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500 overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
@@ -1339,10 +1752,13 @@ export function TrimPricingCalculator() {
             </div>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       {/* Edit Segment Dialog */}
-      <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
+      {/* Keeping this as it's still needed */}
+    </>
+  );
+}
         <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
@@ -1407,6 +1823,3 @@ export function TrimPricingCalculator() {
           )}
         </DialogContent>
       </Dialog>
-    </>
-  );
-}
