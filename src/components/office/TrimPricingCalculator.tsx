@@ -380,24 +380,6 @@ export function TrimPricingCalculator() {
             </div>
           ) : (
             <>
-              {/* Save/Load Buttons */}
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => setShowSaveDialog(true)}
-                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border-2 border-yellow-500"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
-                </Button>
-                <Button
-                  onClick={() => setShowLoadDialog(true)}
-                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border-2 border-yellow-500"
-                >
-                  <FolderOpen className="w-4 h-4 mr-2" />
-                  Load Saved ({savedConfigs.length})
-                </Button>
-              </div>
-
               {/* Steel Section - Dynamic Inch Inputs */}
               <div className="space-y-4 bg-black/30 p-5 rounded-lg border-2 border-green-800">
                 <div className="flex items-center justify-between">
@@ -458,43 +440,13 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
 
-              {/* Results Section - Always Visible */}
-              <div className="space-y-4 pt-4 border-t-4 border-yellow-500">
-                {/* Calculation Details */}
-                <div className="grid grid-cols-5 gap-2">
-                  <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                    <div className="text-yellow-400 font-bold text-xs mb-1">Total In</div>
-                    <div className="text-2xl font-bold text-white">{totalInches.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                    <div className="text-yellow-400 font-bold text-xs mb-1">Total Bend $</div>
-                    <div className="text-2xl font-bold text-white">${totalBendCost.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                    <div className="text-yellow-400 font-bold text-xs mb-1">$ per In</div>
-                    <div className="text-2xl font-bold text-white">${costPerInch.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                    <div className="text-yellow-400 font-bold text-xs mb-1">$ Per Bend</div>
-                    <div className="text-2xl font-bold text-white">${costPerBend.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                    <div className="text-yellow-400 font-bold text-xs mb-1">Total Inch $</div>
-                    <div className="text-2xl font-bold text-white">${totalInchCost.toFixed(2)}</div>
-                  </div>
-                </div>
-
-                {/* Cut Cost Display */}
-                <div className="bg-gradient-to-br from-green-800 to-green-900 border-2 border-yellow-500 rounded-lg p-3 text-center">
-                  <div className="text-yellow-400 font-bold text-sm mb-1">Cut Cost (Fixed)</div>
-                  <div className="text-3xl font-bold text-white">${totalCutCost.toFixed(2)}</div>
-                </div>
-
-                {/* Final Selling Price */}
-                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-6 text-center border-4 border-yellow-400 shadow-2xl">
-                  <div className="text-black font-bold text-lg mb-2">SELLING PRICE</div>
-                  <div className="text-6xl font-black text-black">${sellingPrice.toFixed(2)}</div>
-                  <div className="text-xs text-black/80 mt-2">Material + Bends + Cut</div>
+              {/* Results Section - Condensed */}
+              <div className="space-y-3 pt-3 border-t-4 border-yellow-500">
+                {/* Final Selling Price - Smaller */}
+                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-4 text-center border-4 border-yellow-400 shadow-2xl">
+                  <div className="text-black font-bold text-sm mb-1">SELLING PRICE</div>
+                  <div className="text-4xl font-black text-black">${sellingPrice.toFixed(2)}</div>
+                  <div className="text-xs text-black/80 mt-1">Material + Bends + Cut</div>
                 </div>
 
                 {/* Clear Button */}
@@ -505,6 +457,24 @@ export function TrimPricingCalculator() {
                 >
                   <X className="w-4 h-4 mr-2" />
                   Clear All
+                </Button>
+              </div>
+
+              {/* Save/Load Buttons - Moved to Bottom */}
+              <div className="flex gap-3 pt-4 border-t-2 border-green-800">
+                <Button
+                  onClick={() => setShowSaveDialog(true)}
+                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border-2 border-yellow-500"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Configuration
+                </Button>
+                <Button
+                  onClick={() => setShowLoadDialog(true)}
+                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border-2 border-yellow-500"
+                >
+                  <FolderOpen className="w-4 h-4 mr-2" />
+                  Load Saved ({savedConfigs.length})
                 </Button>
               </div>
             </>
