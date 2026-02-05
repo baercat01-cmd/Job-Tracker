@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen } from 'lucide-react';
+import { Calculator, Settings, Info, X, Plus, Trash2, Save, FolderOpen, Pencil, Trash, ArrowLeft, ArrowRight, ArrowUp, ArrowDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
@@ -38,6 +38,27 @@ interface SavedConfig {
   inches: number[];
   bends: number;
   created_at: string;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface LineSegment {
+  id: string;
+  start: Point;
+  end: Point;
+  label: string;
+  hasHem: boolean;
+  hemAtStart: boolean;
+}
+
+interface DrawingState {
+  segments: LineSegment[];
+  selectedSegmentId: string | null;
+  currentPoint: Point | null;
+  nextLabel: number;
 }
 
 export function TrimPricingCalculator() {
@@ -79,6 +100,327 @@ export function TrimPricingCalculator() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Drawing feature states
+  const [showDrawing, setShowDrawing] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [drawing, setDrawing] = useState<DrawingState>({
+    segments: [],
+    selectedSegmentId: null,
+    currentPoint: null,
+    nextLabel: 65 // ASCII 'A'
+  });
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [gridSize] = useState(0.5); // 1/2" grid
+  const [scale] = useState(20); // pixels per inch
+  const CANVAS_WIDTH = 800;
+  const CANVAS_HEIGHT = 600;
+
+  // Draw canvas
+  useEffect(() => {
+    if (!canvasRef.current || !showDrawing) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // Draw grid
+    ctx.strokeStyle = '#1a3a1a';
+    ctx.lineWidth = 0.5;
+    const gridSpacing = gridSize * scale; // pixels
+    
+    // Vertical lines
+    for (let x = 0; x <= CANVAS_WIDTH; x += gridSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CANVAS_HEIGHT);
+      ctx.stroke();
+    }
+    
+    // Horizontal lines
+    for (let y = 0; y <= CANVAS_HEIGHT; y += gridSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(CANVAS_WIDTH, y);
+      ctx.stroke();
+    }
+
+    // Draw segments
+    drawing.segments.forEach(segment => {
+      const isSelected = segment.id === drawing.selectedSegmentId;
+      
+      // Convert inches to pixels
+      const startX = segment.start.x * scale;
+      const startY = segment.start.y * scale;
+      const endX = segment.end.x * scale;
+      const endY = segment.end.y * scale;
+
+      // Draw line
+      ctx.strokeStyle = isSelected ? '#EAB308' : '#16a34a';
+      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Draw hem if exists
+      if (segment.hasHem) {
+        const hemPoint = segment.hemAtStart ? segment.start : segment.end;
+        const otherPoint = segment.hemAtStart ? segment.end : segment.start;
+        
+        // Calculate direction vector (reversed for hem)
+        const dx = otherPoint.x - hemPoint.x;
+        const dy = otherPoint.y - hemPoint.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const unitX = dx / length;
+        const unitY = dy / length;
+        
+        // Hem goes back 0.5" in opposite direction
+        const hemEndX = (hemPoint.x - unitX * 0.5) * scale;
+        const hemEndY = (hemPoint.y - unitY * 0.5) * scale;
+        
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(hemPoint.x * scale, hemPoint.y * scale);
+        ctx.lineTo(hemEndX, hemEndY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw hem label
+        ctx.fillStyle = '#dc2626';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('HEM', hemEndX - 15, hemEndY - 5);
+      }
+
+      // Draw endpoints
+      ctx.fillStyle = isSelected ? '#EAB308' : '#22c55e';
+      ctx.beginPath();
+      ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw label
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      ctx.fillStyle = '#EAB308';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(segment.label, midX - 5, midY - 10);
+
+      // Calculate and draw measurement
+      const dx = segment.end.x - segment.start.x;
+      const dy = segment.end.y - segment.start.y;
+      const lengthInInches = Math.sqrt(dx * dx + dy * dy);
+      
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(`${lengthInInches.toFixed(2)}"`, midX + 10, midY + 5);
+
+      // Calculate and draw angle (if not first segment)
+      const segmentIndex = drawing.segments.indexOf(segment);
+      if (segmentIndex > 0) {
+        const prevSegment = drawing.segments[segmentIndex - 1];
+        const angle = calculateAngleBetweenSegments(prevSegment, segment);
+        
+        ctx.fillStyle = '#a855f7';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`${Math.round(angle)}°`, startX + 15, startY - 5);
+      }
+    });
+
+    // Draw current point (while drawing)
+    if (drawing.currentPoint) {
+      const x = drawing.currentPoint.x * scale;
+      const y = drawing.currentPoint.y * scale;
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw "Colour Side" markers
+    drawing.segments.forEach((segment, index) => {
+      const startX = segment.start.x * scale;
+      const startY = segment.start.y * scale;
+      
+      if (index === 0) {
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(startX - 15, startY, 8, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.fillStyle = '#3b82f6';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('⊙', startX - 18, startY + 4);
+      }
+    });
+  }, [drawing, showDrawing, scale, gridSize, CANVAS_WIDTH, CANVAS_HEIGHT]);
+
+  function calculateAngleBetweenSegments(seg1: LineSegment, seg2: LineSegment): number {
+    const dx1 = seg1.end.x - seg1.start.x;
+    const dy1 = seg1.end.y - seg1.start.y;
+    const dx2 = seg2.end.x - seg2.start.x;
+    const dy2 = seg2.end.y - seg2.start.y;
+    
+    const angle1 = Math.atan2(dy1, dx1) * 180 / Math.PI;
+    const angle2 = Math.atan2(dy2, dx2) * 180 / Math.PI;
+    
+    let diff = angle2 - angle1;
+    if (diff < 0) diff += 360;
+    if (diff > 360) diff -= 360;
+    
+    return diff;
+  }
+
+  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!canvasRef.current || !isDrawingMode) return;
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / scale;
+    const y = (e.clientY - rect.top) / scale;
+    
+    // Snap to grid
+    const snappedX = Math.round(x / gridSize) * gridSize;
+    const snappedY = Math.round(y / gridSize) * gridSize;
+    
+    const point: Point = { x: snappedX, y: snappedY };
+    
+    if (!drawing.currentPoint) {
+      // Start new line
+      setDrawing(prev => ({ ...prev, currentPoint: point }));
+    } else {
+      // Complete line
+      const newSegment: LineSegment = {
+        id: Date.now().toString(),
+        start: drawing.currentPoint,
+        end: point,
+        label: String.fromCharCode(drawing.nextLabel),
+        hasHem: false,
+        hemAtStart: false
+      };
+      
+      setDrawing(prev => ({
+        segments: [...prev.segments, newSegment],
+        currentPoint: point, // Continue from this point
+        selectedSegmentId: null,
+        nextLabel: prev.nextLabel + 1
+      }));
+    }
+  }
+
+  function selectSegment(segmentId: string) {
+    setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
+  }
+
+  function deleteSelectedSegment() {
+    if (!drawing.selectedSegmentId) {
+      toast.error('No segment selected');
+      return;
+    }
+    
+    setDrawing(prev => ({
+      ...prev,
+      segments: prev.segments.filter(s => s.id !== prev.selectedSegmentId),
+      selectedSegmentId: null
+    }));
+    toast.success('Segment deleted');
+  }
+
+  function addHemToSelected(atStart: boolean) {
+    if (!drawing.selectedSegmentId) {
+      toast.error('No segment selected');
+      return;
+    }
+    
+    setDrawing(prev => ({
+      ...prev,
+      segments: prev.segments.map(seg => 
+        seg.id === prev.selectedSegmentId
+          ? { ...seg, hasHem: true, hemAtStart: atStart }
+          : seg
+      )
+    }));
+    toast.success('Hem added');
+  }
+
+  function removeHemFromSelected() {
+    if (!drawing.selectedSegmentId) {
+      toast.error('No segment selected');
+      return;
+    }
+    
+    const segment = drawing.segments.find(s => s.id === drawing.selectedSegmentId);
+    if (!segment?.hasHem) {
+      toast.error('Selected segment has no hem');
+      return;
+    }
+    
+    setDrawing(prev => ({
+      ...prev,
+      segments: prev.segments.map(seg => 
+        seg.id === prev.selectedSegmentId
+          ? { ...seg, hasHem: false, hemAtStart: false }
+          : seg
+      )
+    }));
+    toast.success('Hem removed');
+  }
+
+  function clearDrawing() {
+    if (drawing.segments.length > 0 && !confirm('Clear all segments?')) return;
+    
+    setDrawing({
+      segments: [],
+      selectedSegmentId: null,
+      currentPoint: null,
+      nextLabel: 65
+    });
+  }
+
+  function calculateTotalLength() {
+    let total = 0;
+    
+    drawing.segments.forEach(segment => {
+      const dx = segment.end.x - segment.start.x;
+      const dy = segment.end.y - segment.start.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      total += length;
+      
+      // Add hem length
+      if (segment.hasHem) {
+        total += 0.5; // Hem is always 0.5"
+      }
+    });
+    
+    return total;
+  }
+
+  function applyDrawingToCalculator() {
+    const totalLength = calculateTotalLength();
+    
+    if (totalLength === 0) {
+      toast.error('No segments drawn');
+      return;
+    }
+    
+    // Count bends (number of segments - 1, plus any hems)
+    const bends = Math.max(0, drawing.segments.length - 1) + 
+                  drawing.segments.filter(s => s.hasHem).length;
+    
+    // Set the values
+    setInchInputs([{ id: '1', value: totalLength.toFixed(2) }]);
+    setNumberOfBends(bends.toString());
+    
+    toast.success(`Applied: ${totalLength.toFixed(2)}" with ${bends} bends`);
+    setShowDrawing(false);
+  }
 
   // Load saved values on mount
   useEffect(() => {
@@ -460,6 +802,17 @@ export function TrimPricingCalculator() {
                 </Button>
               </div>
 
+              {/* Drawing Tool Button */}
+              <div className="pt-4 border-t-2 border-green-800">
+                <Button
+                  onClick={() => setShowDrawing(true)}
+                  className="w-full bg-gradient-to-r from-purple-700 to-purple-800 hover:from-purple-600 hover:to-purple-700 text-yellow-400 font-bold border-2 border-yellow-500"
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  2D Drawing Tool
+                </Button>
+              </div>
+
               {/* Save/Load Buttons - Moved to Bottom */}
               <div className="flex gap-3 pt-4 border-t-2 border-green-800">
                 <Button
@@ -768,6 +1121,135 @@ export function TrimPricingCalculator() {
             >
               Close
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2D Drawing Dialog */}
+      <Dialog open={showDrawing} onOpenChange={setShowDrawing}>
+        <DialogContent className="max-w-6xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500 overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <Pencil className="w-6 h-6" />
+              2D Trim Designer
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between gap-3 bg-black/30 p-3 rounded border-2 border-green-800">
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setIsDrawingMode(!isDrawingMode)}
+                  className={`${
+                    isDrawingMode
+                      ? 'bg-yellow-500 text-black hover:bg-yellow-600'
+                      : 'bg-green-800 text-yellow-400 hover:bg-green-700'
+                  } font-bold border-2 border-yellow-500`}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  {isDrawingMode ? 'Drawing...' : 'Start Drawing'}
+                </Button>
+                
+                <Button
+                  onClick={clearDrawing}
+                  variant="outline"
+                  className="border-2 border-red-500 text-red-400 hover:bg-red-900/20"
+                >
+                  <Trash className="w-4 h-4 mr-2" />
+                  Clear All
+                </Button>
+              </div>
+              
+              <div className="text-yellow-400 text-sm font-semibold">
+                Total Length: {calculateTotalLength().toFixed(2)}" | 
+                Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}
+              </div>
+            </div>
+
+            {/* Selected Segment Controls */}
+            {drawing.selectedSegmentId && (
+              <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded p-3">
+                <p className="text-yellow-400 font-bold mb-2">
+                  Selected: {drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.label}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => addHemToSelected(true)}
+                    size="sm"
+                    className="bg-green-700 text-yellow-400 hover:bg-green-600"
+                  >
+                    Add Hem (Start)
+                  </Button>
+                  <Button
+                    onClick={() => addHemToSelected(false)}
+                    size="sm"
+                    className="bg-green-700 text-yellow-400 hover:bg-green-600"
+                  >
+                    Add Hem (End)
+                  </Button>
+                  <Button
+                    onClick={removeHemFromSelected}
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500 text-red-400"
+                  >
+                    Remove Hem
+                  </Button>
+                  <Button
+                    onClick={deleteSelectedSegment}
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500 text-red-400"
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Canvas */}
+            <div className="border-4 border-yellow-500 rounded bg-black overflow-hidden">
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT}
+                onClick={handleCanvasClick}
+                className="cursor-crosshair"
+                style={{ display: 'block' }}
+              />
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-black/30 border-2 border-green-800 rounded p-3 text-sm text-white/80">
+              <p className="font-semibold text-yellow-400 mb-2">Instructions:</p>
+              <ul className="space-y-1 list-disc list-inside">
+                <li>Click "Start Drawing" then click on canvas to place points (auto-snaps to 1/2" grid)</li>
+                <li>Each click creates a new line segment from the previous point</li>
+                <li>Click on a segment to select it (turns yellow)</li>
+                <li>Add hems to selected segments (180° doublebacks, always 0.5")</li>
+                <li>Measurements and angles are calculated automatically</li>
+                <li>Click "Apply to Calculator" to use the total length and bend count</li>
+              </ul>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <Button
+                onClick={applyDrawingToCalculator}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
+              >
+                Apply to Calculator
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowDrawing(false)}
+                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
