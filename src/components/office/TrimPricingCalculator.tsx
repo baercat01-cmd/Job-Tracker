@@ -1003,6 +1003,7 @@ export function TrimPricingCalculator() {
   const hasSettings = sheetLFCost && pricePerBend && markupPercent;
 
   return (
+    <>
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 max-w-[1800px] mx-auto">
       {/* Drawing Tool - Left Side */}
       <Card className="border-4 border-yellow-500 bg-gradient-to-br from-green-950 via-black to-green-900 shadow-2xl">
@@ -1314,8 +1315,6 @@ export function TrimPricingCalculator() {
         </CardContent>
       </Card>
     </div>
-  );
-}
 
       {/* Settings Dialog */}
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
@@ -1580,194 +1579,6 @@ export function TrimPricingCalculator() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Segment Dialog */}
-      <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
-        <DialogContent className="max-w-6xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500 overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <Pencil className="w-6 h-6" />
-              2D Trim Designer
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="relative">
-            {/* Canvas with Controls Overlay */}
-            <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl">
-              {!canvasReady ? (
-                <div className="w-full h-[1000px] flex items-center justify-center bg-gray-100">
-                  <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-700 font-semibold">Loading Canvas...</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="overflow-auto max-h-[80vh]">
-                  <canvas
-                    ref={canvasRef}
-                    width={CANVAS_WIDTH}
-                    height={CANVAS_HEIGHT}
-                    onClick={handleCanvasClick}
-                    onMouseMove={handleCanvasMouseMove}
-                    className="cursor-crosshair"
-                    style={{ display: 'block' }}
-                  />
-                </div>
-              )}
-              
-              {/* Top-Right Exit Button */}
-              <button
-                onClick={closeDrawing}
-                className="absolute top-4 right-4 w-12 h-12 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white z-10 transition-all hover:scale-110"
-                title="Close Drawing Tool"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              
-              {/* Top Controls - Overlaid on Canvas */}
-              <div className="absolute top-4 left-4 right-20 flex items-center justify-between gap-3 bg-white/95 backdrop-blur-sm p-3 rounded-lg border-2 border-gray-300 shadow-lg">
-                <div className="flex gap-2">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border-2 border-green-500 rounded">
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-700 font-bold text-sm">Drawing Active (1/2" blocks, 1/8" snap)</span>
-                  </div>
-                  
-                  {drawing.currentPoint && (
-                    <Button
-                      onClick={stopDrawing}
-                      size="sm"
-                      className="bg-orange-600 text-white hover:bg-orange-700 border-2 border-orange-400"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Stop Drawing
-                    </Button>
-                  )}
-                  
-                  <Button
-                    onClick={clearDrawing}
-                    size="sm"
-                    variant="outline"
-                    className="border-2 border-red-500 text-red-600 hover:bg-red-50"
-                  >
-                    <Trash className="w-4 h-4 mr-2" />
-                    Clear All
-                  </Button>
-                  
-                  {/* Add Hem Button - Always Available */}
-                  <Button
-                    onClick={addHemToLastSegment}
-                    size="sm"
-                    disabled={drawing.segments.length === 0}
-                    className="bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-bold"
-                    title="Add hem to last drawn segment"
-                  >
-                    + Add Hem
-                  </Button>
-                </div>
-                
-                {/* Zoom Controls */}
-                <div className="flex gap-2 bg-gray-100 px-3 py-2 rounded border-2 border-gray-300">
-                  <Button
-                    onClick={zoomOut}
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-3"
-                  >
-                    <span className="text-lg font-bold">-</span>
-                  </Button>
-                  <Button
-                    onClick={resetZoom}
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-3 text-xs"
-                  >
-                    {Math.round((scale / 80) * 100)}%
-                  </Button>
-                  <Button
-                    onClick={zoomIn}
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-3"
-                  >
-                    <span className="text-lg font-bold">+</span>
-                  </Button>
-                </div>
-                
-                <div className="text-gray-800 text-sm font-bold bg-gray-100 px-4 py-2 rounded border-2 border-gray-300">
-                  Total: {calculateTotalLength().toFixed(3)}" | Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}
-                </div>
-              </div>
-
-              {/* Segment Selection List - Left Side */}
-              {drawing.segments.length > 0 && (
-                <div className="absolute top-20 left-4 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-3 shadow-lg max-w-xs">
-                  <p className="text-gray-800 font-bold mb-2 text-sm">Segments:</p>
-                  <div className="space-y-1 max-h-60 overflow-y-auto">
-                    {drawing.segments.map(seg => (
-                      <div
-                        key={seg.id}
-                        onClick={() => selectSegment(seg.id)}
-                        className={`px-3 py-2 rounded cursor-pointer text-sm font-medium transition-colors ${
-                          seg.id === drawing.selectedSegmentId
-                            ? 'bg-yellow-400 text-black'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>{seg.label} {seg.hasHem && '(HEM)'}</span>
-                          {seg.id === drawing.selectedSegmentId && (
-                            <div className="flex gap-1">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEditMode(seg.id);
-                                }}
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-2 text-blue-600 hover:bg-blue-100"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteSelectedSegment();
-                                }}
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-2 text-red-600 hover:bg-red-100"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons - Bottom Overlay */}
-              <div className="absolute bottom-4 left-4 right-4 flex gap-3 bg-white/95 backdrop-blur-sm p-4 rounded-lg border-2 border-gray-300 shadow-lg">
-                <Button
-                  onClick={applyDrawingToCalculator}
-                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
-                >
-                  Apply to Calculator
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={closeDrawing}
-                  className="border-2 border-gray-400 text-gray-700 hover:bg-gray-100 py-6 px-8"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Edit Segment Measurement/Angle Dialog */}
       <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
         <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
@@ -1834,3 +1645,6 @@ export function TrimPricingCalculator() {
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
