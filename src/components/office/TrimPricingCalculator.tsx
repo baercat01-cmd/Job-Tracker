@@ -981,10 +981,17 @@ export function TrimPricingCalculator() {
       return;
     }
 
-    // Calculate cost per inch from the 42" wide sheet
+    // NEW CALCULATION:
+    // 1. LF cost is for a 42" wide piece that is 10' long
+    // 2. Multiply by 10 to get cost for the full 10' sheet
+    const sheetCost = lfCost * 10;
+    
+    // 3. Apply markup percentage
     const markupMultiplier = 1 + (markup / 100);
-    const sellingPricePerLF = lfCost * markupMultiplier;
-    const pricePerInch = sellingPricePerLF / 12;
+    const markedUpSheetCost = sheetCost * markupMultiplier;
+    
+    // 4. Divide by 42 to get price per inch for a 10' strip
+    const pricePerInch = markedUpSheetCost / 42;
     setCostPerInch(pricePerInch);
     
     // Cost per bend
@@ -998,11 +1005,11 @@ export function TrimPricingCalculator() {
     const inchCost = totalIn * pricePerInch;
     setTotalInchCost(inchCost);
     
-    // Cut cost (always present)
+    // Cut cost (always 1 cut)
     const cutCost = cutPriceVal || 0;
     setTotalCutCost(cutCost);
     
-    // Selling price = total inch cost + total bend cost + cut cost
+    // Selling price = (total inches × price per inch) + (bends × bend price) + cut cost
     setSellingPrice(inchCost + bendCost + cutCost);
   }, [sheetLFCost, pricePerBend, markupPercent, cutPrice, inchInputs, numberOfBends]);
 
@@ -1573,12 +1580,13 @@ export function TrimPricingCalculator() {
             </div>
             <div>
               <h4 className="font-bold text-yellow-400 mb-1">Cost per Inch Calculation:</h4>
-              <p>Sheet Cost per LF × (1 + Markup%) ÷ 12 inches</p>
+              <p>(Sheet Cost per LF × 10) × (1 + Markup%) ÷ 42 inches</p>
+              <p className="text-xs text-white/60 mt-1">LF cost is for a 42" wide × 10' long sheet</p>
             </div>
             <div>
               <h4 className="font-bold text-yellow-400 mb-1">Settings:</h4>
               <ul className="list-disc list-inside space-y-1">
-                <li><strong>Sheet Cost per LF:</strong> Your material cost for a 42" wide sheet</li>
+                <li><strong>Sheet Cost per LF:</strong> Your material cost for a 42" wide × 10' long sheet</li>
                 <li><strong>Price per Bend:</strong> Labor/equipment cost per bend</li>
                 <li><strong>Markup %:</strong> Your profit margin (default 32%)</li>
                 <li><strong>Cut Price:</strong> Fixed cost per cut (default $1.00)</li>
