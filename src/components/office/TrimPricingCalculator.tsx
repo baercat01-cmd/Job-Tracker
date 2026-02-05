@@ -112,10 +112,10 @@ export function TrimPricingCalculator() {
   });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
-  const [gridSize] = useState(0.5); // 1/2" grid
-  const [scale] = useState(20); // pixels per inch
-  const CANVAS_WIDTH = 800;
-  const CANVAS_HEIGHT = 600;
+  const [gridSize] = useState(0.125); // 1/8" grid for precision
+  const [scale] = useState(40); // pixels per inch (increased for better precision)
+  const CANVAS_WIDTH = 1400;
+  const CANVAS_HEIGHT = 900;
 
   // Auto-enable drawing mode when dialog opens
   useEffect(() => {
@@ -138,12 +138,12 @@ export function TrimPricingCalculator() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas with dark green background
-    ctx.fillStyle = '#0a1f0a';
+    // Clear canvas with white background
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw grid - make it more visible
-    ctx.strokeStyle = '#2d5a2d';
+    // Draw grid - light grey
+    ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 0.5;
     const gridSpacing = gridSize * scale; // pixels
     
@@ -165,8 +165,8 @@ export function TrimPricingCalculator() {
 
     // Draw "Ready" indicator if in drawing mode and no points yet
     if (isDrawingMode && drawing.segments.length === 0 && !drawing.currentPoint) {
-      ctx.fillStyle = '#22c55e';
-      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#666666';
+      ctx.font = 'bold 24px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('✓ READY - Click anywhere to start drawing', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
       ctx.textAlign = 'left';
@@ -183,8 +183,8 @@ export function TrimPricingCalculator() {
       const endY = segment.end.y * scale;
 
       // Draw line
-      ctx.strokeStyle = isSelected ? '#EAB308' : '#16a34a';
-      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.strokeStyle = isSelected ? '#EAB308' : '#000000';
+      ctx.lineWidth = isSelected ? 4 : 3;
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
@@ -207,8 +207,8 @@ export function TrimPricingCalculator() {
         const hemEndY = (hemPoint.y - unitY * 0.5) * scale;
         
         ctx.strokeStyle = '#dc2626';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
         ctx.beginPath();
         ctx.moveTo(hemPoint.x * scale, hemPoint.y * scale);
         ctx.lineTo(hemEndX, hemEndY);
@@ -222,29 +222,29 @@ export function TrimPricingCalculator() {
       }
 
       // Draw endpoints
-      ctx.fillStyle = isSelected ? '#EAB308' : '#22c55e';
+      ctx.fillStyle = isSelected ? '#EAB308' : '#000000';
       ctx.beginPath();
-      ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+      ctx.arc(startX, startY, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+      ctx.arc(endX, endY, 6, 0, Math.PI * 2);
       ctx.fill();
 
       // Draw label
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
-      ctx.fillStyle = '#EAB308';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillText(segment.label, midX - 5, midY - 10);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(segment.label, midX - 5, midY - 12);
 
       // Calculate and draw measurement
       const dx = segment.end.x - segment.start.x;
       const dy = segment.end.y - segment.start.y;
       const lengthInInches = Math.sqrt(dx * dx + dy * dy);
       
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px sans-serif';
-      ctx.fillText(`${lengthInInches.toFixed(2)}"`, midX + 10, midY + 5);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX + 10, midY + 5);
 
       // Calculate and draw angle (if not first segment)
       const segmentIndex = drawing.segments.indexOf(segment);
@@ -252,8 +252,8 @@ export function TrimPricingCalculator() {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
         
-        ctx.fillStyle = '#a855f7';
-        ctx.font = 'bold 11px sans-serif';
+        ctx.fillStyle = '#6b21a8';
+        ctx.font = 'bold 13px sans-serif';
         ctx.fillText(`${Math.round(angle)}°`, startX + 15, startY - 5);
       }
     });
@@ -264,7 +264,7 @@ export function TrimPricingCalculator() {
       const y = drawing.currentPoint.y * scale;
       ctx.fillStyle = '#3b82f6';
       ctx.beginPath();
-      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -1159,80 +1159,14 @@ export function TrimPricingCalculator() {
             </DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-4">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between gap-3 bg-black/30 p-3 rounded border-2 border-green-800">
-              <div className="flex gap-2">
-                <div className="flex items-center gap-2 px-4 py-2 bg-green-500/20 border-2 border-green-500 rounded">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-green-400 font-bold">Drawing Active</span>
-                </div>
-                
-                <Button
-                  onClick={clearDrawing}
-                  variant="outline"
-                  className="border-2 border-red-500 text-red-400 hover:bg-red-900/20"
-                >
-                  <Trash className="w-4 h-4 mr-2" />
-                  Clear All
-                </Button>
-              </div>
-              
-              <div className="text-yellow-400 text-sm font-semibold">
-                Total Length: {calculateTotalLength().toFixed(2)}" | 
-                Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}
-              </div>
-            </div>
-
-            {/* Selected Segment Controls */}
-            {drawing.selectedSegmentId && (
-              <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded p-3">
-                <p className="text-yellow-400 font-bold mb-2">
-                  Selected: {drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.label}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => addHemToSelected(true)}
-                    size="sm"
-                    className="bg-green-700 text-yellow-400 hover:bg-green-600"
-                  >
-                    Add Hem (Start)
-                  </Button>
-                  <Button
-                    onClick={() => addHemToSelected(false)}
-                    size="sm"
-                    className="bg-green-700 text-yellow-400 hover:bg-green-600"
-                  >
-                    Add Hem (End)
-                  </Button>
-                  <Button
-                    onClick={removeHemFromSelected}
-                    size="sm"
-                    variant="outline"
-                    className="border-red-500 text-red-400"
-                  >
-                    Remove Hem
-                  </Button>
-                  <Button
-                    onClick={deleteSelectedSegment}
-                    size="sm"
-                    variant="outline"
-                    className="border-red-500 text-red-400"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Canvas */}
-            <div className="border-4 border-green-500 rounded overflow-hidden shadow-lg shadow-green-500/30">
+          <div className="relative">
+            {/* Canvas with Controls Overlay */}
+            <div className="relative border-4 border-gray-300 rounded overflow-hidden shadow-2xl">
               {!canvasReady ? (
-                <div className="w-full h-[600px] flex items-center justify-center bg-gray-900">
+                <div className="w-full h-[900px] flex items-center justify-center bg-gray-100">
                   <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-yellow-400 font-semibold">Loading Canvas...</p>
+                    <div className="w-12 h-12 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-700 font-semibold">Loading Canvas...</p>
                   </div>
                 </div>
               ) : (
@@ -1245,36 +1179,89 @@ export function TrimPricingCalculator() {
                   style={{ display: 'block' }}
                 />
               )}
-            </div>
+              
+              {/* Top Controls - Overlaid on Canvas */}
+              <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-3 bg-white/95 backdrop-blur-sm p-3 rounded-lg border-2 border-gray-300 shadow-lg">
+                <div className="flex gap-2">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border-2 border-green-500 rounded">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-green-700 font-bold text-sm">Drawing Active (1/8" Grid)</span>
+                  </div>
+                  
+                  <Button
+                    onClick={clearDrawing}
+                    size="sm"
+                    variant="outline"
+                    className="border-2 border-red-500 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash className="w-4 h-4 mr-2" />
+                    Clear All
+                  </Button>
+                </div>
+                
+                <div className="text-gray-800 text-sm font-bold bg-gray-100 px-4 py-2 rounded border-2 border-gray-300">
+                  Total: {calculateTotalLength().toFixed(3)}" | Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}
+                </div>
+              </div>
 
-            {/* Instructions */}
-            <div className="bg-black/30 border-2 border-green-800 rounded p-3 text-sm text-white/80">
-              <p className="font-semibold text-yellow-400 mb-2">Instructions:</p>
-              <ul className="space-y-1 list-disc list-inside">
-                <li>Click "Start Drawing" then click on canvas to place points (auto-snaps to 1/2" grid)</li>
-                <li>Each click creates a new line segment from the previous point</li>
-                <li>Click on a segment to select it (turns yellow)</li>
-                <li>Add hems to selected segments (180° doublebacks, always 0.5")</li>
-                <li>Measurements and angles are calculated automatically</li>
-                <li>Click "Apply to Calculator" to use the total length and bend count</li>
-              </ul>
-            </div>
+              {/* Selected Segment Controls - Overlaid */}
+              {drawing.selectedSegmentId && (
+                <div className="absolute top-20 left-4 bg-yellow-50/95 backdrop-blur-sm border-2 border-yellow-500 rounded-lg p-3 shadow-lg max-w-md">
+                  <p className="text-yellow-800 font-bold mb-2">
+                    Selected: {drawing.segments.find(s => s.id === drawing.selectedSegmentId)?.label}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => addHemToSelected(true)}
+                      size="sm"
+                      className="bg-green-600 text-white hover:bg-green-700"
+                    >
+                      Add Hem (Start)
+                    </Button>
+                    <Button
+                      onClick={() => addHemToSelected(false)}
+                      size="sm"
+                      className="bg-green-600 text-white hover:bg-green-700"
+                    >
+                      Add Hem (End)
+                    </Button>
+                    <Button
+                      onClick={removeHemFromSelected}
+                      size="sm"
+                      variant="outline"
+                      className="border-red-500 text-red-600 hover:bg-red-50"
+                    >
+                      Remove Hem
+                    </Button>
+                    <Button
+                      onClick={deleteSelectedSegment}
+                      size="sm"
+                      variant="outline"
+                      className="border-red-500 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
-              <Button
-                onClick={applyDrawingToCalculator}
-                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
-              >
-                Apply to Calculator
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowDrawing(false)}
-                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-              >
-                Close
-              </Button>
+              {/* Action Buttons - Bottom Overlay */}
+              <div className="absolute bottom-4 left-4 right-4 flex gap-3 bg-white/95 backdrop-blur-sm p-4 rounded-lg border-2 border-gray-300 shadow-lg">
+                <Button
+                  onClick={applyDrawingToCalculator}
+                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-lg py-6"
+                >
+                  Apply to Calculator
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDrawing(false)}
+                  className="border-2 border-gray-400 text-gray-700 hover:bg-gray-100 py-6 px-8"
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
