@@ -702,7 +702,7 @@ export function TrimPricingCalculator() {
       // Start new line
       setDrawing(prev => ({ ...prev, currentPoint: point }));
     } else {
-      // Complete line and EXIT drawing mode
+      // Complete line and STAY in drawing mode
       const newSegment: LineSegment = {
         id: Date.now().toString(),
         start: drawing.currentPoint,
@@ -714,15 +714,13 @@ export function TrimPricingCalculator() {
       
       setDrawing(prev => ({
         segments: [...prev.segments, newSegment],
-        currentPoint: null, // Clear current point
+        currentPoint: null, // Clear current point to allow starting next line
         selectedSegmentId: null,
         nextLabel: prev.nextLabel + 1
       }));
       
-      // Exit drawing mode after completing one line
-      setIsDrawingMode(false);
-      setDrawingLocked(true);
-      toast.success('Line completed - click "Draw" to add another');
+      // STAY in drawing mode - user can continue adding lines
+      toast.success('Line added - click endpoint to continue or anywhere to start new');
     }
   }
 
@@ -837,7 +835,7 @@ export function TrimPricingCalculator() {
     setDrawing(prev => ({ ...prev, currentPoint: null }));
     setIsDrawingMode(false);
     setDrawingLocked(true);
-    toast.success('Drawing cancelled');
+    toast.success('Drawing mode ended');
   }
 
   function startHemPreview() {
@@ -1330,7 +1328,7 @@ export function TrimPricingCalculator() {
             
             {/* Top Controls - Overlaid on Canvas */}
             <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm p-2 rounded-lg border-2 border-gray-300 shadow-lg text-xs">
-              {/* Draw/Finish Button */}
+              {/* Draw/Stop Drawing Button */}
               {!isDrawingMode ? (
                 <Button
                   onClick={() => {
@@ -1351,16 +1349,13 @@ export function TrimPricingCalculator() {
                     </span>
                   </div>
                   
-                  {drawing.currentPoint && (
-                    <Button
-                      onClick={stopDrawing}
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-3 border border-red-500 text-red-600 hover:bg-red-50 text-xs font-bold"
-                    >
-                      Cancel Line
-                    </Button>
-                  )}
+                  <Button
+                    onClick={stopDrawing}
+                    size="sm"
+                    className="h-7 px-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+                  >
+                    {drawing.currentPoint ? 'Cancel Line' : 'Stop Drawing'}
+                  </Button>
                 </>
               )}              
               
