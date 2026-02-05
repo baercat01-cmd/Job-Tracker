@@ -345,10 +345,17 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
   }
 
   async function removeComponent(componentId: string) {
-    if (!isOffice) return;
+    if (!isOffice) {
+      toast.error('Only office staff can remove components');
+      return;
+    }
+
+    console.log('Removing component:', componentId);
+    console.log('Current components:', jobComponents);
 
     try {
       const updatedComponents = jobComponents.filter(c => c.id !== componentId);
+      console.log('Updated components after removal:', updatedComponents);
 
       const { error } = await supabase
         .from('jobs')
@@ -358,14 +365,17 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
         })
         .eq('id', job.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error removing component:', error);
+        throw error;
+      }
 
       toast.success('Component removed from job');
       setRemovingComponent(null);
       onUpdate();
     } catch (error: any) {
-      toast.error('Failed to remove component');
-      console.error(error);
+      toast.error('Failed to remove component: ' + (error.message || 'Unknown error'));
+      console.error('Remove component error:', error);
     }
   }
 
@@ -455,8 +465,9 @@ export function JobComponents({ job, onUpdate }: JobComponentsProps) {
                           size="sm"
                           onClick={() => setRemovingComponent(component.id)}
                           className="text-destructive hover:text-destructive"
+                          title="Remove component from this job"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </>
                     )}
