@@ -565,16 +565,16 @@ export function TrimPricingCalculator() {
       
       const labelOffset = 25;
       
-      // Draw label (letter) - light gray, smaller, closer to line
+      // Draw label (letter) - light gray, smaller, on OUTSIDE of trim
       ctx.fillStyle = '#999999';
       ctx.font = '13px sans-serif';
-      const labelX = midX + perpX * labelOffset;
-      const labelY = midY + perpY * labelOffset;
+      const labelX = midX - perpX * (labelOffset + 10);
+      const labelY = midY - perpY * (labelOffset + 10);
       ctx.fillText(segment.label, labelX - 5, labelY + 4);
 
-      // Draw measurement with optional arrow
-      const measureX = midX - perpX * measureOffset;
-      const measureY = midY - perpY * measureOffset;
+      // Draw measurement with optional arrow - on OUTSIDE of trim
+      const measureX = midX - perpX * (measureOffset + 20);
+      const measureY = midY - perpY * (measureOffset + 20);
       
       if (needsArrow) {
         // Draw arrow from measurement to line midpoint
@@ -631,17 +631,19 @@ export function TrimPricingCalculator() {
         const prevAngle = Math.atan2(prevDy, prevDx);
         const currAngle = Math.atan2(currDy, currDx);
         
-        // Use the interior angle bisector
+        // Calculate the exterior angle bisector (45° from corner)
         let bisectorAngle = (prevAngle + currAngle) / 2;
         
-        // Adjust bisector to point toward interior of the shape
+        // Point outward from the shape
         const angleDiff = currAngle - prevAngle;
         if (Math.abs(angleDiff) > Math.PI) {
           bisectorAngle += Math.PI;
+        } else {
+          bisectorAngle += Math.PI; // Flip to point outward
         }
         
-        // Position angle label slightly away from corner on the bisector
-        const angleOffsetDist = 25; // Closer to corner
+        // Position angle label further away from corner at 45° angle
+        const angleOffsetDist = 40; // Further from corner
         const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
         const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
         
@@ -683,23 +685,7 @@ export function TrimPricingCalculator() {
       ctx.fill();
     }
 
-    // Draw "Colour Side" markers
-    drawing.segments.forEach((segment, index) => {
-      const startX = segment.start.x * scale;
-      const startY = segment.start.y * scale;
-      
-      if (index === 0) {
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(startX - 15, startY, 8, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        ctx.fillStyle = '#3b82f6';
-        ctx.font = '10px sans-serif';
-        ctx.fillText('⊙', startX - 18, startY + 4);
-      }
-    });
+    // "Colour Side" markers removed - no blue dot at starting point
   }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode, angleDisplayMode]);
 
   function pointToLineDistance(point: Point, lineStart: Point, lineEnd: Point): number {
@@ -1846,13 +1832,10 @@ export function TrimPricingCalculator() {
               </div>
             )}
 
-            {/* Live Drawing Info - Bottom Left */}
+            {/* Live Drawing Info - Bottom Right (Minimal Black & White) */}
             {isDrawingMode && drawing.currentPoint && mousePos && (
-              <div className="absolute bottom-2 left-2 bg-blue-600/95 backdrop-blur-sm border-2 border-blue-400 rounded-lg p-3 shadow-lg">
-                <div className="text-white text-sm font-bold mb-2">
-                  📏 Live Measurement
-                </div>
-                <div className="space-y-2">
+              <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-sm border border-gray-300 rounded p-2 shadow-md">
+                <div className="space-y-1">
                   {(() => {
                     const dx = mousePos.x - drawing.currentPoint.x;
                     const dy = mousePos.y - drawing.currentPoint.y;
@@ -1862,29 +1845,21 @@ export function TrimPricingCalculator() {
                     
                     return (
                       <>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-xs">Angle:</span>
-                          <span className="text-yellow-300 font-bold text-sm">{Math.round(displayAngle)}°</span>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-600">∠{Math.round(displayAngle)}°</span>
+                          <span className="text-gray-800 font-semibold">{cleanNumber(length)}"</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-xs">Length:</span>
-                          <span className="text-yellow-300 font-bold text-sm">{cleanNumber(length)}"</span>
-                        </div>
-                        <div className="border-t border-white/30 pt-2 mt-2">
-                          <Label className="text-white/90 text-xs mb-1 block">Set Length:</Label>
-                          <Input
-                            ref={lengthInputRef}
-                            type="number"
-                            min="0"
-                            step="0.125"
-                            value={lengthInput}
-                            onChange={(e) => setLengthInput(e.target.value)}
-                            onKeyDown={handleLengthInput}
-                            placeholder="Type & press Enter"
-                            className="h-8 text-sm bg-white border-2 border-blue-400 focus:border-yellow-400 font-bold text-center"
-                          />
-                        </div>
-                        <p className="text-white/60 text-xs mt-1 italic">Type length & press Enter</p>
+                        <Input
+                          ref={lengthInputRef}
+                          type="number"
+                          min="0"
+                          step="0.125"
+                          value={lengthInput}
+                          onChange={(e) => setLengthInput(e.target.value)}
+                          onKeyDown={handleLengthInput}
+                          placeholder="Length"
+                          className="h-6 text-xs bg-white border border-gray-300 focus:border-gray-500 text-center w-20"
+                        />
                       </>
                     );
                   })()}
