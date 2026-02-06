@@ -111,6 +111,7 @@ export function TrimPricingCalculator() {
   
   // Trim type management
   const [showTrimTypeManagement, setShowTrimTypeManagement] = useState(false);
+  const [showMaterialInfo, setShowMaterialInfo] = useState(false);
   const [editingTrimType, setEditingTrimType] = useState<TrimType | null>(null);
   const [newTrimTypeName, setNewTrimTypeName] = useState('');
   const [newTrimTypeWidth, setNewTrimTypeWidth] = useState('42');
@@ -1920,11 +1921,20 @@ export function TrimPricingCalculator() {
                     <SelectContent>
                       {trimTypes.map((type) => (
                         <SelectItem key={type.id} value={type.id}>
-                          {type.name} ({type.width_inches}" @ ${type.cost_per_lf}/LF)
+                          {type.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedTrimType && (
+                    <Button
+                      onClick={() => setShowMaterialInfo(true)}
+                      size="sm"
+                      className="bg-blue-700 hover:bg-blue-600 text-white font-bold border border-blue-500 h-8 px-2 text-xs"
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                  )}
                   <Button
                     onClick={() => setShowTrimTypeManagement(true)}
                     size="sm"
@@ -1933,30 +1943,6 @@ export function TrimPricingCalculator() {
                     <Settings className="w-3 h-3" />
                   </Button>
                 </div>
-                {selectedTrimType && (
-                  <div className="mt-1 space-y-0.5 text-xs text-green-400">
-                    <div className="flex justify-between">
-                      <span>Width:</span>
-                      <span className="font-semibold">{selectedTrimType.width_inches}"</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Cost/LF:</span>
-                      <span className="font-semibold">${selectedTrimType.cost_per_lf}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Bend Price:</span>
-                      <span className="font-semibold">${selectedTrimType.price_per_bend}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Markup:</span>
-                      <span className="font-semibold">{selectedTrimType.markup_percent}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Cut Price:</span>
-                      <span className="font-semibold">${selectedTrimType.cut_price}</span>
-                    </div>
-                  </div>
-                )}
               </div>
               
               {/* Steel Section - Dynamic Inch Inputs */}
@@ -2054,10 +2040,9 @@ export function TrimPricingCalculator() {
                 </div>
 
                 {/* Final Selling Price - Compact */}
-                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-2 text-center border-2 border-yellow-400 shadow-lg">
+                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-1.5 text-center border-2 border-yellow-400 shadow-lg">
                   <div className="text-black font-bold text-xs">SELLING PRICE</div>
-                  <div className="text-3xl font-black text-black">${sellingPrice.toFixed(2)}</div>
-                  <div className="text-xs text-black/70">All Costs Included</div>
+                  <div className="text-2xl font-black text-black">${sellingPrice.toFixed(2)}</div>
                 </div>
 
                 {/* Clear Button */}
@@ -2272,6 +2257,53 @@ export function TrimPricingCalculator() {
               Close
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Material Info Dialog */}
+      <Dialog open={showMaterialInfo} onOpenChange={setShowMaterialInfo}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <Info className="w-5 h-5" />
+              Material Details: {selectedTrimType?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTrimType && (
+            <div className="space-y-3">
+              <div className="bg-black/30 border-2 border-green-800 rounded-lg p-3">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-white/80">
+                    <span className="text-yellow-400 font-semibold">Width:</span>
+                    <span className="font-bold text-white">{selectedTrimType.width_inches}"</span>
+                  </div>
+                  <div className="flex justify-between text-white/80">
+                    <span className="text-yellow-400 font-semibold">Cost per LF:</span>
+                    <span className="font-bold text-white">${selectedTrimType.cost_per_lf}</span>
+                  </div>
+                  <div className="flex justify-between text-white/80">
+                    <span className="text-yellow-400 font-semibold">Price per Bend:</span>
+                    <span className="font-bold text-white">${selectedTrimType.price_per_bend}</span>
+                  </div>
+                  <div className="flex justify-between text-white/80">
+                    <span className="text-yellow-400 font-semibold">Markup Percentage:</span>
+                    <span className="font-bold text-white">{selectedTrimType.markup_percent}%</span>
+                  </div>
+                  <div className="flex justify-between text-white/80">
+                    <span className="text-yellow-400 font-semibold">Cut Price:</span>
+                    <span className="font-bold text-white">${selectedTrimType.cut_price}</span>
+                  </div>
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowMaterialInfo(false)}
+                variant="outline"
+                className="w-full border-green-700 text-yellow-400"
+              >
+                Close
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
