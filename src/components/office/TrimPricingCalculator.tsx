@@ -2114,7 +2114,7 @@ export function TrimPricingCalculator() {
                   <Input
                     value={newTrimTypeName}
                     onChange={(e) => setNewTrimTypeName(e.target.value)}
-                    placeholder="e.g., Standard 42\" Sheet"
+                    placeholder="e.g., Standard 42 inch Sheet"
                     className="bg-white border-green-700"
                   />
                 </div>
