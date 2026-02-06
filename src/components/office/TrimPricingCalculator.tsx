@@ -992,21 +992,6 @@ export function TrimPricingCalculator() {
       
       if (error) {
         console.error('❌ Error loading settings:', error);
-        // Use defaults on error
-        const defaultLFCost = '3.46';
-        const defaultBendPrice = '1.00';
-        const defaultMarkup = '35';
-        const defaultCut = '1.00';
-        
-        setSheetLFCost(defaultLFCost);
-        setTempLFCost(defaultLFCost);
-        setPricePerBend(defaultBendPrice);
-        setTempBendPrice(defaultBendPrice);
-        setMarkupPercent(defaultMarkup);
-        setTempMarkupPercent(defaultMarkup);
-        setCutPrice(defaultCut);
-        setTempCutPrice(defaultCut);
-        return;
       }
       
       if (data && data.length > 0) {
@@ -1029,13 +1014,14 @@ export function TrimPricingCalculator() {
         setCutPrice(cut);
         setTempCutPrice(cut);
       } else {
-        // No settings in database yet - use defaults
-        console.log('ℹ️ No settings found in database, using defaults');
+        // No settings in database yet - create initial defaults and save them
+        console.log('ℹ️ No settings found in database, creating defaults...');
         const defaultLFCost = '3.46';
         const defaultBendPrice = '1.00';
         const defaultMarkup = '35';
         const defaultCut = '1.00';
         
+        // Set state first
         setSheetLFCost(defaultLFCost);
         setTempLFCost(defaultLFCost);
         setPricePerBend(defaultBendPrice);
@@ -1044,6 +1030,29 @@ export function TrimPricingCalculator() {
         setTempMarkupPercent(defaultMarkup);
         setCutPrice(defaultCut);
         setTempCutPrice(defaultCut);
+        
+        // Save defaults to database so they persist
+        try {
+          const settingsData = {
+            sheet_lf_cost: parseFloat(defaultLFCost),
+            price_per_bend: parseFloat(defaultBendPrice),
+            markup_percent: parseFloat(defaultMarkup),
+            cut_price: parseFloat(defaultCut),
+            updated_at: new Date().toISOString()
+          };
+          
+          const { error: insertError } = await supabase
+            .from('trim_calculator_settings')
+            .insert([settingsData]);
+          
+          if (insertError) {
+            console.error('❌ Error saving default settings:', insertError);
+          } else {
+            console.log('✅ Default settings saved to database');
+          }
+        } catch (err) {
+          console.error('❌ Exception saving default settings:', err);
+        }
       }
     } catch (error) {
       console.error('❌ Exception loading settings:', error);
