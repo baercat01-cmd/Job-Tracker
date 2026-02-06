@@ -91,6 +91,8 @@ export function TrimPricingCalculator() {
   const [totalInchCost, setTotalInchCost] = useState(0);
   const [totalCutCost, setTotalCutCost] = useState(0);
   const [sellingPrice, setSellingPrice] = useState(0);
+  const [materialCost, setMaterialCost] = useState(0); // Cost before markup
+  const [markupAmount, setMarkupAmount] = useState(0); // Markup added
   
   // Dialog states
   const [showSettings, setShowSettings] = useState(false);
@@ -988,7 +990,7 @@ export function TrimPricingCalculator() {
       const { data, error } = await supabase
         .from('trim_calculator_settings')
         .select('*')
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: false});
       
       if (error) {
         console.error('❌ Error loading settings:', error);
@@ -997,10 +999,12 @@ export function TrimPricingCalculator() {
       if (data && data.length > 0) {
         // Settings found in database - use the most recent one
         const mostRecent = data[0];
-        const lfCost = mostRecent.sheet_lf_cost?.toString() || '3.46';
-        const bendPrice = mostRecent.price_per_bend?.toString() || '1.00';
-        const markup = mostRecent.markup_percent?.toString() || '35';
-        const cut = mostRecent.cut_price?.toString() || '1.00';
+        
+        // Convert to strings, handling 0 values and nulls properly
+        const lfCost = mostRecent.sheet_lf_cost != null ? String(mostRecent.sheet_lf_cost) : '3.46';
+        const bendPrice = mostRecent.price_per_bend != null ? String(mostRecent.price_per_bend) : '1.00';
+        const markup = mostRecent.markup_percent != null ? String(mostRecent.markup_percent) : '35';
+        const cut = mostRecent.cut_price != null ? String(mostRecent.cut_price) : '1.00';
         
         console.log('✅ Loaded settings from database:', { lfCost, bendPrice, markup, cut });
         
@@ -1192,17 +1196,16 @@ export function TrimPricingCalculator() {
       
       console.log('✅ Settings saved successfully to database:', savedData);
       
-      // Update component state with the saved values (use string versions)
+      // Update component state with the saved values (keep as strings)
       setSheetLFCost(tempLFCost);
       setPricePerBend(tempBendPrice);
       setMarkupPercent(tempMarkupPercent);
       setCutPrice(tempCutPrice);
       
-      setShowSettings(false);
-      toast.success('Settings saved and persisted to database!');
+      console.log('✅ State updated - settings will persist when dialog reopens');
       
-      // Don't reload settings - we already have the correct values in state
-      // Reloading could overwrite with stale cached data
+      setShowSettings(false);
+      toast.success('Settings saved and will persist!');
     } catch (error) {
       console.error('❌ Exception saving settings:', error);
       toast.error('Failed to save settings: ' + (error as any).message);
@@ -1245,21 +1248,34 @@ export function TrimPricingCalculator() {
       setTotalInchCost(0);
       setTotalCutCost(0);
       setSellingPrice(0);
+      setMaterialCost(0);
+      setMarkupAmount(0);
       return;
     }
 
-    // NEW CALCULATION:
+    // CALCULATION:
     // 1. LF cost is for a 42" wide piece that is 10' long
     // 2. Multiply by 10 to get cost for the full 10' sheet
     const sheetCost = lfCost * 10;
     
-    // 3. Apply markup percentage
+    // 3. Calculate cost per inch BEFORE markup (material cost)
+    const costPerInchBeforeMarkup = sheetCost / 42;
+    
+    // 4. Material cost for this piece (before markup)
+    const materialCostValue = totalIn * costPerInchBeforeMarkup;
+    setMaterialCost(materialCostValue);
+    
+    // 5. Apply markup percentage
     const markupMultiplier = 1 + (markup / 100);
     const markedUpSheetCost = sheetCost * markupMultiplier;
     
-    // 4. Divide by 42 to get price per inch for a 10' strip
+    // 6. Divide by 42 to get price per inch for a 10' strip (after markup)
     const pricePerInch = markedUpSheetCost / 42;
     setCostPerInch(pricePerInch);
+    
+    // 7. Calculate markup amount added
+    const markupAmountValue = (totalIn * pricePerInch) - materialCostValue;
+    setMarkupAmount(markupAmountValue);
     
     // Cost per bend
     setCostPerBend(bendPriceVal);
@@ -1268,7 +1284,7 @@ export function TrimPricingCalculator() {
     const bendCost = bends * bendPriceVal;
     setTotalBendCost(bendCost);
     
-    // Total inch cost = total inches × price per inch
+    // Total inch cost = total inches × price per inch (with markup)
     const inchCost = totalIn * pricePerInch;
     setTotalInchCost(inchCost);
     
@@ -1617,6 +1633,7 @@ export function TrimPricingCalculator() {
               </Button>
               <Button
                 onClick={() => {
+                  console.log('Opening settings dialog, current values:', { sheetLFCost, pricePerBend, markupPercent, cutPrice });
                   setTempLFCost(sheetLFCost);
                   setTempBendPrice(pricePerBend);
                   setTempMarkupPercent(markupPercent);
@@ -1713,13 +1730,45 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
 
-              {/* Results Section - Condensed */}
+              {/* Results Section - Condensed with Cost Breakdown */}
               <div className="space-y-1.5 pt-1.5 border-t-2 border-yellow-500">
+                {/* Cost Breakdown - Compact */}
+                <div className="bg-black/30 border-2 border-green-800 rounded-lg p-2 space-y-1">
+                  <div className="text-green-400 font-bold text-xs uppercase mb-1">Cost Breakdown</div>
+                  
+                  <div className="flex justify-between text-xs text-white/80">
+                    <span>Material Cost:</span>
+                    <span className="font-bold text-white">${materialCost.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between text-xs text-white/80">
+                    <span>+ Markup ({markupPercent}%):</span>
+                    <span className="font-bold text-green-400">${markupAmount.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between text-xs text-white/80">
+                    <span>+ Bends ({numberOfBends || 0}):</span>
+                    <span className="font-bold text-white">${totalBendCost.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between text-xs text-white/80">
+                    <span>+ Cut:</span>
+                    <span className="font-bold text-white">${totalCutCost.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="border-t border-green-700 pt-1 mt-1"></div>
+                  
+                  <div className="flex justify-between text-xs text-yellow-400 font-bold">
+                    <span>Total Material Cost:</span>
+                    <span>${(materialCost + markupAmount).toFixed(2)}</span>
+                  </div>
+                </div>
+
                 {/* Final Selling Price - Compact */}
                 <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-2 text-center border-2 border-yellow-400 shadow-lg">
                   <div className="text-black font-bold text-xs">SELLING PRICE</div>
                   <div className="text-3xl font-black text-black">${sellingPrice.toFixed(2)}</div>
-                  <div className="text-xs text-black/70">Material + Bends + Cut</div>
+                  <div className="text-xs text-black/70">All Costs Included</div>
                 </div>
 
                 {/* Clear Button */}
