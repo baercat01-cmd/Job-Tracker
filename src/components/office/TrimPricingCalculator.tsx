@@ -137,6 +137,11 @@ export function TrimPricingCalculator() {
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
   const CANVAS_HEIGHT = BASE_CANVAS_HEIGHT * (scale / 80);
 
+  // Helper function to remove trailing zeros
+  function cleanNumber(num: number, decimals: number = 3): string {
+    return num.toFixed(decimals).replace(/\.?0+$/, '');
+  }
+
   // Helper function to draw a hem
   function drawHem(
     ctx: CanvasRenderingContext2D, 
@@ -401,11 +406,11 @@ export function TrimPricingCalculator() {
       ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
       ctx.fillRect(midX - 40, midY - 30, 80, 24);
       
-      // Measurement text
+      // Measurement text (no trailing zeros)
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${previewLength.toFixed(3)}"`, midX, midY - 12);
+      ctx.fillText(`${cleanNumber(previewLength)}"`, midX, midY - 12);
       
       // Calculate and display preview angle (if not first segment)
       if (drawing.segments.length > 0) {
@@ -495,11 +500,34 @@ export function TrimPricingCalculator() {
       ctx.lineTo(endX, endY);
       ctx.stroke();
 
-      // Don't draw endpoint dots - removed as per request
-
       // Draw hem if exists (U-shaped fold - no exposed edge)
       if (segment.hasHem) {
         drawHem(ctx, segment, scale, false);
+        
+        // Draw 180° angle for hem at the corner where hem starts
+        const hemPoint = segment.hemAtStart ? segment.start : segment.end;
+        const hemX = hemPoint.x * scale;
+        const hemY = hemPoint.y * scale;
+        
+        // Position the 180° label at the hem corner
+        const side = segment.hemSide || 'right';
+        const otherPoint = segment.hemAtStart ? segment.end : segment.start;
+        const dx = otherPoint.x - hemPoint.x;
+        const dy = otherPoint.y - hemPoint.y;
+        const unitX = dx / Math.sqrt(dx * dx + dy * dy);
+        const unitY = dy / Math.sqrt(dx * dx + dy * dy);
+        
+        const perpX = side === 'right' ? -unitY : unitY;
+        const perpY = side === 'right' ? unitX : -unitX;
+        
+        const hemAngleX = hemX + perpX * 35;
+        const hemAngleY = hemY + perpY * 35;
+        
+        ctx.fillStyle = '#6b21a8';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('180°', hemAngleX, hemAngleY);
+        ctx.textAlign = 'left';
       }
 
       // Calculate measurements first
@@ -524,19 +552,19 @@ export function TrimPricingCalculator() {
       const labelOffset = baseOffset;
       const measureOffset = baseOffset + 15;
       
-      // Draw label (letter) - positioned perpendicular to line for better spacing
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 18px sans-serif';
+      // Draw label (letter) - light gray, smaller
+      ctx.fillStyle = '#999999';
+      ctx.font = '14px sans-serif';
       const labelX = midX + perpX * labelOffset;
       const labelY = midY + perpY * labelOffset;
-      ctx.fillText(segment.label, labelX - 8, labelY + 6);
+      ctx.fillText(segment.label, labelX - 6, labelY + 5);
 
-      // Draw measurement - on opposite side from label
+      // Draw measurement - dominant, bold, larger, no trailing zeros
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 18px sans-serif';
       const measureX = midX - perpX * measureOffset;
       const measureY = midY - perpY * measureOffset;
-      ctx.fillText(`${lengthInInches.toFixed(3)}"`, measureX - 20, measureY + 6);
+      ctx.fillText(`${cleanNumber(lengthInInches)}"`, measureX - 25, measureY + 6);
 
       // Calculate and draw angle AT THE CORNER (if not first segment)
       const segmentIndex = drawing.segments.indexOf(segment);
@@ -549,7 +577,6 @@ export function TrimPricingCalculator() {
         const displayAngle = useComplement ? (360 - angle) : angle;
         
         // Position angle AT the corner point (start of this segment)
-        // Offset it slightly away from the corner for visibility
         const prevDx = prevSegment.end.x - prevSegment.start.x;
         const prevDy = prevSegment.end.y - prevSegment.start.y;
         const currDx = segment.end.x - segment.start.x;
@@ -560,24 +587,15 @@ export function TrimPricingCalculator() {
         const currAngle = Math.atan2(currDy, currDx);
         const bisectorAngle = (prevAngle + currAngle) / 2;
         
-        const angleOffsetDist = 25;
+        const angleOffsetDist = 35;
         const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
         const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
         
-        // Draw clickable angle text
+        // Draw angle text (no background box)
         ctx.fillStyle = '#6b21a8';
         ctx.font = 'bold 14px sans-serif';
-        const angleText = `${Math.round(displayAngle)}°`;
-        const angleTextWidth = ctx.measureText(angleText).width;
-        
-        // Background for clickability
-        ctx.fillStyle = 'rgba(107, 33, 168, 0.1)';
-        ctx.fillRect(angleX - angleTextWidth/2 - 4, angleY - 16, angleTextWidth + 8, 20);
-        
-        // Angle text
-        ctx.fillStyle = '#6b21a8';
         ctx.textAlign = 'center';
-        ctx.fillText(angleText, angleX, angleY);
+        ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
         ctx.textAlign = 'left';
       }
     });
@@ -628,7 +646,7 @@ export function TrimPricingCalculator() {
         ctx.fillText('⊙', startX - 18, startY + 4);
       }
     });
-  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode]);
+  }, [drawing, showDrawing, canvasReady, scale, gridSize, majorGridSize, CANVAS_WIDTH, CANVAS_HEIGHT, isDrawingMode, mousePos, drawingLocked, hemPreviewMode, angleDisplayMode]);
 
   function pointToLineDistance(point: Point, lineStart: Point, lineEnd: Point): number {
     const dx = lineEnd.x - lineStart.x;
@@ -661,6 +679,9 @@ export function TrimPricingCalculator() {
     let diff = angle2 - angle1;
     if (diff < 0) diff += 360;
     if (diff > 360) diff -= 360;
+    
+    // Invert to show interior angle (90° for L-bends, not 270°)
+    diff = 360 - diff;
     
     return diff;
   }
@@ -703,7 +724,7 @@ export function TrimPricingCalculator() {
       const currAngle = Math.atan2(currDy, currDx);
       const bisectorAngle = (prevAngle + currAngle) / 2;
       
-      const angleOffsetDist = 25;
+      const angleOffsetDist = 35;
       const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
       const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
       
@@ -1042,7 +1063,7 @@ export function TrimPricingCalculator() {
     setInchInputs([{ id: '1', value: totalLength.toFixed(2) }]);
     setNumberOfBends(bends.toString());
     
-    toast.success(`Applied: ${totalLength.toFixed(2)}" with ${bends} bends`);
+    toast.success(`Applied: ${cleanNumber(totalLength, 2)}" with ${bends} bends`);
     setShowDrawing(false);
   }
 
@@ -1714,7 +1735,7 @@ export function TrimPricingCalculator() {
             {/* Stats - Bottom Right */}
             <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-2 shadow-lg">
               <div className="text-gray-800 text-xs font-bold">
-                <div>Total: {calculateTotalLength().toFixed(3)}"</div>
+                <div>Total: {cleanNumber(calculateTotalLength())}"</div>
                 <div>Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}</div>
               </div>
             </div>
@@ -2155,7 +2176,7 @@ export function TrimPricingCalculator() {
                         <p className="text-white/60 text-sm">Job: {config.job_name}</p>
                       )}
                       <div className="mt-2 text-white/80 text-sm space-y-1">
-                        <p>Total Inches: {config.inches.reduce((sum, val) => sum + val, 0).toFixed(2)}"</p>
+                        <p>Total Inches: {cleanNumber(config.inches.reduce((sum, val) => sum + val, 0), 2)}"</p>
                         <p>Bends: {config.bends}</p>
                         {config.drawing_segments && config.drawing_segments.length > 0 && (
                           <p className="text-green-400">📐 Includes Drawing ({config.drawing_segments.length} segments)</p>
@@ -2272,14 +2293,16 @@ export function TrimPricingCalculator() {
                       // Labels
                       const midX = (startX + endX) / 2;
                       const midY = (startY + endY) / 2;
-                      ctx.fillStyle = '#000000';
-                      ctx.font = 'bold 14px sans-serif';
+                      ctx.fillStyle = '#999999';
+                      ctx.font = '14px sans-serif';
                       ctx.fillText(seg.label, midX - 20, midY);
                       
                       const dx = seg.end.x - seg.start.x;
                       const dy = seg.end.y - seg.start.y;
                       const length = Math.sqrt(dx * dx + dy * dy);
-                      ctx.fillText(`${length.toFixed(3)}"`, midX + 10, midY);
+                      ctx.fillStyle = '#000000';
+                      ctx.font = 'bold 14px sans-serif';
+                      ctx.fillText(`${cleanNumber(length)}"`, midX + 10, midY);
                     });
                   }}
                   className="w-full h-full"
@@ -2294,7 +2317,7 @@ export function TrimPricingCalculator() {
                     {previewConfig.job_name && (
                       <p>Job: <span className="text-white font-semibold">{previewConfig.job_name}</span></p>
                     )}
-                    <p>Total Inches: <span className="text-white font-semibold">{previewConfig.inches.reduce((s, v) => s + v, 0).toFixed(2)}"</span></p>
+                    <p>Total Inches: <span className="text-white font-semibold">{cleanNumber(previewConfig.inches.reduce((s, v) => s + v, 0), 2)}"</span></p>
                     <p>Bends: <span className="text-white font-semibold">{previewConfig.bends}</span></p>
                     {previewConfig.drawing_segments && (
                       <p>Segments: <span className="text-white font-semibold">{previewConfig.drawing_segments.length}</span></p>
