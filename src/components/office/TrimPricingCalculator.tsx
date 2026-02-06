@@ -131,6 +131,8 @@ export function TrimPricingCalculator() {
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const [hemPreviewMode, setHemPreviewMode] = useState<HemPreviewMode | null>(null);
   const [angleDisplayMode, setAngleDisplayMode] = useState<Record<string, boolean>>({});
+  const [lengthInput, setLengthInput] = useState('');
+  const lengthInputRef = useRef<HTMLInputElement>(null);
   const [previewConfig, setPreviewConfig] = useState<SavedConfig | null>(null);
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
@@ -807,6 +809,9 @@ export function TrimPricingCalculator() {
     if (!drawing.currentPoint) {
       // Start new line
       setDrawing(prev => ({ ...prev, currentPoint: point }));
+      setLengthInput(''); // Clear length input when starting new line
+      // Focus the length input after a short delay to allow state to update
+      setTimeout(() => lengthInputRef.current?.focus(), 100);
     } else {
       // Complete line and STAY in drawing mode
       const newSegment: LineSegment = {
@@ -824,6 +829,8 @@ export function TrimPricingCalculator() {
         selectedSegmentId: null,
         nextLabel: prev.nextLabel + 1
       }));
+      
+      setLengthInput(''); // Clear length input after completing line
       
       // STAY in drawing mode - user can continue adding lines
       toast.success('Line added - click endpoint to continue or anywhere to start new');
@@ -941,7 +948,62 @@ export function TrimPricingCalculator() {
     setDrawing(prev => ({ ...prev, currentPoint: null }));
     setIsDrawingMode(false);
     setDrawingLocked(true);
+    setLengthInput('');
     toast.success('Drawing mode ended');
+  }
+
+  function handleLengthInput(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && drawing.currentPoint && mousePos) {
+      const targetLength = parseFloat(lengthInput);
+      
+      if (isNaN(targetLength) || targetLength <= 0) {
+        toast.error('Please enter a valid length');
+        return;
+      }
+      
+      // Calculate direction from current point to mouse position
+      const dx = mousePos.x - drawing.currentPoint.x;
+      const dy = mousePos.y - drawing.currentPoint.y;
+      const currentLength = Math.sqrt(dx * dx + dy * dy);
+      
+      if (currentLength === 0) {
+        toast.error('Move mouse to set direction first');
+        return;
+      }
+      
+      // Calculate unit direction vector
+      const unitX = dx / currentLength;
+      const unitY = dy / currentLength;
+      
+      // Calculate endpoint at exact target length
+      const endX = drawing.currentPoint.x + unitX * targetLength;
+      const endY = drawing.currentPoint.y + unitY * targetLength;
+      
+      // Snap to grid
+      const snappedEndX = Math.round(endX / gridSize) * gridSize;
+      const snappedEndY = Math.round(endY / gridSize) * gridSize;
+      const endPoint = { x: snappedEndX, y: snappedEndY };
+      
+      // Create the segment
+      const newSegment: LineSegment = {
+        id: Date.now().toString(),
+        start: drawing.currentPoint,
+        end: endPoint,
+        label: String.fromCharCode(drawing.nextLabel),
+        hasHem: false,
+        hemAtStart: false
+      };
+      
+      setDrawing(prev => ({
+        segments: [...prev.segments, newSegment],
+        currentPoint: null,
+        selectedSegmentId: null,
+        nextLabel: prev.nextLabel + 1
+      }));
+      
+      setLengthInput('');
+      toast.success(`Line created: ${cleanNumber(targetLength)}"`);
+    }
   }
 
   function startHemPreview() {
@@ -1728,6 +1790,52 @@ export function TrimPricingCalculator() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Live Drawing Info - Bottom Left */}
+            {isDrawingMode && drawing.currentPoint && mousePos && (
+              <div className="absolute bottom-2 left-2 bg-blue-600/95 backdrop-blur-sm border-2 border-blue-400 rounded-lg p-3 shadow-lg">
+                <div className="text-white text-sm font-bold mb-2">
+                  📏 Live Measurement
+                </div>
+                <div className="space-y-2">
+                  {(() => {
+                    const dx = mousePos.x - drawing.currentPoint.x;
+                    const dy = mousePos.y - drawing.currentPoint.y;
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                    const displayAngle = angle < 0 ? angle + 360 : angle;
+                    
+                    return (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs">Angle:</span>
+                          <span className="text-yellow-300 font-bold text-sm">{Math.round(displayAngle)}°</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-xs">Length:</span>
+                          <span className="text-yellow-300 font-bold text-sm">{cleanNumber(length)}"</span>
+                        </div>
+                        <div className="border-t border-white/30 pt-2 mt-2">
+                          <Label className="text-white/90 text-xs mb-1 block">Set Length:</Label>
+                          <Input
+                            ref={lengthInputRef}
+                            type="number"
+                            min="0"
+                            step="0.125"
+                            value={lengthInput}
+                            onChange={(e) => setLengthInput(e.target.value)}
+                            onKeyDown={handleLengthInput}
+                            placeholder="Type & press Enter"
+                            className="h-8 text-sm bg-white border-2 border-blue-400 focus:border-yellow-400 font-bold text-center"
+                          />
+                        </div>
+                        <p className="text-white/60 text-xs mt-1 italic">Type length & press Enter</p>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
