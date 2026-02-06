@@ -983,36 +983,37 @@ export function TrimPricingCalculator() {
 
   async function loadSettings() {
     try {
+      console.log('🔄 Loading trim calculator settings from database...');
+      
       const { data, error } = await supabase
         .from('trim_calculator_settings')
         .select('*')
+        .order('updated_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no data
       
       if (error) {
-        if (error.code === 'PGRST116') {
-          // No settings found - use defaults
-          console.log('No settings found, using defaults');
-          const defaultMarkup = '32';
-          const defaultCut = '1.00';
-          setMarkupPercent(defaultMarkup);
-          setTempMarkupPercent(defaultMarkup);
-          setCutPrice(defaultCut);
-          setTempCutPrice(defaultCut);
-        } else {
-          console.error('Error loading settings:', error);
-        }
+        console.error('❌ Error loading settings:', error);
+        // Use defaults on error
+        const defaultMarkup = '32';
+        const defaultCut = '1.00';
+        setMarkupPercent(defaultMarkup);
+        setTempMarkupPercent(defaultMarkup);
+        setCutPrice(defaultCut);
+        setTempCutPrice(defaultCut);
         return;
       }
       
       if (data) {
+        // Settings found in database
         const lfCost = data.sheet_lf_cost?.toString() || '';
         const bendPrice = data.price_per_bend?.toString() || '';
         const markup = data.markup_percent?.toString() || '32';
         const cut = data.cut_price?.toString() || '1.00';
         
-        console.log('Loaded settings from database:', { lfCost, bendPrice, markup, cut });
+        console.log('✅ Loaded settings from database:', { lfCost, bendPrice, markup, cut });
         
+        // Set both main state and temp state
         setSheetLFCost(lfCost);
         setTempLFCost(lfCost);
         setPricePerBend(bendPrice);
@@ -1021,9 +1022,18 @@ export function TrimPricingCalculator() {
         setTempMarkupPercent(markup);
         setCutPrice(cut);
         setTempCutPrice(cut);
+      } else {
+        // No settings in database yet - use defaults
+        console.log('ℹ️ No settings found in database, using defaults');
+        const defaultMarkup = '32';
+        const defaultCut = '1.00';
+        setMarkupPercent(defaultMarkup);
+        setTempMarkupPercent(defaultMarkup);
+        setCutPrice(defaultCut);
+        setTempCutPrice(defaultCut);
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.error('❌ Exception loading settings:', error);
     }
   }
 
@@ -1078,12 +1088,19 @@ export function TrimPricingCalculator() {
     }
     
     try {
+      console.log('💾 Saving trim calculator settings...');
+      
       // Check if settings exist
-      const { data: existing } = await supabase
+      const { data: existing, error: checkError } = await supabase
         .from('trim_calculator_settings')
         .select('id')
+        .order('updated_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
+      
+      if (checkError) {
+        console.error('❌ Error checking existing settings:', checkError);
+      }
       
       const settingsData = {
         sheet_lf_cost: lfCost,
@@ -1093,34 +1110,59 @@ export function TrimPricingCalculator() {
         updated_at: new Date().toISOString()
       };
       
+      console.log('📝 Settings data to save:', settingsData);
+      
       let error;
+      let savedData;
       
       if (existing?.id) {
         // Update existing settings
-        ({ error } = await supabase
+        console.log('🔄 Updating existing settings with ID:', existing.id);
+        const result = await supabase
           .from('trim_calculator_settings')
           .update(settingsData)
-          .eq('id', existing.id));
+          .eq('id', existing.id)
+          .select()
+          .single();
+        
+        error = result.error;
+        savedData = result.data;
       } else {
         // Insert new settings
-        ({ error } = await supabase
+        console.log('➕ Inserting new settings');
+        const result = await supabase
           .from('trim_calculator_settings')
-          .insert([settingsData]));
+          .insert([settingsData])
+          .select()
+          .single();
+        
+        error = result.error;
+        savedData = result.data;
       }
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error saving to database:', error);
+        throw error;
+      }
       
-      console.log('Settings saved to database:', settingsData);
+      console.log('✅ Settings saved successfully to database:', savedData);
       
+      // Update component state with the saved values (use string versions)
       setSheetLFCost(tempLFCost);
       setPricePerBend(tempBendPrice);
       setMarkupPercent(tempMarkupPercent);
       setCutPrice(tempCutPrice);
+      
       setShowSettings(false);
       toast.success('Settings saved successfully!');
+      
+      // Reload settings to verify persistence
+      setTimeout(() => {
+        loadSettings();
+      }, 500);
     } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      console.error('❌ Exception saving settings:', error);
+      toast.error('Failed to save settings: ' + (error as any).message);
     }
   }
 
