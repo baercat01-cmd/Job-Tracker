@@ -75,6 +75,9 @@ interface TrimType {
   name: string;
   width_inches: number;
   cost_per_lf: number;
+  price_per_bend: number;
+  markup_percent: number;
+  cut_price: number;
   active: boolean;
 }
 
@@ -83,12 +86,6 @@ export function TrimPricingCalculator() {
   const [trimTypes, setTrimTypes] = useState<TrimType[]>([]);
   const [selectedTrimTypeId, setSelectedTrimTypeId] = useState<string>('');
   const [selectedTrimType, setSelectedTrimType] = useState<TrimType | null>(null);
-  
-  // Persistent settings
-  const [sheetLFCost, setSheetLFCost] = useState<string>('3.46');
-  const [pricePerBend, setPricePerBend] = useState<string>('1.00');
-  const [markupPercent, setMarkupPercent] = useState<string>('35');
-  const [cutPrice, setCutPrice] = useState<string>('1.00');
   
   // Dynamic inch inputs
   const [inchInputs, setInchInputs] = useState<InchInput[]>([
@@ -108,15 +105,9 @@ export function TrimPricingCalculator() {
   const [markupAmount, setMarkupAmount] = useState(0); // Markup added
   
   // Dialog states
-  const [showSettings, setShowSettings] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
-  
-  const [tempLFCost, setTempLFCost] = useState('3.46');
-  const [tempBendPrice, setTempBendPrice] = useState('1.00');
-  const [tempMarkupPercent, setTempMarkupPercent] = useState('35');
-  const [tempCutPrice, setTempCutPrice] = useState('1.00');
   
   // Trim type management
   const [showTrimTypeManagement, setShowTrimTypeManagement] = useState(false);
@@ -124,6 +115,9 @@ export function TrimPricingCalculator() {
   const [newTrimTypeName, setNewTrimTypeName] = useState('');
   const [newTrimTypeWidth, setNewTrimTypeWidth] = useState('42');
   const [newTrimTypeCost, setNewTrimTypeCost] = useState('3.46');
+  const [newTrimTypeBendPrice, setNewTrimTypeBendPrice] = useState('1.00');
+  const [newTrimTypeMarkup, setNewTrimTypeMarkup] = useState('35');
+  const [newTrimTypeCutPrice, setNewTrimTypeCutPrice] = useState('1.00');
 
   // Save/Load
   const [configName, setConfigName] = useState('');
@@ -1184,7 +1178,6 @@ export function TrimPricingCalculator() {
 
   // Load saved values from database on mount
   useEffect(() => {
-    loadSettings();
     loadJobs();
     loadSavedConfigs();
     loadTrimTypes();
@@ -1196,99 +1189,7 @@ export function TrimPricingCalculator() {
     setSelectedTrimType(selected || null);
   }, [selectedTrimTypeId, trimTypes]);
 
-  async function loadSettings() {
-    try {
-      console.log('🔄 Loading trim calculator settings from database...');
-      
-      const { data, error } = await supabase
-        .from('trim_calculator_settings')
-        .select('*')
-        .order('updated_at', { ascending: false});
-      
-      if (error) {
-        console.error('❌ Error loading settings:', error);
-      }
-      
-      if (data && data.length > 0) {
-        // Settings found in database - use the most recent one
-        const mostRecent = data[0];
-        
-        // Convert to strings, handling 0 values and nulls properly
-        const lfCost = mostRecent.sheet_lf_cost != null ? String(mostRecent.sheet_lf_cost) : '3.46';
-        const bendPrice = mostRecent.price_per_bend != null ? String(mostRecent.price_per_bend) : '1.00';
-        const markup = mostRecent.markup_percent != null ? String(mostRecent.markup_percent) : '35';
-        const cut = mostRecent.cut_price != null ? String(mostRecent.cut_price) : '1.00';
-        
-        console.log('✅ Loaded settings from database:', { lfCost, bendPrice, markup, cut });
-        
-        // Set both main state and temp state
-        setSheetLFCost(lfCost);
-        setTempLFCost(lfCost);
-        setPricePerBend(bendPrice);
-        setTempBendPrice(bendPrice);
-        setMarkupPercent(markup);
-        setTempMarkupPercent(markup);
-        setCutPrice(cut);
-        setTempCutPrice(cut);
-      } else {
-        // No settings in database yet - create initial defaults and save them
-        console.log('ℹ️ No settings found in database, creating defaults...');
-        const defaultLFCost = '3.46';
-        const defaultBendPrice = '1.00';
-        const defaultMarkup = '35';
-        const defaultCut = '1.00';
-        
-        // Set state first
-        setSheetLFCost(defaultLFCost);
-        setTempLFCost(defaultLFCost);
-        setPricePerBend(defaultBendPrice);
-        setTempBendPrice(defaultBendPrice);
-        setMarkupPercent(defaultMarkup);
-        setTempMarkupPercent(defaultMarkup);
-        setCutPrice(defaultCut);
-        setTempCutPrice(defaultCut);
-        
-        // Save defaults to database so they persist
-        try {
-          const settingsData = {
-            sheet_lf_cost: parseFloat(defaultLFCost),
-            price_per_bend: parseFloat(defaultBendPrice),
-            markup_percent: parseFloat(defaultMarkup),
-            cut_price: parseFloat(defaultCut),
-            updated_at: new Date().toISOString()
-          };
-          
-          const { error: insertError } = await supabase
-            .from('trim_calculator_settings')
-            .insert([settingsData]);
-          
-          if (insertError) {
-            console.error('❌ Error saving default settings:', insertError);
-          } else {
-            console.log('✅ Default settings saved to database');
-          }
-        } catch (err) {
-          console.error('❌ Exception saving default settings:', err);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Exception loading settings:', error);
-      // Use defaults on exception
-      const defaultLFCost = '3.46';
-      const defaultBendPrice = '1.00';
-      const defaultMarkup = '35';
-      const defaultCut = '1.00';
-      
-      setSheetLFCost(defaultLFCost);
-      setTempLFCost(defaultLFCost);
-      setPricePerBend(defaultBendPrice);
-      setTempBendPrice(defaultBendPrice);
-      setMarkupPercent(defaultMarkup);
-      setTempMarkupPercent(defaultMarkup);
-      setCutPrice(defaultCut);
-      setTempCutPrice(defaultCut);
-    }
-  }
+
 
   async function loadJobs() {
     try {
@@ -1340,113 +1241,7 @@ export function TrimPricingCalculator() {
     }
   }
 
-  async function saveSettings() {
-    const lfCost = parseFloat(tempLFCost);
-    const bendPrice = parseFloat(tempBendPrice);
-    const markup = parseFloat(tempMarkupPercent);
-    const cut = parseFloat(tempCutPrice);
-    
-    if (!lfCost || lfCost <= 0) {
-      toast.error('Please enter a valid sheet cost per LF');
-      return;
-    }
-    if (!bendPrice || bendPrice <= 0) {
-      toast.error('Please enter a valid price per bend');
-      return;
-    }
-    if (markup < 0) {
-      toast.error('Please enter a valid markup percentage (0 or higher)');
-      return;
-    }
-    if (!cut || cut <= 0) {
-      toast.error('Please enter a valid cut price');
-      return;
-    }
-    
-    try {
-      console.log('💾 Saving trim calculator settings...');
-      
-      // Check if settings exist - get all and use the first one
-      const { data: existingList, error: checkError } = await supabase
-        .from('trim_calculator_settings')
-        .select('id')
-        .order('updated_at', { ascending: false });
-      
-      if (checkError) {
-        console.error('❌ Error checking existing settings:', checkError);
-      }
-      
-      const settingsData = {
-        sheet_lf_cost: lfCost,
-        price_per_bend: bendPrice,
-        markup_percent: markup,
-        cut_price: cut,
-        updated_at: new Date().toISOString()
-      };
-      
-      console.log('📝 Settings data to save:', settingsData);
-      
-      let error;
-      let savedData;
-      
-      if (existingList && existingList.length > 0) {
-        // Update the most recent settings (or update all to keep them in sync)
-        const existingId = existingList[0].id;
-        console.log('🔄 Updating existing settings with ID:', existingId);
-        
-        // Update the most recent one
-        const result = await supabase
-          .from('trim_calculator_settings')
-          .update(settingsData)
-          .eq('id', existingId)
-          .select();
-        
-        error = result.error;
-        savedData = result.data?.[0]; // Get first item from array
-        
-        // Optional: Delete old duplicate entries to keep table clean
-        if (existingList.length > 1) {
-          console.log('🧹 Cleaning up old duplicate settings...');
-          const oldIds = existingList.slice(1).map(item => item.id);
-          await supabase
-            .from('trim_calculator_settings')
-            .delete()
-            .in('id', oldIds);
-        }
-      } else {
-        // Insert new settings
-        console.log('➕ Inserting new settings');
-        const result = await supabase
-          .from('trim_calculator_settings')
-          .insert([settingsData])
-          .select();
-        
-        error = result.error;
-        savedData = result.data?.[0]; // Get first item from array
-      }
-      
-      if (error) {
-        console.error('❌ Error saving to database:', error);
-        throw error;
-      }
-      
-      console.log('✅ Settings saved successfully to database:', savedData);
-      
-      // Update component state with the saved values (keep as strings)
-      setSheetLFCost(tempLFCost);
-      setPricePerBend(tempBendPrice);
-      setMarkupPercent(tempMarkupPercent);
-      setCutPrice(tempCutPrice);
-      
-      console.log('✅ State updated - settings will persist when dialog reopens');
-      
-      setShowSettings(false);
-      toast.success('Settings saved and will persist!');
-    } catch (error) {
-      console.error('❌ Exception saving settings:', error);
-      toast.error('Failed to save settings: ' + (error as any).message);
-    }
-  }
+
   
   async function saveTrimType() {
     if (!newTrimTypeName.trim()) {
@@ -1456,6 +1251,9 @@ export function TrimPricingCalculator() {
     
     const width = parseFloat(newTrimTypeWidth);
     const cost = parseFloat(newTrimTypeCost);
+    const bendPrice = parseFloat(newTrimTypeBendPrice);
+    const markup = parseFloat(newTrimTypeMarkup);
+    const cutPrice = parseFloat(newTrimTypeCutPrice);
     
     if (!width || width <= 0) {
       toast.error('Please enter a valid width');
@@ -1463,7 +1261,22 @@ export function TrimPricingCalculator() {
     }
     
     if (!cost || cost <= 0) {
-      toast.error('Please enter a valid cost');
+      toast.error('Please enter a valid cost per LF');
+      return;
+    }
+    
+    if (!bendPrice || bendPrice <= 0) {
+      toast.error('Please enter a valid price per bend');
+      return;
+    }
+    
+    if (markup < 0) {
+      toast.error('Please enter a valid markup percentage');
+      return;
+    }
+    
+    if (!cutPrice || cutPrice <= 0) {
+      toast.error('Please enter a valid cut price');
       return;
     }
     
@@ -1476,12 +1289,15 @@ export function TrimPricingCalculator() {
             name: newTrimTypeName.trim(),
             width_inches: width,
             cost_per_lf: cost,
+            price_per_bend: bendPrice,
+            markup_percent: markup,
+            cut_price: cutPrice,
             updated_at: new Date().toISOString()
           })
           .eq('id', editingTrimType.id);
         
         if (error) throw error;
-        toast.success('Trim type updated');
+        toast.success('Material type updated');
       } else {
         // Insert new
         const { error } = await supabase
@@ -1490,11 +1306,14 @@ export function TrimPricingCalculator() {
             name: newTrimTypeName.trim(),
             width_inches: width,
             cost_per_lf: cost,
+            price_per_bend: bendPrice,
+            markup_percent: markup,
+            cut_price: cutPrice,
             active: true
           }]);
         
         if (error) throw error;
-        toast.success('Trim type added');
+        toast.success('Material type added');
       }
       
       // Reload trim types
@@ -1504,10 +1323,13 @@ export function TrimPricingCalculator() {
       setNewTrimTypeName('');
       setNewTrimTypeWidth('42');
       setNewTrimTypeCost('3.46');
+      setNewTrimTypeBendPrice('1.00');
+      setNewTrimTypeMarkup('35');
+      setNewTrimTypeCutPrice('1.00');
       setEditingTrimType(null);
     } catch (error) {
       console.error('Error saving trim type:', error);
-      toast.error('Failed to save trim type');
+      toast.error('Failed to save material type');
     }
   }
   
@@ -1540,6 +1362,9 @@ export function TrimPricingCalculator() {
     setNewTrimTypeName(trimType.name);
     setNewTrimTypeWidth(trimType.width_inches.toString());
     setNewTrimTypeCost(trimType.cost_per_lf.toString());
+    setNewTrimTypeBendPrice(trimType.price_per_bend.toString());
+    setNewTrimTypeMarkup(trimType.markup_percent.toString());
+    setNewTrimTypeCutPrice(trimType.cut_price.toString());
   }
   
   function cancelEditTrimType() {
@@ -1547,6 +1372,9 @@ export function TrimPricingCalculator() {
     setNewTrimTypeName('');
     setNewTrimTypeWidth('42');
     setNewTrimTypeCost('3.46');
+    setNewTrimTypeBendPrice('1.00');
+    setNewTrimTypeMarkup('35');
+    setNewTrimTypeCutPrice('1.00');
   }
 
   // Auto-update calculator from drawing in real-time
@@ -1564,12 +1392,25 @@ export function TrimPricingCalculator() {
 
   // Calculate trim pricing
   useEffect(() => {
-    // Use selected trim type's cost and width, or fall back to legacy settings
-    const lfCost = selectedTrimType ? selectedTrimType.cost_per_lf : parseFloat(sheetLFCost);
-    const sheetWidth = selectedTrimType ? selectedTrimType.width_inches : 42;
-    const bendPriceVal = parseFloat(pricePerBend);
-    const markup = parseFloat(markupPercent);
-    const cutPriceVal = parseFloat(cutPrice);
+    // All values come from selected trim type
+    if (!selectedTrimType) {
+      // No material selected - show zeros
+      setCostPerInch(0);
+      setCostPerBend(0);
+      setTotalBendCost(0);
+      setTotalInchCost(0);
+      setTotalCutCost(0);
+      setSellingPrice(0);
+      setMaterialCost(0);
+      setMarkupAmount(0);
+      return;
+    }
+    
+    const lfCost = selectedTrimType.cost_per_lf;
+    const sheetWidth = selectedTrimType.width_inches;
+    const bendPriceVal = selectedTrimType.price_per_bend;
+    const markup = selectedTrimType.markup_percent;
+    const cutPriceVal = selectedTrimType.cut_price;
     const bends = parseInt(numberOfBends) || 0;
 
     // Sum all inch inputs
@@ -1634,7 +1475,7 @@ export function TrimPricingCalculator() {
     
     // Selling price = (total inches × price per inch) + (bends × bend price) + cut cost
     setSellingPrice(inchCost + bendCost + cutCost);
-  }, [sheetLFCost, pricePerBend, markupPercent, cutPrice, inchInputs, numberOfBends, selectedTrimType]);
+  }, [inchInputs, numberOfBends, selectedTrimType]);
 
   function addInchInput() {
     const newId = (Math.max(...inchInputs.map(i => parseInt(i.id)), 0) + 1).toString();
@@ -1741,11 +1582,15 @@ export function TrimPricingCalculator() {
   }
   
   function calculateConfigPricing(config: SavedConfig) {
-    const lfCost = selectedTrimType ? selectedTrimType.cost_per_lf : parseFloat(sheetLFCost);
-    const sheetWidth = selectedTrimType ? selectedTrimType.width_inches : 42;
-    const bendPriceVal = parseFloat(pricePerBend);
-    const markup = parseFloat(markupPercent);
-    const cutPriceVal = parseFloat(cutPrice);
+    if (!selectedTrimType) {
+      return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
+    }
+    
+    const lfCost = selectedTrimType.cost_per_lf;
+    const sheetWidth = selectedTrimType.width_inches;
+    const bendPriceVal = selectedTrimType.price_per_bend;
+    const markup = selectedTrimType.markup_percent;
+    const cutPriceVal = selectedTrimType.cut_price;
     
     if (!lfCost || !bendPriceVal || markup < 0 || !cutPriceVal) {
       return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
@@ -1789,7 +1634,7 @@ export function TrimPricingCalculator() {
     toast.success('Configuration deleted');
   }
 
-  const hasSettings = (selectedTrimType || sheetLFCost) && pricePerBend && markupPercent;
+  const hasSettings = selectedTrimType !== null;
 
   return (
     <>
@@ -2037,49 +1882,27 @@ export function TrimPricingCalculator() {
               <Calculator className="w-5 h-5" />
               <span className="text-lg font-bold">Calculator</span>
             </CardTitle>
-            <div className="flex gap-1">
-              <Button
-                onClick={() => setShowInfo(true)}
-                size="sm"
-                className="bg-green-800 hover:bg-green-700 text-yellow-400 border-2 border-yellow-500 h-7 w-7 p-0"
-              >
-                <Info className="w-4 h-4" />
-              </Button>
-              <Button
-                onClick={() => {
-                  console.log('Opening settings dialog, current values:', { sheetLFCost, pricePerBend, markupPercent, cutPrice });
-                  setTempLFCost(sheetLFCost);
-                  setTempBendPrice(pricePerBend);
-                  setTempMarkupPercent(markupPercent);
-                  setTempCutPrice(cutPrice);
-                  setShowSettings(true);
-                }}
-                size="sm"
-                className="bg-green-800 hover:bg-green-700 text-yellow-400 border-2 border-yellow-500 h-7 w-7 p-0"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            </div>
+            <Button
+              onClick={() => setShowInfo(true)}
+              size="sm"
+              className="bg-green-800 hover:bg-green-700 text-yellow-400 border-2 border-yellow-500 h-7 w-7 p-0"
+            >
+              <Info className="w-4 h-4" />
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-2 pt-2 p-2 flex-1 overflow-y-auto">
           {!hasSettings ? (
             <div className="bg-yellow-500/10 border-2 border-yellow-500 rounded-lg p-3 text-center">
               <p className="text-yellow-500 font-bold text-sm mb-2">
-                Configure Settings First
+                Add a Material Type First
               </p>
               <Button
-                onClick={() => {
-                  setTempLFCost(sheetLFCost);
-                  setTempBendPrice(pricePerBend);
-                  setTempMarkupPercent(markupPercent);
-                  setTempCutPrice(cutPrice);
-                  setShowSettings(true);
-                }}
+                onClick={() => setShowTrimTypeManagement(true)}
                 className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold px-3 py-1.5 text-xs"
               >
-                <Settings className="w-3 h-3 mr-1" />
-                Open Settings
+                <Plus className="w-3 h-3 mr-1" />
+                Add Material
               </Button>
             </div>
           ) : (
@@ -2111,8 +1934,27 @@ export function TrimPricingCalculator() {
                   </Button>
                 </div>
                 {selectedTrimType && (
-                  <div className="mt-1 text-xs text-green-400">
-                    Width: {selectedTrimType.width_inches}" | Cost: ${selectedTrimType.cost_per_lf}/LF
+                  <div className="mt-1 space-y-0.5 text-xs text-green-400">
+                    <div className="flex justify-between">
+                      <span>Width:</span>
+                      <span className="font-semibold">{selectedTrimType.width_inches}"</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cost/LF:</span>
+                      <span className="font-semibold">${selectedTrimType.cost_per_lf}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Bend Price:</span>
+                      <span className="font-semibold">${selectedTrimType.price_per_bend}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Markup:</span>
+                      <span className="font-semibold">{selectedTrimType.markup_percent}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cut Price:</span>
+                      <span className="font-semibold">${selectedTrimType.cut_price}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2189,7 +2031,7 @@ export function TrimPricingCalculator() {
                   </div>
                   
                   <div className="flex justify-between text-xs text-white/80">
-                    <span>+ Markup ({markupPercent}%):</span>
+                    <span>+ Markup ({selectedTrimType?.markup_percent || 0}%):</span>
                     <span className="font-bold text-green-400">${markupAmount.toFixed(2)}</span>
                   </div>
                   
@@ -2251,6 +2093,213 @@ export function TrimPricingCalculator() {
         </CardContent>
       </Card>
     </div>
+      {/* Material Type Management Dialog */}
+      <Dialog open={showTrimTypeManagement} onOpenChange={setShowTrimTypeManagement}>
+        <DialogContent className="sm:max-w-3xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <Settings className="w-6 h-6" />
+              Material Type Management
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Add/Edit Form */}
+            <div className="bg-black/30 p-4 rounded-lg border-2 border-green-800">
+              <h3 className="text-yellow-400 font-bold mb-3">
+                {editingTrimType ? 'Edit Material Type' : 'Add New Material Type'}
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-yellow-400">Name</Label>
+                  <Input
+                    value={newTrimTypeName}
+                    onChange={(e) => setNewTrimTypeName(e.target.value)}
+                    placeholder="e.g., Standard 42\" Sheet"
+                    className="bg-white border-green-700"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-yellow-400">Width (inches)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={newTrimTypeWidth}
+                      onChange={(e) => setNewTrimTypeWidth(e.target.value)}
+                      placeholder="42"
+                      className="bg-white border-green-700"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-yellow-400">Cost per LF ($)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newTrimTypeCost}
+                      onChange={(e) => setNewTrimTypeCost(e.target.value)}
+                      placeholder="3.46"
+                      className="bg-white border-green-700"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-yellow-400">Price per Bend ($)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newTrimTypeBendPrice}
+                      onChange={(e) => setNewTrimTypeBendPrice(e.target.value)}
+                      placeholder="1.00"
+                      className="bg-white border-green-700"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-yellow-400">Markup (%)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={newTrimTypeMarkup}
+                      onChange={(e) => setNewTrimTypeMarkup(e.target.value)}
+                      placeholder="35"
+                      className="bg-white border-green-700"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-yellow-400">Cut Price ($)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newTrimTypeCutPrice}
+                      onChange={(e) => setNewTrimTypeCutPrice(e.target.value)}
+                      placeholder="1.00"
+                      className="bg-white border-green-700"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={saveTrimType}
+                    className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+                  >
+                    {editingTrimType ? 'Update' : 'Add'} Material
+                  </Button>
+                  {editingTrimType && (
+                    <Button
+                      onClick={cancelEditTrimType}
+                      variant="outline"
+                      className="border-green-700 text-yellow-400"
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Material List */}
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {trimTypes.length === 0 ? (
+                <div className="text-center py-8 text-white/50">
+                  No materials yet. Add your first material above.
+                </div>
+              ) : (
+                trimTypes.map((type) => (
+                  <div
+                    key={type.id}
+                    className="bg-black/30 border border-green-800 rounded p-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="text-yellow-400 font-semibold text-lg">{type.name}</div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-sm text-white/80">
+                          <div className="flex justify-between">
+                            <span>Width:</span>
+                            <span className="font-semibold text-white">{type.width_inches}"</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Cost/LF:</span>
+                            <span className="font-semibold text-white">${type.cost_per_lf}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Bend Price:</span>
+                            <span className="font-semibold text-white">${type.price_per_bend}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Markup:</span>
+                            <span className="font-semibold text-white">{type.markup_percent}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Cut Price:</span>
+                            <span className="font-semibold text-white">${type.cut_price}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <Button
+                          onClick={() => startEditTrimType(type)}
+                          size="sm"
+                          variant="outline"
+                          className="border-green-700 text-yellow-400"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          onClick={() => deleteTrimType(type.id)}
+                          size="sm"
+                          variant="outline"
+                          className="border-red-500 text-red-400"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <Button
+              onClick={() => setShowTrimTypeManagement(false)}
+              variant="outline"
+              className="w-full border-green-700 text-yellow-400"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Info Dialog */}
+      <Dialog open={showInfo} onOpenChange={setShowInfo}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <Info className="w-5 h-5" />
+              How It Works
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-white/80 text-sm">
+            <div>
+              <p className="font-bold text-yellow-400 mb-1">Material Types:</p>
+              <p>Create custom material types with their own pricing settings. Each material has its width, cost per linear foot, bend price, markup percentage, and cut price.</p>
+            </div>
+            <div>
+              <p className="font-bold text-yellow-400 mb-1">Drawing Tool:</p>
+              <p>Draw your trim shape on the grid. The calculator automatically updates as you draw. You can add hems (U-shaped folds) to any segment.</p>
+            </div>
+            <div>
+              <p className="font-bold text-yellow-400 mb-1">Pricing Calculation:</p>
+              <p>Material Cost = (Total Inches × Cost per Inch) where Cost per Inch = (LF Cost × 10 × Markup) ÷ Material Width. Final price includes material, bends, and cut.</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
