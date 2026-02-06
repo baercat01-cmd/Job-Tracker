@@ -2251,3 +2251,6 @@ export function TrimPricingCalculator() {
         </CardContent>
       </Card>
     </div>
+    </>
+  );
+}
