@@ -539,8 +539,9 @@ export function TrimPricingCalculator() {
         const perpX = side === 'right' ? -unitY : unitY;
         const perpY = side === 'right' ? unitX : -unitX;
         
-        const hemAngleX = hemX + perpX * 35;
-        const hemAngleY = hemY + perpY * 35;
+        // Position radially from corner
+        const hemAngleX = hemX + perpX * 50;
+        const hemAngleY = hemY + perpY * 50;
         
         ctx.fillStyle = '#6b21a8';
         ctx.font = 'bold 14px sans-serif';
@@ -579,28 +580,28 @@ export function TrimPricingCalculator() {
       const outwardPerpX = perpX * direction;
       const outwardPerpY = perpY * direction;
       
-      // Offsets - measurements further out than labels
-      const labelOffset = 25;
-      const measureOffset = 45;
+      // STACKED LABELS: Label on top, measurement below
+      const stackOffset = 35; // Distance from line
+      const stackSpacing = 16; // Vertical spacing between label and measurement
       
-      // Draw segment label (lighter, smaller, closer to line)
-      const labelX = midX + outwardPerpX * labelOffset;
-      const labelY = midY + outwardPerpY * labelOffset;
+      // Base position (perpendicular from midpoint)
+      const baseX = midX + outwardPerpX * stackOffset;
+      const baseY = midY + outwardPerpY * stackOffset;
+      
+      // Draw segment label (lighter gray, smaller, on top)
       ctx.fillStyle = '#999999';
-      ctx.font = '13px sans-serif';
+      ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(segment.label, labelX, labelY);
+      ctx.fillText(segment.label, baseX, baseY - 8);
       
-      // Draw measurement (bold, larger, further out)
-      const measureX = midX + outwardPerpX * measureOffset;
-      const measureY = midY + outwardPerpY * measureOffset;
+      // Draw measurement (bold black, larger, below label)
       ctx.fillStyle = '#000000';
-      ctx.font = 'bold 18px sans-serif';
+      ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${cleanNumber(lengthInInches)}"`, measureX, measureY);
+      ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + 8);
       ctx.textAlign = 'left';
 
-      // Draw angle label if not first segment
+      // Draw angle label if not first segment - RADIALLY FROM CORNER
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -608,7 +609,7 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayMode[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         
-        // Calculate bisector angle (exterior angle)
+        // Calculate the two line directions
         const prevDx = prevSegment.end.x - prevSegment.start.x;
         const prevDy = prevSegment.end.y - prevSegment.start.y;
         const currDx = segment.end.x - segment.start.x;
@@ -617,24 +618,27 @@ export function TrimPricingCalculator() {
         const prevAngle = Math.atan2(prevDy, prevDx);
         const currAngle = Math.atan2(currDy, currDx);
         
-        // Calculate exterior bisector (pointing away from the shape)
+        // Calculate the EXTERIOR bisector angle
+        // The exterior bisector points away from the interior of the angle
         let bisectorAngle = (prevAngle + currAngle) / 2;
-        const angleDiff = currAngle - prevAngle;
         
-        // Adjust bisector to point outward
-        if (Math.abs(angleDiff) > Math.PI) {
-          bisectorAngle += Math.PI;
-        } else {
+        // Determine if we need to add PI to point outward
+        let angleDiff = currAngle - prevAngle;
+        if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+        
+        // If the turn is to the left (counter-clockwise), the bisector should point outward by adding PI
+        if (angleDiff > 0) {
           bisectorAngle += Math.PI;
         }
         
-        // Position angle label along bisector, further from corner
-        const angleOffsetDist = 50;
-        const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
-        const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
+        // Position angle label RADIALLY from the corner point along the bisector
+        const angleDistance = 60; // Further from corner for clarity
+        const angleX = startX + Math.cos(bisectorAngle) * angleDistance;
+        const angleY = startY + Math.sin(bisectorAngle) * angleDistance;
         
-        // Draw angle text
-        ctx.fillStyle = '#6b21a8';
+        // Draw angle text (no background box)
+        ctx.fillStyle = '#6b21a8'; // Purple for angles
         ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
