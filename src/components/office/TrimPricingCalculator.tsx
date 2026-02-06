@@ -130,6 +130,8 @@ export function TrimPricingCalculator() {
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const [hemPreviewMode, setHemPreviewMode] = useState<HemPreviewMode | null>(null);
+  const [angleDisplayMode, setAngleDisplayMode] = useState<Record<string, boolean>>({});
+  const [previewConfig, setPreviewConfig] = useState<SavedConfig | null>(null);
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
@@ -513,40 +515,70 @@ export function TrimPricingCalculator() {
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
       
-      // Draw label (letter) - position based on line orientation
+      // Calculate perpendicular offset direction for better spacing
+      const perpX = -dy / Math.sqrt(dx * dx + dy * dy) || 0;
+      const perpY = dx / Math.sqrt(dx * dx + dy * dy) || 0;
+      
+      // Adaptive offset based on line length - longer lines = more offset
+      const baseOffset = Math.min(40, lengthInInches * 8);
+      const labelOffset = baseOffset;
+      const measureOffset = baseOffset + 15;
+      
+      // Draw label (letter) - positioned perpendicular to line for better spacing
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 18px sans-serif';
+      const labelX = midX + perpX * labelOffset;
+      const labelY = midY + perpY * labelOffset;
+      ctx.fillText(segment.label, labelX - 8, labelY + 6);
+
+      // Draw measurement - on opposite side from label
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 16px sans-serif';
-      if (isVerticalish) {
-        // Vertical line - put label to the left
-        ctx.fillText(segment.label, midX - 20, midY);
-      } else {
-        // Horizontal line - put label above
-        ctx.fillText(segment.label, midX - 5, midY - 25);
-      }
+      const measureX = midX - perpX * measureOffset;
+      const measureY = midY - perpY * measureOffset;
+      ctx.fillText(`${lengthInInches.toFixed(3)}"`, measureX - 20, measureY + 6);
 
-      // Draw measurement - opposite side from label
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 14px sans-serif';
-      if (isVerticalish) {
-        // Vertical line - put measurement to the right
-        ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX + 10, midY);
-      } else {
-        // Horizontal line - put measurement below
-        ctx.fillText(`${lengthInInches.toFixed(3)}"`, midX - 5, midY + 20);
-      }
-
-      // Calculate and draw angle at start point (if not first segment)
+      // Calculate and draw angle AT THE CORNER (if not first segment)
       const segmentIndex = drawing.segments.indexOf(segment);
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
         
+        // Allow toggling between angle and its complement
+        const useComplement = angleDisplayMode[segment.id] || false;
+        const displayAngle = useComplement ? (360 - angle) : angle;
+        
+        // Position angle AT the corner point (start of this segment)
+        // Offset it slightly away from the corner for visibility
+        const prevDx = prevSegment.end.x - prevSegment.start.x;
+        const prevDy = prevSegment.end.y - prevSegment.start.y;
+        const currDx = segment.end.x - segment.start.x;
+        const currDy = segment.end.y - segment.start.y;
+        
+        // Calculate bisector direction for angle label placement
+        const prevAngle = Math.atan2(prevDy, prevDx);
+        const currAngle = Math.atan2(currDy, currDx);
+        const bisectorAngle = (prevAngle + currAngle) / 2;
+        
+        const angleOffsetDist = 25;
+        const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
+        const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
+        
+        // Draw clickable angle text
         ctx.fillStyle = '#6b21a8';
-        ctx.font = 'bold 13px sans-serif';
-        // Position angle away from the line
-        const angleOffsetX = isVerticalish ? -35 : 15;
-        const angleOffsetY = isVerticalish ? -10 : -15;
-        ctx.fillText(`${Math.round(angle)}°`, startX + angleOffsetX, startY + angleOffsetY);
+        ctx.font = 'bold 14px sans-serif';
+        const angleText = `${Math.round(displayAngle)}°`;
+        const angleTextWidth = ctx.measureText(angleText).width;
+        
+        // Background for clickability
+        ctx.fillStyle = 'rgba(107, 33, 168, 0.1)';
+        ctx.fillRect(angleX - angleTextWidth/2 - 4, angleY - 16, angleTextWidth + 8, 20);
+        
+        // Angle text
+        ctx.fillStyle = '#6b21a8';
+        ctx.textAlign = 'center';
+        ctx.fillText(angleText, angleX, angleY);
+        ctx.textAlign = 'left';
       }
     });
 
@@ -653,6 +685,44 @@ export function TrimPricingCalculator() {
     const rect = canvasRef.current.getBoundingClientRect();
     const clickX = (e.clientX - rect.left) / scale;
     const clickY = (e.clientY - rect.top) / scale;
+    
+    // Check if user clicked on an angle label to toggle it
+    for (let i = 1; i < drawing.segments.length; i++) {
+      const segment = drawing.segments[i];
+      const prevSegment = drawing.segments[i - 1];
+      
+      const startX = segment.start.x * scale;
+      const startY = segment.start.y * scale;
+      
+      const prevDx = prevSegment.end.x - prevSegment.start.x;
+      const prevDy = prevSegment.end.y - prevSegment.start.y;
+      const currDx = segment.end.x - segment.start.x;
+      const currDy = segment.end.y - segment.start.y;
+      
+      const prevAngle = Math.atan2(prevDy, prevDx);
+      const currAngle = Math.atan2(currDy, currDx);
+      const bisectorAngle = (prevAngle + currAngle) / 2;
+      
+      const angleOffsetDist = 25;
+      const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
+      const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
+      
+      // Check if click is near the angle label
+      const distToAngle = Math.sqrt(
+        ((e.clientX - rect.left) - angleX) ** 2 + 
+        ((e.clientY - rect.top) - angleY) ** 2
+      );
+      
+      if (distToAngle < 20) { // Within 20 pixels of angle label
+        // Toggle angle display mode
+        setAngleDisplayMode(prev => ({
+          ...prev,
+          [segment.id]: !prev[segment.id]
+        }));
+        toast.info('Angle view toggled');
+        return;
+      }
+    }
     
     // If not in drawing mode, check if user clicked on a segment to select it
     if (!isDrawingMode) {
@@ -1393,6 +1463,50 @@ export function TrimPricingCalculator() {
     }
     
     setShowLoadDialog(false);
+    setPreviewConfig(null);
+  }
+  
+  function showConfigPreview(config: SavedConfig) {
+    setPreviewConfig(config);
+  }
+  
+  function calculateConfigPricing(config: SavedConfig) {
+    const lfCost = parseFloat(sheetLFCost);
+    const bendPriceVal = parseFloat(pricePerBend);
+    const markup = parseFloat(markupPercent);
+    const cutPriceVal = parseFloat(cutPrice);
+    
+    if (!lfCost || !bendPriceVal || markup < 0 || !cutPriceVal) {
+      return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
+    }
+    
+    const totalInches = config.inches.reduce((sum, val) => sum + val, 0);
+    
+    // Material cost calculation
+    const sheetCost = lfCost * 10;
+    const costPerInchBeforeMarkup = sheetCost / 42;
+    const materialCost = totalInches * costPerInchBeforeMarkup;
+    
+    // Apply markup
+    const markupMultiplier = 1 + (markup / 100);
+    const markedUpSheetCost = sheetCost * markupMultiplier;
+    const pricePerInch = markedUpSheetCost / 42;
+    
+    const totalInchCost = totalInches * pricePerInch;
+    const totalBendCost = config.bends * bendPriceVal;
+    const totalCutCost = cutPriceVal;
+    
+    const sellingPrice = totalInchCost + totalBendCost + totalCutCost;
+    const totalCost = materialCost + totalBendCost + totalCutCost;
+    const markupAmount = sellingPrice - totalCost;
+    const markupPercentActual = totalCost > 0 ? (markupAmount / totalCost) * 100 : 0;
+    
+    return {
+      cost: totalCost,
+      price: sellingPrice,
+      markup: markupAmount,
+      markupPercent: markupPercentActual
+    };
   }
 
   function deleteConfiguration(configId: string) {
@@ -2027,29 +2141,46 @@ export function TrimPricingCalculator() {
             </div>
           ) : (
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {savedConfigs.map((config) => (
+              {savedConfigs.map((config) => {
+                const pricing = calculateConfigPricing(config);
+                return (
                 <div
                   key={config.id}
                   className="bg-black/30 border-2 border-green-800 rounded-lg p-4 hover:border-yellow-500 transition-colors"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <h4 className="text-yellow-400 font-bold">{config.name}</h4>
                       {config.job_name && (
                         <p className="text-white/60 text-sm">Job: {config.job_name}</p>
                       )}
-                      <div className="mt-2 text-white/80 text-sm">
+                      <div className="mt-2 text-white/80 text-sm space-y-1">
                         <p>Total Inches: {config.inches.reduce((sum, val) => sum + val, 0).toFixed(2)}"</p>
                         <p>Bends: {config.bends}</p>
                         {config.drawing_segments && config.drawing_segments.length > 0 && (
                           <p className="text-green-400">📐 Includes Drawing ({config.drawing_segments.length} segments)</p>
                         )}
+                        <div className="border-t border-green-700 pt-2 mt-2">
+                          <p className="text-white/60">Cost: <span className="text-white font-bold">${pricing.cost.toFixed(2)}</span></p>
+                          <p className="text-yellow-400">Price: <span className="font-bold">${pricing.price.toFixed(2)}</span></p>
+                          <p className="text-green-400">Markup: <span className="font-bold">{pricing.markupPercent.toFixed(1)}%</span> (${pricing.markup.toFixed(2)})</p>
+                        </div>
                         <p className="text-white/40 text-xs mt-1">
                           Saved: {new Date(config.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2">
+                      {config.drawing_segments && config.drawing_segments.length > 0 && (
+                        <Button
+                          onClick={() => showConfigPreview(config)}
+                          size="sm"
+                          variant="outline"
+                          className="border-2 border-blue-500 text-blue-400 hover:bg-blue-900/20"
+                        >
+                          Preview
+                        </Button>
+                      )}
                       <Button
                         onClick={() => loadConfiguration(config)}
                         size="sm"
@@ -2068,7 +2199,7 @@ export function TrimPricingCalculator() {
                     </div>
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           )}
           <Button
@@ -2078,6 +2209,151 @@ export function TrimPricingCalculator() {
           >
             Close
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Configuration Dialog */}
+      <Dialog open={!!previewConfig} onOpenChange={(open) => !open && setPreviewConfig(null)}>
+        <DialogContent className="sm:max-w-4xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
+              <FolderOpen className="w-6 h-6" />
+              Preview: {previewConfig?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {previewConfig && (
+            <div className="grid grid-cols-2 gap-4">
+              {/* Drawing Preview */}
+              <div className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
+                <canvas
+                  ref={(canvas) => {
+                    if (!canvas || !previewConfig.drawing_segments) return;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return;
+                    
+                    const previewScale = 60;
+                    canvas.width = 600;
+                    canvas.height = 400;
+                    
+                    // White background
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, 600, 400);
+                    
+                    // Draw grid
+                    ctx.strokeStyle = '#f0f0f0';
+                    ctx.lineWidth = 0.5;
+                    for (let x = 0; x <= 600; x += previewScale * 0.125) {
+                      ctx.beginPath();
+                      ctx.moveTo(x, 0);
+                      ctx.lineTo(x, 400);
+                      ctx.stroke();
+                    }
+                    for (let y = 0; y <= 400; y += previewScale * 0.125) {
+                      ctx.beginPath();
+                      ctx.moveTo(0, y);
+                      ctx.lineTo(600, y);
+                      ctx.stroke();
+                    }
+                    
+                    // Draw segments
+                    previewConfig.drawing_segments.forEach((seg: LineSegment, idx: number) => {
+                      const startX = seg.start.x * previewScale;
+                      const startY = seg.start.y * previewScale;
+                      const endX = seg.end.x * previewScale;
+                      const endY = seg.end.y * previewScale;
+                      
+                      ctx.strokeStyle = '#000000';
+                      ctx.lineWidth = 3;
+                      ctx.beginPath();
+                      ctx.moveTo(startX, startY);
+                      ctx.lineTo(endX, endY);
+                      ctx.stroke();
+                      
+                      // Labels
+                      const midX = (startX + endX) / 2;
+                      const midY = (startY + endY) / 2;
+                      ctx.fillStyle = '#000000';
+                      ctx.font = 'bold 14px sans-serif';
+                      ctx.fillText(seg.label, midX - 20, midY);
+                      
+                      const dx = seg.end.x - seg.start.x;
+                      const dy = seg.end.y - seg.start.y;
+                      const length = Math.sqrt(dx * dx + dy * dy);
+                      ctx.fillText(`${length.toFixed(3)}"`, midX + 10, midY);
+                    });
+                  }}
+                  className="w-full h-full"
+                />
+              </div>
+              
+              {/* Pricing Info */}
+              <div className="space-y-4">
+                <div className="bg-black/30 border-2 border-green-800 rounded-lg p-4">
+                  <h4 className="text-yellow-400 font-bold mb-3">Configuration Details</h4>
+                  <div className="space-y-2 text-white/80 text-sm">
+                    {previewConfig.job_name && (
+                      <p>Job: <span className="text-white font-semibold">{previewConfig.job_name}</span></p>
+                    )}
+                    <p>Total Inches: <span className="text-white font-semibold">{previewConfig.inches.reduce((s, v) => s + v, 0).toFixed(2)}"</span></p>
+                    <p>Bends: <span className="text-white font-semibold">{previewConfig.bends}</span></p>
+                    {previewConfig.drawing_segments && (
+                      <p>Segments: <span className="text-white font-semibold">{previewConfig.drawing_segments.length}</span></p>
+                    )}
+                  </div>
+                </div>
+                
+                {(() => {
+                  const pricing = calculateConfigPricing(previewConfig);
+                  return (
+                    <div className="bg-black/30 border-2 border-green-800 rounded-lg p-4">
+                      <h4 className="text-yellow-400 font-bold mb-3">Pricing Breakdown</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between text-white/80">
+                          <span>Total Cost:</span>
+                          <span className="text-white font-bold">${pricing.cost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-white/80">
+                          <span>Markup:</span>
+                          <span className="text-green-400 font-bold">+${pricing.markup.toFixed(2)}</span>
+                        </div>
+                        <div className="border-t border-green-700 pt-2">
+                          <div className="flex justify-between">
+                            <span className="text-yellow-400 font-bold">Selling Price:</span>
+                            <span className="text-yellow-400 font-bold text-lg">${pricing.price.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <div className="bg-green-900/30 border border-green-600 rounded p-2 mt-2">
+                          <div className="flex justify-between">
+                            <span className="text-green-300 font-semibold">Markup %:</span>
+                            <span className="text-green-300 font-bold text-lg">{pricing.markupPercent.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      loadConfiguration(previewConfig);
+                      setShowLoadDialog(false);
+                    }}
+                    className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+                  >
+                    Load This Configuration
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setPreviewConfig(null)}
+                    className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
