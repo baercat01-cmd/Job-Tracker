@@ -2169,8 +2169,123 @@ export function TrimPricingCalculator() {
                   key={config.id}
                   className="bg-black/30 border-2 border-green-800 rounded-lg p-4 hover:border-yellow-500 transition-colors"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
+                  <div className="flex items-start gap-4">
+                    {/* Thumbnail Preview */}
+                    {config.drawing_segments && config.drawing_segments.length > 0 ? (
+                      <div className="flex-shrink-0 bg-white rounded border-2 border-gray-300 overflow-hidden">
+                        <canvas
+                          ref={(canvas) => {
+                            if (!canvas) return;
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) return;
+                            
+                            const thumbScale = 25;
+                            canvas.width = 120;
+                            canvas.height = 120;
+                            
+                            // White background
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, 120, 120);
+                            
+                            // Find bounding box to center the drawing
+                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                            config.drawing_segments.forEach((seg: LineSegment) => {
+                              minX = Math.min(minX, seg.start.x, seg.end.x);
+                              minY = Math.min(minY, seg.start.y, seg.end.y);
+                              maxX = Math.max(maxX, seg.start.x, seg.end.x);
+                              maxY = Math.max(maxY, seg.start.y, seg.end.y);
+                            });
+                            
+                            const width = maxX - minX;
+                            const height = maxY - minY;
+                            const centerX = (minX + maxX) / 2;
+                            const centerY = (minY + maxY) / 2;
+                            
+                            // Calculate scale to fit in thumbnail
+                            const padding = 10;
+                            const availWidth = 120 - (padding * 2);
+                            const availHeight = 120 - (padding * 2);
+                            const scaleX = width > 0 ? availWidth / width : thumbScale;
+                            const scaleY = height > 0 ? availHeight / height : thumbScale;
+                            const fitScale = Math.min(scaleX, scaleY, thumbScale);
+                            
+                            // Offset to center the drawing
+                            const offsetX = 60 - (centerX * fitScale);
+                            const offsetY = 60 - (centerY * fitScale);
+                            
+                            // Draw segments only - no labels, no measurements, no grid
+                            ctx.strokeStyle = '#000000';
+                            ctx.lineWidth = 2;
+                            config.drawing_segments.forEach((seg: LineSegment) => {
+                              const startX = seg.start.x * fitScale + offsetX;
+                              const startY = seg.start.y * fitScale + offsetY;
+                              const endX = seg.end.x * fitScale + offsetX;
+                              const endY = seg.end.y * fitScale + offsetY;
+                              
+                              ctx.beginPath();
+                              ctx.moveTo(startX, startY);
+                              ctx.lineTo(endX, endY);
+                              ctx.stroke();
+                              
+                              // Draw hem if exists - simplified version
+                              if (seg.hasHem) {
+                                const hemPoint = seg.hemAtStart ? seg.start : seg.end;
+                                const otherPoint = seg.hemAtStart ? seg.end : seg.start;
+                                
+                                const dx = otherPoint.x - hemPoint.x;
+                                const dy = otherPoint.y - hemPoint.y;
+                                const length = Math.sqrt(dx * dx + dy * dy);
+                                const unitX = dx / length;
+                                const unitY = dy / length;
+                                
+                                const side = seg.hemSide || 'right';
+                                const perpX = side === 'right' ? -unitY : unitY;
+                                const perpY = side === 'right' ? unitX : -unitX;
+                                
+                                const hemDepth = 0.5;
+                                const bendRadius = 0.125;
+                                
+                                const p1x = hemPoint.x * fitScale + offsetX;
+                                const p1y = hemPoint.y * fitScale + offsetY;
+                                const p2x = (hemPoint.x + perpX * (hemDepth - bendRadius)) * fitScale + offsetX;
+                                const p2y = (hemPoint.y + perpY * (hemDepth - bendRadius)) * fitScale + offsetY;
+                                const centerX = (hemPoint.x + perpX * hemDepth) * fitScale + offsetX;
+                                const centerY = (hemPoint.y + perpY * hemDepth) * fitScale + offsetY;
+                                
+                                const startAngle = Math.atan2(perpY, perpX);
+                                
+                                ctx.strokeStyle = '#dc2626';
+                                ctx.lineWidth = 1.5;
+                                ctx.beginPath();
+                                ctx.moveTo(p1x, p1y);
+                                ctx.lineTo(p2x, p2y);
+                                ctx.arc(
+                                  centerX,
+                                  centerY,
+                                  bendRadius * fitScale,
+                                  startAngle - Math.PI / 2,
+                                  startAngle + Math.PI / 2,
+                                  false
+                                );
+                                ctx.stroke();
+                                ctx.strokeStyle = '#000000';
+                                ctx.lineWidth = 2;
+                              }
+                            });
+                          }}
+                          width={120}
+                          height={120}
+                          className="block"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex-shrink-0 w-[120px] h-[120px] bg-gray-800 rounded border-2 border-gray-600 flex items-center justify-center">
+                        <span className="text-gray-500 text-xs">No Drawing</span>
+                      </div>
+                    )}
+                    
+                    {/* Config Details */}
+                    <div className="flex-1 min-w-0">
                       <h4 className="text-yellow-400 font-bold">{config.name}</h4>
                       {config.job_name && (
                         <p className="text-white/60 text-sm">Job: {config.job_name}</p>
@@ -2179,7 +2294,7 @@ export function TrimPricingCalculator() {
                         <p>Total Inches: {cleanNumber(config.inches.reduce((sum, val) => sum + val, 0), 2)}"</p>
                         <p>Bends: {config.bends}</p>
                         {config.drawing_segments && config.drawing_segments.length > 0 && (
-                          <p className="text-green-400">📐 Includes Drawing ({config.drawing_segments.length} segments)</p>
+                          <p className="text-green-400">📐 {config.drawing_segments.length} segments</p>
                         )}
                         <div className="border-t border-green-700 pt-2 mt-2">
                           <p className="text-white/60">Cost: <span className="text-white font-bold">${pricing.cost.toFixed(2)}</span></p>
@@ -2191,7 +2306,9 @@ export function TrimPricingCalculator() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    
+                    {/* Action Buttons */}
+                    <div className="flex flex-col gap-2 flex-shrink-0">
                       {config.drawing_segments && config.drawing_segments.length > 0 && (
                         <Button
                           onClick={() => showConfigPreview(config)}
