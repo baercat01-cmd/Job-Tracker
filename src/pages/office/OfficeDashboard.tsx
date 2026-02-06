@@ -481,13 +481,7 @@ export function OfficeDashboard() {
         )}
 
         {activeTab === 'trim-calculator' && (
-          <div className="space-y-6">
-            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Trim Pricing Calculator</h2>
-              <p className="text-yellow-400">Calculate custom trim pricing with bend and cut specifications</p>
-            </div>
-            <TrimPricingCalculator />
-          </div>
+          <TrimPricingCalculator />
         )}
 
         {activeTab === 'settings' && (
