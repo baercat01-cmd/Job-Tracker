@@ -1303,7 +1303,7 @@ export function TrimPricingCalculator() {
         toast.success('Material type updated');
       } else {
         // Insert new
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('trim_types')
           .insert([{
             name: newTrimTypeName.trim(),
@@ -1313,10 +1313,18 @@ export function TrimPricingCalculator() {
             markup_percent: markup,
             cut_price: cutPrice,
             active: true
-          }]);
+          }])
+          .select()
+          .single();
         
         if (error) throw error;
-        toast.success('Material type added');
+        
+        // Auto-select the newly created material type
+        if (data) {
+          setSelectedTrimTypeId(data.id);
+        }
+        
+        toast.success('Material type added and selected');
       }
       
       // Reload trim types
