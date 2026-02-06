@@ -988,9 +988,7 @@ export function TrimPricingCalculator() {
       const { data, error } = await supabase
         .from('trim_calculator_settings')
         .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no data
+        .order('updated_at', { ascending: false });
       
       if (error) {
         console.error('❌ Error loading settings:', error);
@@ -1004,12 +1002,13 @@ export function TrimPricingCalculator() {
         return;
       }
       
-      if (data) {
-        // Settings found in database
-        const lfCost = data.sheet_lf_cost?.toString() || '';
-        const bendPrice = data.price_per_bend?.toString() || '';
-        const markup = data.markup_percent?.toString() || '32';
-        const cut = data.cut_price?.toString() || '1.00';
+      if (data && data.length > 0) {
+        // Settings found in database - use the most recent one
+        const mostRecent = data[0];
+        const lfCost = mostRecent.sheet_lf_cost?.toString() || '';
+        const bendPrice = mostRecent.price_per_bend?.toString() || '';
+        const markup = mostRecent.markup_percent?.toString() || '32';
+        const cut = mostRecent.cut_price?.toString() || '1.00';
         
         console.log('✅ Loaded settings from database:', { lfCost, bendPrice, markup, cut });
         
@@ -1090,13 +1089,11 @@ export function TrimPricingCalculator() {
     try {
       console.log('💾 Saving trim calculator settings...');
       
-      // Check if settings exist
-      const { data: existing, error: checkError } = await supabase
+      // Check if settings exist - get all and use the first one
+      const { data: existingList, error: checkError } = await supabase
         .from('trim_calculator_settings')
         .select('id')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('updated_at', { ascending: false });
       
       if (checkError) {
         console.error('❌ Error checking existing settings:', checkError);
@@ -1115,29 +1112,40 @@ export function TrimPricingCalculator() {
       let error;
       let savedData;
       
-      if (existing?.id) {
-        // Update existing settings
-        console.log('🔄 Updating existing settings with ID:', existing.id);
+      if (existingList && existingList.length > 0) {
+        // Update the most recent settings (or update all to keep them in sync)
+        const existingId = existingList[0].id;
+        console.log('🔄 Updating existing settings with ID:', existingId);
+        
+        // Update the most recent one
         const result = await supabase
           .from('trim_calculator_settings')
           .update(settingsData)
-          .eq('id', existing.id)
-          .select()
-          .single();
+          .eq('id', existingId)
+          .select();
         
         error = result.error;
-        savedData = result.data;
+        savedData = result.data?.[0]; // Get first item from array
+        
+        // Optional: Delete old duplicate entries to keep table clean
+        if (existingList.length > 1) {
+          console.log('🧹 Cleaning up old duplicate settings...');
+          const oldIds = existingList.slice(1).map(item => item.id);
+          await supabase
+            .from('trim_calculator_settings')
+            .delete()
+            .in('id', oldIds);
+        }
       } else {
         // Insert new settings
         console.log('➕ Inserting new settings');
         const result = await supabase
           .from('trim_calculator_settings')
           .insert([settingsData])
-          .select()
-          .single();
+          .select();
         
         error = result.error;
-        savedData = result.data;
+        savedData = result.data?.[0]; // Get first item from array
       }
       
       if (error) {
