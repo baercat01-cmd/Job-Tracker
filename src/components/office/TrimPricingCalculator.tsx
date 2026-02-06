@@ -36,6 +36,8 @@ interface SavedConfig {
   bends: number;
   drawing_segments?: LineSegment[];
   created_at: string;
+  material_type_id?: string;
+  material_type_name?: string;
 }
 
 interface Point {
@@ -1516,6 +1518,11 @@ export function TrimPricingCalculator() {
       return;
     }
 
+    if (!selectedTrimType) {
+      toast.error('Please select a material type first');
+      return;
+    }
+
     try {
       setSaving(true);
       
@@ -1532,6 +1539,8 @@ export function TrimPricingCalculator() {
         bends,
         drawing_segments: drawing.segments.length > 0 ? drawing.segments : undefined,
         created_at: new Date().toISOString(),
+        material_type_id: selectedTrimTypeId,
+        material_type_name: selectedTrimType.name,
       };
 
       const updatedConfigs = [...savedConfigs, newConfig];
@@ -2272,6 +2281,208 @@ export function TrimPricingCalculator() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <Save className="w-5 h-5" />
+              Save Configuration
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-yellow-400">Configuration Name</Label>
+              <Input
+                value={configName}
+                onChange={(e) => setConfigName(e.target.value)}
+                placeholder="e.g., J-Channel Trim"
+                className="bg-white border-green-700"
+              />
+            </div>
+            <div>
+              <Label className="text-yellow-400">Link to Job (Optional)</Label>
+              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                <SelectTrigger className="bg-white border-green-700">
+                  <SelectValue placeholder="No job selected" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No job</SelectItem>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.job_number ? `${job.job_number} - ` : ''}{job.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-black/30 border border-green-800 rounded p-3">
+              <p className="text-yellow-400 font-semibold text-sm mb-2">Will save:</p>
+              <ul className="text-white/80 text-sm space-y-1">
+                <li>• Total: {totalInches.toFixed(2)}" with {numberOfBends} bends</li>
+                <li>• Material: {selectedTrimType?.name || 'None'}</li>
+                {drawing.segments.length > 0 && (
+                  <li>• Drawing with {drawing.segments.length} segments</li>
+                )}
+              </ul>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={saveConfiguration}
+                disabled={saving}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+              <Button
+                onClick={() => setShowSaveDialog(false)}
+                variant="outline"
+                className="border-green-700 text-yellow-400"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Load Dialog */}
+      <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <FolderOpen className="w-5 h-5" />
+              Load Saved Configuration
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {savedConfigs.length === 0 ? (
+              <div className="text-center py-8 text-white/50">
+                No saved configurations yet
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedConfigs.map((config) => {
+                  const pricing = calculateConfigPricing(config);
+                  return (
+                    <div
+                      key={config.id}
+                      className="bg-black/30 border-2 border-green-800 rounded-lg p-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        {/* Preview thumbnail if has drawing */}
+                        {config.drawing_segments && config.drawing_segments.length > 0 && (
+                          <div className="w-32 h-32 bg-white rounded border-2 border-green-700 flex-shrink-0">
+                            <svg viewBox="0 0 100 100" className="w-full h-full">
+                              {/* Calculate bounds */}
+                              {(() => {
+                                const allX = config.drawing_segments!.flatMap(s => [s.start.x, s.end.x]);
+                                const allY = config.drawing_segments!.flatMap(s => [s.start.y, s.end.y]);
+                                const minX = Math.min(...allX);
+                                const maxX = Math.max(...allX);
+                                const minY = Math.min(...allY);
+                                const maxY = Math.max(...allY);
+                                const width = maxX - minX;
+                                const height = maxY - minY;
+                                const padding = Math.max(width, height) * 0.1;
+                                const viewBoxWidth = width + 2 * padding;
+                                const viewBoxHeight = height + 2 * padding;
+                                const scaleX = 100 / viewBoxWidth;
+                                const scaleY = 100 / viewBoxHeight;
+                                const scale = Math.min(scaleX, scaleY);
+                                const offsetX = (100 - width * scale) / 2 - minX * scale;
+                                const offsetY = (100 - height * scale) / 2 - minY * scale;
+                                
+                                return (
+                                  <g transform={`translate(${offsetX}, ${offsetY}) scale(${scale})`}>
+                                    {config.drawing_segments!.map((seg, i) => (
+                                      <line
+                                        key={i}
+                                        x1={seg.start.x}
+                                        y1={seg.start.y}
+                                        x2={seg.end.x}
+                                        y2={seg.end.y}
+                                        stroke="#000000"
+                                        strokeWidth={0.5 / scale}
+                                      />
+                                    ))}
+                                  </g>
+                                );
+                              })()}
+                            </svg>
+                          </div>
+                        )}
+                        
+                        {/* Info */}
+                        <div className="flex-1">
+                          <div className="text-yellow-400 font-bold text-lg mb-1">{config.name}</div>
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                            <div className="flex justify-between text-white/70">
+                              <span>Total Inches:</span>
+                              <span className="font-semibold text-white">{config.inches.reduce((a, b) => a + b, 0).toFixed(2)}"</span>
+                            </div>
+                            <div className="flex justify-between text-white/70">
+                              <span>Bends:</span>
+                              <span className="font-semibold text-white">{config.bends}</span>
+                            </div>
+                            <div className="flex justify-between text-white/70">
+                              <span>Saved Material:</span>
+                              <span className="font-semibold text-green-400">{config.material_type_name || 'Unknown'}</span>
+                            </div>
+                            {config.job_name && (
+                              <div className="flex justify-between text-white/70">
+                                <span>Job:</span>
+                                <span className="font-semibold text-white">{config.job_name}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-white/70">
+                              <span>Current Price:</span>
+                              <span className="font-bold text-yellow-400">${pricing.price.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-white/70">
+                              <span>Markup:</span>
+                              <span className="font-semibold text-green-400">{pricing.markupPercent.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-white/50 mt-2">
+                            Saved: {new Date(config.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            onClick={() => loadConfiguration(config)}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+                          >
+                            Load
+                          </Button>
+                          <Button
+                            onClick={() => deleteConfiguration(config.id)}
+                            size="sm"
+                            variant="outline"
+                            className="border-red-500 text-red-400"
+                          >
+                            <Trash className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Button
+              onClick={() => setShowLoadDialog(false)}
+              variant="outline"
+              className="w-full border-green-700 text-yellow-400"
+            >
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
