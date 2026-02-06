@@ -2005,44 +2005,12 @@ export function TrimPricingCalculator() {
                 </div>
               </div>
 
-              {/* Results Section - Condensed with Cost Breakdown */}
+              {/* Results Section - Just Selling Price */}
               <div className="space-y-1.5 pt-1.5 border-t-2 border-yellow-500">
-                {/* Cost Breakdown - Compact */}
-                <div className="bg-black/30 border-2 border-green-800 rounded-lg p-2 space-y-1">
-                  <div className="text-green-400 font-bold text-xs uppercase mb-1">Cost Breakdown</div>
-                  
-                  <div className="flex justify-between text-xs text-white/80">
-                    <span>Material Cost:</span>
-                    <span className="font-bold text-white">${materialCost.toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="flex justify-between text-xs text-white/80">
-                    <span>+ Markup ({selectedTrimType?.markup_percent || 0}%):</span>
-                    <span className="font-bold text-green-400">${markupAmount.toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="flex justify-between text-xs text-white/80">
-                    <span>+ Bends ({numberOfBends || 0}):</span>
-                    <span className="font-bold text-white">${totalBendCost.toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="flex justify-between text-xs text-white/80">
-                    <span>+ Cut:</span>
-                    <span className="font-bold text-white">${totalCutCost.toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="border-t border-green-700 pt-1 mt-1"></div>
-                  
-                  <div className="flex justify-between text-xs text-yellow-400 font-bold">
-                    <span>Total Material Cost:</span>
-                    <span>${(materialCost + markupAmount).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Final Selling Price - Compact */}
-                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-1.5 text-center border-2 border-yellow-400 shadow-lg">
-                  <div className="text-black font-bold text-xs">SELLING PRICE</div>
-                  <div className="text-2xl font-black text-black">${sellingPrice.toFixed(2)}</div>
+                {/* Final Selling Price */}
+                <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-lg p-2 text-center border-2 border-yellow-400 shadow-lg">
+                  <div className="text-black font-bold text-sm">SELLING PRICE</div>
+                  <div className="text-3xl font-black text-black">${sellingPrice.toFixed(2)}</div>
                 </div>
 
                 {/* Clear Button */}
@@ -2309,25 +2277,61 @@ export function TrimPricingCalculator() {
 
       {/* Info Dialog */}
       <Dialog open={showInfo} onOpenChange={setShowInfo}>
-        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+        <DialogContent className="sm:max-w-lg bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500">
               <Info className="w-5 h-5" />
-              How It Works
+              Calculator Information
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 text-white/80 text-sm">
-            <div>
-              <p className="font-bold text-yellow-400 mb-1">Material Types:</p>
-              <p>Create custom material types with their own pricing settings. Each material has its width, cost per linear foot, bend price, markup percentage, and cut price.</p>
-            </div>
-            <div>
-              <p className="font-bold text-yellow-400 mb-1">Drawing Tool:</p>
-              <p>Draw your trim shape on the grid. The calculator automatically updates as you draw. You can add hems (U-shaped folds) to any segment.</p>
-            </div>
-            <div>
-              <p className="font-bold text-yellow-400 mb-1">Pricing Calculation:</p>
-              <p>Material Cost = (Total Inches × Cost per Inch) where Cost per Inch = (LF Cost × 10 × Markup) ÷ Material Width. Final price includes material, bends, and cut.</p>
+          <div className="space-y-4">
+            {/* Cost Breakdown */}
+            {hasSettings && (totalInches > 0 || parseInt(numberOfBends) > 0) && (
+              <div className="bg-black/30 border-2 border-green-800 rounded-lg p-3 space-y-2">
+                <div className="text-green-400 font-bold text-sm uppercase mb-2">Current Cost Breakdown</div>
+                
+                <div className="flex justify-between text-sm text-white/80">
+                  <span>Material Cost:</span>
+                  <span className="font-bold text-white">${materialCost.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex justify-between text-sm text-white/80">
+                  <span>+ Markup ({selectedTrimType?.markup_percent || 0}%):</span>
+                  <span className="font-bold text-green-400">${markupAmount.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex justify-between text-sm text-white/80">
+                  <span>+ Bends ({numberOfBends || 0}):</span>
+                  <span className="font-bold text-white">${totalBendCost.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex justify-between text-sm text-white/80">
+                  <span>+ Cut:</span>
+                  <span className="font-bold text-white">${totalCutCost.toFixed(2)}</span>
+                </div>
+                
+                <div className="border-t border-green-700 pt-2 mt-2"></div>
+                
+                <div className="flex justify-between text-sm text-yellow-400 font-bold">
+                  <span>Total Selling Price:</span>
+                  <span className="text-lg">${sellingPrice.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3 text-white/80 text-sm">
+              <div>
+                <p className="font-bold text-yellow-400 mb-1">Material Types:</p>
+                <p>Create custom material types with their own pricing settings. Each material has its width, cost per linear foot, bend price, markup percentage, and cut price.</p>
+              </div>
+              <div>
+                <p className="font-bold text-yellow-400 mb-1">Drawing Tool:</p>
+                <p>Draw your trim shape on the grid. The calculator automatically updates as you draw. You can add hems (U-shaped folds) to any segment.</p>
+              </div>
+              <div>
+                <p className="font-bold text-yellow-400 mb-1">Pricing Calculation:</p>
+                <p>Material Cost = (Total Inches × Cost per Inch) where Cost per Inch = (LF Cost × 10 × Markup) ÷ Material Width. Final price includes material, bends, and cut.</p>
+              </div>
             </div>
           </div>
         </DialogContent>
