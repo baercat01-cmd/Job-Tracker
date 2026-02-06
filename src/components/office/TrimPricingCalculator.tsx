@@ -549,27 +549,70 @@ export function TrimPricingCalculator() {
       const perpX = -dy / Math.sqrt(dx * dx + dy * dy) || 0;
       const perpY = dx / Math.sqrt(dx * dx + dy * dy) || 0;
       
-      // Adaptive offset based on line length - longer lines = more offset
-      const baseOffset = Math.min(40, lengthInInches * 8);
-      const labelOffset = baseOffset;
-      const measureOffset = baseOffset + 15;
+      // Intelligent spacing - check if we need to offset this measurement
+      const segmentIndex = drawing.segments.indexOf(segment);
+      let needsArrow = false;
+      let measureOffset = 40;
       
-      // Draw label (letter) - light gray, smaller
+      // Check if this segment's measurement would overlap with adjacent segments
+      if (segmentIndex > 0 || segmentIndex < drawing.segments.length - 1) {
+        // For short segments or when segments are close, use arrow offset
+        if (lengthInInches < 2) {
+          needsArrow = true;
+          measureOffset = 60; // Move further away
+        }
+      }
+      
+      const labelOffset = 25;
+      
+      // Draw label (letter) - light gray, smaller, closer to line
       ctx.fillStyle = '#999999';
-      ctx.font = '14px sans-serif';
+      ctx.font = '13px sans-serif';
       const labelX = midX + perpX * labelOffset;
       const labelY = midY + perpY * labelOffset;
-      ctx.fillText(segment.label, labelX - 6, labelY + 5);
+      ctx.fillText(segment.label, labelX - 5, labelY + 4);
 
+      // Draw measurement with optional arrow
+      const measureX = midX - perpX * measureOffset;
+      const measureY = midY - perpY * measureOffset;
+      
+      if (needsArrow) {
+        // Draw arrow from measurement to line midpoint
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(measureX, measureY - 8);
+        ctx.lineTo(midX, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw arrowhead
+        const arrowAngle = Math.atan2(midY - (measureY - 8), midX - measureX);
+        const arrowSize = 6;
+        ctx.beginPath();
+        ctx.moveTo(midX, midY);
+        ctx.lineTo(
+          midX - arrowSize * Math.cos(arrowAngle - Math.PI / 6),
+          midY - arrowSize * Math.sin(arrowAngle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          midX - arrowSize * Math.cos(arrowAngle + Math.PI / 6),
+          midY - arrowSize * Math.sin(arrowAngle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = '#666666';
+        ctx.fill();
+      }
+      
       // Draw measurement - dominant, bold, larger, no trailing zeros
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 18px sans-serif';
-      const measureX = midX - perpX * measureOffset;
-      const measureY = midY - perpY * measureOffset;
-      ctx.fillText(`${cleanNumber(lengthInInches)}"`, measureX - 25, measureY + 6);
+      ctx.textAlign = 'center';
+      ctx.fillText(`${cleanNumber(lengthInInches)}"`, measureX, measureY);
+      ctx.textAlign = 'left';
 
-      // Calculate and draw angle AT THE CORNER (if not first segment)
-      const segmentIndex = drawing.segments.indexOf(segment);
+      // Calculate and draw angle EXACTLY AT THE CORNER (if not first segment)
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -578,26 +621,35 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayMode[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         
-        // Position angle AT the corner point (start of this segment)
+        // Position angle EXACTLY at the corner point (where segments meet)
         const prevDx = prevSegment.end.x - prevSegment.start.x;
         const prevDy = prevSegment.end.y - prevSegment.start.y;
         const currDx = segment.end.x - segment.start.x;
         const currDy = segment.end.y - segment.start.y;
         
-        // Calculate bisector direction for angle label placement
+        // Calculate the angle bisector for optimal placement
         const prevAngle = Math.atan2(prevDy, prevDx);
         const currAngle = Math.atan2(currDy, currDx);
-        const bisectorAngle = (prevAngle + currAngle) / 2;
         
-        const angleOffsetDist = 35;
+        // Use the interior angle bisector
+        let bisectorAngle = (prevAngle + currAngle) / 2;
+        
+        // Adjust bisector to point toward interior of the shape
+        const angleDiff = currAngle - prevAngle;
+        if (Math.abs(angleDiff) > Math.PI) {
+          bisectorAngle += Math.PI;
+        }
+        
+        // Position angle label slightly away from corner on the bisector
+        const angleOffsetDist = 25; // Closer to corner
         const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
         const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
         
-        // Draw angle text (no background box)
+        // Draw angle text at the corner
         ctx.fillStyle = '#6b21a8';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 13px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
+        ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY + 4);
         ctx.textAlign = 'left';
       }
     });
