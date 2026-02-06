@@ -572,9 +572,43 @@ export function TrimPricingCalculator() {
       const labelY = midY - perpY * (labelOffset + 10);
       ctx.fillText(segment.label, labelX - 5, labelY + 4);
 
-      // Draw measurement with optional arrow - on OUTSIDE of trim
-      const measureX = midX - perpX * (measureOffset + 20);
-      const measureY = midY - perpY * (measureOffset + 20);
+      // Intelligent measurement positioning:
+      // Check if there's an angle at the start of this segment that might conflict
+      let measureSideFlip = 1; // 1 = normal side, -1 = opposite side
+      
+      if (segmentIndex > 0) {
+        // There's an angle at the start of this segment
+        const prevSegment = drawing.segments[segmentIndex - 1];
+        const prevDx = prevSegment.end.x - prevSegment.start.x;
+        const prevDy = prevSegment.end.y - prevSegment.start.y;
+        const currDx = segment.end.x - segment.start.x;
+        const currDy = segment.end.y - segment.start.y;
+        
+        // Calculate angle direction
+        const prevAngle = Math.atan2(prevDy, prevDx);
+        const currAngle = Math.atan2(currDy, currDx);
+        let bisectorAngle = (prevAngle + currAngle) / 2;
+        
+        const angleDiff = currAngle - prevAngle;
+        if (Math.abs(angleDiff) > Math.PI) {
+          bisectorAngle += Math.PI;
+        } else {
+          bisectorAngle += Math.PI;
+        }
+        
+        // Calculate perpendicular direction for measurement
+        const measurePerpAngle = Math.atan2(perpY, perpX);
+        
+        // If angle bisector and measurement direction are on same side, flip measurement
+        const dotProduct = Math.cos(bisectorAngle - measurePerpAngle);
+        if (dotProduct > 0.3) { // Threshold for "same side"
+          measureSideFlip = -1; // Flip to opposite side
+        }
+      }
+      
+      // Draw measurement with optional arrow - on OUTSIDE of trim, intelligently positioned
+      const measureX = midX - perpX * measureSideFlip * (measureOffset + 20);
+      const measureY = midY - perpY * measureSideFlip * (measureOffset + 20);
       
       if (needsArrow) {
         // Draw arrow from measurement to line midpoint
@@ -643,16 +677,31 @@ export function TrimPricingCalculator() {
         }
         
         // Position angle label further away from corner at 45° angle
-        const angleOffsetDist = 40; // Further from corner
+        const angleOffsetDist = 50; // Further from corner to avoid overlap
         const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
         const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
         
-        // Draw angle text at the corner
+        // Draw angle text at the corner - NO BACKGROUND BOX
         ctx.fillStyle = '#6b21a8';
-        ctx.font = 'bold 13px sans-serif';
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY + 4);
         ctx.textAlign = 'left';
+        
+        // Determine which side the angle is on to position measurement on opposite side
+        // Store this info for intelligent measurement positioning
+        const angleDirection = bisectorAngle;
+        
+        // Adjust measurement position for THIS segment based on angle direction
+        // If angle is on one side, measurement should be on the opposite side
+        const currentPerpAngle = Math.atan2(-currDy, currDx);
+        const angleDiffFromPerp = angleDirection - currentPerpAngle;
+        
+        // If angle is pointing in similar direction as measurement offset, flip measurement to other side
+        if (Math.abs(angleDiffFromPerp) < Math.PI / 2) {
+          // Flip the perpendicular direction for measurement
+          measureOffset = 60; // Move measurement further away
+        }
       }
     });
 
