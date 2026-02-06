@@ -2380,23 +2380,23 @@ export function TrimPricingCalculator() {
                     <div className="flex-1 grid grid-cols-2 gap-x-8">
                       {/* Left Column - Trim Info */}
                       <div>
-                        <h4 className="text-yellow-400 font-bold text-base mb-1">{config.name}</h4>
+                        <h4 className="text-yellow-400 font-bold text-xl mb-2">{config.name}</h4>
                         {config.job_name && (
-                          <p className="text-white/60 text-xs mb-2">Job: {config.job_name}</p>
+                          <p className="text-white/60 text-sm mb-2">Job: {config.job_name}</p>
                         )}
-                        <div className="text-white/80 text-sm space-y-0.5">
-                          <p>Total: <span className="text-white font-semibold">{cleanNumber(totalInches, 2)}"</span></p>
-                          <p className="text-white/40 text-xs mt-2">
+                        <div className="text-white/80 text-base space-y-1">
+                          <p>Total: <span className="text-white font-semibold text-lg">{cleanNumber(totalInches, 2)}"</span></p>
+                          <p className="text-white/40 text-sm mt-2">
                             {new Date(config.created_at).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
                       
                       {/* Right Column - Pricing Info */}
-                      <div className="text-sm space-y-0.5">
-                        <p className="text-white/60 text-xs">Cost: <span className="text-white font-bold">${pricing.cost.toFixed(2)}</span></p>
-                        <p className="text-yellow-400 text-xs">Price: <span className="font-bold">${pricing.price.toFixed(2)}</span></p>
-                        <p className="text-green-400 text-xs">Markup: <span className="font-bold">{pricing.markupPercent.toFixed(1)}%</span></p>
+                      <div className="text-base space-y-1">
+                        <p className="text-white/60 text-sm">Cost: <span className="text-white font-bold text-base">${pricing.cost.toFixed(2)}</span></p>
+                        <p className="text-yellow-400 text-sm">Price: <span className="font-bold text-lg">${pricing.price.toFixed(2)}</span></p>
+                        <p className="text-green-400 text-sm">Markup: <span className="font-bold text-base">{pricing.markupPercent.toFixed(1)}%</span></p>
                       </div>
                     </div>
                     
