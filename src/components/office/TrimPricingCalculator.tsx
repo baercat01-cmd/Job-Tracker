@@ -72,9 +72,9 @@ interface HemPreviewMode {
 
 export function TrimPricingCalculator() {
   // Persistent settings
-  const [sheetLFCost, setSheetLFCost] = useState<string>('');
-  const [pricePerBend, setPricePerBend] = useState<string>('');
-  const [markupPercent, setMarkupPercent] = useState<string>('32');
+  const [sheetLFCost, setSheetLFCost] = useState<string>('3.46');
+  const [pricePerBend, setPricePerBend] = useState<string>('1.00');
+  const [markupPercent, setMarkupPercent] = useState<string>('35');
   const [cutPrice, setCutPrice] = useState<string>('1.00');
   
   // Dynamic inch inputs
@@ -98,9 +98,9 @@ export function TrimPricingCalculator() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   
-  const [tempLFCost, setTempLFCost] = useState('');
-  const [tempBendPrice, setTempBendPrice] = useState('');
-  const [tempMarkupPercent, setTempMarkupPercent] = useState('32');
+  const [tempLFCost, setTempLFCost] = useState('3.46');
+  const [tempBendPrice, setTempBendPrice] = useState('1.00');
+  const [tempMarkupPercent, setTempMarkupPercent] = useState('35');
   const [tempCutPrice, setTempCutPrice] = useState('1.00');
 
   // Save/Load
@@ -993,8 +993,15 @@ export function TrimPricingCalculator() {
       if (error) {
         console.error('❌ Error loading settings:', error);
         // Use defaults on error
-        const defaultMarkup = '32';
+        const defaultLFCost = '3.46';
+        const defaultBendPrice = '1.00';
+        const defaultMarkup = '35';
         const defaultCut = '1.00';
+        
+        setSheetLFCost(defaultLFCost);
+        setTempLFCost(defaultLFCost);
+        setPricePerBend(defaultBendPrice);
+        setTempBendPrice(defaultBendPrice);
         setMarkupPercent(defaultMarkup);
         setTempMarkupPercent(defaultMarkup);
         setCutPrice(defaultCut);
@@ -1005,9 +1012,9 @@ export function TrimPricingCalculator() {
       if (data && data.length > 0) {
         // Settings found in database - use the most recent one
         const mostRecent = data[0];
-        const lfCost = mostRecent.sheet_lf_cost?.toString() || '';
-        const bendPrice = mostRecent.price_per_bend?.toString() || '';
-        const markup = mostRecent.markup_percent?.toString() || '32';
+        const lfCost = mostRecent.sheet_lf_cost?.toString() || '3.46';
+        const bendPrice = mostRecent.price_per_bend?.toString() || '1.00';
+        const markup = mostRecent.markup_percent?.toString() || '35';
         const cut = mostRecent.cut_price?.toString() || '1.00';
         
         console.log('✅ Loaded settings from database:', { lfCost, bendPrice, markup, cut });
@@ -1024,8 +1031,15 @@ export function TrimPricingCalculator() {
       } else {
         // No settings in database yet - use defaults
         console.log('ℹ️ No settings found in database, using defaults');
-        const defaultMarkup = '32';
+        const defaultLFCost = '3.46';
+        const defaultBendPrice = '1.00';
+        const defaultMarkup = '35';
         const defaultCut = '1.00';
+        
+        setSheetLFCost(defaultLFCost);
+        setTempLFCost(defaultLFCost);
+        setPricePerBend(defaultBendPrice);
+        setTempBendPrice(defaultBendPrice);
         setMarkupPercent(defaultMarkup);
         setTempMarkupPercent(defaultMarkup);
         setCutPrice(defaultCut);
@@ -1033,6 +1047,20 @@ export function TrimPricingCalculator() {
       }
     } catch (error) {
       console.error('❌ Exception loading settings:', error);
+      // Use defaults on exception
+      const defaultLFCost = '3.46';
+      const defaultBendPrice = '1.00';
+      const defaultMarkup = '35';
+      const defaultCut = '1.00';
+      
+      setSheetLFCost(defaultLFCost);
+      setTempLFCost(defaultLFCost);
+      setPricePerBend(defaultBendPrice);
+      setTempBendPrice(defaultBendPrice);
+      setMarkupPercent(defaultMarkup);
+      setTempMarkupPercent(defaultMarkup);
+      setCutPrice(defaultCut);
+      setTempCutPrice(defaultCut);
     }
   }
 
@@ -1740,7 +1768,7 @@ export function TrimPricingCalculator() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="lf-cost" className="text-yellow-400 font-semibold">
-                Sheet Cost per LF (42" wide)
+                Cost PLF (Per Linear Foot)
               </Label>
               <Input
                 id="lf-cost"
@@ -1749,8 +1777,8 @@ export function TrimPricingCalculator() {
                 step="0.01"
                 value={tempLFCost}
                 onChange={(e) => setTempLFCost(e.target.value)}
-                placeholder="Enter cost per linear foot"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+                placeholder="3.46"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
               />
             </div>
 
@@ -1765,8 +1793,8 @@ export function TrimPricingCalculator() {
                 step="0.01"
                 value={tempBendPrice}
                 onChange={(e) => setTempBendPrice(e.target.value)}
-                placeholder="Enter price per bend"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+                placeholder="1.00"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
               />
             </div>
 
@@ -1781,8 +1809,8 @@ export function TrimPricingCalculator() {
                 step="0.1"
                 value={tempMarkupPercent}
                 onChange={(e) => setTempMarkupPercent(e.target.value)}
-                placeholder="Enter markup percentage"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+                placeholder="35"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
               />
             </div>
 
@@ -1797,8 +1825,8 @@ export function TrimPricingCalculator() {
                 step="0.01"
                 value={tempCutPrice}
                 onChange={(e) => setTempCutPrice(e.target.value)}
-                placeholder="Enter cut price"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500"
+                placeholder="1.00"
+                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
               />
             </div>
 
@@ -1837,15 +1865,15 @@ export function TrimPricingCalculator() {
             </div>
             <div>
               <h4 className="font-bold text-yellow-400 mb-1">Cost per Inch Calculation:</h4>
-              <p>(Sheet Cost per LF × 10) × (1 + Markup%) ÷ 42 inches</p>
-              <p className="text-xs text-white/60 mt-1">LF cost is for a 42" wide × 10' long sheet</p>
+              <p>(Cost PLF × 10) × (1 + Markup%) ÷ 42 inches</p>
+              <p className="text-xs text-white/60 mt-1">Example: ($3.46 × 10) × 1.35 ÷ 42 = $1.11 per inch</p>
             </div>
             <div>
               <h4 className="font-bold text-yellow-400 mb-1">Settings:</h4>
               <ul className="list-disc list-inside space-y-1">
-                <li><strong>Sheet Cost per LF:</strong> Your material cost for a 42" wide × 10' long sheet</li>
-                <li><strong>Price per Bend:</strong> Labor/equipment cost per bend</li>
-                <li><strong>Markup %:</strong> Your profit margin (default 32%)</li>
+                <li><strong>Cost PLF:</strong> Material cost per linear foot (default $3.46)</li>
+                <li><strong>Price per Bend:</strong> Cost per bend (default $1.00)</li>
+                <li><strong>Markup %:</strong> Profit margin (default 35%)</li>
                 <li><strong>Cut Price:</strong> Fixed cost per cut (default $1.00)</li>
               </ul>
             </div>
