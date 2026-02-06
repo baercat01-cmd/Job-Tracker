@@ -1977,13 +1977,7 @@ export function TrimPricingCalculator() {
               </div>
             )}
 
-            {/* Stats - Bottom Right */}
-            <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-sm border-2 border-gray-300 rounded-lg p-2 shadow-lg">
-              <div className="text-gray-800 text-xs font-bold">
-                <div>Total: {cleanNumber(calculateTotalLength())}"</div>
-                <div>Bends: {Math.max(0, drawing.segments.length - 1) + drawing.segments.filter(s => s.hasHem).length}</div>
-              </div>
-            </div>
+
           </div>
           
           {/* Real-time Status */}
