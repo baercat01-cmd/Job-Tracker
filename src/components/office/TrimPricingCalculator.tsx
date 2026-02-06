@@ -2313,19 +2313,30 @@ export function TrimPricingCalculator() {
             </div>
             <div>
               <Label className="text-yellow-400">Link to Job (Optional)</Label>
-              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                <SelectTrigger className="bg-white border-green-700">
-                  <SelectValue placeholder="No job selected" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">No job</SelectItem>
-                  {jobs.map((job) => (
-                    <SelectItem key={job.id} value={job.id}>
-                      {job.job_number ? `${job.job_number} - ` : ''}{job.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Select value={selectedJobId || undefined} onValueChange={setSelectedJobId}>
+                  <SelectTrigger className="bg-white border-green-700">
+                    <SelectValue placeholder="No job selected" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jobs.map((job) => (
+                      <SelectItem key={job.id} value={job.id}>
+                        {job.job_number ? `${job.job_number} - ` : ''}{job.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedJobId && (
+                  <Button
+                    onClick={() => setSelectedJobId('')}
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-red-500 text-red-400 hover:bg-red-900/20"
+                  >
+                    Clear Job Selection
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="bg-black/30 border border-green-800 rounded p-3">
               <p className="text-yellow-400 font-semibold text-sm mb-2">Will save:</p>
