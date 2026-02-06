@@ -581,7 +581,9 @@ export function TrimPricingCalculator() {
       const outwardPerpY = perpY * direction;
       
       // STACKED LABELS: Label on top, measurement below
-      const stackOffset = 35; // Distance from line
+      // Use larger offset for short segments to avoid crowding
+      const isShortSegment = lengthInInches < 1.0;
+      const stackOffset = isShortSegment ? 50 : 35; // Distance from line
       const stackSpacing = 16; // Vertical spacing between label and measurement
       
       // Base position (perpendicular from midpoint)
@@ -601,7 +603,7 @@ export function TrimPricingCalculator() {
       ctx.fillText(`${cleanNumber(lengthInInches)}"`, baseX, baseY + 8);
       ctx.textAlign = 'left';
 
-      // Draw angle label if not first segment - RADIALLY FROM CORNER
+      // Draw angle label if not first segment - RADIALLY FROM CORNER AT 45° BISECTOR
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -633,7 +635,8 @@ export function TrimPricingCalculator() {
         }
         
         // Position angle label RADIALLY from the corner point along the bisector
-        const angleDistance = 60; // Further from corner for clarity
+        // Use larger distance to keep angles clearly separated from measurements
+        const angleDistance = 75; // Increased distance for better clarity
         const angleX = startX + Math.cos(bisectorAngle) * angleDistance;
         const angleY = startY + Math.sin(bisectorAngle) * angleDistance;
         
