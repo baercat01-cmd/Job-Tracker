@@ -70,7 +70,20 @@ interface HemPreviewMode {
   segmentId: string;
 }
 
+interface TrimType {
+  id: string;
+  name: string;
+  width_inches: number;
+  cost_per_lf: number;
+  active: boolean;
+}
+
 export function TrimPricingCalculator() {
+  // Material type selection
+  const [trimTypes, setTrimTypes] = useState<TrimType[]>([]);
+  const [selectedTrimTypeId, setSelectedTrimTypeId] = useState<string>('');
+  const [selectedTrimType, setSelectedTrimType] = useState<TrimType | null>(null);
+  
   // Persistent settings
   const [sheetLFCost, setSheetLFCost] = useState<string>('3.46');
   const [pricePerBend, setPricePerBend] = useState<string>('1.00');
@@ -104,6 +117,13 @@ export function TrimPricingCalculator() {
   const [tempBendPrice, setTempBendPrice] = useState('1.00');
   const [tempMarkupPercent, setTempMarkupPercent] = useState('35');
   const [tempCutPrice, setTempCutPrice] = useState('1.00');
+  
+  // Trim type management
+  const [showTrimTypeManagement, setShowTrimTypeManagement] = useState(false);
+  const [editingTrimType, setEditingTrimType] = useState<TrimType | null>(null);
+  const [newTrimTypeName, setNewTrimTypeName] = useState('');
+  const [newTrimTypeWidth, setNewTrimTypeWidth] = useState('42');
+  const [newTrimTypeCost, setNewTrimTypeCost] = useState('3.46');
 
   // Save/Load
   const [configName, setConfigName] = useState('');
@@ -1167,7 +1187,14 @@ export function TrimPricingCalculator() {
     loadSettings();
     loadJobs();
     loadSavedConfigs();
+    loadTrimTypes();
   }, []);
+  
+  // Update selected trim type when selection changes
+  useEffect(() => {
+    const selected = trimTypes.find(t => t.id === selectedTrimTypeId);
+    setSelectedTrimType(selected || null);
+  }, [selectedTrimTypeId, trimTypes]);
 
   async function loadSettings() {
     try {
@@ -1275,6 +1302,29 @@ export function TrimPricingCalculator() {
       setJobs(data || []);
     } catch (error) {
       console.error('Error loading jobs:', error);
+    }
+  }
+  
+  async function loadTrimTypes() {
+    try {
+      console.log('🔄 Loading trim types from database...');
+      const { data, error } = await supabase
+        .from('trim_types')
+        .select('*')
+        .eq('active', true)
+        .order('name');
+      
+      if (error) throw error;
+      
+      console.log('✅ Loaded trim types:', data);
+      setTrimTypes(data || []);
+      
+      // Auto-select first type if none selected
+      if (data && data.length > 0 && !selectedTrimTypeId) {
+        setSelectedTrimTypeId(data[0].id);
+      }
+    } catch (error) {
+      console.error('❌ Error loading trim types:', error);
     }
   }
 
@@ -1397,6 +1447,107 @@ export function TrimPricingCalculator() {
       toast.error('Failed to save settings: ' + (error as any).message);
     }
   }
+  
+  async function saveTrimType() {
+    if (!newTrimTypeName.trim()) {
+      toast.error('Please enter a name for the trim type');
+      return;
+    }
+    
+    const width = parseFloat(newTrimTypeWidth);
+    const cost = parseFloat(newTrimTypeCost);
+    
+    if (!width || width <= 0) {
+      toast.error('Please enter a valid width');
+      return;
+    }
+    
+    if (!cost || cost <= 0) {
+      toast.error('Please enter a valid cost');
+      return;
+    }
+    
+    try {
+      if (editingTrimType) {
+        // Update existing
+        const { error } = await supabase
+          .from('trim_types')
+          .update({
+            name: newTrimTypeName.trim(),
+            width_inches: width,
+            cost_per_lf: cost,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingTrimType.id);
+        
+        if (error) throw error;
+        toast.success('Trim type updated');
+      } else {
+        // Insert new
+        const { error } = await supabase
+          .from('trim_types')
+          .insert([{
+            name: newTrimTypeName.trim(),
+            width_inches: width,
+            cost_per_lf: cost,
+            active: true
+          }]);
+        
+        if (error) throw error;
+        toast.success('Trim type added');
+      }
+      
+      // Reload trim types
+      await loadTrimTypes();
+      
+      // Reset form
+      setNewTrimTypeName('');
+      setNewTrimTypeWidth('42');
+      setNewTrimTypeCost('3.46');
+      setEditingTrimType(null);
+    } catch (error) {
+      console.error('Error saving trim type:', error);
+      toast.error('Failed to save trim type');
+    }
+  }
+  
+  async function deleteTrimType(id: string) {
+    if (!confirm('Delete this trim type?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('trim_types')
+        .update({ active: false })
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      toast.success('Trim type deleted');
+      await loadTrimTypes();
+      
+      // If deleted type was selected, clear selection
+      if (selectedTrimTypeId === id) {
+        setSelectedTrimTypeId('');
+      }
+    } catch (error) {
+      console.error('Error deleting trim type:', error);
+      toast.error('Failed to delete trim type');
+    }
+  }
+  
+  function startEditTrimType(trimType: TrimType) {
+    setEditingTrimType(trimType);
+    setNewTrimTypeName(trimType.name);
+    setNewTrimTypeWidth(trimType.width_inches.toString());
+    setNewTrimTypeCost(trimType.cost_per_lf.toString());
+  }
+  
+  function cancelEditTrimType() {
+    setEditingTrimType(null);
+    setNewTrimTypeName('');
+    setNewTrimTypeWidth('42');
+    setNewTrimTypeCost('3.46');
+  }
 
   // Auto-update calculator from drawing in real-time
   useEffect(() => {
@@ -1413,7 +1564,9 @@ export function TrimPricingCalculator() {
 
   // Calculate trim pricing
   useEffect(() => {
-    const lfCost = parseFloat(sheetLFCost);
+    // Use selected trim type's cost and width, or fall back to legacy settings
+    const lfCost = selectedTrimType ? selectedTrimType.cost_per_lf : parseFloat(sheetLFCost);
+    const sheetWidth = selectedTrimType ? selectedTrimType.width_inches : 42;
     const bendPriceVal = parseFloat(pricePerBend);
     const markup = parseFloat(markupPercent);
     const cutPriceVal = parseFloat(cutPrice);
@@ -1440,12 +1593,13 @@ export function TrimPricingCalculator() {
     }
 
     // CALCULATION:
-    // 1. LF cost is for a 42" wide piece that is 10' long
+    // 1. LF cost is for a sheet of specific width that is 10' long
     // 2. Multiply by 10 to get cost for the full 10' sheet
     const sheetCost = lfCost * 10;
     
     // 3. Calculate cost per inch BEFORE markup (material cost)
-    const costPerInchBeforeMarkup = sheetCost / 42;
+    // Divide by the sheet's width in inches
+    const costPerInchBeforeMarkup = sheetCost / sheetWidth;
     
     // 4. Material cost for this piece (before markup)
     const materialCostValue = totalIn * costPerInchBeforeMarkup;
@@ -1455,8 +1609,8 @@ export function TrimPricingCalculator() {
     const markupMultiplier = 1 + (markup / 100);
     const markedUpSheetCost = sheetCost * markupMultiplier;
     
-    // 6. Divide by 42 to get price per inch for a 10' strip (after markup)
-    const pricePerInch = markedUpSheetCost / 42;
+    // 6. Divide by sheet width to get price per inch for a 10' strip (after markup)
+    const pricePerInch = markedUpSheetCost / sheetWidth;
     setCostPerInch(pricePerInch);
     
     // 7. Calculate markup amount added
@@ -1480,7 +1634,7 @@ export function TrimPricingCalculator() {
     
     // Selling price = (total inches × price per inch) + (bends × bend price) + cut cost
     setSellingPrice(inchCost + bendCost + cutCost);
-  }, [sheetLFCost, pricePerBend, markupPercent, cutPrice, inchInputs, numberOfBends]);
+  }, [sheetLFCost, pricePerBend, markupPercent, cutPrice, inchInputs, numberOfBends, selectedTrimType]);
 
   function addInchInput() {
     const newId = (Math.max(...inchInputs.map(i => parseInt(i.id)), 0) + 1).toString();
@@ -1587,7 +1741,8 @@ export function TrimPricingCalculator() {
   }
   
   function calculateConfigPricing(config: SavedConfig) {
-    const lfCost = parseFloat(sheetLFCost);
+    const lfCost = selectedTrimType ? selectedTrimType.cost_per_lf : parseFloat(sheetLFCost);
+    const sheetWidth = selectedTrimType ? selectedTrimType.width_inches : 42;
     const bendPriceVal = parseFloat(pricePerBend);
     const markup = parseFloat(markupPercent);
     const cutPriceVal = parseFloat(cutPrice);
@@ -1600,13 +1755,13 @@ export function TrimPricingCalculator() {
     
     // Material cost calculation
     const sheetCost = lfCost * 10;
-    const costPerInchBeforeMarkup = sheetCost / 42;
+    const costPerInchBeforeMarkup = sheetCost / sheetWidth;
     const materialCost = totalInches * costPerInchBeforeMarkup;
     
     // Apply markup
     const markupMultiplier = 1 + (markup / 100);
     const markedUpSheetCost = sheetCost * markupMultiplier;
-    const pricePerInch = markedUpSheetCost / 42;
+    const pricePerInch = markedUpSheetCost / sheetWidth;
     
     const totalInchCost = totalInches * pricePerInch;
     const totalBendCost = config.bends * bendPriceVal;
@@ -1634,7 +1789,7 @@ export function TrimPricingCalculator() {
     toast.success('Configuration deleted');
   }
 
-  const hasSettings = sheetLFCost && pricePerBend && markupPercent;
+  const hasSettings = (selectedTrimType || sheetLFCost) && pricePerBend && markupPercent;
 
   return (
     <>
@@ -1929,6 +2084,39 @@ export function TrimPricingCalculator() {
             </div>
           ) : (
             <>
+              {/* Material Type Selection */}
+              <div className="bg-black/30 p-2 rounded-lg border-2 border-green-800">
+                <Label className="text-yellow-400 font-semibold text-xs mb-1 block">
+                  Material Type
+                </Label>
+                <div className="flex gap-1">
+                  <Select value={selectedTrimTypeId} onValueChange={setSelectedTrimTypeId}>
+                    <SelectTrigger className="h-8 bg-white border-2 border-green-700 focus:border-yellow-500 text-sm font-semibold flex-1">
+                      <SelectValue placeholder="Select material..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {trimTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name} ({type.width_inches}" @ ${type.cost_per_lf}/LF)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => setShowTrimTypeManagement(true)}
+                    size="sm"
+                    className="bg-green-700 hover:bg-green-600 text-yellow-400 font-bold border border-yellow-500 h-8 px-2 text-xs"
+                  >
+                    <Settings className="w-3 h-3" />
+                  </Button>
+                </div>
+                {selectedTrimType && (
+                  <div className="mt-1 text-xs text-green-400">
+                    Width: {selectedTrimType.width_inches}" | Cost: ${selectedTrimType.cost_per_lf}/LF
+                  </div>
+                )}
+              </div>
+              
               {/* Steel Section - Dynamic Inch Inputs */}
               <div className="space-y-1.5 bg-black/30 p-2 rounded-lg border-2 border-green-800">
                 <div className="flex items-center justify-between">
@@ -2063,578 +2251,3 @@ export function TrimPricingCalculator() {
         </CardContent>
       </Card>
     </div>
-
-      {/* Settings Dialog */}
-      <Dialog open={showSettings} onOpenChange={(open) => {
-        if (!open) {
-          // Reset temp values to current saved values when closing without saving
-          setTempLFCost(sheetLFCost);
-          setTempBendPrice(pricePerBend);
-          setTempMarkupPercent(markupPercent);
-          setTempCutPrice(cutPrice);
-        }
-        setShowSettings(open);
-      }}>
-        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <Settings className="w-6 h-6" />
-              Calculator Settings
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="lf-cost" className="text-yellow-400 font-semibold">
-                Cost PLF (Per Linear Foot)
-              </Label>
-              <Input
-                id="lf-cost"
-                type="number"
-                min="0"
-                step="0.01"
-                value={tempLFCost}
-                onChange={(e) => setTempLFCost(e.target.value)}
-                placeholder="3.46"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bend-price" className="text-yellow-400 font-semibold">
-                Price per Bend
-              </Label>
-              <Input
-                id="bend-price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={tempBendPrice}
-                onChange={(e) => setTempBendPrice(e.target.value)}
-                placeholder="1.00"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="markup" className="text-yellow-400 font-semibold">
-                Markup Percentage (%)
-              </Label>
-              <Input
-                id="markup"
-                type="number"
-                min="0"
-                step="0.1"
-                value={tempMarkupPercent}
-                onChange={(e) => setTempMarkupPercent(e.target.value)}
-                placeholder="35"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cut-price" className="text-yellow-400 font-semibold">
-                Cut Price (Fixed)
-              </Label>
-              <Input
-                id="cut-price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={tempCutPrice}
-                onChange={(e) => setTempCutPrice(e.target.value)}
-                placeholder="1.00"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                onClick={saveSettings}
-                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-              >
-                Save Settings
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowSettings(false)}
-                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Info Dialog */}
-      <Dialog open={showInfo} onOpenChange={setShowInfo}>
-        <DialogContent className="sm:max-w-lg bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <Info className="w-6 h-6" />
-              How the Calculator Works
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 text-white/90 text-sm">
-            <div>
-              <h4 className="font-bold text-yellow-400 mb-1">Pricing Formula:</h4>
-              <p>Selling Price = (Total Inches × Cost per Inch) + (Bends × Price per Bend) + Cut Cost</p>
-            </div>
-            <div>
-              <h4 className="font-bold text-yellow-400 mb-1">Cost per Inch Calculation:</h4>
-              <p>(Cost PLF × 10) × (1 + Markup%) ÷ 42 inches</p>
-              <p className="text-xs text-white/60 mt-1">Example: ($3.46 × 10) × 1.35 ÷ 42 = $1.11 per inch</p>
-            </div>
-            <div>
-              <h4 className="font-bold text-yellow-400 mb-1">Settings:</h4>
-              <ul className="list-disc list-inside space-y-1">
-                <li><strong>Cost PLF:</strong> Material cost per linear foot (default $3.46)</li>
-                <li><strong>Price per Bend:</strong> Cost per bend (default $1.00)</li>
-                <li><strong>Markup %:</strong> Profit margin (default 35%)</li>
-                <li><strong>Cut Price:</strong> Fixed cost per cut (default $1.00)</li>
-              </ul>
-            </div>
-          </div>
-          <Button
-            onClick={() => setShowInfo(false)}
-            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-          >
-            Got It
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Save Configuration Dialog */}
-      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
-        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <Save className="w-6 h-6" />
-              Save Configuration
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="config-name" className="text-yellow-400 font-semibold">
-                Configuration Name
-              </Label>
-              <Input
-                id="config-name"
-                value={configName}
-                onChange={(e) => setConfigName(e.target.value)}
-                placeholder="Enter a name for this configuration"
-                className="bg-white border-2 border-green-700 focus:border-yellow-500"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="job-select" className="text-yellow-400 font-semibold">
-                Link to Job (Optional)
-              </Label>
-              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-                <SelectTrigger className="bg-white border-2 border-green-700 focus:border-yellow-500">
-                  <SelectValue placeholder="Select a job..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Job</SelectItem>
-                  {jobs.map((job) => (
-                    <SelectItem key={job.id} value={job.id}>
-                      {job.job_number ? `${job.job_number} - ` : ''}{job.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                onClick={saveConfiguration}
-                disabled={saving}
-                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowSaveDialog(false);
-                  setConfigName('');
-                  setSelectedJobId('');
-                }}
-                className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Load Configuration Dialog */}
-      <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
-        <DialogContent className="sm:max-w-4xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <FolderOpen className="w-6 h-6" />
-              Load Saved Configuration
-            </DialogTitle>
-          </DialogHeader>
-          {savedConfigs.length === 0 ? (
-            <div className="text-center py-8 text-white/60">
-              <p>No saved configurations yet.</p>
-              <p className="text-sm mt-2">Save your first configuration to see it here.</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {savedConfigs.map((config) => {
-                const pricing = calculateConfigPricing(config);
-                const totalInches = config.inches.reduce((sum, val) => sum + val, 0);
-                
-                return (
-                <div
-                  key={config.id}
-                  className="bg-black/30 border-2 border-green-800 rounded-lg p-3 hover:border-yellow-500 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    {/* Thumbnail Preview */}
-                    {config.drawing_segments && config.drawing_segments.length > 0 ? (
-                      <div className="flex-shrink-0 bg-white rounded border-2 border-gray-300 overflow-hidden">
-                        <canvas
-                          ref={(canvas) => {
-                            if (!canvas) return;
-                            const ctx = canvas.getContext('2d');
-                            if (!ctx) return;
-                            
-                            const thumbScale = 25;
-                            canvas.width = 100;
-                            canvas.height = 100;
-                            
-                            // White background
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fillRect(0, 0, 100, 100);
-                            
-                            // Find bounding box to center the drawing
-                            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                            config.drawing_segments.forEach((seg: LineSegment) => {
-                              minX = Math.min(minX, seg.start.x, seg.end.x);
-                              minY = Math.min(minY, seg.start.y, seg.end.y);
-                              maxX = Math.max(maxX, seg.start.x, seg.end.x);
-                              maxY = Math.max(maxY, seg.start.y, seg.end.y);
-                            });
-                            
-                            const width = maxX - minX;
-                            const height = maxY - minY;
-                            const centerX = (minX + maxX) / 2;
-                            const centerY = (minY + maxY) / 2;
-                            
-                            // Calculate scale to fit in thumbnail
-                            const padding = 10;
-                            const availWidth = 100 - (padding * 2);
-                            const availHeight = 100 - (padding * 2);
-                            const scaleX = width > 0 ? availWidth / width : thumbScale;
-                            const scaleY = height > 0 ? availHeight / height : thumbScale;
-                            const fitScale = Math.min(scaleX, scaleY, thumbScale);
-                            
-                            // Offset to center the drawing
-                            const offsetX = 50 - (centerX * fitScale);
-                            const offsetY = 50 - (centerY * fitScale);
-                            
-                            // Draw segments only - no labels, no measurements, no grid
-                            ctx.strokeStyle = '#000000';
-                            ctx.lineWidth = 2;
-                            config.drawing_segments.forEach((seg: LineSegment) => {
-                              const startX = seg.start.x * fitScale + offsetX;
-                              const startY = seg.start.y * fitScale + offsetY;
-                              const endX = seg.end.x * fitScale + offsetX;
-                              const endY = seg.end.y * fitScale + offsetY;
-                              
-                              ctx.beginPath();
-                              ctx.moveTo(startX, startY);
-                              ctx.lineTo(endX, endY);
-                              ctx.stroke();
-                            });
-                          }}
-                          width={100}
-                          height={100}
-                          className="block"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex-shrink-0 w-[100px] h-[100px] bg-gray-800 rounded border-2 border-gray-600 flex items-center justify-center">
-                        <span className="text-gray-500 text-xs">No Drawing</span>
-                      </div>
-                    )}
-                    
-                    {/* Config Details - Two Column Layout */}
-                    <div className="flex-1 grid grid-cols-2 gap-x-8">
-                      {/* Left Column - Trim Info */}
-                      <div>
-                        <h4 className="text-yellow-400 font-bold text-xl mb-2">{config.name}</h4>
-                        {config.job_name && (
-                          <p className="text-white/60 text-sm mb-2">Job: {config.job_name}</p>
-                        )}
-                        <div className="text-white/80 text-base space-y-1">
-                          <p>Total: <span className="text-white font-semibold text-lg">{cleanNumber(totalInches, 2)}"</span></p>
-                          <p className="text-white/40 text-sm mt-2">
-                            {new Date(config.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      {/* Right Column - Pricing Info */}
-                      <div className="text-base space-y-1">
-                        <p className="text-white/60 text-sm">Cost: <span className="text-white font-bold text-base">${pricing.cost.toFixed(2)}</span></p>
-                        <p className="text-yellow-400 text-sm">Price: <span className="font-bold text-lg">${pricing.price.toFixed(2)}</span></p>
-                        <p className="text-green-400 text-sm">Markup: <span className="font-bold text-base">{pricing.markupPercent.toFixed(1)}%</span></p>
-                      </div>
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 flex-shrink-0">
-                      <Button
-                        onClick={() => loadConfiguration(config)}
-                        size="sm"
-                        className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-                      >
-                        Load
-                      </Button>
-                      <Button
-                        onClick={() => deleteConfiguration(config.id)}
-                        size="sm"
-                        variant="outline"
-                        className="border-2 border-red-500 text-red-400 hover:bg-red-900/20 p-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );})}
-            </div>
-          )}
-          <Button
-            onClick={() => setShowLoadDialog(false)}
-            variant="outline"
-            className="w-full border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-          >
-            Close
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Preview Configuration Dialog */}
-      <Dialog open={!!previewConfig} onOpenChange={(open) => !open && setPreviewConfig(null)}>
-        <DialogContent className="sm:max-w-4xl bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <FolderOpen className="w-6 h-6" />
-              Preview: {previewConfig?.name}
-            </DialogTitle>
-          </DialogHeader>
-          {previewConfig && (
-            <div className="grid grid-cols-2 gap-4">
-              {/* Drawing Preview */}
-              <div className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
-                <canvas
-                  ref={(canvas) => {
-                    if (!canvas || !previewConfig.drawing_segments) return;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) return;
-                    
-                    const previewScale = 60;
-                    canvas.width = 600;
-                    canvas.height = 400;
-                    
-                    // White background
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, 600, 400);
-                    
-                    // Draw grid
-                    ctx.strokeStyle = '#f0f0f0';
-                    ctx.lineWidth = 0.5;
-                    for (let x = 0; x <= 600; x += previewScale * 0.125) {
-                      ctx.beginPath();
-                      ctx.moveTo(x, 0);
-                      ctx.lineTo(x, 400);
-                      ctx.stroke();
-                    }
-                    for (let y = 0; y <= 400; y += previewScale * 0.125) {
-                      ctx.beginPath();
-                      ctx.moveTo(0, y);
-                      ctx.lineTo(600, y);
-                      ctx.stroke();
-                    }
-                    
-                    // Draw segments
-                    previewConfig.drawing_segments.forEach((seg: LineSegment, idx: number) => {
-                      const startX = seg.start.x * previewScale;
-                      const startY = seg.start.y * previewScale;
-                      const endX = seg.end.x * previewScale;
-                      const endY = seg.end.y * previewScale;
-                      
-                      ctx.strokeStyle = '#000000';
-                      ctx.lineWidth = 3;
-                      ctx.beginPath();
-                      ctx.moveTo(startX, startY);
-                      ctx.lineTo(endX, endY);
-                      ctx.stroke();
-                      
-                      // Labels
-                      const midX = (startX + endX) / 2;
-                      const midY = (startY + endY) / 2;
-                      ctx.fillStyle = '#999999';
-                      ctx.font = '14px sans-serif';
-                      ctx.fillText(seg.label, midX - 20, midY);
-                      
-                      const dx = seg.end.x - seg.start.x;
-                      const dy = seg.end.y - seg.start.y;
-                      const length = Math.sqrt(dx * dx + dy * dy);
-                      ctx.fillStyle = '#000000';
-                      ctx.font = 'bold 14px sans-serif';
-                      ctx.fillText(`${cleanNumber(length)}"`, midX + 10, midY);
-                    });
-                  }}
-                  className="w-full h-full"
-                />
-              </div>
-              
-              {/* Pricing Info */}
-              <div className="space-y-4">
-                <div className="bg-black/30 border-2 border-green-800 rounded-lg p-4">
-                  <h4 className="text-yellow-400 font-bold mb-3">Configuration Details</h4>
-                  <div className="space-y-2 text-white/80 text-sm">
-                    {previewConfig.job_name && (
-                      <p>Job: <span className="text-white font-semibold">{previewConfig.job_name}</span></p>
-                    )}
-                    <p>Total Inches: <span className="text-white font-semibold">{cleanNumber(previewConfig.inches.reduce((s, v) => s + v, 0), 2)}"</span></p>
-                    <p>Bends: <span className="text-white font-semibold">{previewConfig.bends}</span></p>
-                    {previewConfig.drawing_segments && (
-                      <p>Segments: <span className="text-white font-semibold">{previewConfig.drawing_segments.length}</span></p>
-                    )}
-                  </div>
-                </div>
-                
-                {(() => {
-                  const pricing = calculateConfigPricing(previewConfig);
-                  return (
-                    <div className="bg-black/30 border-2 border-green-800 rounded-lg p-4">
-                      <h4 className="text-yellow-400 font-bold mb-3">Pricing Breakdown</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between text-white/80">
-                          <span>Total Cost:</span>
-                          <span className="text-white font-bold">${pricing.cost.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-white/80">
-                          <span>Markup:</span>
-                          <span className="text-green-400 font-bold">+${pricing.markup.toFixed(2)}</span>
-                        </div>
-                        <div className="border-t border-green-700 pt-2">
-                          <div className="flex justify-between">
-                            <span className="text-yellow-400 font-bold">Selling Price:</span>
-                            <span className="text-yellow-400 font-bold text-lg">${pricing.price.toFixed(2)}</span>
-                          </div>
-                        </div>
-                        <div className="bg-green-900/30 border border-green-600 rounded p-2 mt-2">
-                          <div className="flex justify-between">
-                            <span className="text-green-300 font-semibold">Markup %:</span>
-                            <span className="text-green-300 font-bold text-lg">{pricing.markupPercent.toFixed(1)}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      loadConfiguration(previewConfig);
-                      setShowLoadDialog(false);
-                    }}
-                    className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-                  >
-                    Load This Configuration
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setPreviewConfig(null)}
-                    className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Segment Measurement/Angle Dialog */}
-      <Dialog open={!!editMode} onOpenChange={(open) => !open && setEditMode(null)}>
-        <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
-              <Pencil className="w-6 h-6" />
-              Edit Segment {editMode && drawing.segments.find(s => s.id === editMode.segmentId)?.label}
-            </DialogTitle>
-          </DialogHeader>
-          {editMode && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-measurement" className="text-yellow-400 font-semibold">
-                  Measurement (inches)
-                </Label>
-                <Input
-                  id="edit-measurement"
-                  type="number"
-                  min="0"
-                  step="0.125"
-                  value={editMode.measurement}
-                  onChange={(e) => setEditMode({ ...editMode, measurement: e.target.value })}
-                  className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-angle" className="text-yellow-400 font-semibold">
-                  Angle (degrees)
-                </Label>
-                <p className="text-xs text-white/60">
-                  {drawing.segments.findIndex(s => s.id === editMode.segmentId) === 0 
-                    ? 'Angle from horizontal (0° = right, 90° = up)'
-                    : 'Angle from previous segment'}
-                </p>
-                <Input
-                  id="edit-angle"
-                  type="number"
-                  min="0"
-                  max="360"
-                  step="1"
-                  value={editMode.angle}
-                  onChange={(e) => setEditMode({ ...editMode, angle: e.target.value })}
-                  className="bg-white border-2 border-green-700 focus:border-yellow-500 text-lg font-bold"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <Button
-                  onClick={applyEdit}
-                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-                >
-                  Apply Changes
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setEditMode(null)}
-                  className="border-2 border-green-700 text-yellow-400 hover:bg-green-900/20"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
