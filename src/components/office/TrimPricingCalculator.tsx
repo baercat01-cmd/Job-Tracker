@@ -716,7 +716,6 @@ export function TrimPricingCalculator() {
         });
       }
     });
-    });
 
     // Resolve overlaps in text elements
     const resolvedElements = resolveOverlaps(textElements);
