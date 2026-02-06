@@ -318,94 +318,18 @@ export function TrimPricingCalculator() {
     }
   }, [showDrawing]);
 
-  // Intelligent text placement - collision detection
-  interface TextElement {
-    text: string;
-    x: number;
-    y: number;
-    targetX: number;
-    targetY: number;
-    type: 'label' | 'measurement' | 'angle';
-    segmentId: string;
-    fontSize: number;
-    color: string;
-    needsLeader: boolean;
-  }
-
-  function getTextBounds(text: string, x: number, y: number, fontSize: number) {
-    const width = text.length * fontSize * 0.6; // Approximate width
-    const height = fontSize;
-    return {
-      left: x - width / 2,
-      right: x + width / 2,
-      top: y - height,
-      bottom: y + height / 4
-    };
-  }
-
-  function boundsOverlap(b1: ReturnType<typeof getTextBounds>, b2: ReturnType<typeof getTextBounds>) {
-    const padding = 5;
-    return !(
-      b1.right + padding < b2.left ||
-      b1.left - padding > b2.right ||
-      b1.bottom + padding < b2.top ||
-      b1.top - padding > b2.bottom
-    );
-  }
-
-  function resolveOverlaps(elements: TextElement[]): TextElement[] {
-    const resolved = elements.map(el => ({ ...el }));
-    const maxIterations = 50;
+  // Calculate the centroid of the drawing for intelligent label placement
+  function calculateCentroid(segments: LineSegment[]): Point {
+    if (segments.length === 0) return { x: 0, y: 0 };
     
-    for (let iter = 0; iter < maxIterations; iter++) {
-      let hasOverlap = false;
-      
-      for (let i = 0; i < resolved.length; i++) {
-        for (let j = i + 1; j < resolved.length; j++) {
-          const el1 = resolved[i];
-          const el2 = resolved[j];
-          
-          const b1 = getTextBounds(el1.text, el1.x, el1.y, el1.fontSize);
-          const b2 = getTextBounds(el2.text, el2.x, el2.y, el2.fontSize);
-          
-          if (boundsOverlap(b1, b2)) {
-            hasOverlap = true;
-            
-            // Push elements apart
-            const dx = el2.x - el1.x;
-            const dy = el2.y - el1.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            
-            if (dist > 0) {
-              const pushDist = 15;
-              const pushX = (dx / dist) * pushDist;
-              const pushY = (dy / dist) * pushDist;
-              
-              // Move both elements away from each other
-              el1.x -= pushX / 2;
-              el1.y -= pushY / 2;
-              el2.x += pushX / 2;
-              el2.y += pushY / 2;
-              
-              // Mark as needing leader lines if moved far from target
-              const dist1 = Math.sqrt(
-                (el1.x - el1.targetX) ** 2 + (el1.y - el1.targetY) ** 2
-              );
-              const dist2 = Math.sqrt(
-                (el2.x - el2.targetX) ** 2 + (el2.y - el2.targetY) ** 2
-              );
-              
-              if (dist1 > 30) el1.needsLeader = true;
-              if (dist2 > 30) el2.needsLeader = true;
-            }
-          }
-        }
-      }
-      
-      if (!hasOverlap) break;
-    }
+    let sumX = 0, sumY = 0, count = 0;
+    segments.forEach(seg => {
+      sumX += seg.start.x + seg.end.x;
+      sumY += seg.start.y + seg.end.y;
+      count += 2;
+    });
     
-    return resolved;
+    return { x: sumX / count, y: sumY / count };
   }
 
   // Draw canvas
@@ -574,10 +498,10 @@ export function TrimPricingCalculator() {
       });
     }
 
-    // Collect all text elements for intelligent placement
-    const textElements: TextElement[] = [];
+    // Calculate centroid for intelligent placement
+    const centroid = calculateCentroid(drawing.segments);
 
-    // Draw segments and collect text elements
+    // Draw segments with intelligent text placement
     drawing.segments.forEach((segment, segmentIndex) => {
       const isSelected = segment.id === drawing.selectedSegmentId;
       
@@ -634,47 +558,49 @@ export function TrimPricingCalculator() {
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
       
-      // Calculate perpendicular offset direction
-      const perpX = -dy / Math.sqrt(dx * dx + dy * dy) || 0;
-      const perpY = dx / Math.sqrt(dx * dx + dy * dy) || 0;
+      // Calculate perpendicular direction
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const perpX = -dy / length || 0;
+      const perpY = dx / length || 0;
       
-      // Base offsets
-      const labelOffset = 35;
-      const measureOffset = 55;
+      // Determine which side is "outside" (away from centroid)
+      const midPointInInches = {
+        x: (segment.start.x + segment.end.x) / 2,
+        y: (segment.start.y + segment.end.y) / 2
+      };
+      const toCentroidX = centroid.x - midPointInInches.x;
+      const toCentroidY = centroid.y - midPointInInches.y;
       
-      // Add segment label to text elements
-      const labelX = midX - perpX * labelOffset;
-      const labelY = midY - perpY * labelOffset;
-      textElements.push({
-        text: segment.label,
-        x: labelX,
-        y: labelY,
-        targetX: midX,
-        targetY: midY,
-        type: 'label',
-        segmentId: segment.id,
-        fontSize: 13,
-        color: '#999999',
-        needsLeader: false
-      });
+      // Dot product to determine which perpendicular direction is away from centroid
+      const dotProduct = perpX * toCentroidX + perpY * toCentroidY;
+      const direction = dotProduct > 0 ? -1 : 1; // Flip if pointing toward centroid
       
-      // Add measurement to text elements
-      const measureX = midX - perpX * measureOffset;
-      const measureY = midY - perpY * measureOffset;
-      textElements.push({
-        text: `${cleanNumber(lengthInInches)}"`,
-        x: measureX,
-        y: measureY,
-        targetX: midX,
-        targetY: midY,
-        type: 'measurement',
-        segmentId: segment.id,
-        fontSize: 18,
-        color: '#000000',
-        needsLeader: false
-      });
+      // Adjusted perpendicular (pointing away from shape)
+      const outwardPerpX = perpX * direction;
+      const outwardPerpY = perpY * direction;
+      
+      // Offsets - measurements further out than labels
+      const labelOffset = 25;
+      const measureOffset = 45;
+      
+      // Draw segment label (lighter, smaller, closer to line)
+      const labelX = midX + outwardPerpX * labelOffset;
+      const labelY = midY + outwardPerpY * labelOffset;
+      ctx.fillStyle = '#999999';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(segment.label, labelX, labelY);
+      
+      // Draw measurement (bold, larger, further out)
+      const measureX = midX + outwardPerpX * measureOffset;
+      const measureY = midY + outwardPerpY * measureOffset;
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${cleanNumber(lengthInInches)}"`, measureX, measureY);
+      ctx.textAlign = 'left';
 
-      // Add angle label if not first segment
+      // Draw angle label if not first segment
       if (segmentIndex > 0) {
         const prevSegment = drawing.segments[segmentIndex - 1];
         const angle = calculateAngleBetweenSegments(prevSegment, segment);
@@ -682,6 +608,7 @@ export function TrimPricingCalculator() {
         const useComplement = angleDisplayMode[segment.id] || false;
         const displayAngle = useComplement ? (360 - angle) : angle;
         
+        // Calculate bisector angle (exterior angle)
         const prevDx = prevSegment.end.x - prevSegment.start.x;
         const prevDy = prevSegment.end.y - prevSegment.start.y;
         const currDx = segment.end.x - segment.start.x;
@@ -690,81 +617,32 @@ export function TrimPricingCalculator() {
         const prevAngle = Math.atan2(prevDy, prevDx);
         const currAngle = Math.atan2(currDy, currDx);
         
+        // Calculate exterior bisector (pointing away from the shape)
         let bisectorAngle = (prevAngle + currAngle) / 2;
         const angleDiff = currAngle - prevAngle;
+        
+        // Adjust bisector to point outward
         if (Math.abs(angleDiff) > Math.PI) {
           bisectorAngle += Math.PI;
         } else {
           bisectorAngle += Math.PI;
         }
         
-        const angleOffsetDist = 60;
+        // Position angle label along bisector, further from corner
+        const angleOffsetDist = 50;
         const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
         const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
         
-        textElements.push({
-          text: `${Math.round(displayAngle)}°`,
-          x: angleX,
-          y: angleY,
-          targetX: startX,
-          targetY: startY,
-          type: 'angle',
-          segmentId: segment.id,
-          fontSize: 14,
-          color: '#6b21a8',
-          needsLeader: false
-        });
+        // Draw angle text
+        ctx.fillStyle = '#6b21a8';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${Math.round(displayAngle)}°`, angleX, angleY);
+        ctx.textAlign = 'left';
       }
     });
 
-    // Resolve overlaps in text elements
-    const resolvedElements = resolveOverlaps(textElements);
-    
-    // Draw all text elements with leader lines if needed
-    resolvedElements.forEach(element => {
-      // Draw leader line if element was moved far from target
-      if (element.needsLeader) {
-        ctx.strokeStyle = '#999999';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(element.x, element.y - 5);
-        ctx.lineTo(element.targetX, element.targetY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        
-        // Draw small arrowhead
-        const arrowAngle = Math.atan2(
-          element.targetY - (element.y - 5),
-          element.targetX - element.x
-        );
-        const arrowSize = 5;
-        ctx.beginPath();
-        ctx.moveTo(element.targetX, element.targetY);
-        ctx.lineTo(
-          element.targetX - arrowSize * Math.cos(arrowAngle - Math.PI / 6),
-          element.targetY - arrowSize * Math.sin(arrowAngle - Math.PI / 6)
-        );
-        ctx.lineTo(
-          element.targetX - arrowSize * Math.cos(arrowAngle + Math.PI / 6),
-          element.targetY - arrowSize * Math.sin(arrowAngle + Math.PI / 6)
-        );
-        ctx.closePath();
-        ctx.fillStyle = '#999999';
-        ctx.fill();
-      }
-      
-      // Draw text
-      ctx.fillStyle = element.color;
-      if (element.type === 'measurement') {
-        ctx.font = `bold ${element.fontSize}px sans-serif`;
-      } else {
-        ctx.font = `${element.type === 'label' ? '' : 'bold '}${element.fontSize}px sans-serif`;
-      }
-      ctx.textAlign = 'center';
-      ctx.fillText(element.text, element.x, element.y);
-      ctx.textAlign = 'left';
-    });
+
 
     // Draw hem previews if in preview mode
     if (hemPreviewMode) {
@@ -1942,9 +1820,9 @@ export function TrimPricingCalculator() {
               </div>
             )}
 
-            {/* Live Drawing Info - Bottom Right (Minimal Black & White) */}
+            {/* Live Drawing Info - Bottom Right (Minimal Black & White) - Only when actively drawing */}
             {isDrawingMode && drawing.currentPoint && mousePos && (
-              <div className="absolute bottom-2 right-2 bg-white/95 backdrop-blur-sm border border-gray-300 rounded p-2 shadow-md">
+              <div className="absolute bottom-14 right-2 bg-white/95 backdrop-blur-sm border border-gray-300 rounded p-2 shadow-md">
                 <div className="space-y-1">
                   {(() => {
                     const dx = mousePos.x - drawing.currentPoint.x;
