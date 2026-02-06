@@ -714,6 +714,8 @@ export function TrimPricingCalculator() {
           color: '#6b21a8',
           needsLeader: false
         });
+      }
+    });
     });
 
     // Resolve overlaps in text elements
