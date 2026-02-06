@@ -1162,12 +1162,10 @@ export function TrimPricingCalculator() {
       setCutPrice(tempCutPrice);
       
       setShowSettings(false);
-      toast.success('Settings saved successfully!');
+      toast.success('Settings saved and persisted to database!');
       
-      // Reload settings to verify persistence
-      setTimeout(() => {
-        loadSettings();
-      }, 500);
+      // Don't reload settings - we already have the correct values in state
+      // Reloading could overwrite with stale cached data
     } catch (error) {
       console.error('❌ Exception saving settings:', error);
       toast.error('Failed to save settings: ' + (error as any).message);
@@ -1722,7 +1720,16 @@ export function TrimPricingCalculator() {
     </div>
 
       {/* Settings Dialog */}
-      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+      <Dialog open={showSettings} onOpenChange={(open) => {
+        if (!open) {
+          // Reset temp values to current saved values when closing without saving
+          setTempLFCost(sheetLFCost);
+          setTempBendPrice(pricePerBend);
+          setTempMarkupPercent(markupPercent);
+          setTempCutPrice(cutPrice);
+        }
+        setShowSettings(open);
+      }}>
         <DialogContent className="sm:max-w-md bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-500 text-xl">
