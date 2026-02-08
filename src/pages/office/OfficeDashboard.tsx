@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -28,6 +28,7 @@ import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement
 import { MaterialInventory } from '@/components/office/MaterialInventory';
 import { TrimPricingCalculator } from '@/components/office/TrimPricingCalculator';
 import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
+import { FinancialDashboard } from '@/components/office/FinancialDashboard';
 import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
@@ -286,6 +287,19 @@ export function OfficeDashboard() {
               <Calculator className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Trim Calculator</span>
             </Button>
+            <Button
+              variant={activeTab === 'financials' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('financials')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'financials'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <DollarSign className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Financials</span>
+            </Button>
           </div>
 
           {/* Right Side Actions */}
@@ -482,6 +496,16 @@ export function OfficeDashboard() {
 
         {activeTab === 'trim-calculator' && (
           <TrimPricingCalculator />
+        )}
+
+        {activeTab === 'financials' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Financial Management</h2>
+              <p className="text-yellow-400">Track overhead, job budgets, and profitability</p>
+            </div>
+            <FinancialDashboard />
+          </div>
         )}
 
         {activeTab === 'settings' && (
