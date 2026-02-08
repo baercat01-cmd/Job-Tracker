@@ -56,7 +56,7 @@ const FREQUENCIES = [
 ];
 
 export function OverheadManagement({ onUpdate }: OverheadManagementProps) {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const [expenses, setExpenses] = useState<OverheadExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -137,7 +137,7 @@ export function OverheadManagement({ onUpdate }: OverheadManagementProps) {
         expense_date: expenseDate,
         frequency,
         notes: notes || null,
-        created_by: user?.id
+        created_by: profile?.id
       };
 
       if (editingExpense) {

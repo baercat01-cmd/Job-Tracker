@@ -54,7 +54,7 @@ interface JobBudgetManagementProps {
 }
 
 export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const [budgets, setBudgets] = useState<JobBudget[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +180,7 @@ export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
         total_quoted_price: quotedNum,
         overhead_allocation: parseFloat(overheadAllocation) || null,
         target_profit_margin: parseFloat(targetMargin) || null,
-        created_by: user?.id
+        created_by: profile?.id
       };
 
       if (editingBudget) {
