@@ -13,6 +13,14 @@ const STATIC_CACHE_URLS = [
   '/manifest.json',
 ];
 
+// CDN resources to cache for offline field use
+const CDN_CACHE_URLS = [
+  'https://unpkg.com/three@0.160.0/build/three.module.js',
+  'https://unpkg.com/@react-three/fiber@8.15.16/dist/index.js',
+  'https://unpkg.com/@react-three/drei@9.96.1/dist/index.js',
+  'https://cdn.tailwindcss.com/3.4.11',
+];
+
 // Cache duration (7 days for images)
 const IMAGE_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
 
@@ -21,13 +29,20 @@ self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing v' + CACHE_VERSION);
   
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching static resources');
-      return cache.addAll(STATIC_CACHE_URLS).catch(err => {
-        console.warn('[Service Worker] Failed to cache some resources:', err);
-        // Don't fail installation if some resources can't be cached
-      });
-    }).then(() => {
+    Promise.all([
+      caches.open(CACHE_NAME).then((cache) => {
+        console.log('[Service Worker] Caching static resources');
+        return cache.addAll(STATIC_CACHE_URLS).catch(err => {
+          console.warn('[Service Worker] Failed to cache some resources:', err);
+        });
+      }),
+      caches.open('cdn-cache').then((cache) => {
+        console.log('[Service Worker] Caching CDN resources for offline field use');
+        return cache.addAll(CDN_CACHE_URLS).catch(err => {
+          console.warn('[Service Worker] Failed to cache CDN resources:', err);
+        });
+      })
+    ]).then(() => {
       // Activate immediately
       return self.skipWaiting();
     })
@@ -38,7 +53,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   console.log('[Service Worker] Activating v' + CACHE_VERSION);
   
-  const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE];
+  const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE, 'cdn-cache'];
   
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -62,7 +77,29 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip cross-origin requests except for CDN images
+  // Handle CDN resources with cache-first strategy
+  if (url.hostname.includes('unpkg.com') || url.hostname.includes('cdn.tailwindcss.com')) {
+    event.respondWith(
+      caches.open('cdn-cache').then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          return fetch(request).then((response) => {
+            if (response && response.status === 200) {
+              cache.put(request, response.clone());
+            }
+            return response;
+          }).catch(() => {
+            return new Response('CDN resource unavailable offline', { status: 503 });
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // Skip other cross-origin requests except for CDN images
   if (url.origin !== location.origin && !url.hostname.includes('cdn-ai.onspace.ai')) {
     return;
   }

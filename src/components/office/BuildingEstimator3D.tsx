@@ -446,14 +446,14 @@ export default function BuildingEstimator3D({
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
       {/* Header */}
-      <header className="bg-[#0f172a] text-white h-14 flex items-center px-4 justify-between shadow-lg shrink-0 font-mono text-xs border-b border-white/10">
+      <header className="bg-mb-dark-blue text-white h-14 flex items-center px-4 justify-between shadow-lg shrink-0 font-mono text-xs border-b border-white/10">
         <div className="flex items-center gap-4">
-          <div className="w-8 h-8 bg-emerald-600 rounded flex items-center justify-center font-bold text-sm shadow-inner border border-white/10">
+          <div className="w-8 h-8 bg-mb-success rounded flex items-center justify-center font-bold text-sm shadow-inner border border-white/10">
             SF
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight uppercase leading-none">
-              SmartBuild <span className="text-emerald-400">BIM</span>
+              SmartBuild <span className="text-mb-success">BIM</span>
             </h1>
             <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mt-1">
               Fascia Cap Alignment V11.7
@@ -466,7 +466,7 @@ export default function BuildingEstimator3D({
             <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter italic">
               Piece-Based Valuation
             </div>
-            <div className="text-lg font-bold text-emerald-400 leading-tight">
+            <div className="text-lg font-bold text-mb-yellow leading-tight">
               ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
           </div>
@@ -485,7 +485,7 @@ export default function BuildingEstimator3D({
               size="sm"
               onClick={handleSave}
               disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
+              className="bg-mb-success hover:bg-green-500 text-white shadow-sm"
             >
               <Save className="w-3 h-3 mr-1" />
               {saving ? 'Saving...' : 'Save'}
@@ -502,19 +502,19 @@ export default function BuildingEstimator3D({
           <div className="h-10 border-b border-slate-200 flex items-center justify-between px-4 bg-white font-mono text-[11px] shrink-0">
             <div className="flex gap-8 h-full">
               <button
-                className={`px-1 transition-all ${activeTab === '3d' ? 'text-emerald-600 border-b-2 border-emerald-600 font-bold' : 'text-slate-600 hover:text-emerald-600'}`}
+                className={`px-1 transition-all ${activeTab === '3d' ? 'text-mb-success border-b-2 border-mb-success font-bold' : 'text-slate-600 hover:text-mb-success'}`}
                 onClick={() => setActiveTab('3d')}
               >
                 3D Building View
               </button>
               <button
-                className={`px-1 transition-all ${activeTab === 'catalog' ? 'text-emerald-600 border-b-2 border-emerald-600 font-bold' : 'text-slate-600 hover:text-emerald-600'}`}
+                className={`px-1 transition-all ${activeTab === 'catalog' ? 'text-mb-success border-b-2 border-mb-success font-bold' : 'text-slate-600 hover:text-mb-success'}`}
                 onClick={() => setActiveTab('catalog')}
               >
                 Inventory Reference
               </button>
               <button
-                className={`px-1 transition-all ${activeTab === 'review' ? 'text-emerald-600 border-b-2 border-emerald-600 font-bold' : 'text-slate-600 hover:text-emerald-600'}`}
+                className={`px-1 transition-all ${activeTab === 'review' ? 'text-mb-success border-b-2 border-mb-success font-bold' : 'text-slate-600 hover:text-mb-success'}`}
                 onClick={() => setActiveTab('review')}
               >
                 Job Review
@@ -538,7 +538,7 @@ export default function BuildingEstimator3D({
                 {/* HUD */}
                 <div className="absolute top-4 left-4 pointer-events-none">
                   <div className="bg-slate-900/90 text-white p-4 rounded-xl shadow-2xl border border-white/10 space-y-2 w-56">
-                    <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest font-mono">
+                    <div className="text-[10px] font-black text-mb-success uppercase tracking-widest font-mono">
                       Structural Resolution
                     </div>
                     <div className="space-y-1 font-mono text-[11px] opacity-90">
@@ -546,13 +546,13 @@ export default function BuildingEstimator3D({
                         <span>Posts:</span>
                         <span className="font-bold text-white uppercase">6x6 S4S</span>
                       </div>
-                      <div className="flex justify-between gap-12 text-emerald-400">
+                      <div className="flex justify-between gap-12 text-mb-success">
                         <span>Fascia:</span>
                         <span className="font-bold uppercase tracking-tighter italic">Purlin Capped</span>
                       </div>
                       <div className="flex justify-between gap-12">
                         <span>Openings:</span>
-                        <span className="font-bold text-amber-400">{state.openings.length}</span>
+                        <span className="font-bold text-mb-yellow">{state.openings.length}</span>
                       </div>
                     </div>
                   </div>
@@ -564,7 +564,7 @@ export default function BuildingEstimator3D({
                     onClick={() => setVisibility(prev => ({ ...prev, shell: !prev.shell }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.shell
-                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        ? 'bg-mb-success text-white border-green-700'
                         : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
                     }`}
                   >
@@ -574,7 +574,7 @@ export default function BuildingEstimator3D({
                     onClick={() => setVisibility(prev => ({ ...prev, frame: !prev.frame }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.frame
-                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        ? 'bg-mb-success text-white border-green-700'
                         : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
                     }`}
                   >
@@ -584,7 +584,7 @@ export default function BuildingEstimator3D({
                     onClick={() => setVisibility(prev => ({ ...prev, roof: !prev.roof }))}
                     className={`px-5 py-2 text-[10px] font-bold rounded-xl uppercase transition-all shadow-sm border ${
                       visibility.roof
-                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        ? 'bg-mb-success text-white border-green-700'
                         : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
                     }`}
                   >
@@ -598,7 +598,7 @@ export default function BuildingEstimator3D({
             {activeTab === 'catalog' && (
               <div className="absolute inset-0 w-full h-full bg-slate-50 p-8 overflow-y-auto">
                 <div className="max-w-6xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                  <h2 className="text-sm font-black text-slate-800 uppercase mb-4 font-mono underline decoration-emerald-500 underline-offset-8">
+                  <h2 className="text-sm font-black text-slate-800 uppercase mb-4 font-mono underline decoration-mb-success underline-offset-8">
                     Master Material Database
                   </h2>
                   <table className="w-full">
@@ -613,7 +613,7 @@ export default function BuildingEstimator3D({
                     <tbody>
                       {Object.entries(CATALOG).map(([key, item]) => (
                         <tr key={key} className="hover:bg-slate-50 transition-colors border-b border-slate-50">
-                          <td className="px-4 py-3 text-[11px] text-emerald-600 font-bold font-mono">{item.sku}</td>
+                          <td className="px-4 py-3 text-[11px] text-mb-blue font-bold font-mono">{item.sku}</td>
                           <td className="px-4 py-3 text-[11px] text-slate-700 font-mono">{item.desc}</td>
                           <td className="px-4 py-3 text-right text-[11px] text-slate-800 font-bold font-mono">
                             ${('priceEA' in item ? item.priceEA : item.priceLF * 16).toFixed(2)}
@@ -631,7 +631,7 @@ export default function BuildingEstimator3D({
             {activeTab === 'review' && (
               <div className="absolute inset-0 w-full h-full bg-slate-50 p-8 overflow-y-auto">
                 <div className="max-w-5xl mx-auto space-y-6">
-                  <div className="bg-emerald-700 p-8 rounded-2xl shadow-xl text-white flex justify-between items-center overflow-hidden relative">
+                  <div className="bg-mb-success p-8 rounded-2xl shadow-xl text-white flex justify-between items-center overflow-hidden relative">
                     <div className="z-10 text-left">
                       <div className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">
                         Assigned Project Total
@@ -643,7 +643,7 @@ export default function BuildingEstimator3D({
                     <div className="text-right font-mono italic text-[11px] opacity-80 uppercase tracking-widest leading-none z-10">
                       Capped-Fascia<br />BIM Synthesis
                     </div>
-                    <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-emerald-500 rounded-full opacity-20 blur-3xl"></div>
+                    <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-green-500 rounded-full opacity-20 blur-3xl"></div>
                   </div>
 
                   <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
@@ -670,7 +670,7 @@ export default function BuildingEstimator3D({
                                 <div className="text-[9px] opacity-60 font-mono">{line.sku}</div>
                               </td>
                               <td className="px-4 py-3 text-center font-bold text-[11px]">{line.qty} EA</td>
-                              <td className="px-4 py-3 text-right text-emerald-700 font-bold text-[11px]">
+                              <td className="px-4 py-3 text-right text-mb-success font-bold text-[11px]">
                                 ${sub.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
                             </tr>
@@ -720,12 +720,12 @@ export default function BuildingEstimator3D({
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-[10px] font-bold text-emerald-600 uppercase italic">Pitch</Label>
+              <Label className="text-[10px] font-bold text-mb-blue uppercase italic">Pitch</Label>
               <Input
                 type="number"
                 value={state.pitch}
                 onChange={(e) => setState(prev => ({ ...prev, pitch: parseFloat(e.target.value) || 0 }))}
-                className="w-24 text-right font-bold text-emerald-700 border-emerald-100 bg-emerald-50/20"
+                className="w-24 text-right font-bold text-mb-blue border-blue-100 bg-blue-50/20"
               />
             </div>
           </div>
@@ -733,7 +733,7 @@ export default function BuildingEstimator3D({
           <div className="p-4 bg-slate-50 border-b border-slate-200 shrink-0">
             <h2 className="text-xs font-black text-slate-700 uppercase tracking-widest flex justify-between items-center italic">
               <span>Add Windows</span>
-              <span className="text-emerald-600 text-lg leading-none">&#65291;</span>
+              <span className="text-mb-success text-lg leading-none">&#65291;</span>
             </h2>
           </div>
 
@@ -797,7 +797,7 @@ export default function BuildingEstimator3D({
             </div>
             <Button
               onClick={addWindow}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 text-[10px] font-bold uppercase tracking-widest w-full shadow-sm"
+              className="bg-mb-success hover:bg-green-500 text-white py-2 text-[10px] font-bold uppercase tracking-widest w-full shadow-sm"
             >
               Add to Model
             </Button>
@@ -823,11 +823,11 @@ export default function BuildingEstimator3D({
             <ul className="space-y-2 text-[10px] opacity-80">
               <li className="flex justify-between">
                 <span>Structural Posts:</span>
-                <span className="text-emerald-400 font-bold">{numPosts}</span>
+                <span className="text-mb-yellow font-bold">{numPosts}</span>
               </li>
               <li className="flex justify-between">
                 <span>Lumber Piece Tally:</span>
-                <span className="text-emerald-400 font-bold">{lumberPieces + numPosts}</span>
+                <span className="text-mb-yellow font-bold">{lumberPieces + numPosts}</span>
               </li>
             </ul>
           </div>

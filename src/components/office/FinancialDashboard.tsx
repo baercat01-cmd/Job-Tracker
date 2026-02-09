@@ -216,7 +216,7 @@ export function FinancialDashboard() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-mb-success border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading financial data...</p>
         </div>
       </div>
@@ -248,7 +248,7 @@ export function FinancialDashboard() {
                 <CardTitle className="text-sm font-medium text-gray-600">Total Revenue (Quoted)</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-2xl font-bold text-mb-success">
                   ${totalQuotedRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">{jobBudgets.length} jobs</p>
@@ -260,7 +260,7 @@ export function FinancialDashboard() {
                 <CardTitle className="text-sm font-medium text-gray-600">Total Overhead</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-orange-600">
+                <div className="text-2xl font-bold text-mb-warning">
                   ${totalOverhead.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">{overheadExpenses.length} expenses</p>
@@ -272,16 +272,16 @@ export function FinancialDashboard() {
                 <CardTitle className="text-sm font-medium text-gray-600">Estimated Profit</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold ${estimatedProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <div className={`text-2xl font-bold ${estimatedProfit >= 0 ? 'text-mb-success' : 'text-mb-error'}`}>
                   ${estimatedProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="flex items-center gap-1 mt-1">
                   {profitMargin >= 0 ? (
-                    <TrendingUp className="w-4 h-4 text-green-600" />
+                    <TrendingUp className="w-4 h-4 text-mb-success" />
                   ) : (
-                    <TrendingDown className="w-4 h-4 text-red-600" />
+                    <TrendingDown className="w-4 h-4 text-mb-error" />
                   )}
-                  <span className={`text-xs ${profitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <span className={`text-xs ${profitMargin >= 0 ? 'text-mb-success' : 'text-mb-error'}`}>
                     {profitMargin.toFixed(1)}% margin
                   </span>
                 </div>
@@ -293,7 +293,7 @@ export function FinancialDashboard() {
                 <CardTitle className="text-sm font-medium text-gray-600">Budget Alerts</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-2xl font-bold text-mb-error">
                   {jobsOverBudget.length}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">Jobs over budget</p>
@@ -305,7 +305,7 @@ export function FinancialDashboard() {
           {jobsOverBudget.length > 0 && (
             <Card className="border-red-200 bg-red-50">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-red-700">
+                <CardTitle className="flex items-center gap-2 text-mb-error">
                   <AlertCircle className="w-5 h-5" />
                   Jobs Over Budget
                 </CardTitle>
@@ -335,10 +335,10 @@ export function FinancialDashboard() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold text-red-600">
+                          <div className="font-bold text-mb-error">
                             +${variance.toFixed(2)}
                           </div>
-                          <div className="text-xs text-red-600">
+                          <div className="text-xs text-mb-error">
                             {variancePercent.toFixed(1)}% over
                           </div>
                         </div>
@@ -356,7 +356,7 @@ export function FinancialDashboard() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Building2 className="w-6 h-6 text-orange-600" />
+                    <Building2 className="w-6 h-6 text-mb-warning" />
                   </div>
                   <div>
                     <div className="font-semibold text-gray-900">Manage Overhead</div>
@@ -370,7 +370,7 @@ export function FinancialDashboard() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Briefcase className="w-6 h-6 text-blue-600" />
+                    <Briefcase className="w-6 h-6 text-mb-blue" />
                   </div>
                   <div>
                     <div className="font-semibold text-gray-900">Job Budgets</div>
@@ -384,7 +384,7 @@ export function FinancialDashboard() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-green-600" />
+                    <FileText className="w-6 h-6 text-mb-success" />
                   </div>
                   <div>
                     <div className="font-semibold text-gray-900">View Reports</div>
