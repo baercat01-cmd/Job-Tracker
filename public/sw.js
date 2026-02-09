@@ -1,8 +1,8 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'v50-data-master';
-const CACHE_NAME = `martin-builder-${CACHE_VERSION}`;
+const CACHE_VERSION = 'force-v100';
+const CACHE_NAME = `martin-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
 const CDN_CACHE = `martin-cdn-${CACHE_VERSION}`;
@@ -132,7 +132,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CRITICAL: Stale-While-Revalidate for Supabase API (Material Database)
+  // BRUTE FORCE: CACHE-FIRST for Supabase API (Material Database)
+  // ZERO network wait - return cached data IMMEDIATELY
   if (url.hostname.includes('supabase.co')) {
     // Only cache GET requests (read operations)
     if (request.method !== 'GET') {
@@ -142,29 +143,38 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.open(DATA_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
-          // STALE-WHILE-REVALIDATE: Return cached data immediately
-          const fetchPromise = fetch(request).then((networkResponse) => {
-            // Update cache with fresh data in background
+          // CACHE-FIRST: Return cached data INSTANTLY (0ms wait)
+          if (cachedResponse) {
+            console.log('[Martin OS SW] ⚡ INSTANT CACHE HIT - 0 bars = 0 wait:', url.pathname);
+            
+            // Background update (fire and forget)
+            fetch(request).then((networkResponse) => {
+              if (networkResponse && networkResponse.status === 200) {
+                console.log('[Martin OS SW] ✓ Background update complete:', url.pathname);
+                cache.put(request, networkResponse.clone());
+              }
+            }).catch(() => {
+              console.log('[Martin OS SW] ⚠ Background update failed (offline) - cached data already served');
+            });
+            
+            return cachedResponse; // Return immediately
+          }
+
+          // No cached data - first-time fetch only
+          console.log('[Martin OS SW] ⬇ First-time fetch (will cache for next time):', url.pathname);
+          return fetch(request).then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              console.log('[Martin OS SW] ✓ Updated data cache:', url.pathname);
+              console.log('[Martin OS SW] ✓ Cached for offline use:', url.pathname);
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
           }).catch((err) => {
-            console.warn('[Martin OS SW] ⚠ Network failed, using cached data:', err);
-            // Network failed - cached response is already being returned
-            return cachedResponse;
+            console.error('[Martin OS SW] ✗ Network failed and no cache available:', err);
+            return new Response('Offline - data not yet cached', { 
+              status: 503,
+              statusText: 'Service Unavailable'
+            });
           });
-
-          // Return cached response immediately if available
-          if (cachedResponse) {
-            console.log('[Martin OS SW] ⚡ Instant load from cache (updating in background):', url.pathname);
-            return cachedResponse;
-          }
-
-          // No cached data - wait for network
-          console.log('[Martin OS SW] ⬇ First-time fetch for data:', url.pathname);
-          return fetchPromise;
         });
       })
     );
@@ -349,4 +359,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - HARDENED DATA ENGINE ready');
+console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - BRUTE FORCE CACHE-FIRST ENGINE ACTIVE');
