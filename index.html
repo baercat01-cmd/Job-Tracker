@@ -22,10 +22,12 @@
         let deferredPrompt;
         let validationTimer;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        let installAttempts = 0;
 
         const logStatus = (msg, isError = false) => {
             const el = document.getElementById('pwa-status-box');
             if (el) el.innerHTML += `<div class="${isError ? 'text-red-500' : 'text-emerald-500'}">• ${msg}</div>`;
+            console.log('[PWA]', msg);
         };
 
         // Check if files exist on server
@@ -89,6 +91,7 @@
 
         // Capture Install Prompt
         window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('[PWA] beforeinstallprompt event fired');
             e.preventDefault();
             deferredPrompt = e;
             if (validationTimer) clearInterval(validationTimer);
@@ -96,7 +99,10 @@
             
             // Make install button pulse
             const btn = document.getElementById('install-btn-trigger');
-            if (btn) btn.classList.add('animate-pulse');
+            if (btn) {
+                btn.classList.add('animate-pulse');
+                btn.textContent = 'Install Now';
+            }
         });
 
         window.addEventListener('appinstalled', () => {
@@ -130,27 +136,53 @@
 
     <script>
         document.getElementById('install-btn-trigger')?.addEventListener('click', async () => {
+            installAttempts++;
+            console.log('[PWA] Install button clicked. Attempt #' + installAttempts);
+            console.log('[PWA] deferredPrompt exists:', !!deferredPrompt);
+            
             if (deferredPrompt) {
-                // Chrome validated - proceed with install
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    document.getElementById('pwa-top-banner').style.display = 'none';
-                    logStatus('✅ Installed!');
-                } else {
-                    logStatus('⚠ Install cancelled', true);
+                try {
+                    console.log('[PWA] Calling deferredPrompt.prompt()');
+                    logStatus('Opening install dialog...');
+                    
+                    // Call prompt and wait for it to return
+                    await deferredPrompt.prompt();
+                    
+                    console.log('[PWA] Waiting for user choice...');
+                    const choiceResult = await deferredPrompt.userChoice;
+                    console.log('[PWA] User choice:', choiceResult.outcome);
+                    
+                    if (choiceResult.outcome === 'accepted') {
+                        document.getElementById('pwa-top-banner').style.display = 'none';
+                        logStatus('✅ Installed!');
+                    } else {
+                        logStatus('⚠ Install cancelled', true);
+                        showFallbackInstructions();
+                    }
+                    deferredPrompt = null;
+                } catch (error) {
+                    console.error('[PWA] Error during install prompt:', error);
+                    logStatus('❌ Install failed: ' + error.message, true);
+                    showFallbackInstructions();
                 }
-                deferredPrompt = null;
             } else {
-                // Chrome hasn't validated yet - provide fallback instructions
-                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                if (isIOS) {
-                    alert("iOS Installation:\n\n1. Tap the 'Share' button (square with arrow)\n2. Scroll down and tap 'Add to Home Screen'\n3. Tap 'Add' in the top right");
-                } else {
-                    alert("Chrome is still validating the app.\n\nFallback Option:\n1. Tap the Chrome menu (⋮) in the top right\n2. Tap 'Install app' or 'Add to Home screen'\n\nOR wait for the status box to show '✅ Ready to Install!' and try again.");
-                }
+                console.log('[PWA] No deferredPrompt available, showing fallback');
+                showFallbackInstructions();
             }
         });
+        
+        function showFallbackInstructions() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const isAndroid = /Android/.test(navigator.userAgent);
+            
+            if (isIOS) {
+                alert("📱 iOS Installation Instructions:\n\n1. Tap the Share button (⬆️ square with arrow)\n2. Scroll down and find 'Add to Home Screen'\n3. Tap 'Add to Home Screen'\n4. Tap 'Add' in the top right corner\n\n✅ The app icon will appear on your home screen!");
+            } else if (isAndroid) {
+                alert("📱 Android Installation Instructions:\n\nMethod 1 (Recommended):\n1. Tap the Chrome menu (⋮) in the top right\n2. Tap 'Install app' or 'Add to Home screen'\n3. Tap 'Install' when prompted\n\nMethod 2:\n1. Tap 'Add Martin OS to Home screen' in the address bar\n2. Confirm installation\n\n✅ The app will install to your device!");
+            } else {
+                alert("To install this app:\n\n1. Open this site in Chrome (mobile or desktop)\n2. Look for 'Install' in the address bar or browser menu\n3. Click Install\n\nOR\n\nUse your browser's 'Add to Home Screen' feature.");
+            }
+        }
     </script>
 
     <script type="module" src="/src/main.tsx"></script>
