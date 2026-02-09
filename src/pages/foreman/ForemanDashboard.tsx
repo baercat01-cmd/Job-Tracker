@@ -32,6 +32,7 @@ import { JobSchedule } from '@/components/office/JobSchedule';
 import { JobGanttChart } from '@/components/office/JobGanttChart';
 import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
 
 type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'schedule';
@@ -735,6 +736,9 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           </Button>
         </div>
       </nav>
+
+      {/* PWA Install Button */}
+      <PWAInstallButton />
     </div>
   );
 }

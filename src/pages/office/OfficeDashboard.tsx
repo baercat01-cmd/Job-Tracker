@@ -33,6 +33,7 @@ import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -656,6 +657,9 @@ export function OfficeDashboard() {
           </div>
         )}
       </main>
+
+      {/* PWA Install Button */}
+      <PWAInstallButton />
     </div>
   );
 }

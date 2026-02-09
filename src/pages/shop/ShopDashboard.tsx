@@ -11,6 +11,7 @@ import { MasterCalendar } from '@/components/office/MasterCalendar';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import type { Job } from '@/types';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
 export function ShopDashboard() {
   const { profile, clearUser } = useAuth();
@@ -204,6 +205,9 @@ export function ShopDashboard() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* PWA Install Button */}
+      <PWAInstallButton />
     </div>
   );
 }
