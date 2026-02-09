@@ -846,19 +846,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="space-y-3 sm:space-y-4 w-full max-w-full overflow-x-hidden">
-      {/* Fixed top section - Search and Add Custom button stick to top for easy keyboard access */}
+      {/* Fixed top section - Add Custom and Search stick to top, optimized for mobile */}
       <div className="sticky top-0 z-10 bg-white pb-3 space-y-3 border-b-2 border-slate-200">
-        <div className="relative">
-          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search materials..."
-            value={catalogSearch}
-            onChange={(e) => setCatalogSearch(e.target.value)}
-            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
-            autoFocus
-          />
-        </div>
-        
         <Button
           onClick={() => setShowCustomMaterialDialog(true)}
           variant="outline"
@@ -867,6 +856,16 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           <Plus className="w-5 h-5 mr-2" />
           Add Custom Material
         </Button>
+        
+        <div className="relative">
+          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search materials..."
+            value={catalogSearch}
+            onChange={(e) => setCatalogSearch(e.target.value)}
+            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
+          />
+        </div>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
