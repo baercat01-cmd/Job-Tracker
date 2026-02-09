@@ -1,4 +1,4 @@
-const CACHE = 'martin-v305';
+const CACHE = 'martin-v306';
 const ASSETS = ['/', '/index.html', '/manifest.json', '/martin-logo.png', 'https://cdn.tailwindcss.com'];
 
 self.addEventListener('install', (e) => {

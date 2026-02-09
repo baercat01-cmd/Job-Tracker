@@ -20,6 +20,7 @@
     </style>
     <script>
         let deferredPrompt;
+        let validationTimer;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
         const logStatus = (msg, isError = false) => {
@@ -39,27 +40,69 @@
             }
         }
 
-        // SW Registration with Force Activation
+        // SW Registration with Better Lifecycle Tracking
         if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            navigator.serviceWorker.register('/sw.js?v=305')
+            navigator.serviceWorker.register('/sw.js?v=306')
                 .then(reg => {
                     logStatus('SW: Registered ✓');
-                    reg.update(); 
-                    if (reg.active) logStatus('SW: Active ✓');
+                    reg.update();
+                    
+                    // Wait for SW to activate
+                    if (reg.active) {
+                        logStatus('SW: Active ✓');
+                    } else if (reg.installing) {
+                        reg.installing.addEventListener('statechange', function() {
+                            if (this.state === 'activated') {
+                                logStatus('SW: Active ✓');
+                            }
+                        });
+                    } else if (reg.waiting) {
+                        logStatus('SW: Active ✓');
+                    }
+                    
+                    // Start validation timer
+                    startValidationTimer();
                 })
                 .catch(err => logStatus('SW Error: ' + err.message, true));
+        }
+
+        // Chrome Validation Timer
+        function startValidationTimer() {
+            let seconds = 0;
+            logStatus('Chrome: Validating...');
+            
+            validationTimer = setInterval(() => {
+                seconds++;
+                if (seconds === 10 && !deferredPrompt) {
+                    logStatus('Chrome: Still validating (10s)...');
+                }
+                if (seconds === 30 && !deferredPrompt) {
+                    logStatus('Chrome: Still validating (30s)...');
+                }
+                if (seconds > 60 && !deferredPrompt) {
+                    clearInterval(validationTimer);
+                    logStatus('⚠ Chrome validation timeout', true);
+                    logStatus('Use Chrome Menu (⋮) > Install');
+                }
+            }, 1000);
         }
 
         // Capture Install Prompt
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            logStatus('Chrome: Ready to Install ✓');
+            if (validationTimer) clearInterval(validationTimer);
+            logStatus('✅ Ready to Install!');
+            
+            // Make install button pulse
+            const btn = document.getElementById('install-btn-trigger');
+            if (btn) btn.classList.add('animate-pulse');
         });
 
         window.addEventListener('appinstalled', () => {
             document.getElementById('pwa-top-banner').style.display = 'none';
             deferredPrompt = null;
+            console.log('PWA installed successfully');
         });
 
         window.onload = () => {
@@ -88,16 +131,23 @@
     <script>
         document.getElementById('install-btn-trigger')?.addEventListener('click', async () => {
             if (deferredPrompt) {
+                // Chrome validated - proceed with install
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') document.getElementById('pwa-top-banner').style.display = 'none';
+                if (outcome === 'accepted') {
+                    document.getElementById('pwa-top-banner').style.display = 'none';
+                    logStatus('✅ Installed!');
+                } else {
+                    logStatus('⚠ Install cancelled', true);
+                }
                 deferredPrompt = null;
             } else {
+                // Chrome hasn't validated yet - provide fallback instructions
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
                 if (isIOS) {
-                    alert("iOS: Tap 'Share' > 'Add to Home Screen'");
+                    alert("iOS Installation:\n\n1. Tap the 'Share' button (square with arrow)\n2. Scroll down and tap 'Add to Home Screen'\n3. Tap 'Add' in the top right");
                 } else {
-                    alert("Validation Pending: Chrome requires all status checks to be GREEN before installing. Please wait 10 seconds or refresh the page.");
+                    alert("Chrome is still validating the app.\n\nFallback Option:\n1. Tap the Chrome menu (⋮) in the top right\n2. Tap 'Install app' or 'Add to Home screen'\n\nOR wait for the status box to show '✅ Ready to Install!' and try again.");
                 }
             }
         });
