@@ -12,19 +12,13 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
@@ -39,7 +33,7 @@
       "url": "/office?tab=jobs",
       "icons": [
         {
-          "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -52,7 +46,7 @@
       "url": "/building-estimator",
       "icons": [
         {
-          "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -65,7 +59,7 @@
       "url": "/office?tab=financials",
       "icons": [
         {
-          "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
           "sizes": "192x192",
           "type": "image/png"
         }
