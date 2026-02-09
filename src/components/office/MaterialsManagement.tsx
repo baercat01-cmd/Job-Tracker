@@ -1681,7 +1681,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       <div ref={containerRef} className="w-full -mx-2">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-            <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm">
+            <div className="flex items-center gap-2 w-full">
+              <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm flex-1">
               <TabsTrigger 
                 value="manage" 
                 className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
@@ -1715,7 +1716,17 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 <DollarSign className="w-5 h-5" />
                 <span className="text-xs sm:text-base">Extras</span>
               </TabsTrigger>
-            </TabsList>
+              </TabsList>
+              <Button
+                onClick={exportMaterialsToCSV}
+                variant="default"
+                size="lg"
+                className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold shadow-lg h-14 px-6 flex-shrink-0"
+              >
+                <Download className="w-5 h-5 mr-2" />
+                Export CSV
+              </Button>
+            </div>
           </div>
 
           <TabsContent value="manage" className="space-y-2">
