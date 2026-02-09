@@ -12,59 +12,75 @@
     <link rel="apple-touch-icon" href="/martin-logo.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Only show the banner on mobile screens */
+        @media (min-width: 768px) {
+            #pwa-top-banner { display: none !important; }
+        }
+    </style>
     <script>
         let deferredPrompt;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-        // 1. Status Logger
         const logStatus = (msg, isError = false) => {
             const el = document.getElementById('pwa-status-box');
             if (el) el.innerHTML += `<div class="${isError ? 'text-red-500' : 'text-emerald-500'}">• ${msg}</div>`;
         };
 
-        // 2. Critical File Check
         async function checkFiles() {
             const files = ['/manifest.json', '/sw.js', '/martin-logo.png'];
             for (const f of files) {
                 try {
                     const r = await fetch(f, { method: 'HEAD' });
                     if (r.ok) logStatus(`${f} Found ✓`);
-                    else logStatus(`${f} NOT FOUND (404) ✗`, true);
-                } catch (e) { logStatus(`${f} Unreachable`, true); }
+                    else logStatus(`${f} 404 ✗`, true);
+                } catch (e) { logStatus(`${f} Error`, true); }
             }
         }
 
-        // 3. SW Registration
+        // SW Registration
         if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            navigator.serviceWorker.register('/sw.js?v=303')
-                .then(() => logStatus('Service Worker: Active ✓'))
+            navigator.serviceWorker.register('/sw.js?v=304')
+                .then(reg => {
+                    logStatus('SW: Active ✓');
+                    reg.update(); // Force update
+                })
                 .catch(err => logStatus('SW Error: ' + err.message, true));
         }
 
+        // Capture Install Prompt
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            logStatus('PWA: Ready to Install ✓');
+            logStatus('PWA: Ready ✓');
+            // Show banner ONLY if on mobile and not already installed
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            if (isMobile && !isStandalone) {
+                document.getElementById('pwa-top-banner').style.display = 'flex';
+            }
+        });
+
+        // Hide banner immediately after successful installation
+        window.addEventListener('appinstalled', () => {
+            document.getElementById('pwa-top-banner').style.display = 'none';
+            deferredPrompt = null;
+            console.log('PWA was installed');
         });
 
         window.onload = () => {
-            if (!isStandalone) {
-                document.getElementById('pwa-top-banner').style.display = 'flex';
-                checkFiles();
-            }
+            checkFiles();
         };
     </script>
 </head>
 <body class="bg-slate-50">
+    <!-- Mobile-Only Banner -->
     <div id="pwa-top-banner" style="display:none;" class="bg-[#4179bc] text-white p-3 flex justify-between items-center sticky top-0 z-[100] shadow-md">
         <div class="flex items-center gap-2">
             <img src="/martin-logo.png" class="w-8 h-8 rounded-lg" alt="Logo">
-            <div id="pwa-status-box" class="text-[8px] font-mono leading-tight bg-black/20 p-1 rounded min-w-[120px]">
-                <!-- Status logs appear here -->
-            </div>
+            <div id="pwa-status-box" class="text-[7px] font-mono leading-tight bg-black/20 p-1 rounded min-w-[100px]"></div>
         </div>
-        <button id="install-btn-trigger" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-lg">
-            Install App
+        <button id="install-btn-trigger" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter">
+            Install
         </button>
     </div>
 
@@ -75,14 +91,16 @@
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') document.getElementById('pwa-top-banner').style.display = 'none';
+                if (outcome === 'accepted') {
+                    document.getElementById('pwa-top-banner').style.display = 'none';
+                }
                 deferredPrompt = null;
             } else {
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
                 if (isIOS) {
-                    alert("To install on iPhone: Tap 'Share' (square with arrow), then scroll down and tap 'Add to Home Screen'.");
+                    alert("iOS: Tap 'Share' > 'Add to Home Screen'");
                 } else {
-                    alert("Chrome hasn't validated the files yet. Ensure the status box shows 'Found ✓' for all files, then try again or use Chrome Menu (⋮) > Install app.");
+                    alert("Validating... If the status box shows Green, please refresh once more.");
                 }
             }
         });
