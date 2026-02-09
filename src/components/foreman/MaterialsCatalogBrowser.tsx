@@ -846,33 +846,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
-      {/* Fixed top section - Add Custom and Search fixed to screen top */}
+      {/* Fixed top section - Category tabs, Add Custom, and Search fixed to screen top */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4">
-        <Button
-          onClick={() => setShowCustomMaterialDialog(true)}
-          variant="outline"
-          className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add Custom Material
-        </Button>
-        
-        <div className="relative">
-          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search materials..."
-            value={catalogSearch}
-            onChange={(e) => setCatalogSearch(e.target.value)}
-            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
-          />
-        </div>
-      </div>
-
-      {/* Spacer to push content below fixed header */}
-      <div className="h-[180px] sm:h-[156px]"></div>
-
-      {/* Rest of content with padding */}
-      <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
+        {/* Category Filter Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
           <Button
             variant={catalogCategory === null ? "default" : "outline"}
@@ -902,6 +878,32 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </Button>
           ))}
         </div>
+
+        <Button
+          onClick={() => setShowCustomMaterialDialog(true)}
+          variant="outline"
+          className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Add Custom Material
+        </Button>
+        
+        <div className="relative">
+          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search materials..."
+            value={catalogSearch}
+            onChange={(e) => setCatalogSearch(e.target.value)}
+            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
+          />
+        </div>
+      </div>
+
+      {/* Spacer to push content below fixed header */}
+      <div className="h-[240px] sm:h-[212px]"></div>
+
+      {/* Rest of content with padding */}
+      <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
 
         {catalogSearch && catalogLoading ? (
           <Card>
