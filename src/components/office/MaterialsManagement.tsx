@@ -100,6 +100,7 @@ interface Material {
   extra_notes?: string | null;
   bundle_name?: string;
   order_index?: number;
+  priority?: 'immediate' | 'high' | 'medium' | 'low';
 }
 
 interface Category {
@@ -515,6 +516,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialColor, setMaterialColor] = useState('');
   const [materialUseCase, setMaterialUseCase] = useState('');
   const [materialStatus, setMaterialStatus] = useState('not_ordered');
+  const [materialPriority, setMaterialPriority] = useState('medium');
+
+  const PRIORITY_OPTIONS = [
+    { value: 'immediate', label: 'Immediate', color: 'bg-red-600 text-white border-red-700' },
+    { value: 'high', label: 'High', color: 'bg-orange-500 text-white border-orange-600' },
+    { value: 'medium', label: 'Medium', color: 'bg-yellow-500 text-white border-yellow-600' },
+    { value: 'low', label: 'Low', color: 'bg-green-500 text-white border-green-600' },
+  ];
   const [materialPhotos, setMaterialPhotos] = useState<File[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<any[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -1104,6 +1113,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialColor('');
     setMaterialUseCase('');
     setMaterialStatus('not_ordered');
+    setMaterialPriority('medium');
     setMaterialPhotos([]);
     setExistingPhotos([]);
     setShowMaterialModal(true);
@@ -1118,6 +1128,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setMaterialColor(material.color || '');
     setMaterialUseCase((material as any).use_case || '');
     setMaterialStatus(material.status);
+    setMaterialPriority(material.priority || 'medium');
     setMaterialPhotos([]);
     
     // Load existing photos
@@ -1164,6 +1175,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             color: materialColor.trim() || null,
             use_case: materialUseCase.trim() || null,
             status: materialStatus,
+            priority: materialPriority,
             updated_at: new Date().toISOString(),
           })
           .eq('id', editingMaterial.id);
@@ -1194,6 +1206,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             color: materialColor.trim() || null,
             use_case: materialUseCase.trim() || null,
             status: materialStatus,
+            priority: materialPriority,
             created_by: userId,
             import_source: 'manual',
             order_index: nextOrderIndex,
@@ -2273,22 +2286,43 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="material-status">Status</Label>
-              <Select value={materialStatus} onValueChange={setMaterialStatus}>
-                <SelectTrigger id="material-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
-                        {opt.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="material-status">Status</Label>
+                <Select value={materialStatus} onValueChange={setMaterialStatus}>
+                  <SelectTrigger id="material-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                          {opt.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="material-priority">Priority (Shop)</Label>
+                <Select value={materialPriority} onValueChange={setMaterialPriority}>
+                  <SelectTrigger id="material-priority" className={PRIORITY_OPTIONS.find(p => p.value === materialPriority)?.color}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${opt.color}`}>
+                          {opt.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Priority for shop to pull this material</p>
+              </div>
             </div>
 
             {/* Photo Upload */}

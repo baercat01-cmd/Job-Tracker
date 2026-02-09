@@ -28,6 +28,7 @@ interface Material {
   job_id: string;
   category_id: string;
   pull_by_date?: string | null;
+  priority?: 'immediate' | 'high' | 'medium' | 'low';
   job?: {
     id: string;
     name: string;
@@ -56,6 +57,25 @@ const STATUS_OPTIONS = [
 
 function getStatusColor(status: string) {
   return STATUS_OPTIONS.find(s => s.value === status)?.color || 'bg-gray-100 text-gray-700 border-gray-300';
+}
+
+const PRIORITY_OPTIONS = [
+  { value: 'immediate', label: 'Immediate', color: 'bg-red-600 text-white border-red-700', sortOrder: 1 },
+  { value: 'high', label: 'High', color: 'bg-orange-500 text-white border-orange-600', sortOrder: 2 },
+  { value: 'medium', label: 'Medium', color: 'bg-yellow-500 text-white border-yellow-600', sortOrder: 3 },
+  { value: 'low', label: 'Low', color: 'bg-green-500 text-white border-green-600', sortOrder: 4 },
+];
+
+function getPriorityColor(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.color || 'bg-gray-100 text-gray-700 border-gray-300';
+}
+
+function getPriorityLabel(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.label || priority;
+}
+
+function getPrioritySortOrder(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.sortOrder || 999;
 }
 
 export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterialsDialogProps) {
@@ -141,7 +161,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   const totalAtShop = materialsAtShop.length;
   const totalReadyToPull = materialsReadyToPull.length;
 
-  // Group materials by job
+  // Group materials by job and sort by priority
   function groupMaterialsByJob(materials: Material[]): Map<string, { job: any; materials: Material[] }> {
     const grouped = new Map<string, { job: any; materials: Material[] }>();
     
@@ -156,6 +176,16 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
         });
       }
       grouped.get(jobId)!.materials.push(material);
+    });
+    
+    // Sort materials within each job by priority
+    grouped.forEach(group => {
+      group.materials.sort((a, b) => {
+        const priorityA = getPrioritySortOrder(a.priority || 'medium');
+        const priorityB = getPrioritySortOrder(b.priority || 'medium');
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return a.name.localeCompare(b.name);
+      });
     });
     
     return grouped;
@@ -226,8 +256,11 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-purple-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-3 px-3">
                                 <div className="flex items-center gap-3">
-                                  {/* Left side: Category badge and pull by date */}
+                                  {/* Left side: Priority, category badge and pull by date */}
                                   <div className="flex flex-col gap-1 flex-shrink-0">
+                                    <Badge className={`text-xs font-bold whitespace-nowrap ${getPriorityColor(material.priority || 'medium')}`}>
+                                      {getPriorityLabel(material.priority || 'medium')}
+                                    </Badge>
                                     <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
@@ -320,8 +353,11 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-blue-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-3 px-3">
                                 <div className="flex items-center gap-3">
-                                  {/* Left side: Category badge and pull by date */}
+                                  {/* Left side: Priority, category badge and pull by date */}
                                   <div className="flex flex-col gap-1 flex-shrink-0">
+                                    <Badge className={`text-xs font-bold whitespace-nowrap ${getPriorityColor(material.priority || 'medium')}`}>
+                                      {getPriorityLabel(material.priority || 'medium')}
+                                    </Badge>
                                     <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
