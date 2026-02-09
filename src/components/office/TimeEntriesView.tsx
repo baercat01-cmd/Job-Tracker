@@ -226,16 +226,23 @@ export function TimeEntriesView() {
 
   // Group entries by different criteria
   const groupedByJob = entries.reduce((acc, entry) => {
-    const jobId = entry.jobs?.id || 'unknown';
-    if (!acc[jobId]) {
-      acc[jobId] = {
-        job: entry.jobs,
+    const miscJobName = getMiscJobName(entry);
+    // For misc jobs, group by custom job name instead of job_id
+    const groupKey = miscJobName ? `misc_${miscJobName}` : (entry.jobs?.id || 'unknown');
+    
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        job: miscJobName ? { 
+          ...entry.jobs, 
+          name: miscJobName,
+          isMiscJob: true 
+        } : entry.jobs,
         entries: [],
         totalManHours: 0,
       };
     }
-    acc[jobId].entries.push(entry);
-    acc[jobId].totalManHours += (entry.total_hours || 0) * (entry.crew_count || 1);
+    acc[groupKey].entries.push(entry);
+    acc[groupKey].totalManHours += (entry.total_hours || 0) * (entry.crew_count || 1);
     return acc;
   }, {} as Record<string, any>);
 
