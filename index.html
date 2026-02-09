@@ -27,23 +27,25 @@
             if (el) el.innerHTML += `<div class="${isError ? 'text-red-500' : 'text-emerald-500'}">• ${msg}</div>`;
         };
 
+        // Check if files exist on server
         async function checkFiles() {
             const files = ['/manifest.json', '/sw.js', '/martin-logo.png'];
             for (const f of files) {
                 try {
                     const r = await fetch(f, { method: 'HEAD' });
-                    if (r.ok) logStatus(`${f} Found ✓`);
-                    else logStatus(`${f} 404 ✗`, true);
-                } catch (e) { logStatus(`${f} Error`, true); }
+                    if (r.ok) logStatus(`${f.replace('/','')} Found ✓`);
+                    else logStatus(`${f.replace('/','')} 404 ✗`, true);
+                } catch (e) { logStatus(`${f.replace('/','')} Error`, true); }
             }
         }
 
-        // SW Registration
+        // SW Registration with Force Activation
         if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            navigator.serviceWorker.register('/sw.js?v=304')
+            navigator.serviceWorker.register('/sw.js?v=305')
                 .then(reg => {
-                    logStatus('SW: Active ✓');
-                    reg.update(); // Force update
+                    logStatus('SW: Registered ✓');
+                    reg.update(); 
+                    if (reg.active) logStatus('SW: Active ✓');
                 })
                 .catch(err => logStatus('SW Error: ' + err.message, true));
         }
@@ -52,22 +54,19 @@
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            logStatus('PWA: Ready ✓');
-            // Show banner ONLY if on mobile and not already installed
+            logStatus('Chrome: Ready to Install ✓');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            document.getElementById('pwa-top-banner').style.display = 'none';
+            deferredPrompt = null;
+        });
+
+        window.onload = () => {
             const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
             if (isMobile && !isStandalone) {
                 document.getElementById('pwa-top-banner').style.display = 'flex';
             }
-        });
-
-        // Hide banner immediately after successful installation
-        window.addEventListener('appinstalled', () => {
-            document.getElementById('pwa-top-banner').style.display = 'none';
-            deferredPrompt = null;
-            console.log('PWA was installed');
-        });
-
-        window.onload = () => {
             checkFiles();
         };
     </script>
@@ -91,16 +90,14 @@
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    document.getElementById('pwa-top-banner').style.display = 'none';
-                }
+                if (outcome === 'accepted') document.getElementById('pwa-top-banner').style.display = 'none';
                 deferredPrompt = null;
             } else {
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
                 if (isIOS) {
                     alert("iOS: Tap 'Share' > 'Add to Home Screen'");
                 } else {
-                    alert("Validating... If the status box shows Green, please refresh once more.");
+                    alert("Validation Pending: Chrome requires all status checks to be GREEN before installing. Please wait 10 seconds or refresh the page.");
                 }
             }
         });
