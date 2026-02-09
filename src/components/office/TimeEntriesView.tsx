@@ -326,16 +326,34 @@ export function TimeEntriesView() {
         return notesData.notes;
       }
     } catch (e) {
-      // Not JSON, return as-is
-      return entry.notes;
+      // Not JSON, regular notes
     }
     return null;
+  }
+
+  function getRegularNotes(entry: any): string | null {
+    if (!entry.notes) return null;
+    
+    try {
+      const notesData = JSON.parse(entry.notes);
+      // If it's a misc job, don't show it as regular notes (already shown separately)
+      if (notesData.type === 'misc_job') {
+        return null;
+      }
+    } catch (e) {
+      // Not JSON, return as regular notes
+      return entry.notes;
+    }
+    
+    // If we get here, it's JSON but not a misc_job, treat as regular notes
+    return entry.notes;
   }
 
   function renderEntry(entry: any) {
     const miscJobName = getMiscJobName(entry);
     const miscJobAddress = getMiscJobAddress(entry);
     const miscJobNotes = getMiscJobNotes(entry);
+    const regularNotes = getRegularNotes(entry);
     const isMiscJob = miscJobName !== null;
 
     return (
@@ -392,10 +410,11 @@ export function TimeEntriesView() {
             </div>
           </div>
         )}
-        {miscJobNotes && (
+        {/* Show notes - either misc job notes or regular notes */}
+        {(miscJobNotes || regularNotes) && (
           <div className="pt-2 border-t">
             <p className="text-xs font-medium text-muted-foreground mb-1">Notes:</p>
-            <p className="text-sm">{miscJobNotes}</p>
+            <p className="text-sm">{miscJobNotes || regularNotes}</p>
           </div>
         )}
       </div>
