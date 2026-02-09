@@ -114,13 +114,24 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
         .lte('due_date', todayStr)
         .neq('status', 'completed')
         .neq('task_type', 'field')
-        .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold'])
-        .order('due_date', { ascending: true })
-        .order('priority', { ascending: false });
+        .in('jobs.status', ['active', 'prepping', 'quoting', 'on_hold']);
 
       if (tasksError) throw tasksError;
 
-      const filteredTasks = tasksData || [];
+      // Sort tasks: high priority first, then by due date
+      const priorityOrder = { 'high': 1, 'urgent': 1, 'medium': 2, 'low': 3 };
+      const filteredTasks = (tasksData || []).sort((a, b) => {
+        const priorityA = priorityOrder[a.priority as keyof typeof priorityOrder] || 99;
+        const priorityB = priorityOrder[b.priority as keyof typeof priorityOrder] || 99;
+        
+        // First, sort by priority (high priority first)
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        // If same priority, sort by due date (overdue first)
+        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+      });
 
       // Load calendar events for today that are not completed from active/quoting/on hold jobs
       // Exclude 'task' type events since those are already shown from job_tasks table
