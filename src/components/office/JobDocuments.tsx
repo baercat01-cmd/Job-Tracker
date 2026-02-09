@@ -55,6 +55,7 @@ interface JobDocument {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  latest_file_url?: string;
 }
 
 interface DocumentRevision {
@@ -161,7 +162,25 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
-      setDocuments(data || []);
+
+      // Fetch latest revision URL for each document
+      const documentsWithUrls = await Promise.all(
+        (data || []).map(async (doc: any) => {
+          const { data: latestRevision } = await supabase
+            .from('job_document_revisions')
+            .select('file_url')
+            .eq('document_id', doc.id)
+            .eq('version_number', doc.current_version)
+            .single();
+
+          return {
+            ...doc,
+            latest_file_url: latestRevision?.file_url || null,
+          };
+        })
+      );
+
+      setDocuments(documentsWithUrls);
     } catch (error: any) {
       console.error('Error loading documents:', error);
       toast.error('Failed to load documents');
@@ -492,6 +511,23 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {doc.latest_file_url && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        asChild
+                      >
+                        <a 
+                          href={doc.latest_file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1"
+                        >
+                          <FileText className="w-4 h-4" />
+                          View
+                        </a>
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
