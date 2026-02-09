@@ -1366,7 +1366,210 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       </Dialog>
 
       {/* Add Material from Catalog Dialog - Mobile Optimized */}
-      {/* (Dialog content continues unchanged - truncated for brevity) */}
+      <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              {selectedCatalogMaterial?.material_name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCatalogMaterial && (
+            <div className="space-y-4">
+              {/* Material Variants - Pre-defined Lengths */}
+              {!showCustomLength && materialVariants.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <h3 className="font-semibold text-sm mb-3">Select Lengths & Quantities</h3>
+                    <div className="space-y-2">
+                      {materialVariants.map((variant) => (
+                        <div key={variant.sku} className="flex items-center gap-3 p-2 bg-white rounded border">
+                          <div className="flex-1">
+                            <div className="font-medium text-sm">{variant.length}</div>
+                            {variant.purchaseCost > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                ${variant.purchaseCost.toFixed(2)} each
+                              </div>
+                            )}
+                          </div>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={selectedVariants.get(variant.sku) || 0}
+                            onChange={(e) => updateVariantQuantity(variant.sku, parseInt(e.target.value) || 0)}
+                            className="w-20 h-9 text-center"
+                            placeholder="0"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {getTotalVariantsCount() > 0 && (
+                      <div className="mt-3 pt-3 border-t space-y-1">
+                        <div className="flex justify-between text-sm font-semibold">
+                          <span>Total Pieces:</span>
+                          <span>{getTotalVariantsCount()}</span>
+                        </div>
+                        {getTotalVariantsCost() > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span>Estimated Cost:</span>
+                            <span className="font-semibold">${getTotalVariantsCost().toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : showCustomLength ? (
+                /* Custom Length Entry */
+                <div className="space-y-3">
+                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                    <h3 className="font-semibold text-sm mb-3">Add Custom Length Pieces</h3>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Feet</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={customLengthFeet}
+                          onChange={(e) => setCustomLengthFeet(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="0"
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Inches</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="11"
+                          value={customLengthInches}
+                          onChange={(e) => setCustomLengthInches(e.target.value === '' ? '' : Math.max(0, Math.min(11, parseFloat(e.target.value) || 0)))}
+                          placeholder="0"
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Qty</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={addMaterialQuantity}
+                          onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                          placeholder="1"
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={addPieceToList} size="sm" variant="outline" className="w-full">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add This Piece to Order
+                    </Button>
+                  </div>
+
+                  {/* Pieces List */}
+                  {materialPieces.length > 0 && (
+                    <div className="bg-white p-3 rounded-lg border">
+                      <h4 className="font-semibold text-sm mb-2">Pieces in Order:</h4>
+                      <div className="space-y-2">
+                        {materialPieces.map((piece, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">
+                                {piece.quantity}x @ {piece.displayLength}
+                              </div>
+                              {piece.costPerPiece > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  ${(piece.costPerPiece * piece.quantity).toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                            <Button
+                              onClick={() => removePiece(index)}
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t space-y-1">
+                        <div className="flex justify-between text-sm font-semibold">
+                          <span>Total Pieces:</span>
+                          <span>{getTotalPiecesCount()}</span>
+                        </div>
+                        {getTotalCost() > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span>Estimated Cost:</span>
+                            <span className="font-semibold">${getTotalCost().toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Simple Quantity (no pre-defined length and not custom) */
+                <div className="space-y-2">
+                  <Label>Quantity *</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={addMaterialQuantity}
+                    onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                    placeholder="1"
+                    className="h-10"
+                  />
+                </div>
+              )}
+
+              {/* Optional Fields */}
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="material-color">Color (optional)</Label>
+                  <Input
+                    id="material-color"
+                    value={addMaterialColor}
+                    onChange={(e) => setAddMaterialColor(e.target.value)}
+                    placeholder="e.g., Charcoal"
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="material-notes">Notes (optional)</Label>
+                  <Textarea
+                    id="material-notes"
+                    value={addMaterialNotes}
+                    onChange={(e) => setAddMaterialNotes(e.target.value)}
+                    placeholder="Any additional details..."
+                    rows={3}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4">
+                <Button
+                  onClick={addMaterialToJob}
+                  disabled={addingMaterial}
+                  className="flex-1"
+                >
+                  {addingMaterial ? 'Adding...' : 'Send to Office'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddMaterialDialog(false)}
+                  disabled={addingMaterial}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
