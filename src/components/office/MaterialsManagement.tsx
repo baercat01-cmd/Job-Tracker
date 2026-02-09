@@ -92,6 +92,12 @@ interface Material {
   pickup_date?: string | null;
   actual_pickup_date?: string | null;
   delivery_method?: 'pickup' | 'delivery' | null;
+  delivery_vendor?: string | null;
+  pickup_vendor?: string | null;
+  unit_cost?: number | null;
+  total_cost?: number | null;
+  is_extra?: boolean;
+  extra_notes?: string | null;
   bundle_name?: string;
   order_index?: number;
 }
@@ -1435,8 +1441,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     return [selectedCategory];
   };
 
-  const filteredCategories = getDisplayCategories();
-
   // CSV Export Function
   async function exportMaterialsToCSV() {
     try {
@@ -1657,8 +1661,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       importMaterialsFromCSV(file);
     }
   }
-
-  const filteredCategories = getDisplayCategories();
 
   const activeDragItem = activeDragId
     ? categories
