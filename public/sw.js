@@ -1,11 +1,12 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'martin-v11-logo-fix';
+const CACHE_VERSION = 'martin-v15-offline-data-master';
 const CACHE_NAME = `martin-builder-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
 const CDN_CACHE = 'martin-cdn-cache';
+const DATA_CACHE = 'martin-data-cache'; // For Supabase API responses
 
 // Core assets to cache immediately for offline field use
 const STATIC_CACHE_URLS = [
@@ -64,7 +65,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   console.log('[Martin OS SW] Activating v' + CACHE_VERSION);
   
-  const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE, CDN_CACHE];
+  const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE, CDN_CACHE, DATA_CACHE];
   
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -131,8 +132,42 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip Supabase API calls (they'll be handled by IndexedDB)
+  // CRITICAL: Stale-While-Revalidate for Supabase API (Material Database)
   if (url.hostname.includes('supabase.co')) {
+    // Only cache GET requests (read operations)
+    if (request.method !== 'GET') {
+      return; // Let mutations go through network
+    }
+
+    event.respondWith(
+      caches.open(DATA_CACHE).then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          // STALE-WHILE-REVALIDATE: Return cached data immediately
+          const fetchPromise = fetch(request).then((networkResponse) => {
+            // Update cache with fresh data in background
+            if (networkResponse && networkResponse.status === 200) {
+              console.log('[Martin OS SW] ✓ Updated data cache:', url.pathname);
+              cache.put(request, networkResponse.clone());
+            }
+            return networkResponse;
+          }).catch((err) => {
+            console.warn('[Martin OS SW] ⚠ Network failed, using cached data:', err);
+            // Network failed - cached response is already being returned
+            return cachedResponse;
+          });
+
+          // Return cached response immediately if available
+          if (cachedResponse) {
+            console.log('[Martin OS SW] ⚡ Instant load from cache (updating in background):', url.pathname);
+            return cachedResponse;
+          }
+
+          // No cached data - wait for network
+          console.log('[Martin OS SW] ⬇ First-time fetch for data:', url.pathname);
+          return fetchPromise;
+        });
+      })
+    );
     return;
   }
 
