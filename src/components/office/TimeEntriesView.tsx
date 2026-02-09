@@ -281,7 +281,56 @@ export function TimeEntriesView() {
     return acc;
   }, {} as Record<string, any>);
 
+  // Helper to extract misc job details from notes
+  function getMiscJobName(entry: any): string | null {
+    if (!entry.notes) return null;
+    
+    try {
+      const notesData = JSON.parse(entry.notes);
+      if (notesData.type === 'misc_job' && notesData.jobName) {
+        return notesData.jobName;
+      }
+    } catch (e) {
+      // Not JSON, regular notes
+    }
+    return null;
+  }
+
+  function getMiscJobAddress(entry: any): string | null {
+    if (!entry.notes) return null;
+    
+    try {
+      const notesData = JSON.parse(entry.notes);
+      if (notesData.type === 'misc_job' && notesData.address) {
+        return notesData.address;
+      }
+    } catch (e) {
+      // Not JSON, regular notes
+    }
+    return null;
+  }
+
+  function getMiscJobNotes(entry: any): string | null {
+    if (!entry.notes) return null;
+    
+    try {
+      const notesData = JSON.parse(entry.notes);
+      if (notesData.type === 'misc_job' && notesData.notes) {
+        return notesData.notes;
+      }
+    } catch (e) {
+      // Not JSON, return as-is
+      return entry.notes;
+    }
+    return null;
+  }
+
   function renderEntry(entry: any) {
+    const miscJobName = getMiscJobName(entry);
+    const miscJobAddress = getMiscJobAddress(entry);
+    const miscJobNotes = getMiscJobNotes(entry);
+    const isMiscJob = miscJobName !== null;
+
     return (
       <div
         key={entry.id}
@@ -292,7 +341,8 @@ export function TimeEntriesView() {
             <div className="flex items-center gap-2 flex-wrap">
               {viewMode !== 'job' && entry.jobs && (
                 <span className="text-sm font-medium">
-                  {entry.jobs.name || entry.jobs.job_number} - {entry.jobs.client_name}
+                  {isMiscJob ? miscJobName : (entry.jobs.name || entry.jobs.job_number)}
+                  {!isMiscJob && entry.jobs.client_name && ` - ${entry.jobs.client_name}`}
                 </span>
               )}
               {viewMode !== 'component' && entry.components && (
@@ -302,6 +352,11 @@ export function TimeEntriesView() {
                 <Badge variant="outline" className="text-xs">Manual</Badge>
               )}
             </div>
+            {isMiscJob && miscJobAddress && (
+              <p className="text-xs text-muted-foreground">
+                📍 {miscJobAddress}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {formatDate(entry.start_time)} • {formatTime(entry.start_time)}
             </p>
@@ -329,10 +384,10 @@ export function TimeEntriesView() {
             </div>
           </div>
         )}
-        {entry.notes && (
+        {miscJobNotes && (
           <div className="pt-2 border-t">
             <p className="text-xs font-medium text-muted-foreground mb-1">Notes:</p>
-            <p className="text-sm">{entry.notes}</p>
+            <p className="text-sm">{miscJobNotes}</p>
           </div>
         )}
       </div>
