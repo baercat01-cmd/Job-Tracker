@@ -1,12 +1,12 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'martin-v15-offline-data-master';
+const CACHE_VERSION = 'v50-data-master';
 const CACHE_NAME = `martin-builder-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
-const CDN_CACHE = 'martin-cdn-cache';
-const DATA_CACHE = 'martin-data-cache'; // For Supabase API responses
+const CDN_CACHE = `martin-cdn-${CACHE_VERSION}`;
+const DATA_CACHE = `martin-data-${CACHE_VERSION}`; // For Supabase/Zoho API responses
 
 // Core assets to cache immediately for offline field use
 const STATIC_CACHE_URLS = [
@@ -349,4 +349,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - HARDENED offline mode ready');
+console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - HARDENED DATA ENGINE ready');
