@@ -1,12 +1,19 @@
 {
   "short_name": "Martin OS",
   "name": "Martin Builder Operations OS",
+  "id": "/?source=pwa",
   "icons": [
-    {
-      "src": "/martin-logo.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+    { 
+      "src": "/martin-logo.png", 
+      "sizes": "192x192", 
+      "type": "image/png", 
+      "purpose": "any maskable" 
+    },
+    { 
+      "src": "/martin-logo.png", 
+      "sizes": "512x512", 
+      "type": "image/png", 
+      "purpose": "any maskable" 
     }
   ],
   "start_url": "/",

@@ -22,15 +22,18 @@
             if (logEl) logEl.innerHTML += `<div>• ${msg}</div>`;
         };
 
-        // 1. Service Worker Registration
+        // 1. Service Worker Registration (Force Update)
         if ('serviceWorker' in navigator) {
             const isLocal = window.location.hostname === 'localhost';
             const isHttps = window.location.protocol === 'https:';
             const isBlob = window.location.href.startsWith('blob:');
 
             if ((isHttps || isLocal) && !isBlob) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(() => debugLog('SW: Registered & Active'))
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then((reg) => {
+                        debugLog('SW: Registered & Active');
+                        reg.update(); // Force check for updates
+                    })
                     .catch(err => debugLog('SW Error: ' + err.message));
             } else {
                 debugLog('SW: Blocked (Insecure or Preview Environment)');
@@ -42,7 +45,7 @@
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            debugLog('PWA: Install event detected!');
+            debugLog('PWA: Chrome detected install eligibility!');
             e.preventDefault();
             deferredPrompt = e;
             showInstallUI('android');
@@ -126,7 +129,7 @@
                 }
                 deferredPrompt = null;
             } else {
-                debugLog('Error: Browser blocked prompt event');
+                debugLog('Error: Chrome is still validating. Try refreshing or use the Chrome menu ⋮ > Install app.');
             }
         });
     </script>
