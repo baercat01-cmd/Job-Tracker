@@ -669,6 +669,13 @@ export function TimeEntriesView() {
         <TabsContent value="user" className="space-y-3 mt-6">
           {Object.entries(groupedByUser).map(([userId, group]: [string, any]) => {
             const isExpanded = expandedItems.has(userId);
+            const jobsWorked = Array.from(new Set(
+              group.entries.map((entry: any) => {
+                const miscJobName = getMiscJobName(entry);
+                return miscJobName || entry.jobs?.name || 'Unknown Job';
+              })
+            ));
+            
             return (
               <Collapsible
                 key={userId}
@@ -679,22 +686,29 @@ export function TimeEntriesView() {
                   <CollapsibleTrigger asChild>
                     <button className="w-full hover:bg-muted/50 transition-colors">
                       <div className="flex items-center justify-between p-4 bg-muted/30">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                            <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                           ) : (
-                            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                           )}
-                          <div className="text-left">
+                          <div className="text-left flex-1 min-w-0">
                             <h3 className="font-bold text-lg">
                               {group.user?.username || group.user?.email || 'Unknown User'}
                             </h3>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground mb-1">
                               {group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
                             </p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {jobsWorked.map((jobName, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs font-medium">
+                                  {jobName}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex-shrink-0 ml-4">
                           <p className="text-2xl font-bold text-primary">
                             {group.totalManHours.toFixed(2)}
                           </p>
