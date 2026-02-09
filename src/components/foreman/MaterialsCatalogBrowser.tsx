@@ -931,10 +931,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             <CardContent className="p-0 overflow-x-hidden">
               <div className="divide-y w-full max-w-full overflow-x-hidden">
                 {filteredCatalogMaterials.map(material => (
-                  <div
+                  <button
                     key={material.sku}
                     onClick={() => openAddMaterialDialog(material)}
-                    className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer"
+                    className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
                   >
                     <div className="flex-1 min-w-0 space-y-1">
                       <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">{material.material_name}</h4>
@@ -947,7 +947,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     <div className="flex-shrink-0 flex items-center text-primary">
                       <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </CardContent>
