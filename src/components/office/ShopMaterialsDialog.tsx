@@ -353,11 +353,8 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-blue-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-3 px-3">
                                 <div className="flex items-center gap-3">
-                                  {/* Left side: Priority, category badge and pull by date */}
+                                  {/* Left side: category badge and pull by date (NO PRIORITY for Ready for Job) */}
                                   <div className="flex flex-col gap-1 flex-shrink-0">
-                                    <Badge className={`text-xs font-bold whitespace-nowrap ${getPriorityColor(material.priority || 'medium')}`}>
-                                      {getPriorityLabel(material.priority || 'medium')}
-                                    </Badge>
                                     <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
