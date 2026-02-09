@@ -363,25 +363,39 @@ export function TimeEntriesView() {
       >
         <div className="flex items-start justify-between">
           <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Always show misc job name, or show job name if not in job view */}
-              {(isMiscJob || viewMode !== 'job') && entry.jobs && (
-                <span className="text-sm font-medium">
-                  {isMiscJob ? miscJobName : (entry.jobs.name || entry.jobs.job_number)}
-                  {!isMiscJob && entry.jobs.client_name && ` - ${entry.jobs.client_name}`}
-                </span>
-              )}
-              {viewMode !== 'component' && entry.components && (
-                <Badge variant="secondary">{entry.components.name}</Badge>
-              )}
-              {entry.is_manual && (
-                <Badge variant="outline" className="text-xs">Manual</Badge>
-              )}
-            </div>
-            {isMiscJob && miscJobAddress && (
-              <p className="text-xs text-muted-foreground">
-                📍 {miscJobAddress}
-              </p>
+            {/* Always show misc job name prominently, or regular job name */}
+            {isMiscJob ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-base font-bold text-primary">
+                    {miscJobName}
+                  </span>
+                  <Badge variant="default" className="text-xs">Misc Job</Badge>
+                  {entry.is_manual && (
+                    <Badge variant="outline" className="text-xs">Manual</Badge>
+                  )}
+                </div>
+                {miscJobAddress && (
+                  <p className="text-sm text-muted-foreground">
+                    📍 {miscJobAddress}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-wrap">
+                {viewMode !== 'job' && entry.jobs && (
+                  <span className="text-sm font-medium">
+                    {entry.jobs.name || entry.jobs.job_number}
+                    {entry.jobs.client_name && ` - ${entry.jobs.client_name}`}
+                  </span>
+                )}
+                {viewMode !== 'component' && entry.components && (
+                  <Badge variant="secondary">{entry.components.name}</Badge>
+                )}
+                {entry.is_manual && (
+                  <Badge variant="outline" className="text-xs">Manual</Badge>
+                )}
+              </div>
             )}
             <p className="text-sm text-muted-foreground">
               {formatDate(entry.start_time)} • {formatTime(entry.start_time)}
