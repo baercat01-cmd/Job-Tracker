@@ -161,6 +161,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     date: new Date().toISOString().split('T')[0],
     startTime: '06:00',
     endTime: '17:00',
+    isOvernightShift: false,
   });
   const [jobType, setJobType] = useState<'existing' | 'misc'>('existing');
   const [miscJobData, setMiscJobData] = useState({
@@ -170,6 +171,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     startTime: '06:00',
     endTime: '17:00',
     notes: '',
+    isOvernightShift: false,
   });
   const [miscJobsId, setMiscJobsId] = useState<string | null>(null);
   const [components, setComponents] = useState<Component[]>([]);
@@ -438,14 +440,24 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
 
-    // Calculate total hours using local time
+    // Calculate total hours - handle overnight shifts
     const [startHours, startMinutes] = manualData.startTime.split(':').map(Number);
     const [endHours, endMinutes] = manualData.endTime.split(':').map(Number);
     const startTotalMinutes = startHours * 60 + startMinutes;
-    const endTotalMinutes = endHours * 60 + endMinutes;
+    let endTotalMinutes = endHours * 60 + endMinutes;
     
+    // For overnight shifts, add 24 hours (1440 minutes) to end time
+    if (manualData.isOvernightShift) {
+      endTotalMinutes += 1440; // Add 24 hours in minutes
+    }
+    
+    // Validation: end must be after start (considering overnight)
     if (endTotalMinutes <= startTotalMinutes) {
-      toast.error('Clock out time must be after clock in time');
+      if (manualData.isOvernightShift) {
+        toast.error('Invalid overnight shift times');
+      } else {
+        toast.error('Clock out time must be after clock in time. Use "Overnight Shift" for shifts spanning two days.');
+      }
       return;
     }
     
@@ -470,7 +482,16 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
     try {
       const startDateTime = createUTCTimestamp(manualData.date, manualData.startTime);
-      const endDateTime = createUTCTimestamp(manualData.date, manualData.endTime);
+      
+      // For overnight shifts, end date is the next day
+      let endDate = manualData.date;
+      if (manualData.isOvernightShift) {
+        const nextDay = new Date(manualData.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        endDate = nextDay.toISOString().split('T')[0];
+      }
+      
+      const endDateTime = createUTCTimestamp(endDate, manualData.endTime);
 
       // Save job-level time entry
       const { error } = await supabase
@@ -530,6 +551,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
         date: new Date().toISOString().split('T')[0],
         startTime: '06:00',
         endTime: '17:00',
+        isOvernightShift: false,
       });
       setJobComponents([]);
       onSuccess?.();
@@ -565,14 +587,24 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
 
-    // Calculate total hours using local time
+    // Calculate total hours - handle overnight shifts
     const [startHours, startMinutes] = miscJobData.startTime.split(':').map(Number);
     const [endHours, endMinutes] = miscJobData.endTime.split(':').map(Number);
     const startTotalMinutes = startHours * 60 + startMinutes;
-    const endTotalMinutes = endHours * 60 + endMinutes;
+    let endTotalMinutes = endHours * 60 + endMinutes;
     
+    // For overnight shifts, add 24 hours (1440 minutes) to end time
+    if (miscJobData.isOvernightShift) {
+      endTotalMinutes += 1440; // Add 24 hours in minutes
+    }
+    
+    // Validation: end must be after start (considering overnight)
     if (endTotalMinutes <= startTotalMinutes) {
-      toast.error('Clock out time must be after clock in time');
+      if (miscJobData.isOvernightShift) {
+        toast.error('Invalid overnight shift times');
+      } else {
+        toast.error('Clock out time must be after clock in time. Use "Overnight Shift" for shifts spanning two days.');
+      }
       return;
     }
     
@@ -582,7 +614,16 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
     try {
       const startDateTime = createUTCTimestamp(miscJobData.date, miscJobData.startTime);
-      const endDateTime = createUTCTimestamp(miscJobData.date, miscJobData.endTime);
+      
+      // For overnight shifts, end date is the next day
+      let endDate = miscJobData.date;
+      if (miscJobData.isOvernightShift) {
+        const nextDay = new Date(miscJobData.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        endDate = nextDay.toISOString().split('T')[0];
+      }
+      
+      const endDateTime = createUTCTimestamp(endDate, miscJobData.endTime);
 
       // Create structured notes with job details
       const notesData = {
@@ -621,6 +662,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
         startTime: '06:00',
         endTime: '17:00',
         notes: '',
+        isOvernightShift: false,
       });
       onSuccess?.();
       onBack?.();
@@ -754,6 +796,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
               date: new Date().toISOString().split('T')[0],
               startTime: '06:00',
               endTime: '17:00',
+              isOvernightShift: false,
             });
             setMiscJobData({
               name: '',
@@ -762,6 +805,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
               startTime: '06:00',
               endTime: '17:00',
               notes: '',
+              isOvernightShift: false,
             });
             setJobComponents([]);
             onBack?.(); // Go back to jobs page
@@ -886,6 +930,26 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                       <Clock className="w-5 h-5 text-yellow-600" />
                       <span className="text-base font-bold text-yellow-600">Time Entry *</span>
                     </div>
+                    
+                    {/* Overnight Shift Checkbox */}
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 border-2 border-blue-300 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="overnight-shift"
+                        checked={manualData.isOvernightShift}
+                        onChange={(e) => setManualData({ ...manualData, isOvernightShift: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <Label htmlFor="overnight-shift" className="text-sm font-semibold text-blue-900 cursor-pointer">
+                        🌙 Overnight Shift (ends next day)
+                      </Label>
+                    </div>
+                    {manualData.isOvernightShift && (
+                      <div className="p-2 bg-blue-100 border border-blue-400 rounded text-xs text-blue-800">
+                        ℹ️ Clock out time will be recorded as the next day ({new Date(new Date(manualData.date).getTime() + 86400000).toLocaleDateString()})
+                      </div>
+                    )}
+                    
                     <TimeDropdownPicker
                       label="Clock In Time"
                       value={manualData.startTime}
@@ -1054,6 +1118,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                         date: new Date().toISOString().split('T')[0],
                         startTime: '06:00',
                         endTime: '17:00',
+                        isOvernightShift: false,
                       });
                       setJobComponents([]);
                       onBack?.();
@@ -1148,6 +1213,26 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                     <Clock className="w-5 h-5 text-yellow-600" />
                     <span className="text-base font-bold text-yellow-600">Time Entry *</span>
                   </div>
+                  
+                  {/* Overnight Shift Checkbox */}
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border-2 border-blue-300 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="misc-overnight-shift"
+                      checked={miscJobData.isOvernightShift}
+                      onChange={(e) => setMiscJobData({ ...miscJobData, isOvernightShift: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <Label htmlFor="misc-overnight-shift" className="text-sm font-semibold text-blue-900 cursor-pointer">
+                      🌙 Overnight Shift (ends next day)
+                    </Label>
+                  </div>
+                  {miscJobData.isOvernightShift && (
+                    <div className="p-2 bg-blue-100 border border-blue-400 rounded text-xs text-blue-800">
+                      ℹ️ Clock out time will be recorded as the next day ({new Date(new Date(miscJobData.date).getTime() + 86400000).toLocaleDateString()})
+                    </div>
+                  )}
+                  
                   <TimeDropdownPicker
                     label="Clock In Time"
                     value={miscJobData.startTime}
@@ -1186,6 +1271,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
                         startTime: '06:00',
                         endTime: '17:00',
                         notes: '',
+                        isOvernightShift: false,
                       });
                       onBack?.();
                     }}
