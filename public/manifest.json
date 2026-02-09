@@ -1,7 +1,7 @@
 {
   "name": "Martin Builder Operations OS",
   "short_name": "Martin OS",
-  "description": "Martin Builder's comprehensive construction management platform with PWA capabilities",
+  "description": "Martin Builder's comprehensive construction management platform with robust offline capabilities",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

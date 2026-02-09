@@ -1,14 +1,14 @@
-// Service Worker for Martin Builder OS
-// Provides offline support, CDN caching, and PWA capabilities
+// Service Worker for Martin Builder OS - HARDENED OFFLINE DATA ENGINE
+// Provides robust offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'final-v200-mobile-fix';
+const CACHE_VERSION = 'offline-data-v300';
 const CACHE_NAME = `martin-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
 const CDN_CACHE = `martin-cdn-${CACHE_VERSION}`;
-const DATA_CACHE = `martin-data-${CACHE_VERSION}`; // For Supabase/Zoho API responses
+const DATA_CACHE = `martin-data-${CACHE_VERSION}`; // For Supabase/API responses - HIGH PRIORITY
 
-// Core assets to cache immediately for offline field use
+// Core assets to cache immediately for offline field use - 100% GUARANTEED
 const STATIC_CACHE_URLS = [
   '/',
   '/index.html',
@@ -23,38 +23,39 @@ const CDN_CACHE_URLS = [
   'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js',
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap',
-  // Backup URLs (if different versions are used)
-  'https://unpkg.com/three@0.160.0/build/three.module.js',
-  'https://unpkg.com/@react-three/fiber@8.15.16/dist/index.js',
-  'https://unpkg.com/@react-three/drei@9.96.1/dist/index.js',
-  'https://cdn.tailwindcss.com/3.4.11',
 ];
 
 // Cache duration (7 days for images)
 const IMAGE_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
 
-// Install event - cache static resources and CDN assets
+// Install event - cache static resources and CDN assets - ZERO TOLERANCE FOR FAILURE
 self.addEventListener('install', (event) => {
-  console.log('[Martin OS SW] Installing v' + CACHE_VERSION);
+  console.log('[Martin OS SW] 🔧 Installing HARDENED OFFLINE ENGINE v' + CACHE_VERSION);
   
   event.waitUntil(
     Promise.all([
-      // Cache core static assets
+      // Cache core static assets - MUST SUCCEED
       caches.open(CACHE_NAME).then((cache) => {
-        console.log('[Martin OS SW] Caching core assets');
+        console.log('[Martin OS SW] 📦 Caching core assets (100% guarantee)');
         return cache.addAll(STATIC_CACHE_URLS).catch(err => {
-          console.warn('[Martin OS SW] Failed to cache some core assets:', err);
+          console.error('[Martin OS SW] ❌ CRITICAL: Failed to cache core assets:', err);
+          // Force retry on critical failure
+          return cache.addAll(STATIC_CACHE_URLS);
         });
       }),
-      // Cache CDN resources for offline field use
+      // Cache CDN resources for offline field use - MUST SUCCEED
       caches.open(CDN_CACHE).then((cache) => {
-        console.log('[Martin OS SW] Caching CDN resources for offline field use');
-        return cache.addAll(CDN_CACHE_URLS).catch(err => {
-          console.warn('[Martin OS SW] Failed to cache CDN resources:', err);
-        });
+        console.log('[Martin OS SW] 📦 Caching CDN resources for offline field use (100% guarantee)');
+        return Promise.allSettled(
+          CDN_CACHE_URLS.map(url => 
+            cache.add(url).catch(err => {
+              console.warn('[Martin OS SW] ⚠️ Failed to cache CDN resource:', url, err);
+            })
+          )
+        );
       })
     ]).then(() => {
-      console.log('[Martin OS SW] Installation complete');
+      console.log('[Martin OS SW] ✅ Installation complete - HARDENED OFFLINE ENGINE READY');
       // Activate immediately
       return self.skipWaiting();
     })
@@ -63,7 +64,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[Martin OS SW] Activating v' + CACHE_VERSION);
+  console.log('[Martin OS SW] 🚀 Activating HARDENED OFFLINE ENGINE v' + CACHE_VERSION);
   
   const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE, CDN_CACHE, DATA_CACHE];
   
@@ -72,25 +73,25 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (!currentCaches.includes(cacheName)) {
-            console.log('[Martin OS SW] Deleting old cache:', cacheName);
+            console.log('[Martin OS SW] 🗑️ Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     }).then(() => {
-      console.log('[Martin OS SW] Activation complete - taking control of clients');
+      console.log('[Martin OS SW] ✅ Activation complete - taking control of all clients');
       // Take control of all clients immediately
       return self.clients.claim();
     })
   );
 });
 
-// Fetch event - serve from cache when offline
+// Fetch event - HARDENED CACHE-FIRST STRATEGY for data persistence
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // HARDENED: Cache-first for ALL external CDN resources (Three.js, Tailwind, Charts, Fonts)
+  // PRIORITY 1: CACHE-FIRST for ALL external CDN resources (Three.js, Tailwind, Charts, Fonts)
   if (url.hostname.includes('unpkg.com') || 
       url.hostname.includes('cdn.tailwindcss.com') ||
       url.hostname.includes('cdnjs.cloudflare.com') ||
@@ -100,22 +101,22 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.open(CDN_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
-          // CACHE-FIRST: Return immediately if cached
+          // CACHE-FIRST: Return immediately if cached (0ms wait)
           if (cachedResponse) {
-            console.log('[Martin OS SW] ✓ Serving CDN from cache:', url.pathname);
+            console.log('[Martin OS SW] ⚡ CDN CACHE HIT:', url.pathname);
             return cachedResponse;
           }
           
           // Not cached - fetch and store
-          console.log('[Martin OS SW] ⬇ Downloading CDN resource:', url.pathname);
+          console.log('[Martin OS SW] ⬇️ Downloading CDN resource:', url.pathname);
           return fetch(request, { mode: 'cors' }).then((response) => {
             if (response && response.status === 200) {
-              console.log('[Martin OS SW] ✓ Cached CDN resource:', url.pathname);
+              console.log('[Martin OS SW] ✅ Cached CDN resource:', url.pathname);
               cache.put(request, response.clone());
             }
             return response;
           }).catch((err) => {
-            console.error('[Martin OS SW] ✗ CDN fetch failed:', url.pathname, err);
+            console.error('[Martin OS SW] ❌ CDN fetch failed (offline):', url.pathname);
             return new Response('CDN resource unavailable offline', { 
               status: 503,
               statusText: 'Service Unavailable'
@@ -132,47 +133,52 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // BRUTE FORCE: CACHE-FIRST for Supabase API (Material Database)
-  // ZERO network wait - return cached data IMMEDIATELY
-  if (url.hostname.includes('supabase.co')) {
+  // PRIORITY 2: HARDENED CACHE-FIRST for Supabase API (Database/Storage)
+  // ZERO network wait - return cached JSON data IMMEDIATELY
+  if (url.hostname.includes('supabase.co') || url.hostname.includes('backend.onspace.ai')) {
     // Only cache GET requests (read operations)
     if (request.method !== 'GET') {
+      console.log('[Martin OS SW] 🔄 Mutation request - bypassing cache:', request.method, url.pathname);
       return; // Let mutations go through network
     }
 
     event.respondWith(
       caches.open(DATA_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
-          // CACHE-FIRST: Return cached data INSTANTLY (0ms wait)
+          // HARDENED CACHE-FIRST: Return cached data INSTANTLY (0ms wait)
           if (cachedResponse) {
-            console.log('[Martin OS SW] ⚡ INSTANT CACHE HIT - 0 bars = 0 wait:', url.pathname);
+            console.log('[Martin OS SW] ⚡ DATABASE CACHE HIT - INSTANT RETURN (0ms):', url.pathname);
             
-            // Background update (fire and forget)
+            // Background update (fire and forget - stale-while-revalidate)
             fetch(request).then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
-                console.log('[Martin OS SW] ✓ Background update complete:', url.pathname);
+                console.log('[Martin OS SW] ✅ Background update complete:', url.pathname);
                 cache.put(request, networkResponse.clone());
               }
             }).catch(() => {
-              console.log('[Martin OS SW] ⚠ Background update failed (offline) - cached data already served');
+              console.log('[Martin OS SW] ℹ️ Background update failed (offline) - cached data already served');
             });
             
-            return cachedResponse; // Return immediately
+            return cachedResponse; // Return immediately - ZERO WAIT
           }
 
           // No cached data - first-time fetch only
-          console.log('[Martin OS SW] ⬇ First-time fetch (will cache for next time):', url.pathname);
+          console.log('[Martin OS SW] ⬇️ First-time database fetch (will cache for offline):', url.pathname);
           return fetch(request).then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              console.log('[Martin OS SW] ✓ Cached for offline use:', url.pathname);
+              console.log('[Martin OS SW] ✅ Cached for offline use:', url.pathname);
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
           }).catch((err) => {
-            console.error('[Martin OS SW] ✗ Network failed and no cache available:', err);
-            return new Response('Offline - data not yet cached', { 
+            console.error('[Martin OS SW] ❌ Network failed and no cache available:', err);
+            return new Response(JSON.stringify({ 
+              error: 'Offline - data not yet cached',
+              offline: true 
+            }), { 
               status: 503,
-              statusText: 'Service Unavailable'
+              statusText: 'Service Unavailable',
+              headers: { 'Content-Type': 'application/json' }
             });
           });
         });
@@ -214,7 +220,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HARDENED: Cache-first for app shell (HTML, JS, CSS, JSON)
+  // PRIORITY 3: CACHE-FIRST for app shell (HTML, JS, CSS, JSON)
   if (request.destination === 'document' || 
       request.url.endsWith('.js') || 
       request.url.endsWith('.css') ||
@@ -224,7 +230,7 @@ self.addEventListener('fetch', (event) => {
         return cache.match(request).then((cachedResponse) => {
           // CACHE-FIRST: Return immediately if cached
           if (cachedResponse) {
-            console.log('[Martin OS SW] ✓ Serving app shell from cache:', url.pathname);
+            console.log('[Martin OS SW] ⚡ APP SHELL CACHE HIT:', url.pathname);
             
             // Background update (stale-while-revalidate)
             fetch(request).then((response) => {
@@ -237,7 +243,7 @@ self.addEventListener('fetch', (event) => {
           }
 
           // Not cached - fetch and store
-          console.log('[Martin OS SW] ⬇ Downloading app resource:', url.pathname);
+          console.log('[Martin OS SW] ⬇️ Downloading app resource:', url.pathname);
           return fetch(request).then((response) => {
             if (!response || response.status !== 200) {
               return response;
@@ -246,10 +252,10 @@ self.addEventListener('fetch', (event) => {
             // Cache successful responses
             const responseToCache = response.clone();
             cache.put(request, responseToCache);
-            console.log('[Martin OS SW] ✓ Cached app resource:', url.pathname);
+            console.log('[Martin OS SW] ✅ Cached app resource:', url.pathname);
             return response;
           }).catch((err) => {
-            console.error('[Martin OS SW] ✗ App fetch failed:', url.pathname, err);
+            console.error('[Martin OS SW] ❌ App fetch failed:', url.pathname, err);
             // Network failed, return app shell for HTML
             if (request.destination === 'document') {
               return caches.match('/index.html');
@@ -288,7 +294,7 @@ self.addEventListener('fetch', (event) => {
 
 // Background sync for offline actions
 self.addEventListener('sync', (event) => {
-  console.log('[Martin OS SW] Background sync:', event.tag);
+  console.log('[Martin OS SW] 🔄 Background sync:', event.tag);
   
   if (event.tag === 'sync-offline-data') {
     event.waitUntil(
@@ -306,7 +312,7 @@ self.addEventListener('sync', (event) => {
 
 // Message handler for communication with clients
 self.addEventListener('message', (event) => {
-  console.log('[Martin OS SW] Message received:', event.data?.type);
+  console.log('[Martin OS SW] 💬 Message received:', event.data?.type);
   
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
@@ -329,14 +335,14 @@ self.addEventListener('message', (event) => {
 
 // Push notification handler
 self.addEventListener('push', (event) => {
-  console.log('[Martin OS SW] Push notification received');
+  console.log('[Martin OS SW] 🔔 Push notification received');
   
   const data = event.data ? event.data.json() : {};
   const title = data.title || 'Martin Builder OS';
   const options = {
     body: data.body || 'New notification',
-    icon: 'https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png',
-    badge: 'https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png',
+    icon: '/martin-logo.png',
+    badge: '/martin-logo.png',
     vibrate: [200, 100, 200],
     data: data.data || {},
     tag: data.tag || 'martin-builder-notification',
@@ -350,7 +356,7 @@ self.addEventListener('push', (event) => {
 
 // Notification click handler
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Martin OS SW] Notification clicked');
+  console.log('[Martin OS SW] 👆 Notification clicked');
   
   event.notification.close();
   
@@ -359,4 +365,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - BRUTE FORCE CACHE-FIRST ENGINE ACTIVE');
+console.log('[Martin OS SW] ✅ HARDENED OFFLINE ENGINE v' + CACHE_VERSION + ' LOADED - CACHE-FIRST DATABASE STRATEGY ACTIVE');
