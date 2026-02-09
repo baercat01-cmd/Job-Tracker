@@ -339,7 +339,8 @@ export function TimeEntriesView() {
         <div className="flex items-start justify-between">
           <div className="flex-1 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              {viewMode !== 'job' && entry.jobs && (
+              {/* Always show misc job name, or show job name if not in job view */}
+              {(isMiscJob || viewMode !== 'job') && entry.jobs && (
                 <span className="text-sm font-medium">
                   {isMiscJob ? miscJobName : (entry.jobs.name || entry.jobs.job_number)}
                   {!isMiscJob && entry.jobs.client_name && ` - ${entry.jobs.client_name}`}
