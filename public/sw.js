@@ -1,7 +1,7 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'martin-os-v2.1.0';
+const CACHE_VERSION = 'martin-v10-offline-fix';
 const CACHE_NAME = `martin-builder-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
@@ -14,8 +14,14 @@ const STATIC_CACHE_URLS = [
   '/manifest.json',
 ];
 
-// Critical CDN resources for offline field use
+// Critical CDN resources for offline field use - HARDENED LIST
 const CDN_CACHE_URLS = [
+  'https://cdn.tailwindcss.com',
+  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js',
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap',
+  // Backup URLs (if different versions are used)
   'https://unpkg.com/three@0.160.0/build/three.module.js',
   'https://unpkg.com/@react-three/fiber@8.15.16/dist/index.js',
   'https://unpkg.com/@react-three/drei@9.96.1/dist/index.js',
@@ -82,24 +88,32 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Handle CDN resources with cache-first strategy for offline field use
-  if (url.hostname.includes('unpkg.com') || url.hostname.includes('cdn.tailwindcss.com')) {
+  // HARDENED: Cache-first for ALL external CDN resources (Three.js, Tailwind, Charts, Fonts)
+  if (url.hostname.includes('unpkg.com') || 
+      url.hostname.includes('cdn.tailwindcss.com') ||
+      url.hostname.includes('cdnjs.cloudflare.com') ||
+      url.hostname.includes('cdn.jsdelivr.net') ||
+      url.hostname.includes('fonts.googleapis.com') ||
+      url.hostname.includes('fonts.gstatic.com')) {
     event.respondWith(
       caches.open(CDN_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
+          // CACHE-FIRST: Return immediately if cached
           if (cachedResponse) {
-            console.log('[Martin OS SW] Serving CDN resource from cache:', url.pathname);
+            console.log('[Martin OS SW] ✓ Serving CDN from cache:', url.pathname);
             return cachedResponse;
           }
-          // Not in cache, fetch from network and cache
-          return fetch(request).then((response) => {
+          
+          // Not cached - fetch and store
+          console.log('[Martin OS SW] ⬇ Downloading CDN resource:', url.pathname);
+          return fetch(request, { mode: 'cors' }).then((response) => {
             if (response && response.status === 200) {
-              console.log('[Martin OS SW] Caching new CDN resource:', url.pathname);
+              console.log('[Martin OS SW] ✓ Cached CDN resource:', url.pathname);
               cache.put(request, response.clone());
             }
             return response;
-          }).catch(() => {
-            console.warn('[Martin OS SW] CDN resource unavailable offline:', url.pathname);
+          }).catch((err) => {
+            console.error('[Martin OS SW] ✗ CDN fetch failed:', url.pathname, err);
             return new Response('CDN resource unavailable offline', { 
               status: 503,
               statusText: 'Service Unavailable'
@@ -154,48 +168,50 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle HTML, JS, CSS with cache-first strategy for app shell
+  // HARDENED: Cache-first for app shell (HTML, JS, CSS, JSON)
   if (request.destination === 'document' || 
       request.url.endsWith('.js') || 
       request.url.endsWith('.css') ||
       request.url.endsWith('.json')) {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          // Return cached version immediately
-          // Update cache in background
-          fetch(request).then((response) => {
-            if (response && response.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => {
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          // CACHE-FIRST: Return immediately if cached
+          if (cachedResponse) {
+            console.log('[Martin OS SW] ✓ Serving app shell from cache:', url.pathname);
+            
+            // Background update (stale-while-revalidate)
+            fetch(request).then((response) => {
+              if (response && response.status === 200) {
                 cache.put(request, response);
-              });
+              }
+            }).catch(() => {});
+            
+            return cachedResponse;
+          }
+
+          // Not cached - fetch and store
+          console.log('[Martin OS SW] ⬇ Downloading app resource:', url.pathname);
+          return fetch(request).then((response) => {
+            if (!response || response.status !== 200) {
+              return response;
             }
-          }).catch(() => {});
-          
-          return cachedResponse;
-        }
 
-        // Not in cache, fetch from network
-        return fetch(request).then((response) => {
-          if (!response || response.status !== 200) {
-            return response;
-          }
-
-          // Cache successful responses
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
+            // Cache successful responses
+            const responseToCache = response.clone();
             cache.put(request, responseToCache);
-          });
-
-          return response;
-        }).catch(() => {
-          // Network failed, return app shell for HTML
-          if (request.destination === 'document') {
-            return caches.match('/index.html');
-          }
-          return new Response('Offline', { 
-            status: 503,
-            statusText: 'Service Unavailable'
+            console.log('[Martin OS SW] ✓ Cached app resource:', url.pathname);
+            return response;
+          }).catch((err) => {
+            console.error('[Martin OS SW] ✗ App fetch failed:', url.pathname, err);
+            // Network failed, return app shell for HTML
+            if (request.destination === 'document') {
+              return caches.match('/index.html');
+            }
+            return new Response('Offline', { 
+              status: 503,
+              statusText: 'Service Unavailable'
+            });
           });
         });
       })
@@ -297,4 +313,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('[Martin OS SW] Service Worker loaded - Ready for offline field use');
+console.log('[Martin OS SW] ✓ Service Worker v' + CACHE_VERSION + ' loaded - HARDENED offline mode ready');
