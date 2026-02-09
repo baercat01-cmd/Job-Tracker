@@ -67,8 +67,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
   const [estimatedLaborHours, setEstimatedLaborHours] = useState('');
   const [laborRate, setLaborRate] = useState('30');
   const [materialsBreakdown, setMaterialsBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
-  const [subcontractorBreakdown, setSubcontractorBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
-  const [equipmentBreakdown, setEquipmentBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
   const [otherCosts, setOtherCosts] = useState('');
   const [otherCostsNotes, setOtherCostsNotes] = useState('');
   const [quotedPrice, setQuotedPrice] = useState('');
@@ -132,8 +130,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
       setEstimatedLaborHours(budget.estimated_labor_hours?.toString() || '');
       setLaborRate(budget.labor_rate_per_hour?.toString() || '30');
       setMaterialsBreakdown(budget.materials_breakdown || []);
-      setSubcontractorBreakdown(budget.subcontractor_breakdown || []);
-      setEquipmentBreakdown(budget.equipment_breakdown || []);
       setOtherCosts(budget.other_costs?.toString() || '');
       setOtherCostsNotes(budget.other_costs_notes || '');
       setQuotedPrice(budget.total_quoted_price.toString());
@@ -151,8 +147,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     setEstimatedLaborHours('');
     setLaborRate('30');
     setMaterialsBreakdown([]);
-    setSubcontractorBreakdown([]);
-    setEquipmentBreakdown([]);
     setOtherCosts('');
     setOtherCostsNotes('');
     setQuotedPrice('');
@@ -179,42 +173,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     setMaterialsBreakdown(updated);
   };
 
-  const addSubcontractorItem = () => {
-    setSubcontractorBreakdown([...subcontractorBreakdown, { description: '', cost: 0 }]);
-  };
-
-  const removeSubcontractorItem = (index: number) => {
-    setSubcontractorBreakdown(subcontractorBreakdown.filter((_, i) => i !== index));
-  };
-
-  const updateSubcontractorItem = (index: number, field: 'description' | 'cost', value: string | number) => {
-    const updated = [...subcontractorBreakdown];
-    if (field === 'description') {
-      updated[index].description = value as string;
-    } else {
-      updated[index].cost = typeof value === 'string' ? parseFloat(value) || 0 : value;
-    }
-    setSubcontractorBreakdown(updated);
-  };
-
-  const addEquipmentItem = () => {
-    setEquipmentBreakdown([...equipmentBreakdown, { description: '', cost: 0 }]);
-  };
-
-  const removeEquipmentItem = (index: number) => {
-    setEquipmentBreakdown(equipmentBreakdown.filter((_, i) => i !== index));
-  };
-
-  const updateEquipmentItem = (index: number, field: 'description' | 'cost', value: string | number) => {
-    const updated = [...equipmentBreakdown];
-    if (field === 'description') {
-      updated[index].description = value as string;
-    } else {
-      updated[index].cost = typeof value === 'string' ? parseFloat(value) || 0 : value;
-    }
-    setEquipmentBreakdown(updated);
-  };
-
   async function saveBudget() {
     if (!selectedJobId || !quotedPrice) {
       toast.error('Please select a job and enter quoted price');
@@ -237,12 +195,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     const materialsTax = materialsSubtotal * 0.07; // 7% sales tax
     const materialsTotalWithTax = materialsSubtotal + materialsTax;
 
-    // Calculate subcontractors total (no tax)
-    const subcontractorsTotal = subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
-
-    // Calculate equipment total (no tax)
-    const equipmentTotal = equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
-
     try {
       const budgetData = {
         job_id: selectedJobId,
@@ -251,10 +203,10 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
         total_labor_budget: laborBudget || null,
         total_materials_budget: materialsTotalWithTax || null,
         materials_breakdown: materialsBreakdown,
-        total_subcontractor_budget: subcontractorsTotal || null,
-        subcontractor_breakdown: subcontractorBreakdown,
-        total_equipment_budget: equipmentTotal || null,
-        equipment_breakdown: equipmentBreakdown,
+        total_subcontractor_budget: null,
+        subcontractor_breakdown: [],
+        total_equipment_budget: null,
+        equipment_breakdown: [],
         other_costs: parseFloat(otherCosts) || null,
         other_costs_notes: otherCostsNotes || null,
         total_quoted_price: quotedNum,
@@ -330,12 +282,9 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     const materialsTax = materialsSubtotal * 0.07;
     const materials = materialsSubtotal + materialsTax;
     
-    // Subs and equipment without tax
-    const subs = subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
-    const equipment = equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
     const other = parseFloat(otherCosts) || 0;
     
-    return labor + materials + subs + equipment + other;
+    return labor + materials + other;
   };
 
   const calculateEstimatedProfit = () => {
@@ -394,8 +343,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
                   const totalCosts = 
                     (budget.total_labor_budget || 0) +
                     (budget.total_materials_budget || 0) +
-                    (budget.total_subcontractor_budget || 0) +
-                    (budget.total_equipment_budget || 0) +
                     (budget.other_costs || 0);
                   const profit = budget.total_quoted_price - totalCosts - (budget.overhead_allocation || 0);
                   const margin = budget.total_quoted_price > 0 
@@ -441,7 +388,7 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div className="grid grid-cols-2 gap-4 mb-4">
                         <div>
                           <div className="text-sm text-gray-600">Labor</div>
                           <div className="font-semibold text-gray-900">
@@ -455,18 +402,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
                           <div className="text-sm text-gray-600">Materials</div>
                           <div className="font-semibold text-gray-900">
                             ${(budget.total_materials_budget || 0).toFixed(2)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-gray-600">Subcontractors</div>
-                          <div className="font-semibold text-gray-900">
-                            ${(budget.total_subcontractor_budget || 0).toFixed(2)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-gray-600">Equipment</div>
-                          <div className="font-semibold text-gray-900">
-                            ${(budget.total_equipment_budget || 0).toFixed(2)}
                           </div>
                         </div>
                       </div>
@@ -621,116 +556,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
                     <span>Total with Tax:</span>
                     <span className="text-blue-600">
                       ${(materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0) * 1.07).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Subcontractors Budget - Column Layout */}
-            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Subcontractors Budget (No Tax)</h3>
-                <Button onClick={addSubcontractorItem} size="sm" variant="outline" type="button">
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Item
-                </Button>
-              </div>
-              {subcontractorBreakdown.length === 0 ? (
-                <p className="text-sm text-gray-600 text-center py-2">No subcontractors added yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {subcontractorBreakdown.map((item, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        placeholder="Description"
-                        value={item.description}
-                        onChange={(e) => updateSubcontractorItem(index, 'description', e.target.value)}
-                        className="flex-1"
-                      />
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Cost"
-                        value={item.cost || ''}
-                        onChange={(e) => updateSubcontractorItem(index, 'cost', e.target.value)}
-                        className="w-32"
-                      />
-                      <Button
-                        onClick={() => removeSubcontractorItem(index)}
-                        size="sm"
-                        variant="ghost"
-                        type="button"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {subcontractorBreakdown.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-purple-300">
-                  <div className="flex justify-between font-bold">
-                    <span>Total:</span>
-                    <span className="text-purple-600">
-                      ${subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Equipment Budget - Column Layout */}
-            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Equipment/Rental Budget (No Tax)</h3>
-                <Button onClick={addEquipmentItem} size="sm" variant="outline" type="button">
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Item
-                </Button>
-              </div>
-              {equipmentBreakdown.length === 0 ? (
-                <p className="text-sm text-gray-600 text-center py-2">No equipment added yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {equipmentBreakdown.map((item, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        placeholder="Description"
-                        value={item.description}
-                        onChange={(e) => updateEquipmentItem(index, 'description', e.target.value)}
-                        className="flex-1"
-                      />
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Cost"
-                        value={item.cost || ''}
-                        onChange={(e) => updateEquipmentItem(index, 'cost', e.target.value)}
-                        className="w-32"
-                      />
-                      <Button
-                        onClick={() => removeEquipmentItem(index)}
-                        size="sm"
-                        variant="ghost"
-                        type="button"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {equipmentBreakdown.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-orange-300">
-                  <div className="flex justify-between font-bold">
-                    <span>Total:</span>
-                    <span className="text-orange-600">
-                      ${equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}
                     </span>
                   </div>
                 </div>
