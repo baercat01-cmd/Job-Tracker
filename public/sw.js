@@ -1,7 +1,7 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'force-v100';
+const CACHE_VERSION = 'final-v200-mobile-fix';
 const CACHE_NAME = `martin-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;

@@ -24,6 +24,7 @@ interface Material {
   status: string;
   job_id: string;
   category_id: string;
+  priority?: 'immediate' | 'high' | 'medium' | 'low';
 }
 
 interface MaterialWithJob extends Material {
@@ -31,6 +32,25 @@ interface MaterialWithJob extends Material {
   client_name: string;
   category_name: string;
   job_status: string;
+}
+
+const PRIORITY_OPTIONS = [
+  { value: 'immediate', label: 'Immediate', color: 'bg-red-600 text-white border-red-700 animate-pulse', sortOrder: 1 },
+  { value: 'high', label: 'High', color: 'bg-orange-500 text-white border-orange-600', sortOrder: 2 },
+  { value: 'medium', label: 'Medium', color: 'bg-yellow-500 text-white border-yellow-600', sortOrder: 3 },
+  { value: 'low', label: 'Low', color: 'bg-green-500 text-white border-green-600', sortOrder: 4 },
+];
+
+function getPriorityColor(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.color || 'bg-gray-100 text-gray-700 border-gray-300';
+}
+
+function getPriorityLabel(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.label || priority;
+}
+
+function getPrioritySortOrder(priority: string) {
+  return PRIORITY_OPTIONS.find(p => p.value === priority)?.sortOrder || 999;
 }
 
 interface ShopMaterialsViewProps {
@@ -62,6 +82,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterJob, setFilterJob] = useState('all');
+  const [filterPriority, setFilterPriority] = useState('all');
   const [jobs, setJobs] = useState<any[]>([]);
 
   useEffect(() => {
@@ -142,6 +163,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         status: m.status,
         job_id: m.job_id,
         category_id: m.category_id,
+        priority: m.priority || 'medium',
         job_name: m.jobs.name,
         client_name: m.jobs.client_name,
         category_name: m.materials_categories.name,
@@ -191,8 +213,17 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       material.client_name.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesJob = filterJob === 'all' || material.job_id === filterJob;
+    const matchesPriority = filterPriority === 'all' || material.priority === filterPriority;
     
-    return matchesSearch && matchesJob;
+    return matchesSearch && matchesJob && matchesPriority;
+  }).sort((a, b) => {
+    // Sort by priority first (immediate > high > medium > low)
+    const priorityA = getPrioritySortOrder(a.priority || 'medium');
+    const priorityB = getPrioritySortOrder(b.priority || 'medium');
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    
+    // Then by name
+    return a.name.localeCompare(b.name);
   });
 
   // Group materials by job
@@ -242,7 +273,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       {/* Search & Filter */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -274,6 +305,23 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                 {jobs.map(job => (
                   <SelectItem key={job.id} value={job.id}>
                     {job.name} - {job.client_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Priority Filter */}
+            <Select value={filterPriority} onValueChange={setFilterPriority}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Priorities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priorities</SelectItem>
+                {PRIORITY_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${opt.color}`}>
+                      {opt.label}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -324,6 +372,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                   <table className="w-full">
                     <thead className="bg-muted/50 border-b">
                       <tr>
+                        <th className="text-left p-3 font-semibold">Priority</th>
                         <th className="text-left p-3 font-semibold">Category</th>
                         <th className="text-left p-3 font-semibold">Material</th>
                         <th className="text-left p-3 font-semibold">Use Case</th>
@@ -335,6 +384,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                     <tbody>
                       {group.materials.map((material) => (
                         <tr key={material.id} className="border-b hover:bg-muted/30 transition-colors">
+                          <td className="p-3">
+                            <Badge className={`font-bold ${getPriorityColor(material.priority || 'medium')}`}>
+                              {getPriorityLabel(material.priority || 'medium')}
+                            </Badge>
+                          </td>
                           <td className="p-3">
                             <Badge variant="outline">{material.category_name}</Badge>
                           </td>
