@@ -60,6 +60,114 @@
         <p>FieldTrack Pro requires JavaScript to be enabled in your browser.</p>
       </div>
     </noscript>
+    <!-- PWA Install Banner Script - PRIORITY #1 -->
+    <script>
+      (function() {
+        let deferredPrompt = null;
+        
+        // CRITICAL: Listen for beforeinstallprompt event FIRST (before any checks)
+        window.addEventListener('beforeinstallprompt', function(e) {
+          console.log('✅ PWA install prompt available');
+          e.preventDefault();
+          deferredPrompt = e;
+          
+          // Check if already dismissed
+          const dismissed = localStorage.getItem('pwa-install-dismissed');
+          if (dismissed) {
+            console.log('PWA install banner previously dismissed');
+            return;
+          }
+          
+          // Check if already installed
+          if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+            console.log('PWA already installed');
+            return;
+          }
+          
+          // Show banner
+          const banner = document.getElementById('pwa-install-banner');
+          if (banner) {
+            banner.style.display = 'block';
+            
+            // Add padding to root to prevent content from hiding under banner
+            const root = document.getElementById('root');
+            if (root) {
+              root.style.paddingTop = '120px';
+            }
+          }
+        });
+        
+        // Install button click
+        document.getElementById('pwa-install-button').addEventListener('click', async function() {
+          if (!deferredPrompt) {
+            console.warn('No install prompt available');
+            return;
+          }
+          
+          // Show the install prompt
+          deferredPrompt.prompt();
+          
+          // Wait for user choice
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log('User choice:', outcome);
+          
+          if (outcome === 'accepted') {
+            console.log('✅ PWA installed successfully');
+          } else {
+            console.log('❌ User dismissed install prompt');
+          }
+          
+          // Clear the prompt
+          deferredPrompt = null;
+          
+          // Hide banner
+          const banner = document.getElementById('pwa-install-banner');
+          if (banner) {
+            banner.style.display = 'none';
+          }
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+        });
+        
+        // Dismiss button click
+        document.getElementById('pwa-dismiss-button').addEventListener('click', function() {
+          const banner = document.getElementById('pwa-install-banner');
+          if (banner) {
+            banner.style.display = 'none';
+          }
+          localStorage.setItem('pwa-install-dismissed', 'true');
+          
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+          
+          console.log('PWA install banner dismissed');
+        });
+        
+        // Listen for app installed event
+        window.addEventListener('appinstalled', function() {
+          console.log('🎉 PWA installed!');
+          const banner = document.getElementById('pwa-install-banner');
+          if (banner) {
+            banner.style.display = 'none';
+          }
+          
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+          
+          // Clear dismissed flag so banner can show again after reinstall
+          localStorage.removeItem('pwa-install-dismissed');
+        });
+        
+        console.log('PWA install banner initialized');
+      })();
+    </script>
+    
     <script>
       // Clear caches but preserve user selection and data
       (function() {
@@ -88,102 +196,6 @@
         }
         
         window.APP_VERSION = '2.0.5';
-      })();
-    </script>
-    
-    <!-- PWA Install Banner Script -->
-    <script>
-      (function() {
-        let deferredPrompt = null;
-        const banner = document.getElementById('pwa-install-banner');
-        const installButton = document.getElementById('pwa-install-button');
-        const dismissButton = document.getElementById('pwa-dismiss-button');
-        
-        // Check if already dismissed
-        const dismissed = localStorage.getItem('pwa-install-dismissed');
-        if (dismissed) {
-          console.log('PWA install banner previously dismissed');
-          return;
-        }
-        
-        // Check if already installed
-        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-          console.log('PWA already installed');
-          return;
-        }
-        
-        // Listen for beforeinstallprompt event
-        window.addEventListener('beforeinstallprompt', function(e) {
-          console.log('✅ PWA install prompt available');
-          e.preventDefault();
-          deferredPrompt = e;
-          
-          // Show banner
-          banner.style.display = 'block';
-          
-          // Add padding to root to prevent content from hiding under banner
-          const root = document.getElementById('root');
-          if (root) {
-            root.style.paddingTop = '120px';
-          }
-        });
-        
-        // Install button click
-        installButton.addEventListener('click', async function() {
-          if (!deferredPrompt) {
-            console.warn('No install prompt available');
-            return;
-          }
-          
-          // Show the install prompt
-          deferredPrompt.prompt();
-          
-          // Wait for user choice
-          const { outcome } = await deferredPrompt.userChoice;
-          console.log('User choice:', outcome);
-          
-          if (outcome === 'accepted') {
-            console.log('✅ PWA installed successfully');
-          } else {
-            console.log('❌ User dismissed install prompt');
-          }
-          
-          // Clear the prompt
-          deferredPrompt = null;
-          
-          // Hide banner
-          banner.style.display = 'none';
-          const root = document.getElementById('root');
-          if (root) {
-            root.style.paddingTop = '0';
-          }
-        });
-        
-        // Dismiss button click
-        dismissButton.addEventListener('click', function() {
-          banner.style.display = 'none';
-          localStorage.setItem('pwa-install-dismissed', 'true');
-          
-          const root = document.getElementById('root');
-          if (root) {
-            root.style.paddingTop = '0';
-          }
-          
-          console.log('PWA install banner dismissed');
-        });
-        
-        // Listen for app installed event
-        window.addEventListener('appinstalled', function() {
-          console.log('🎉 PWA installed!');
-          banner.style.display = 'none';
-          
-          const root = document.getElementById('root');
-          if (root) {
-            root.style.paddingTop = '0';
-          }
-        });
-        
-        console.log('PWA install banner initialized');
       })();
     </script>
     
