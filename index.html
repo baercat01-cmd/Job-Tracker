@@ -15,21 +15,25 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // 1. Service Worker Registration with Blob Protection
+        // 1. Service Worker Registration with Blob/Preview Protection
         if ('serviceWorker' in navigator) {
-            const isSupported = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
-            if (isSupported && !window.location.href.startsWith('blob:')) {
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const isHttps = window.location.protocol === 'https:';
+            const isBlob = window.location.href.startsWith('blob:');
+
+            if ((isHttps || isLocal) && !isBlob) {
                 navigator.serviceWorker.register('/sw.js')
-                    .then(() => console.log('✅ SW Registered'))
-                    .catch(err => console.warn('SW Skip:', err.message));
+                    .then(() => console.log('✅ Service Worker Active'))
+                    .catch(err => console.warn('SW Registration Skipped:', err.message));
             }
         }
 
-        // 2. Comprehensive Install Logic
+        // 2. Install Overlay State Management
         let deferredPrompt;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
         window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('✅ PWA Install Event Captured');
             e.preventDefault();
             deferredPrompt = e;
             showInstallUI('android');
@@ -40,14 +44,15 @@
             const banner = document.getElementById('install-overlay');
             if (banner) banner.style.display = 'flex';
             
-            // Show specific instructions for iOS if needed
             if (platform === 'ios') {
-                document.getElementById('android-instructions').style.display = 'none';
-                document.getElementById('ios-instructions').style.display = 'block';
+                const andInst = document.getElementById('android-instructions');
+                const iosInst = document.getElementById('ios-instructions');
+                if (andInst) andInst.style.display = 'none';
+                if (iosInst) iosInst.style.display = 'block';
             }
         }
 
-        // iOS Detection
+        // iOS Specific Detection (Manual Install Required)
         window.addEventListener('load', () => {
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             if (isIOS && !isStandalone) {
@@ -68,16 +73,16 @@
             <div class="p-6 space-y-4">
                 <div id="android-instructions">
                     <p class="text-slate-600 text-sm font-medium text-center mb-4">Add this to your home screen for full offline access and a native experience.</p>
-                    <button id="pwa-install-btn" class="w-full bg-[#4179bc] text-white py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg shadow-blue-200 active:scale-95 transition-transform">
+                    <button id="pwa-install-btn" class="w-full bg-[#4179bc] text-white py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg active:scale-95 transition-transform">
                         Install App Now
                     </button>
                 </div>
                 <div id="ios-instructions" style="display:none;" class="text-center">
                     <p class="text-slate-600 text-sm font-medium mb-4">To install on iPhone:</p>
                     <ol class="text-left text-xs space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100 font-bold text-slate-500">
-                        <li class="flex items-center gap-2">1. Tap the <span class="text-blue-600">Share</span> icon (square with arrow)</li>
-                        <li class="flex items-center gap-2">2. Scroll down & tap <span class="text-blue-600">"Add to Home Screen"</span></li>
-                        <li class="flex items-center gap-2">3. Tap <span class="text-blue-600">"Add"</span> in the top right</li>
+                        <li>1. Tap the <span class="text-blue-600">Share</span> icon (square with arrow)</li>
+                        <li>2. Scroll down & tap <span class="text-blue-600">"Add to Home Screen"</span></li>
+                        <li>3. Tap <span class="text-blue-600">"Add"</span> in the top right</li>
                     </ol>
                 </div>
                 <button onclick="document.getElementById('install-overlay').style.display='none'" class="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">
