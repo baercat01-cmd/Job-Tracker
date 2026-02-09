@@ -1,4 +1,4 @@
-import { Component, ReactNode } from 'react';
+import { Component, ReactNode, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 import { UserSelectPage } from '@/pages/UserSelectPage';
@@ -15,6 +15,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
+import { PWAInstallPrompt } from '@/components/ui/pwa-install-prompt';
 
 
 // Error Boundary to catch runtime errors
@@ -165,6 +166,51 @@ function AppContent() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Prevent double-tap zoom on mobile
+    let lastTouchEnd = 0;
+    const handleTouchEnd = (event: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    };
+    
+    document.addEventListener('touchend', handleTouchEnd, false);
+
+    // Check for service worker updates
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New service worker available
+                console.log('[PWA] New version available');
+                if (confirm('New version available! Reload to update?')) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  window.location.reload();
+                }
+              }
+            });
+          }
+        });
+
+        // Check for updates every hour
+        const updateInterval = setInterval(() => {
+          registration.update();
+        }, 60 * 60 * 1000);
+
+        return () => {
+          document.removeEventListener('touchend', handleTouchEnd);
+          clearInterval(updateInterval);
+        };
+      });
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <BrowserRouter>
@@ -173,6 +219,7 @@ export default function App() {
           <Route path="/*" element={
             <AuthProvider>
               <AppContent />
+              <PWAInstallPrompt />
               <Toaster position="top-center" richColors />
             </AuthProvider>
           } />

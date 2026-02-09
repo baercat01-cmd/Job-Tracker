@@ -1,18 +1,62 @@
 {
-  "name": "FieldTrack Pro",
+  "name": "Martin Builder - FieldTrack Pro",
   "short_name": "FieldTrack",
-  "description": "Construction time tracking and field management",
+  "description": "Construction time tracking, daily logs, and job management for field teams",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#22c55e",
   "orientation": "portrait",
+  "categories": ["business", "productivity", "construction"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Clock In",
+      "short_name": "Clock In",
+      "description": "Start tracking time",
+      "url": "/",
+      "icons": [
+        {
+          "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Daily Log",
+      "short_name": "Log",
+      "description": "Submit daily log",
+      "url": "/",
+      "icons": [
+        {
+          "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }
