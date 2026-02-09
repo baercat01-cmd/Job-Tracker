@@ -22,9 +22,10 @@
     <meta name="twitter:image" content="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
     
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#22c55e">
+    <meta name="theme-color" content="#4179bc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
     
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -34,6 +35,27 @@
     <link rel="apple-touch-icon" href="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
   </head>
   <body>
+    <!-- PWA Install Banner -->
+    <div id="pwa-install-banner" style="display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: linear-gradient(135deg, #4179bc 0%, #3666a3 100%); color: white; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-bottom: 3px solid #ffd100;">
+      <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+            <img src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" style="height: 32px; width: auto;">
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: white;">Install Martin Builder FieldTrack</h3>
+          </div>
+          <p style="margin: 0; font-size: 13px; opacity: 0.95; line-height: 1.4;">Install our app for offline access, faster loading, and a native app experience!</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+          <button id="pwa-install-button" style="background: #ffd100; color: #1a1a1a; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 700; font-size: 14px; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 8px rgba(255, 209, 0, 0.3); transition: all 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(255, 209, 0, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(255, 209, 0, 0.3)';">
+            📱 Install App
+          </button>
+          <button id="pwa-dismiss-button" style="background: transparent; color: white; border: 2px solid rgba(255,255,255,0.3); padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; transition: all 0.2s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.6)'; this.style.background='rgba(255,255,255,0.1)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.3)'; this.style.background='transparent';">
+            ✕ Not Now
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <div id="root"></div>
     <noscript>
       <div style="text-align: center; padding: 50px; font-family: sans-serif;">
@@ -68,8 +90,143 @@
           console.error('Cleanup error:', e);
         }
         
-        window.APP_VERSION = '2.0.4';
+        window.APP_VERSION = '2.0.5';
       })();
+    </script>
+    
+    <!-- PWA Install Banner Script -->
+    <script>
+      (function() {
+        let deferredPrompt = null;
+        const banner = document.getElementById('pwa-install-banner');
+        const installButton = document.getElementById('pwa-install-button');
+        const dismissButton = document.getElementById('pwa-dismiss-button');
+        
+        // Check if already dismissed
+        const dismissed = localStorage.getItem('pwa-install-dismissed');
+        if (dismissed) {
+          console.log('PWA install banner previously dismissed');
+          return;
+        }
+        
+        // Check if already installed
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+          console.log('PWA already installed');
+          return;
+        }
+        
+        // Listen for beforeinstallprompt event
+        window.addEventListener('beforeinstallprompt', function(e) {
+          console.log('✅ PWA install prompt available');
+          e.preventDefault();
+          deferredPrompt = e;
+          
+          // Show banner
+          banner.style.display = 'block';
+          
+          // Add padding to root to prevent content from hiding under banner
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '120px';
+          }
+        });
+        
+        // Install button click
+        installButton.addEventListener('click', async function() {
+          if (!deferredPrompt) {
+            console.warn('No install prompt available');
+            return;
+          }
+          
+          // Show the install prompt
+          deferredPrompt.prompt();
+          
+          // Wait for user choice
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log('User choice:', outcome);
+          
+          if (outcome === 'accepted') {
+            console.log('✅ PWA installed successfully');
+          } else {
+            console.log('❌ User dismissed install prompt');
+          }
+          
+          // Clear the prompt
+          deferredPrompt = null;
+          
+          // Hide banner
+          banner.style.display = 'none';
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+        });
+        
+        // Dismiss button click
+        dismissButton.addEventListener('click', function() {
+          banner.style.display = 'none';
+          localStorage.setItem('pwa-install-dismissed', 'true');
+          
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+          
+          console.log('PWA install banner dismissed');
+        });
+        
+        // Listen for app installed event
+        window.addEventListener('appinstalled', function() {
+          console.log('🎉 PWA installed!');
+          banner.style.display = 'none';
+          
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.paddingTop = '0';
+          }
+        });
+        
+        console.log('PWA install banner initialized');
+      })();
+    </script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js')
+            .then(function(registration) {
+              console.log('✅ Service Worker registered:', registration.scope);
+              
+              // Check for updates periodically
+              setInterval(function() {
+                registration.update();
+              }, 60000); // Check every minute
+              
+              // Listen for updates
+              registration.addEventListener('updatefound', function() {
+                const newWorker = registration.installing;
+                console.log('🔄 Service Worker update found');
+                
+                newWorker.addEventListener('statechange', function() {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('✨ New version available! Refresh to update.');
+                    
+                    // Auto-refresh after 3 seconds
+                    setTimeout(function() {
+                      window.location.reload();
+                    }, 3000);
+                  }
+                });
+              });
+            })
+            .catch(function(error) {
+              console.error('❌ Service Worker registration failed:', error);
+            });
+        });
+      } else {
+        console.warn('⚠️ Service Worker not supported');
+      }
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
