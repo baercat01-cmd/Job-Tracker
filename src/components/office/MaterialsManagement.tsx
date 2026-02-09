@@ -1441,6 +1441,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     return [selectedCategory];
   };
 
+  // Get filtered categories for display
+  const filteredCategories = getDisplayCategories();
+
   // CSV Export Function
   async function exportMaterialsToCSV() {
     try {
