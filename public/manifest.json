@@ -12,16 +12,16 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
+      "src": "/martin-logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
+      "src": "/martin-logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ],
   "screenshots": [],
@@ -33,7 +33,7 @@
       "url": "/office?tab=jobs",
       "icons": [
         {
-          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
+          "src": "/martin-logo.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -46,7 +46,7 @@
       "url": "/building-estimator",
       "icons": [
         {
-          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
+          "src": "/martin-logo.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -59,7 +59,7 @@
       "url": "/office?tab=financials",
       "icons": [
         {
-          "src": "https://cdn-icons-png.flaticon.com/512/4341/4341139.png",
+          "src": "/martin-logo.png",
           "sizes": "192x192",
           "type": "image/png"
         }

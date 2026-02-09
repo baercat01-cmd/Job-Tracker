@@ -1,7 +1,7 @@
 // Service Worker for Martin Builder OS
 // Provides offline support, CDN caching, and PWA capabilities
 
-const CACHE_VERSION = 'martin-v10-offline-fix';
+const CACHE_VERSION = 'martin-v11-logo-fix';
 const CACHE_NAME = `martin-builder-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `martin-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE = `martin-images-${CACHE_VERSION}`;
@@ -12,6 +12,7 @@ const STATIC_CACHE_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/martin-logo.png',
 ];
 
 // Critical CDN resources for offline field use - HARDENED LIST
