@@ -846,24 +846,27 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="space-y-3 sm:space-y-4 w-full max-w-full overflow-x-hidden">
-      <Button
-        onClick={() => setShowCustomMaterialDialog(true)}
-        variant="outline"
-        className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
-      >
-        <Plus className="w-5 h-5 mr-2" />
-        Add Custom Material
-      </Button>
-
-      <div className="relative">
-        <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search materials..."
-          value={catalogSearch}
-          onChange={(e) => setCatalogSearch(e.target.value)}
-          className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
-          autoFocus
-        />
+      {/* Fixed top section - Search and Add Custom button stick to top for easy keyboard access */}
+      <div className="sticky top-0 z-10 bg-white pb-3 space-y-3 border-b-2 border-slate-200">
+        <div className="relative">
+          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search materials..."
+            value={catalogSearch}
+            onChange={(e) => setCatalogSearch(e.target.value)}
+            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
+            autoFocus
+          />
+        </div>
+        
+        <Button
+          onClick={() => setShowCustomMaterialDialog(true)}
+          variant="outline"
+          className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Add Custom Material
+        </Button>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -926,9 +929,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
               {filteredCatalogMaterials.map(material => (
                 <div
                   key={material.sku}
-                  className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 transition-colors w-full max-w-full"
+                  onClick={() => openAddMaterialDialog(material)}
+                  className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer"
                 >
-                  <div className="flex-1 min-w-0 space-y-1 max-w-[calc(100%-4rem)]">
+                  <div className="flex-1 min-w-0 space-y-1">
                     <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">{material.material_name}</h4>
                     {material.part_length && (
                       <div className="text-base sm:text-lg font-bold text-primary">
@@ -936,14 +940,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                       </div>
                     )}
                   </div>
-                  <Button
-                    onClick={() => openAddMaterialDialog(material)}
-                    size="sm"
-                    className="flex-shrink-0 h-11 w-11 sm:h-10 sm:w-auto sm:px-4 p-0"
-                  >
-                    <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline ml-2">Add</span>
-                  </Button>
+                  <div className="flex-shrink-0 flex items-center text-primary">
+                    <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
+                  </div>
                 </div>
               ))}
             </div>

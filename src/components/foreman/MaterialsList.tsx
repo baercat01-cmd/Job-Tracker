@@ -1286,22 +1286,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Export Button - Always visible at top */}
-      {categories.length > 0 && (
-        <Card className="border-2 border-primary/20 bg-primary/5">
-          <CardContent className="py-3">
-            <Button
-              onClick={downloadMaterialsList}
-              variant="default"
-              size="lg"
-              className="w-full h-12 gap-2"
-            >
-              <Download className="w-5 h-5" />
-              Export All Materials as CSV
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* Export Button removed - no longer needed in crew field view */}
 
       {/* Status Color Bar - Shows at top when on ready or pull tabs */}
       {activeTab === 'ready' && (
