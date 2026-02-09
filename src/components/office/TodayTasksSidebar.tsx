@@ -426,7 +426,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                     setSelectedTask(task);
                     setShowTaskDialog(true);
                   }}
-                  className={`border-2 rounded-lg p-3 space-y-2 hover:shadow-lg transition-all cursor-pointer ${
+                  className={`border-2 rounded-lg px-2 py-2 space-y-1.5 hover:shadow-lg transition-all cursor-pointer ${
                     isOverdue 
                       ? 'border-red-900 bg-red-50 hover:border-red-700' 
                       : 'border-slate-200 bg-white hover:border-yellow-500'
@@ -436,7 +436,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                     <Checkbox
                       checked={false}
                       onCheckedChange={() => handleCompleteTask(task.id)}
-                      className="mt-0.5"
+                      className="mt-1"
                     />
                     <div className="flex-1 min-w-0">
                       {/* Job Name - Prominent Display */}
@@ -446,30 +446,29 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                             e.stopPropagation();
                             onJobSelect?.(task.job_id);
                           }}
-                          className={`flex items-center gap-2 mb-2 text-base font-extrabold hover:underline ${
+                          className={`flex items-center gap-2 mb-1.5 text-sm font-bold hover:underline ${
                             isOverdue ? 'text-red-900 hover:text-red-700' : 'text-green-800 hover:text-green-600'
                           }`}
                         >
-                          <Briefcase className="w-5 h-5 flex-shrink-0" />
+                          <Briefcase className="w-4 h-4 flex-shrink-0" />
                           {task.job.name}
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2 mb-2 text-base font-extrabold text-slate-500">
-                          <Briefcase className="w-5 h-5 flex-shrink-0" />
+                        <div className="flex items-center gap-2 mb-1.5 text-sm font-bold text-slate-500">
+                          <Briefcase className="w-4 h-4 flex-shrink-0" />
                           (No Job Linked)
                         </div>
                       )}
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      
+                      {/* Task Title - Larger */}
+                      <p className="font-semibold text-base mb-2 leading-tight">{task.title}</p>
+                      
+                      {/* Status and Type - Side by Side */}
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         {isOverdue && (
                           <Badge variant="destructive" className="bg-red-900 text-white font-bold border-2 border-red-950">
                             <AlertCircle className="w-3 h-3 mr-1" />
                             OVERDUE
-                          </Badge>
-                        )}
-                        {isDueToday && !isOverdue && (
-                          <Badge className="bg-yellow-500 text-black font-bold border-2 border-yellow-600">
-                            <Clock className="w-3 h-3 mr-1" />
-                            DUE TODAY
                           </Badge>
                         )}
                         <Badge
@@ -482,7 +481,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                           {task.task_type}
                         </Badge>
                       </div>
-                      <p className="font-medium text-sm line-clamp-2">{task.title}</p>
+                      
                       {task.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">
                           {task.description}
@@ -680,15 +679,15 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                           return (
                           <Card 
                             key={task.id} 
-                            className={`border-l-4 ${isCompleted ? 'border-l-gray-400 bg-gray-100/50 opacity-75' : 'border-l-blue-500'}`}
+                            className={`border-l-4 ${isCompleted ? 'border-l-gray-300 bg-gray-50 opacity-60' : 'border-l-blue-500'}`}
                           >
                             <CardContent className="p-3">
                               <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="secondary" className={`text-xs ${isCompleted ? 'bg-gray-200 text-gray-600' : ''}`}>
+                                <Badge variant="secondary" className={`text-xs ${isCompleted ? 'bg-gray-300 text-gray-500' : ''}`}>
                                   Task
                                 </Badge>
                                 {isCompleted ? (
-                                  <Badge variant="secondary" className="text-xs bg-gray-200 text-gray-600">
+                                  <Badge variant="secondary" className="text-xs bg-gray-300 text-gray-500">
                                     <CheckCircle2 className="w-3 h-3 mr-1" />
                                     Completed
                                   </Badge>
@@ -698,11 +697,11 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                                   </Badge>
                                 )}
                               </div>
-                              <p className={`font-medium text-sm ${isCompleted ? 'line-through text-gray-500' : ''}`}>
+                              <p className={`font-medium text-sm ${isCompleted ? 'line-through text-gray-400' : ''}`}>
                                 {task.title}
                               </p>
                               {task.description && (
-                                <p className={`text-xs mt-1 ${isCompleted ? 'text-gray-400' : 'text-muted-foreground'}`}>
+                                <p className={`text-xs mt-1 ${isCompleted ? 'text-gray-300' : 'text-muted-foreground'}`}>
                                   {task.description}
                                 </p>
                               )}
@@ -712,7 +711,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                                     onJobSelect?.(task.job_id);
                                     setShowCalendarView(false);
                                   }}
-                                  className={`flex items-center gap-1 text-xs hover:underline mt-2 ${isCompleted ? 'text-gray-400' : 'text-primary'}`}
+                                  className={`flex items-center gap-1 text-xs hover:underline mt-2 ${isCompleted ? 'text-gray-300' : 'text-primary'}`}
                                 >
                                   <Briefcase className="w-3 h-3" />
                                   {task.job.name}
@@ -729,25 +728,25 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                           return (
                           <Card 
                             key={event.id} 
-                            className={`border-l-4 ${isCompleted ? 'border-l-gray-400 bg-gray-100/50 opacity-75' : 'border-l-green-500'}`}
+                            className={`border-l-4 ${isCompleted ? 'border-l-gray-300 bg-gray-50 opacity-60' : 'border-l-green-500'}`}
                           >
                             <CardContent className="p-3">
                               <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="secondary" className={`text-xs ${isCompleted ? 'bg-gray-200 text-gray-600' : ''}`}>
+                                <Badge variant="secondary" className={`text-xs ${isCompleted ? 'bg-gray-300 text-gray-500' : ''}`}>
                                   {event.event_type}
                                 </Badge>
                                 {isCompleted && (
-                                  <Badge variant="secondary" className="text-xs bg-gray-200 text-gray-600">
+                                  <Badge variant="secondary" className="text-xs bg-gray-300 text-gray-500">
                                     <CheckCircle2 className="w-3 h-3 mr-1" />
                                     Completed
                                   </Badge>
                                 )}
                               </div>
-                              <p className={`font-medium text-sm ${isCompleted ? 'line-through text-gray-500' : ''}`}>
+                              <p className={`font-medium text-sm ${isCompleted ? 'line-through text-gray-400' : ''}`}>
                                 {event.title}
                               </p>
                               {event.description && (
-                                <p className={`text-xs mt-1 ${isCompleted ? 'text-gray-400' : 'text-muted-foreground'}`}>
+                                <p className={`text-xs mt-1 ${isCompleted ? 'text-gray-300' : 'text-muted-foreground'}`}>
                                   {event.description}
                                 </p>
                               )}
@@ -757,7 +756,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                                     onJobSelect?.(event.job_id);
                                     setShowCalendarView(false);
                                   }}
-                                  className={`flex items-center gap-1 text-xs hover:underline mt-2 ${isCompleted ? 'text-gray-400' : 'text-primary'}`}
+                                  className={`flex items-center gap-1 text-xs hover:underline mt-2 ${isCompleted ? 'text-gray-300' : 'text-primary'}`}
                                 >
                                   <Briefcase className="w-3 h-3" />
                                   {event.job.name}
