@@ -845,9 +845,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   });
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
+    <div className="fixed inset-0 w-full h-full overflow-x-hidden overflow-y-auto bg-white">
       {/* Fixed top section - Category tabs, Add Custom, and Search fixed to screen top */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4">
+      <div className="sticky top-0 left-0 right-0 z-50 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4">
         {/* Category Filter Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
           <Button
@@ -899,8 +899,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </div>
       </div>
 
-      {/* Spacer to push content below fixed header */}
-      <div className="h-[240px] sm:h-[212px]"></div>
+      {/* No spacer needed - using sticky positioning */}
 
       {/* Rest of content with padding */}
       <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
@@ -1368,7 +1367,213 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       </Dialog>
 
       {/* Add Material from Catalog Dialog - Mobile Optimized */}
-      {/* (Dialog content continues unchanged - truncated for brevity) */}
+      <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add Material from Catalog
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCatalogMaterial && (
+            <div className="space-y-4">
+              <div className="p-4 bg-primary/5 rounded-lg border">
+                <p className="font-bold text-lg">{selectedCatalogMaterial.material_name}</p>
+                <p className="text-sm text-muted-foreground mt-1">SKU: {selectedCatalogMaterial.sku}</p>
+                {selectedCatalogMaterial.part_length && (
+                  <p className="text-sm font-medium mt-1">Length: {cleanMaterialValue(selectedCatalogMaterial.part_length)}</p>
+                )}
+              </div>
+
+              {/* Variant Selection (for materials with predefined lengths) */}
+              {!showCustomLength && materialVariants.length > 0 && (
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Select Lengths & Quantities</Label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-3">
+                    {materialVariants.map(variant => (
+                      <div key={variant.sku} className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded">
+                        <div className="flex-1">
+                          <p className="font-medium">{variant.length}</p>
+                          <p className="text-xs text-muted-foreground">${variant.purchaseCost.toFixed(2)} per piece</p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={selectedVariants.get(variant.sku) || 0}
+                          onChange={(e) => updateVariantQuantity(variant.sku, parseInt(e.target.value) || 0)}
+                          className="w-20 h-10"
+                          placeholder="Qty"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {selectedVariants.size > 0 && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex justify-between text-sm">
+                        <span>Total Pieces:</span>
+                        <span className="font-bold">{getTotalVariantsCount()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-1">
+                        <span>Total Cost:</span>
+                        <span className="font-bold">${getTotalVariantsCost().toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Custom Length Entry (for materials without predefined lengths) */}
+              {showCustomLength && (
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Add Pieces</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="length-feet">Feet</Label>
+                      <Input
+                        id="length-feet"
+                        type="number"
+                        min="0"
+                        value={customLengthFeet}
+                        onChange={(e) => setCustomLengthFeet(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
+                        placeholder="0"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="length-inches">Inches</Label>
+                      <Input
+                        id="length-inches"
+                        type="number"
+                        min="0"
+                        max="11"
+                        value={customLengthInches}
+                        onChange={(e) => setCustomLengthInches(e.target.value === '' ? '' : Math.max(0, Math.min(11, parseInt(e.target.value) || 0)))}
+                        placeholder="0"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="piece-quantity">Quantity</Label>
+                      <Input
+                        id="piece-quantity"
+                        type="number"
+                        min="1"
+                        value={addMaterialQuantity}
+                        onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1))}
+                        placeholder="1"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={addPieceToList}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Piece to Order
+                  </Button>
+
+                  {/* Pieces List */}
+                  {materialPieces.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold">Order Summary</Label>
+                      <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-2">
+                        {materialPieces.map((piece, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{piece.quantity}x {piece.displayLength}</p>
+                              <p className="text-xs text-muted-foreground">${piece.costPerPiece.toFixed(2)} per piece</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removePiece(index)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="flex justify-between text-sm">
+                          <span>Total Pieces:</span>
+                          <span className="font-bold">{getTotalPiecesCount()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm mt-1">
+                          <span>Total Cost:</span>
+                          <span className="font-bold">${getTotalCost().toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Simple quantity for materials without variants or custom lengths */}
+              {!showCustomLength && materialVariants.length === 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={addMaterialQuantity}
+                    onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1))}
+                    placeholder="1"
+                    className="h-10"
+                  />
+                </div>
+              )}
+
+              {/* Color */}
+              <div className="space-y-2">
+                <Label htmlFor="color">Color (optional)</Label>
+                <Input
+                  id="color"
+                  value={addMaterialColor}
+                  onChange={(e) => setAddMaterialColor(e.target.value)}
+                  placeholder="e.g., Red, Blue"
+                  className="h-10"
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={addMaterialNotes}
+                  onChange={(e) => setAddMaterialNotes(e.target.value)}
+                  placeholder="Any additional details..."
+                  rows={3}
+                />
+              </div>
+
+              {/* Submit */}
+              <div className="flex gap-2 pt-4">
+                <Button
+                  onClick={addMaterialToJob}
+                  disabled={addingMaterial}
+                  className="flex-1"
+                >
+                  {addingMaterial ? 'Adding...' : 'Add to Order'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddMaterialDialog(false)}
+                  disabled={addingMaterial}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
