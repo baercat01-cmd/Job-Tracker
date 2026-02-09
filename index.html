@@ -1,48 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Martin Builder OS</title>
+    
+    <!-- PWA Identity -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#4179bc">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/martin-logo.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      if ('serviceWorker' in navigator) {
-        const isSupported = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
-        if (isSupported && !window.location.href.startsWith('blob:')) {
-          navigator.serviceWorker.register('/sw.js')
-            .then(() => console.log('✅ SW Registered'))
-            .catch(err => console.warn('SW Skip:', err.message));
+        // 1. Service Worker Registration with Blob Protection
+        if ('serviceWorker' in navigator) {
+            const isSupported = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+            if (isSupported && !window.location.href.startsWith('blob:')) {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(() => console.log('✅ SW Registered'))
+                    .catch(err => console.warn('SW Skip:', err.message));
+            }
         }
-      }
-      let deferredPrompt;
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        document.getElementById('pwa-banner').style.display = 'flex';
-      });
+
+        // 2. Comprehensive Install Logic
+        let deferredPrompt;
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            showInstallUI('android');
+        });
+
+        function showInstallUI(platform) {
+            if (isStandalone) return;
+            const banner = document.getElementById('install-overlay');
+            if (banner) banner.style.display = 'flex';
+            
+            // Show specific instructions for iOS if needed
+            if (platform === 'ios') {
+                document.getElementById('android-instructions').style.display = 'none';
+                document.getElementById('ios-instructions').style.display = 'block';
+            }
+        }
+
+        // iOS Detection
+        window.addEventListener('load', () => {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            if (isIOS && !isStandalone) {
+                showInstallUI('ios');
+            }
+        });
     </script>
-  </head>
-  <body class="bg-slate-50">
-    <div id="pwa-banner" style="display:none;" class="bg-[#4179bc] text-white p-3 flex justify-between items-center sticky top-0 z-50">
-      <span class="text-xs font-bold">Install Martin OS for offline use</span>
-      <button id="pwa-install-btn" class="bg-white text-[#4179bc] px-4 py-1 rounded-full text-[10px] font-black">INSTALL</button>
+</head>
+<body class="bg-slate-50">
+    <!-- HARDENED INSTALL OVERLAY -->
+    <div id="install-overlay" style="display:none;" class="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+        <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div class="bg-[#4179bc] p-6 text-center">
+                <img src="/martin-logo.png" class="w-16 h-16 mx-auto rounded-xl shadow-lg border-2 border-white/20 mb-4" alt="Logo">
+                <h2 class="text-white font-black text-xl tracking-tight">Martin Builder OS</h2>
+                <p class="text-white/70 text-xs font-bold uppercase tracking-widest mt-1">Mobile App Setup</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div id="android-instructions">
+                    <p class="text-slate-600 text-sm font-medium text-center mb-4">Add this to your home screen for full offline access and a native experience.</p>
+                    <button id="pwa-install-btn" class="w-full bg-[#4179bc] text-white py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg shadow-blue-200 active:scale-95 transition-transform">
+                        Install App Now
+                    </button>
+                </div>
+                <div id="ios-instructions" style="display:none;" class="text-center">
+                    <p class="text-slate-600 text-sm font-medium mb-4">To install on iPhone:</p>
+                    <ol class="text-left text-xs space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100 font-bold text-slate-500">
+                        <li class="flex items-center gap-2">1. Tap the <span class="text-blue-600">Share</span> icon (square with arrow)</li>
+                        <li class="flex items-center gap-2">2. Scroll down & tap <span class="text-blue-600">"Add to Home Screen"</span></li>
+                        <li class="flex items-center gap-2">3. Tap <span class="text-blue-600">"Add"</span> in the top right</li>
+                    </ol>
+                </div>
+                <button onclick="document.getElementById('install-overlay').style.display='none'" class="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">
+                    Maybe Later
+                </button>
+            </div>
+        </div>
     </div>
+
     <div id="root"></div>
+
     <script>
-      document.getElementById('pwa-install-btn')?.addEventListener('click', async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          deferredPrompt = null;
-          document.getElementById('pwa-banner').style.display = 'none';
-        }
-      });
+        document.getElementById('pwa-install-btn')?.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    document.getElementById('install-overlay').style.display = 'none';
+                }
+                deferredPrompt = null;
+            }
+        });
     </script>
 
     <script type="module" src="/src/main.tsx"></script>
-  </body>
+</body>
 </html>
