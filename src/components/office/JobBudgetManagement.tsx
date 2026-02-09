@@ -51,7 +51,7 @@ interface JobBudget {
 
 interface JobBudgetManagementProps {
   onUpdate: () => void;
-  jobIdFilter?: string; // Optional: filter to show only one job's budget
+  jobIdFilter?: string;
 }
 
 export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManagementProps) {
@@ -66,9 +66,9 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
   // Form state
   const [estimatedLaborHours, setEstimatedLaborHours] = useState('');
   const [laborRate, setLaborRate] = useState('30');
-  const [totalMaterialsBudget, setTotalMaterialsBudget] = useState('');
-  const [totalSubcontractorBudget, setTotalSubcontractorBudget] = useState('');
-  const [totalEquipmentBudget, setTotalEquipmentBudget] = useState('');
+  const [materialsBreakdown, setMaterialsBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
+  const [subcontractorBreakdown, setSubcontractorBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
+  const [equipmentBreakdown, setEquipmentBreakdown] = useState<Array<{ description: string; cost: number }>>([]);
   const [otherCosts, setOtherCosts] = useState('');
   const [otherCostsNotes, setOtherCostsNotes] = useState('');
   const [quotedPrice, setQuotedPrice] = useState('');
@@ -99,7 +99,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
         job:jobs(id, name, job_number, status)
       `);
     
-    // Filter by job if jobIdFilter is provided
     if (jobIdFilter) {
       query = query.eq('job_id', jobIdFilter);
     }
@@ -116,7 +115,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
       .select('id, name, job_number, status')
       .in('status', ['active', 'pending', 'quoting', 'prepping', 'on_hold']);
     
-    // Filter by job if jobIdFilter is provided
     if (jobIdFilter) {
       query = query.eq('id', jobIdFilter);
     }
@@ -133,9 +131,9 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
       setSelectedJobId(budget.job_id);
       setEstimatedLaborHours(budget.estimated_labor_hours?.toString() || '');
       setLaborRate(budget.labor_rate_per_hour?.toString() || '30');
-      setTotalMaterialsBudget(budget.total_materials_budget?.toString() || '');
-      setTotalSubcontractorBudget(budget.total_subcontractor_budget?.toString() || '');
-      setTotalEquipmentBudget(budget.total_equipment_budget?.toString() || '');
+      setMaterialsBreakdown(budget.materials_breakdown || []);
+      setSubcontractorBreakdown(budget.subcontractor_breakdown || []);
+      setEquipmentBreakdown(budget.equipment_breakdown || []);
       setOtherCosts(budget.other_costs?.toString() || '');
       setOtherCostsNotes(budget.other_costs_notes || '');
       setQuotedPrice(budget.total_quoted_price.toString());
@@ -152,15 +150,70 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     setSelectedJobId(jobIdFilter || '');
     setEstimatedLaborHours('');
     setLaborRate('30');
-    setTotalMaterialsBudget('');
-    setTotalSubcontractorBudget('');
-    setTotalEquipmentBudget('');
+    setMaterialsBreakdown([]);
+    setSubcontractorBreakdown([]);
+    setEquipmentBreakdown([]);
     setOtherCosts('');
     setOtherCostsNotes('');
     setQuotedPrice('');
     setOverheadAllocation('');
     setTargetMargin('15');
   }
+
+  // Helper functions for breakdown management
+  const addMaterialItem = () => {
+    setMaterialsBreakdown([...materialsBreakdown, { description: '', cost: 0 }]);
+  };
+
+  const removeMaterialItem = (index: number) => {
+    setMaterialsBreakdown(materialsBreakdown.filter((_, i) => i !== index));
+  };
+
+  const updateMaterialItem = (index: number, field: 'description' | 'cost', value: string | number) => {
+    const updated = [...materialsBreakdown];
+    if (field === 'description') {
+      updated[index].description = value as string;
+    } else {
+      updated[index].cost = typeof value === 'string' ? parseFloat(value) || 0 : value;
+    }
+    setMaterialsBreakdown(updated);
+  };
+
+  const addSubcontractorItem = () => {
+    setSubcontractorBreakdown([...subcontractorBreakdown, { description: '', cost: 0 }]);
+  };
+
+  const removeSubcontractorItem = (index: number) => {
+    setSubcontractorBreakdown(subcontractorBreakdown.filter((_, i) => i !== index));
+  };
+
+  const updateSubcontractorItem = (index: number, field: 'description' | 'cost', value: string | number) => {
+    const updated = [...subcontractorBreakdown];
+    if (field === 'description') {
+      updated[index].description = value as string;
+    } else {
+      updated[index].cost = typeof value === 'string' ? parseFloat(value) || 0 : value;
+    }
+    setSubcontractorBreakdown(updated);
+  };
+
+  const addEquipmentItem = () => {
+    setEquipmentBreakdown([...equipmentBreakdown, { description: '', cost: 0 }]);
+  };
+
+  const removeEquipmentItem = (index: number) => {
+    setEquipmentBreakdown(equipmentBreakdown.filter((_, i) => i !== index));
+  };
+
+  const updateEquipmentItem = (index: number, field: 'description' | 'cost', value: string | number) => {
+    const updated = [...equipmentBreakdown];
+    if (field === 'description') {
+      updated[index].description = value as string;
+    } else {
+      updated[index].cost = typeof value === 'string' ? parseFloat(value) || 0 : value;
+    }
+    setEquipmentBreakdown(updated);
+  };
 
   async function saveBudget() {
     if (!selectedJobId || !quotedPrice) {
@@ -179,15 +232,29 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     const rate = parseFloat(laborRate) || 0;
     const laborBudget = hours * rate;
 
+    // Calculate materials total (before tax)
+    const materialsSubtotal = materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+    const materialsTax = materialsSubtotal * 0.07; // 7% sales tax
+    const materialsTotalWithTax = materialsSubtotal + materialsTax;
+
+    // Calculate subcontractors total (no tax)
+    const subcontractorsTotal = subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+
+    // Calculate equipment total (no tax)
+    const equipmentTotal = equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+
     try {
       const budgetData = {
         job_id: selectedJobId,
         estimated_labor_hours: hours || null,
         labor_rate_per_hour: rate || null,
         total_labor_budget: laborBudget || null,
-        total_materials_budget: parseFloat(totalMaterialsBudget) || null,
-        total_subcontractor_budget: parseFloat(totalSubcontractorBudget) || null,
-        total_equipment_budget: parseFloat(totalEquipmentBudget) || null,
+        total_materials_budget: materialsTotalWithTax || null,
+        materials_breakdown: materialsBreakdown,
+        total_subcontractor_budget: subcontractorsTotal || null,
+        subcontractor_breakdown: subcontractorBreakdown,
+        total_equipment_budget: equipmentTotal || null,
+        equipment_breakdown: equipmentBreakdown,
         other_costs: parseFloat(otherCosts) || null,
         other_costs_notes: otherCostsNotes || null,
         total_quoted_price: quotedNum,
@@ -205,7 +272,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
         if (error) throw error;
         toast.success('Budget updated');
       } else {
-        // Check if budget already exists for this job
         const { data: existing } = await supabase
           .from('job_budgets')
           .select('id')
@@ -254,15 +320,21 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
     }
   }
 
-  // Calculate total budgeted costs
   const calculateTotalCosts = () => {
     const hours = parseFloat(estimatedLaborHours) || 0;
     const rate = parseFloat(laborRate) || 0;
     const labor = hours * rate;
-    const materials = parseFloat(totalMaterialsBudget) || 0;
-    const subs = parseFloat(totalSubcontractorBudget) || 0;
-    const equipment = parseFloat(totalEquipmentBudget) || 0;
+    
+    // Materials with 7% tax
+    const materialsSubtotal = materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+    const materialsTax = materialsSubtotal * 0.07;
+    const materials = materialsSubtotal + materialsTax;
+    
+    // Subs and equipment without tax
+    const subs = subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+    const equipment = equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
     const other = parseFloat(otherCosts) || 0;
+    
     return labor + materials + subs + equipment + other;
   };
 
@@ -294,7 +366,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
   return (
     <>
       <div className="space-y-6">
-        {/* Add Budget Button - only show if no budget exists or not filtering */}
         {(!jobIdFilter || budgets.length === 0) && (
           <div className="flex justify-end">
             <Button onClick={() => openDialog()} className="bg-green-600 hover:bg-green-700">
@@ -304,7 +375,6 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
           </div>
         )}
 
-        {/* Budgets List */}
         <Card>
           <CardHeader>
             <CardTitle>Job Budgets</CardTitle>
@@ -435,7 +505,7 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
-            {/* Job Selection - auto-select if jobIdFilter is provided */}
+            {/* Job Selection */}
             <div>
               <Label>Job *</Label>
               <Select 
@@ -458,7 +528,7 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
 
             {/* Labor */}
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <h3 className="font-semibold mb-3">Labor Budget</h3>
+              <h3 className="font-semibold mb-3">Labor Budget (No Tax)</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Estimated Hours</Label>
@@ -490,41 +560,181 @@ export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManageme
               )}
             </div>
 
-            {/* Other Costs */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Materials Budget ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={totalMaterialsBudget}
-                  onChange={(e) => setTotalMaterialsBudget(e.target.value)}
-                  placeholder="0.00"
-                />
+            {/* Materials Budget - Column Layout with 7% Tax */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Materials Budget (7% Sales Tax)</h3>
+                <Button onClick={addMaterialItem} size="sm" variant="outline" type="button">
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Item
+                </Button>
               </div>
-              <div>
-                <Label>Subcontractors ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={totalSubcontractorBudget}
-                  onChange={(e) => setTotalSubcontractorBudget(e.target.value)}
-                  placeholder="0.00"
-                />
+              {materialsBreakdown.length === 0 ? (
+                <p className="text-sm text-gray-600 text-center py-2">No materials added yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {materialsBreakdown.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder="Description"
+                        value={item.description}
+                        onChange={(e) => updateMaterialItem(index, 'description', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Cost"
+                        value={item.cost || ''}
+                        onChange={(e) => updateMaterialItem(index, 'cost', e.target.value)}
+                        className="w-32"
+                      />
+                      <Button
+                        onClick={() => removeMaterialItem(index)}
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {materialsBreakdown.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-blue-300 space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal:</span>
+                    <span className="font-semibold">
+                      ${materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Sales Tax (7%):</span>
+                    <span className="font-semibold">
+                      ${(materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0) * 0.07).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-bold border-t pt-1">
+                    <span>Total with Tax:</span>
+                    <span className="text-blue-600">
+                      ${(materialsBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0) * 1.07).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Subcontractors Budget - Column Layout */}
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Subcontractors Budget (No Tax)</h3>
+                <Button onClick={addSubcontractorItem} size="sm" variant="outline" type="button">
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Item
+                </Button>
               </div>
-              <div>
-                <Label>Equipment/Rental ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={totalEquipmentBudget}
-                  onChange={(e) => setTotalEquipmentBudget(e.target.value)}
-                  placeholder="0.00"
-                />
+              {subcontractorBreakdown.length === 0 ? (
+                <p className="text-sm text-gray-600 text-center py-2">No subcontractors added yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {subcontractorBreakdown.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder="Description"
+                        value={item.description}
+                        onChange={(e) => updateSubcontractorItem(index, 'description', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Cost"
+                        value={item.cost || ''}
+                        onChange={(e) => updateSubcontractorItem(index, 'cost', e.target.value)}
+                        className="w-32"
+                      />
+                      <Button
+                        onClick={() => removeSubcontractorItem(index)}
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {subcontractorBreakdown.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-purple-300">
+                  <div className="flex justify-between font-bold">
+                    <span>Total:</span>
+                    <span className="text-purple-600">
+                      ${subcontractorBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Equipment Budget - Column Layout */}
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">Equipment/Rental Budget (No Tax)</h3>
+                <Button onClick={addEquipmentItem} size="sm" variant="outline" type="button">
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Item
+                </Button>
               </div>
+              {equipmentBreakdown.length === 0 ? (
+                <p className="text-sm text-gray-600 text-center py-2">No equipment added yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {equipmentBreakdown.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder="Description"
+                        value={item.description}
+                        onChange={(e) => updateEquipmentItem(index, 'description', e.target.value)}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Cost"
+                        value={item.cost || ''}
+                        onChange={(e) => updateEquipmentItem(index, 'cost', e.target.value)}
+                        className="w-32"
+                      />
+                      <Button
+                        onClick={() => removeEquipmentItem(index)}
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {equipmentBreakdown.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-orange-300">
+                  <div className="flex justify-between font-bold">
+                    <span>Total:</span>
+                    <span className="text-orange-600">
+                      ${equipmentBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Other Costs */}
