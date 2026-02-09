@@ -502,8 +502,8 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
 
         {/* Fixed Bottom Action Bar */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg z-10">
-          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-1.5 sm:space-y-2">
-            {/* Time Clock Button - Full width */}
+          <div className="w-full px-0 py-2 sm:py-3 space-y-1.5 sm:space-y-2">
+            {/* Time Clock Button - Full width edge to edge */}
             <QuickTimeEntry 
               userId={profile?.id || ''} 
               onSuccess={loadActiveTimers}
@@ -515,7 +515,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             />
             
             {/* Grid layout for time off calendar, fleet, and my time button */}
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 px-2 sm:px-4">
               {/* Time Off Calendar Button - Left side */}
               <Button
                 onClick={() => setShowUnavailableCalendar(true)}
