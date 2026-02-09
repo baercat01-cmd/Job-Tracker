@@ -1,10 +1,11 @@
-const CACHE_NAME = 'martin-v301-hardened';
+const CACHE_NAME = 'martin-v301-assets';
+const DATA_CACHE = 'martin-material-data';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/martin-logo.png',
-  'https://cdn.tailwindcss.com',
+  '/', 
+  '/index.html', 
+  '/manifest.json', 
+  '/martin-logo.png', 
+  'https://cdn.tailwindcss.com', 
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
 ];
 
@@ -17,7 +18,7 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(keys.map((key) => {
-        if (key !== CACHE_NAME) return caches.delete(key);
+        if (key !== CACHE_NAME && key !== DATA_CACHE) return caches.delete(key);
       }));
     })
   );
@@ -27,10 +28,10 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Intercept Data/API calls for the Material Database
+  // Data Caching (Supabase/API)
   if (url.hostname.includes('supabase.co') || url.hostname.includes('backend.onspace.ai') || event.request.headers.get('accept')?.includes('json')) {
     event.respondWith(
-      caches.open(CACHE_NAME).then(cache => 
+      caches.open(DATA_CACHE).then(cache => 
         cache.match(event.request).then(cached => {
           const networked = fetch(event.request).then(res => {
             cache.put(event.request, res.clone());
@@ -43,5 +44,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
+  // Static Asset Caching
   event.respondWith(caches.match(event.request).then(res => res || fetch(event.request)));
 });

@@ -15,60 +15,71 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // --- PWA DEBUGGER LOGIC ---
-        const debugLog = (msg) => {
+        // --- PWA DIAGNOSTIC & DEBUGGER ---
+        const debugLog = (msg, isError = false) => {
             console.log(msg);
             const logEl = document.getElementById('debug-status');
-            if (logEl) logEl.innerHTML += `<div>• ${msg}</div>`;
+            if (logEl) {
+                const color = isError ? 'text-rose-400' : 'text-emerald-400';
+                logEl.innerHTML += `<div class="${color}">• ${msg}</div>`;
+            }
         };
 
-        // 1. Service Worker Registration (Force Update)
-        if ('serviceWorker' in navigator) {
-            const isLocal = window.location.hostname === 'localhost';
-            const isHttps = window.location.protocol === 'https:';
-            const isBlob = window.location.href.startsWith('blob:');
-
-            if ((isHttps || isLocal) && !isBlob) {
-                navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .then((reg) => {
-                        debugLog('SW: Registered & Active');
-                        reg.update(); // Force check for updates
-                    })
-                    .catch(err => debugLog('SW Error: ' + err.message));
-            } else {
-                debugLog('SW: Blocked (Insecure or Preview Environment)');
+        // 1. Asset Verification (Checks if files actually exist on the server)
+        async function runDiagnostics() {
+            const assets = ['/manifest.json', '/sw.js', '/martin-logo.png'];
+            for (const asset of assets) {
+                try {
+                    const res = await fetch(asset, { method: 'HEAD' });
+                    if (res.ok) debugLog(`${asset.replace('/','')} Found ✓`);
+                    else debugLog(`${asset.replace('/','')} MISSING (404) ✗`, true);
+                } catch (e) {
+                    debugLog(`${asset.replace('/','')} Error: Unreachable`, true);
+                }
             }
         }
 
-        // 2. Install Logic
+        // 2. Service Worker Registration (Force Update with Cache Buster)
+        if ('serviceWorker' in navigator) {
+            const isSupported = (window.location.protocol === 'https:' || window.location.hostname === 'localhost') && !window.location.href.startsWith('blob:');
+            
+            if (isSupported) {
+                // Add versioning to SW registration to force browser to update
+                navigator.serviceWorker.register('/sw.js?v=301', { scope: '/' })
+                    .then((reg) => {
+                        debugLog('SW: Registered & Active');
+                        reg.update(); 
+                    })
+                    .catch(err => debugLog('SW Error: ' + err.message, true));
+            } else {
+                debugLog('SW: Blocked (Preview/Insecure)', true);
+            }
+        }
+
+        // 3. Install Logic
         let deferredPrompt;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            debugLog('PWA: Chrome detected install eligibility!');
+            debugLog('PWA: Ready to install!');
             e.preventDefault();
             deferredPrompt = e;
             showInstallUI('android');
         });
 
         function showInstallUI(platform) {
-            if (isStandalone) {
-                debugLog('PWA: Already running as App');
-                return;
-            }
+            if (isStandalone) return;
             const banner = document.getElementById('install-overlay');
             if (banner) banner.style.display = 'flex';
             
             if (platform === 'ios') {
-                const andInst = document.getElementById('android-instructions');
-                const iosInst = document.getElementById('ios-instructions');
-                if (andInst) andInst.style.display = 'none';
-                if (iosInst) iosInst.style.display = 'block';
+                document.getElementById('android-instructions').style.display = 'none';
+                document.getElementById('ios-instructions').style.display = 'block';
             }
         }
 
         window.addEventListener('load', () => {
-            debugLog('Device: ' + (isStandalone ? 'App Mode' : 'Browser Mode'));
+            runDiagnostics();
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             if (isIOS && !isStandalone) {
                 debugLog('Platform: iOS detected');
@@ -78,7 +89,7 @@
     </script>
 </head>
 <body class="bg-slate-50">
-    <!-- HARDENED INSTALL OVERLAY -->
+    <!-- HARDENED INSTALL OVERLAY WITH DIAGNOSTIC BOX -->
     <div id="install-overlay" style="display:none;" class="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
         <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
             <div class="bg-[#4179bc] p-6 text-center">
@@ -89,7 +100,7 @@
             
             <div class="p-6 space-y-4">
                 <div id="android-instructions">
-                    <p class="text-slate-600 text-sm font-medium text-center mb-4">Add this to your home screen for full offline access and a native experience.</p>
+                    <p class="text-slate-600 text-sm font-medium text-center mb-4">Add to home screen for offline database access and a native experience.</p>
                     <button id="pwa-install-btn" class="w-full bg-[#4179bc] text-white py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg active:scale-95 transition-transform">
                         Install App Now
                     </button>
@@ -104,9 +115,9 @@
                     </ol>
                 </div>
 
-                <!-- DEBUG STATUS BOX -->
-                <div id="debug-status" class="bg-slate-900 text-[9px] font-mono text-emerald-400 p-3 rounded-lg border border-slate-800 leading-relaxed">
-                    <div class="text-slate-500 mb-1 border-b border-slate-800 pb-1 uppercase font-black">System Status</div>
+                <!-- DIAGNOSTIC STATUS BOX -->
+                <div id="debug-status" class="bg-slate-900 text-[9px] font-mono p-3 rounded-lg border border-slate-800 leading-relaxed min-h-[80px]">
+                    <div class="text-slate-500 mb-1 border-b border-slate-800 pb-1 uppercase font-black">Diagnostic Log</div>
                 </div>
 
                 <button onclick="document.getElementById('install-overlay').style.display='none'" class="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">
@@ -123,13 +134,12 @@
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                debugLog('Install: ' + outcome);
                 if (outcome === 'accepted') {
                     document.getElementById('install-overlay').style.display = 'none';
                 }
                 deferredPrompt = null;
             } else {
-                debugLog('Error: Chrome is still validating. Try refreshing or use the Chrome menu ⋮ > Install app.');
+                debugLog('Chrome is still validating or files are missing.', true);
             }
         });
     </script>
