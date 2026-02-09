@@ -35,6 +35,8 @@ import {
   DollarSign,
   Camera,
   Image as ImageIcon,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // import * as XLSX from 'xlsx';
@@ -45,6 +47,7 @@ import { ExtrasManagement } from './ExtrasManagement';
 import { CrewOrdersManagement } from './CrewOrdersManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement, cleanMaterialValue } from '@/lib/utils';
+import { parseCSV, rowsToCSV } from '@/lib/csv-parser';
 import {
   DndContext,
   DragOverlay,
@@ -509,6 +512,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [materialPhotos, setMaterialPhotos] = useState<File[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<any[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [importingCSV, setImportingCSV] = useState(false);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
 
   // Material bundles
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
@@ -1432,6 +1437,229 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   const filteredCategories = getDisplayCategories();
 
+  // CSV Export Function
+  async function exportMaterialsToCSV() {
+    try {
+      const allMaterials = categories.flatMap(cat => 
+        cat.materials.map(mat => ({
+          id: mat.id,
+          category_id: mat.category_id,
+          category_name: categories.find(c => c.id === mat.category_id)?.name || '',
+          name: mat.name,
+          quantity: mat.quantity.toString(),
+          length: mat.length || '',
+          color: mat.color || '',
+          use_case: mat.use_case || '',
+          status: mat.status,
+          notes: mat.notes || '',
+          date_needed_by: mat.date_needed_by || '',
+          order_by_date: mat.order_by_date || '',
+          pull_by_date: mat.pull_by_date || '',
+          delivery_date: mat.delivery_date || '',
+          actual_delivery_date: mat.actual_delivery_date || '',
+          pickup_date: mat.pickup_date || '',
+          actual_pickup_date: mat.actual_pickup_date || '',
+          delivery_method: mat.delivery_method || '',
+          delivery_vendor: mat.delivery_vendor || '',
+          pickup_vendor: mat.pickup_vendor || '',
+          unit_cost: mat.unit_cost?.toString() || '',
+          total_cost: mat.total_cost?.toString() || '',
+          is_extra: mat.is_extra ? 'true' : 'false',
+          extra_notes: mat.extra_notes || '',
+          bundle_name: mat.bundle_name || '',
+        }))
+      );
+
+      if (allMaterials.length === 0) {
+        toast.error('No materials to export');
+        return;
+      }
+
+      // Convert to CSV
+      const csvContent = rowsToCSV(allMaterials);
+
+      // Create download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${job.name.replace(/[^a-z0-9]/gi, '_')}_materials_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Exported ${allMaterials.length} materials to CSV`);
+    } catch (error: any) {
+      console.error('Error exporting CSV:', error);
+      toast.error('Failed to export CSV');
+    }
+  }
+
+  // CSV Import Function
+  async function importMaterialsFromCSV(file: File) {
+    try {
+      setImportingCSV(true);
+      
+      // Read file
+      const text = await file.text();
+      const rows = parseCSV(text);
+
+      if (rows.length === 0) {
+        toast.error('CSV file is empty');
+        return;
+      }
+
+      let updatedCount = 0;
+      let createdCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (const row of rows) {
+        try {
+          // Skip rows without required fields
+          if (!row.name || !row.quantity) {
+            continue;
+          }
+
+          // Find or create category
+          let categoryId = row.category_id;
+          if (!categoryId && row.category_name) {
+            // Try to find category by name
+            const existingCategory = categories.find(c => 
+              c.name.toLowerCase() === row.category_name.toLowerCase()
+            );
+            
+            if (existingCategory) {
+              categoryId = existingCategory.id;
+            } else {
+              // Create new category
+              const { data: newCategory, error: catError } = await supabase
+                .from('materials_categories')
+                .insert({
+                  job_id: job.id,
+                  name: row.category_name,
+                  order_index: categories.length,
+                })
+                .select()
+                .single();
+
+              if (catError) throw catError;
+              categoryId = newCategory.id;
+              
+              // Reload categories to include new one
+              await loadMaterials();
+            }
+          }
+
+          if (!categoryId) {
+            errors.push(`Row "${row.name}": No category specified`);
+            errorCount++;
+            continue;
+          }
+
+          // Prepare material data
+          const materialData: any = {
+            category_id: categoryId,
+            name: row.name.trim(),
+            quantity: parseFloat(row.quantity) || 0,
+            length: row.length?.trim() || null,
+            color: row.color?.trim() || null,
+            use_case: row.use_case?.trim() || null,
+            status: row.status || 'not_ordered',
+            notes: row.notes?.trim() || null,
+            date_needed_by: row.date_needed_by || null,
+            order_by_date: row.order_by_date || null,
+            pull_by_date: row.pull_by_date || null,
+            delivery_date: row.delivery_date || null,
+            actual_delivery_date: row.actual_delivery_date || null,
+            pickup_date: row.pickup_date || null,
+            actual_pickup_date: row.actual_pickup_date || null,
+            delivery_method: row.delivery_method || null,
+            delivery_vendor: row.delivery_vendor?.trim() || null,
+            pickup_vendor: row.pickup_vendor?.trim() || null,
+            unit_cost: row.unit_cost ? parseFloat(row.unit_cost) : null,
+            total_cost: row.total_cost ? parseFloat(row.total_cost) : null,
+            is_extra: row.is_extra?.toLowerCase() === 'true',
+            extra_notes: row.extra_notes?.trim() || null,
+            updated_at: new Date().toISOString(),
+          };
+
+          // Update existing or create new
+          if (row.id) {
+            // Update existing material
+            const { error: updateError } = await supabase
+              .from('materials')
+              .update(materialData)
+              .eq('id', row.id)
+              .eq('job_id', job.id); // Safety check
+
+            if (updateError) throw updateError;
+            updatedCount++;
+          } else {
+            // Create new material
+            const { error: insertError } = await supabase
+              .from('materials')
+              .insert({
+                ...materialData,
+                job_id: job.id,
+                created_by: userId,
+                import_source: 'csv_import',
+              });
+
+            if (insertError) throw insertError;
+            createdCount++;
+          }
+        } catch (rowError: any) {
+          console.error('Error processing row:', row, rowError);
+          errors.push(`Row "${row.name || 'Unknown'}": ${rowError.message}`);
+          errorCount++;
+        }
+      }
+
+      // Show results
+      const successMessage = [
+        updatedCount > 0 ? `${updatedCount} updated` : '',
+        createdCount > 0 ? `${createdCount} created` : '',
+      ].filter(Boolean).join(', ');
+
+      if (successMessage) {
+        toast.success(`CSV Import: ${successMessage}`);
+      }
+
+      if (errorCount > 0) {
+        console.error('Import errors:', errors);
+        toast.error(`${errorCount} rows failed to import (check console)`);
+      }
+
+      // Reload materials
+      await loadMaterials();
+      
+      // Reset file input
+      if (csvFileInputRef.current) {
+        csvFileInputRef.current.value = '';
+      }
+    } catch (error: any) {
+      console.error('Error importing CSV:', error);
+      toast.error('Failed to import CSV: ' + error.message);
+    } finally {
+      setImportingCSV(false);
+    }
+  }
+
+  function handleCSVFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        toast.error('Please upload a CSV file');
+        return;
+      }
+      importMaterialsFromCSV(file);
+    }
+  }
+
+  const filteredCategories = getDisplayCategories();
+
   const activeDragItem = activeDragId
     ? categories
         .flatMap(cat => cat.materials)
@@ -1495,6 +1723,56 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
+              {/* CSV Export/Import Bar */}
+              <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-200">
+                <CardContent className="pt-3 pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-sm mb-1 text-blue-900">Bulk CSV Operations</h3>
+                      <p className="text-xs text-blue-700">Export all materials to CSV, edit in Excel/Google Sheets, then import to update</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={exportMaterialsToCSV}
+                        variant="outline"
+                        size="sm"
+                        className="bg-white border-2 border-green-600 text-green-700 hover:bg-green-50 font-semibold"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Export CSV
+                      </Button>
+                      <input
+                        ref={csvFileInputRef}
+                        type="file"
+                        accept=".csv"
+                        onChange={handleCSVFileSelect}
+                        className="hidden"
+                        id="csv-upload"
+                      />
+                      <Button
+                        onClick={() => csvFileInputRef.current?.click()}
+                        variant="outline"
+                        size="sm"
+                        disabled={importingCSV}
+                        className="bg-white border-2 border-blue-600 text-blue-700 hover:bg-blue-50 font-semibold"
+                      >
+                        {importingCSV ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mr-2" />
+                            Importing...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Import CSV
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Search & Filter Bar */}
               <Card>
                 <CardContent className="pt-3 pb-3">
