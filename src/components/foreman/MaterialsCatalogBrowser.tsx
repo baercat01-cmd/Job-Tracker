@@ -846,34 +846,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
-      {/* Fixed top section - Add Custom and Search fixed to screen top */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4">
-        <Button
-          onClick={() => setShowCustomMaterialDialog(true)}
-          variant="outline"
-          className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add Custom Material
-        </Button>
-        
-        <div className="relative">
-          <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search materials..."
-            value={catalogSearch}
-            onChange={(e) => setCatalogSearch(e.target.value)}
-            className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
-          />
-        </div>
-      </div>
-
-      {/* Spacer to push content below fixed header */}
-      <div className="h-[180px] sm:h-[156px]"></div>
-
-      {/* Rest of content with padding */}
-      <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+      {/* Fixed top section - Categories at the very top of screen */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white space-y-3 border-b-2 border-slate-200">
+        {/* Categories - Fixed to top */}
+        <div className="flex gap-2 overflow-x-auto pb-2 pt-3 px-2 sm:px-4">
           <Button
             variant={catalogCategory === null ? "default" : "outline"}
             size="sm"
@@ -902,6 +878,38 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </Button>
           ))}
         </div>
+        
+        {/* Add Custom Material Button */}
+        <div className="px-2 sm:px-4">
+          <Button
+            onClick={() => setShowCustomMaterialDialog(true)}
+            variant="outline"
+            className="w-full h-14 sm:h-12 border-2 border-slate-300 bg-white hover:bg-slate-50 text-green-900 font-bold text-base"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Add Custom Material
+          </Button>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="px-2 sm:px-4 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-4 sm:h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search materials..."
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              className="pl-11 sm:pl-10 h-14 sm:h-12 text-base sm:text-base border-2 border-slate-300"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Spacer to push content below fixed header (categories + button + search) */}
+      <div className="h-[240px] sm:h-[216px]"></div>
+
+      {/* Rest of content with padding */}
+      <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
 
         {catalogSearch && catalogLoading ? (
           <Card>
@@ -1546,6 +1554,20 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     placeholder="Any additional details..."
                     rows={3}
                   />
+                </div>
+
+                {/* Mark as Extra Checkbox */}
+                <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="material-is-extra"
+                    checked={materialIsExtra}
+                    onChange={(e) => setMaterialIsExtra(e.target.checked)}
+                    className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                  />
+                  <Label htmlFor="material-is-extra" className="cursor-pointer font-semibold text-orange-900 text-sm">
+                    Mark as Extra Material (not in original order)
+                  </Label>
                 </div>
               </div>
 
