@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -512,6 +513,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   // Material bundles
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [bundles, setBundles] = useState<any[]>([]);
+  const [showCreateBundleDialog, setShowCreateBundleDialog] = useState(false);
+  const [showEditBundleDialog, setShowEditBundleDialog] = useState(false);
+  const [editingBundle, setEditingBundle] = useState<any | null>(null);
+  const [bundleName, setBundleName] = useState('');
+  const [bundleDescription, setBundleDescription] = useState('');
+  const [bundleStatus, setBundleStatus] = useState('not_ordered');
 
   useEffect(() => {
     loadMaterials();
@@ -685,6 +692,99 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       console.error('Error assigning material to bundle:', error);
       toast.error('Failed to update bundle assignment');
     }
+  }
+
+  async function createBundle() {
+    if (!bundleName.trim()) {
+      toast.error('Please enter a bundle name');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('material_bundles')
+        .insert({
+          job_id: job.id,
+          name: bundleName.trim(),
+          description: bundleDescription.trim() || null,
+          status: bundleStatus,
+          created_by: userId,
+        });
+
+      if (error) throw error;
+
+      toast.success('Bundle created');
+      setShowCreateBundleDialog(false);
+      setBundleName('');
+      setBundleDescription('');
+      setBundleStatus('not_ordered');
+      loadBundles();
+    } catch (error: any) {
+      console.error('Error creating bundle:', error);
+      toast.error('Failed to create bundle');
+    }
+  }
+
+  async function updateBundle() {
+    if (!editingBundle || !bundleName.trim()) {
+      toast.error('Please enter a bundle name');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('material_bundles')
+        .update({
+          name: bundleName.trim(),
+          description: bundleDescription.trim() || null,
+          status: bundleStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingBundle.id);
+
+      if (error) throw error;
+
+      toast.success('Bundle updated');
+      setShowEditBundleDialog(false);
+      setEditingBundle(null);
+      setBundleName('');
+      setBundleDescription('');
+      setBundleStatus('not_ordered');
+      loadBundles();
+    } catch (error: any) {
+      console.error('Error updating bundle:', error);
+      toast.error('Failed to update bundle');
+    }
+  }
+
+  async function deleteBundle(bundleId: string) {
+    if (!confirm('Delete this bundle? Materials will not be deleted, just removed from the bundle.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('material_bundles')
+        .delete()
+        .eq('id', bundleId);
+
+      if (error) throw error;
+
+      toast.success('Bundle deleted');
+      loadBundles();
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error deleting bundle:', error);
+      toast.error('Failed to delete bundle');
+    }
+  }
+
+  function openEditBundle(bundle: any) {
+    setEditingBundle(bundle);
+    setBundleName(bundle.name);
+    setBundleDescription(bundle.description || '');
+    setBundleStatus(bundle.status);
+    setShowEditBundleDialog(true);
   }
 
   async function moveCategoryUp(categoryId: string) {
@@ -1517,22 +1617,136 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           <TabsContent value="bundles" className="space-y-2">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5" />
-                  Material Bundles
-                </CardTitle>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Create and manage material bundles by grouping related materials together.
-                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <ShoppingCart className="w-5 h-5" />
+                      Material Bundles
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Create and manage material bundles by grouping related materials together.
+                    </p>
+                  </div>
+                  <Button onClick={() => setShowCreateBundleDialog(true)} className="gradient-primary">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Bundle
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="pt-3">
-                <MaterialsList
-                  job={job}
-                  userId={userId}
-                  userRole="office"
-                  allowBundleCreation={true}
-                  defaultTab="bundles"
-                />
+                {bundles.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg mb-2">No bundles yet</p>
+                    <p className="text-sm mb-4">Create your first bundle to group materials together</p>
+                    <Button onClick={() => setShowCreateBundleDialog(true)} variant="outline">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create First Bundle
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {bundles.map((bundle) => {
+                      const bundleMaterials = categories
+                        .flatMap(cat => cat.materials)
+                        .filter(mat => materialBundleMap.get(mat.id)?.bundleId === bundle.id);
+                      
+                      return (
+                        <Card key={bundle.id} className="border-2 border-purple-200">
+                          <CardHeader className="pb-3 bg-purple-50/50">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <PackagePlus className="w-5 h-5 text-purple-600" />
+                                  {bundle.name}
+                                </CardTitle>
+                                {bundle.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {bundle.description}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {bundleMaterials.length} {bundleMaterials.length === 1 ? 'item' : 'items'}
+                                  </Badge>
+                                  <Badge 
+                                    className={
+                                      bundle.status === 'not_ordered' 
+                                        ? 'bg-gray-100 text-gray-700' 
+                                        : bundle.status === 'ordered'
+                                        ? 'bg-yellow-100 text-yellow-700'
+                                        : bundle.status === 'at_shop'
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'bg-green-100 text-green-700'
+                                    }
+                                  >
+                                    {getStatusLabel(bundle.status)}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openEditBundle(bundle)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteBundle(bundle.id)}
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          
+                          {bundleMaterials.length > 0 && (
+                            <CardContent className="pt-3">
+                              <div className="space-y-2">
+                                <p className="text-sm font-semibold text-muted-foreground mb-2">
+                                  Bundle Contents:
+                                </p>
+                                {bundleMaterials.map((material) => {
+                                  const category = categories.find(c => c.id === material.category_id);
+                                  return (
+                                    <div 
+                                      key={material.id}
+                                      className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border"
+                                    >
+                                      <div className="flex-1">
+                                        <p className="font-medium text-sm">{cleanMaterialValue(material.name)}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <Badge variant="outline" className="text-xs">
+                                            {category?.name || 'Uncategorized'}
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            Qty: {material.quantity}
+                                          </span>
+                                          {material.length && (
+                                            <span className="text-xs text-muted-foreground">
+                                              Length: {cleanMaterialValue(material.length)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <Badge className={getStatusColor(material.status)}>
+                                        {getStatusLabel(material.status)}
+                                      </Badge>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </CardContent>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1546,6 +1760,135 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Create Bundle Dialog */}
+      <Dialog open={showCreateBundleDialog} onOpenChange={setShowCreateBundleDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackagePlus className="w-5 h-5" />
+              Create Material Bundle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="bundle-name">Bundle Name *</Label>
+              <Input
+                id="bundle-name"
+                value={bundleName}
+                onChange={(e) => setBundleName(e.target.value)}
+                placeholder="e.g., Steel Roof Package, Foundation Materials"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bundle-description">Description</Label>
+              <Textarea
+                id="bundle-description"
+                value={bundleDescription}
+                onChange={(e) => setBundleDescription(e.target.value)}
+                placeholder="Optional description of what's in this bundle..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bundle-status">Status</Label>
+              <Select value={bundleStatus} onValueChange={setBundleStatus}>
+                <SelectTrigger id="bundle-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                        {opt.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-900">
+                💡 After creating the bundle, assign materials to it using the "Bundle" dropdown in the Manage Materials tab.
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={createBundle} className="flex-1 gradient-primary">
+                Create Bundle
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreateBundleDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Bundle Dialog */}
+      <Dialog open={showEditBundleDialog} onOpenChange={setShowEditBundleDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5" />
+              Edit Bundle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-bundle-name">Bundle Name *</Label>
+              <Input
+                id="edit-bundle-name"
+                value={bundleName}
+                onChange={(e) => setBundleName(e.target.value)}
+                placeholder="e.g., Steel Roof Package, Foundation Materials"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-bundle-description">Description</Label>
+              <Textarea
+                id="edit-bundle-description"
+                value={bundleDescription}
+                onChange={(e) => setBundleDescription(e.target.value)}
+                placeholder="Optional description of what's in this bundle..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-bundle-status">Status</Label>
+              <Select value={bundleStatus} onValueChange={setBundleStatus}>
+                <SelectTrigger id="edit-bundle-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs ${opt.color}`}>
+                        {opt.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={updateBundle} className="flex-1 gradient-primary">
+                Update Bundle
+              </Button>
+              <Button variant="outline" onClick={() => setShowEditBundleDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Material Edit/Add Dialog */}
       <Dialog open={showMaterialModal} onOpenChange={setShowMaterialModal}>
