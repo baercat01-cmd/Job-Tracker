@@ -625,7 +625,7 @@ export function TimeEntriesView() {
                           )}
                           <div className="text-left">
                             <h3 className="font-bold text-lg">
-                              {group.job?.name || group.job?.job_number || 'Unknown Job'}
+                              {group.job?.isMiscJob ? group.job.name : (group.job?.name || group.job?.job_number || 'Unknown Job')}
                             </h3>
                             <p className="text-sm text-muted-foreground">
                               {group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
