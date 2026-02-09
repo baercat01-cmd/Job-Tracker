@@ -158,6 +158,26 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
     }
   }
 
+  async function updateMaterialPriority(materialId: string, newPriority: string) {
+    try {
+      const { error } = await supabase
+        .from('materials')
+        .update({ 
+          priority: newPriority,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+
+      toast.success('Material priority updated');
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error updating priority:', error);
+      toast.error('Failed to update priority');
+    }
+  }
+
   const totalAtShop = materialsAtShop.length;
   const totalReadyToPull = materialsReadyToPull.length;
 
@@ -256,11 +276,8 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                             <Card key={material.id} className="border-l-4 border-l-purple-600 bg-white hover:shadow-md transition-shadow">
                               <CardContent className="py-3 px-3">
                                 <div className="flex items-center gap-3">
-                                  {/* Left side: Priority, category badge and pull by date */}
+                                  {/* Left side: Category badge and pull by date */}
                                   <div className="flex flex-col gap-1 flex-shrink-0">
-                                    <Badge className={`text-xs font-bold whitespace-nowrap ${getPriorityColor(material.priority || 'medium')}`}>
-                                      {getPriorityLabel(material.priority || 'medium')}
-                                    </Badge>
                                     <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
                                       {material.category?.name || 'Uncategorized'}
                                     </Badge>
@@ -281,8 +298,25 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                     </div>
                                   </div>
                                   
-                                  {/* Right side: Compact status selector */}
-                                  <div className="flex-shrink-0 w-36">
+                                  {/* Right side: Priority and Status selectors */}
+                                  <div className="flex flex-col gap-2 flex-shrink-0 w-36">
+                                    <Select
+                                      value={material.priority || 'medium'}
+                                      onValueChange={(value) => updateMaterialPriority(material.id, value)}
+                                    >
+                                      <SelectTrigger className={`h-8 font-bold border-2 text-xs ${getPriorityColor(material.priority || 'medium')}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {PRIORITY_OPTIONS.map(opt => (
+                                          <SelectItem key={opt.value} value={opt.value}>
+                                            <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${opt.color}`}>
+                                              {opt.label}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                     <Select
                                       value={material.status}
                                       onValueChange={(value) => updateMaterialStatus(material.id, value)}
