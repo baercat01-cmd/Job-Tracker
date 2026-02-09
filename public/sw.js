@@ -1,4 +1,4 @@
-const CACHE_NAME = 'martin-v301-assets';
+const CACHE_NAME = 'martin-v302-assets';
 const DATA_CACHE = 'martin-material-data';
 const ASSETS = [
   '/', 
@@ -28,7 +28,6 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Data Caching (Supabase/API)
   if (url.hostname.includes('supabase.co') || url.hostname.includes('backend.onspace.ai') || event.request.headers.get('accept')?.includes('json')) {
     event.respondWith(
       caches.open(DATA_CACHE).then(cache => 
@@ -44,6 +43,5 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Static Asset Caching
   event.respondWith(caches.match(event.request).then(res => res || fetch(event.request)));
 });

@@ -25,7 +25,7 @@
             }
         };
 
-        // 1. Asset Verification (Checks if files actually exist on the server)
+        // 1. Asset Verification
         async function runDiagnostics() {
             const assets = ['/manifest.json', '/sw.js', '/martin-logo.png'];
             for (const asset of assets) {
@@ -39,13 +39,11 @@
             }
         }
 
-        // 2. Service Worker Registration (Force Update with Cache Buster)
+        // 2. Service Worker Registration
         if ('serviceWorker' in navigator) {
             const isSupported = (window.location.protocol === 'https:' || window.location.hostname === 'localhost') && !window.location.href.startsWith('blob:');
-            
             if (isSupported) {
-                // Add versioning to SW registration to force browser to update
-                navigator.serviceWorker.register('/sw.js?v=301', { scope: '/' })
+                navigator.serviceWorker.register('/sw.js?v=302', { scope: '/' })
                     .then((reg) => {
                         debugLog('SW: Registered & Active');
                         reg.update(); 
@@ -61,51 +59,52 @@
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            debugLog('PWA: Ready to install!');
+            debugLog('PWA: Install event captured!');
             e.preventDefault();
             deferredPrompt = e;
-            showInstallUI('android');
+            // Banner is shown automatically via window load logic if !standalone
         });
-
-        function showInstallUI(platform) {
-            if (isStandalone) return;
-            const banner = document.getElementById('install-overlay');
-            if (banner) banner.style.display = 'flex';
-            
-            if (platform === 'ios') {
-                document.getElementById('android-instructions').style.display = 'none';
-                document.getElementById('ios-instructions').style.display = 'block';
-            }
-        }
 
         window.addEventListener('load', () => {
             runDiagnostics();
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            if (isIOS && !isStandalone) {
-                debugLog('Platform: iOS detected');
-                showInstallUI('ios');
+            if (!isStandalone) {
+                const banner = document.getElementById('pwa-top-banner');
+                if (banner) banner.style.display = 'flex';
+                
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                if (isIOS) {
+                    debugLog('Platform: iOS detected');
+                }
             }
         });
     </script>
 </head>
 <body class="bg-slate-50">
-    <!-- HARDENED INSTALL OVERLAY WITH DIAGNOSTIC BOX -->
+    <!-- PERSISTENT TOP INSTALL BANNER -->
+    <div id="pwa-top-banner" style="display:none;" class="bg-[#4179bc] text-white p-3 flex justify-between items-center sticky top-0 z-[100] shadow-md border-b border-white/10">
+        <div class="flex items-center gap-3">
+            <img src="/martin-logo.png" class="w-8 h-8 rounded-lg shadow-sm" alt="App Logo">
+            <div>
+                <p class="text-[10px] font-black leading-none uppercase tracking-widest">Martin OS</p>
+                <p class="text-[8px] font-bold opacity-70">Install for offline access</p>
+            </div>
+        </div>
+        <button id="pwa-header-install-btn" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-lg active:scale-95 transition-transform">
+            Get App
+        </button>
+    </div>
+
+    <!-- FULL SCREEN INSTALL OVERLAY (FALLBACK/IOS) -->
     <div id="install-overlay" style="display:none;" class="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
         <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
             <div class="bg-[#4179bc] p-6 text-center">
                 <img src="/martin-logo.png" class="w-16 h-16 mx-auto rounded-xl shadow-lg border-2 border-white/20 mb-4" alt="Logo">
                 <h2 class="text-white font-black text-xl tracking-tight">Martin Builder OS</h2>
-                <p class="text-white/70 text-[10px] font-bold uppercase tracking-widest mt-1">Mobile App Setup</p>
             </div>
-            
             <div class="p-6 space-y-4">
                 <div id="android-instructions">
-                    <p class="text-slate-600 text-sm font-medium text-center mb-4">Add to home screen for offline database access and a native experience.</p>
-                    <button id="pwa-install-btn" class="w-full bg-[#4179bc] text-white py-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg active:scale-95 transition-transform">
-                        Install App Now
-                    </button>
+                    <p class="text-slate-600 text-sm font-medium text-center mb-4">Launch from your home screen for the full professional experience.</p>
                 </div>
-                
                 <div id="ios-instructions" style="display:none;" class="text-center">
                     <p class="text-slate-600 text-sm font-medium mb-4">To install on iPhone:</p>
                     <ol class="text-left text-[10px] space-y-2 bg-slate-50 p-4 rounded-lg border border-slate-100 font-bold text-slate-500">
@@ -114,12 +113,9 @@
                         <li>3. Tap <span class="text-blue-600">"Add"</span> in the top right</li>
                     </ol>
                 </div>
-
-                <!-- DIAGNOSTIC STATUS BOX -->
-                <div id="debug-status" class="bg-slate-900 text-[9px] font-mono p-3 rounded-lg border border-slate-800 leading-relaxed min-h-[80px]">
-                    <div class="text-slate-500 mb-1 border-b border-slate-800 pb-1 uppercase font-black">Diagnostic Log</div>
+                <div id="debug-status" class="bg-slate-900 text-[9px] font-mono p-3 rounded-lg border border-slate-800 leading-relaxed min-h-[60px]">
+                    <div class="text-slate-500 mb-1 border-b border-slate-800 pb-1 uppercase font-black text-[8px]">Diagnostic Log</div>
                 </div>
-
                 <button onclick="document.getElementById('install-overlay').style.display='none'" class="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">
                     Maybe Later
                 </button>
@@ -130,18 +126,28 @@
     <div id="root"></div>
 
     <script>
-        document.getElementById('pwa-install-btn')?.addEventListener('click', async () => {
+        const handleInstallClick = async () => {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
                 if (outcome === 'accepted') {
-                    document.getElementById('install-overlay').style.display = 'none';
+                    document.getElementById('pwa-top-banner').style.display = 'none';
                 }
                 deferredPrompt = null;
+            } else if (isIOS) {
+                document.getElementById('install-overlay').style.display = 'flex';
+                document.getElementById('android-instructions').style.display = 'none';
+                document.getElementById('ios-instructions').style.display = 'block';
             } else {
-                debugLog('Chrome is still validating or files are missing.', true);
+                // If Chrome is slow to fire beforeinstallprompt, show the debugger
+                document.getElementById('install-overlay').style.display = 'flex';
+                debugLog('Chrome event pending. Try Menu (⋮) > Install app.', true);
             }
-        });
+        };
+
+        document.getElementById('pwa-header-install-btn')?.addEventListener('click', handleInstallClick);
     </script>
 
     <script type="module" src="/src/main.tsx"></script>
