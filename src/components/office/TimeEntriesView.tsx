@@ -669,7 +669,7 @@ export function TimeEntriesView() {
         <TabsContent value="user" className="space-y-3 mt-6">
           {Object.entries(groupedByUser).map(([userId, group]: [string, any]) => {
             const isExpanded = expandedItems.has(userId);
-            const jobsWorked = Array.from(new Set(
+            const jobsWorked: string[] = Array.from(new Set(
               group.entries.map((entry: any) => {
                 const miscJobName = getMiscJobName(entry);
                 return miscJobName || entry.jobs?.name || 'Unknown Job';
