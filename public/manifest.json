@@ -13,13 +13,13 @@
   "icons": [
     {
       "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
-      "sizes": "192x192",
+      "sizes": "192x64",
       "type": "image/png",
       "purpose": "any"
     },
     {
       "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
-      "sizes": "192x192",
+      "sizes": "192x64",
       "type": "image/png",
       "purpose": "maskable"
     },
@@ -28,6 +28,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "screenshots": [],

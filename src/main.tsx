@@ -8,20 +8,51 @@ import { initDB } from './lib/offline-db';
 import './lib/error-handler';
 import './lib/stress-test';
 
-console.log('🚀 FieldTrack Pro v2.0.4 - Starting...');
+console.log('🚀 FieldTrack Pro v2.0.5 (PWA) - Starting...');
 console.log('📱 Offline support enabled');
 
-// Register Service Worker for offline support
+// Register Service Worker for PWA functionality
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('[Service Worker] Registered:', registration);
+        console.log('✅ Service Worker registered successfully:', registration.scope);
+        console.log('🎯 PWA Mode: App can be installed and works offline');
+        
+        // Check for updates every 60 seconds
+        setInterval(() => {
+          registration.update();
+        }, 60000);
+        
+        // Handle service worker updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New service worker available, notify user
+                console.log('🔄 New version available! Prompting user to update.');
+                if (confirm('A new version of FieldTrack is available. Reload to update?')) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  window.location.reload();
+                }
+              }
+            });
+          }
+        });
       })
       .catch((error) => {
-        console.error('[Service Worker] Registration failed:', error);
+        console.error('❌ Service Worker registration failed:', error);
       });
+  });
+  
+  // Listen for messages from service worker
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SYNC_OFFLINE_DATA') {
+      console.log('📡 Background sync triggered');
+      // Trigger offline data sync here if needed
+    }
   });
 }
 
