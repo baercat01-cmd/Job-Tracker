@@ -632,44 +632,47 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
       </div>
 
       {/* Main Content - Tabbed Interface */}
-      <main className="w-full max-w-full px-2 sm:px-4 py-3 sm:py-8 pb-20 sm:pb-24 overflow-x-hidden">
-        {activeTab === 'timer' && (
-          <TimeTracker
-            job={selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleBackToJobs}
-            onTimerUpdate={loadActiveTimers}
-          />
-        )}
+      <main className="w-full max-w-full overflow-x-hidden">
+        <div className="px-2 sm:px-4 py-3 sm:py-8 pb-20 sm:pb-24">
+          {activeTab === 'timer' && (
+            <TimeTracker
+              job={selectedJob}
+              userId={profile?.id || ''}
+              onBack={handleBackToJobs}
+              onTimerUpdate={loadActiveTimers}
+            />
+          )}
 
-        {activeTab === 'photos' && (
-          <PhotoUpload
-            job={selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleBackToJobs}
-          />
-        )}
+          {activeTab === 'photos' && (
+            <PhotoUpload
+              job={selectedJob}
+              userId={profile?.id || ''}
+              onBack={handleBackToJobs}
+            />
+          )}
 
-        {activeTab === 'documents' && (
-          <JobDetails
-            job={selectedJob}
-            onBack={handleBackToJobs}
-            defaultTab={documentTab}
-          />
-        )}
+          {activeTab === 'documents' && (
+            <JobDetails
+              job={selectedJob}
+              onBack={handleBackToJobs}
+              defaultTab={documentTab}
+            />
+          )}
 
+          {activeTab === 'schedule' && (
+            <JobSchedule
+              job={selectedJob}
+            />
+          )}
+        </div>
+
+        {/* Materials tab without padding for full screen experience */}
         {activeTab === 'materials' && (
           <MaterialsList
             job={selectedJob}
             userId={profile?.id || ''}
             allowBundleCreation={false}
             defaultTab={materialsDefaultTab}
-          />
-        )}
-
-        {activeTab === 'schedule' && (
-          <JobSchedule
-            job={selectedJob}
           />
         )}
       </main>

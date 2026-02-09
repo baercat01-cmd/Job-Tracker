@@ -1281,7 +1281,9 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
   return (
     <div
-      className="space-y-3 w-full max-w-[2000px] mx-auto"
+      className={`w-full max-w-[2000px] mx-auto ${
+        activeTab === 'order' ? '' : 'space-y-3 px-2 sm:px-4 py-3 sm:py-4 pb-20'
+      }`}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -1325,7 +1327,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'order')} className="w-full">
-        <div className="relative mb-4">
+        <div className={`relative ${activeTab === 'order' ? '' : 'px-2 sm:px-4 mb-4'}`}>
           <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-5' : 'grid-cols-4'} bg-slate-100 p-1 rounded-none`}>
             <TabsTrigger
               value="all"
@@ -1402,7 +1404,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
           )}
         </div>
 
-        <TabsContent value="all" className="space-y-3">
+        <TabsContent value="all" className="space-y-3 px-2 sm:px-4">
           {/* Bundle Creation Button (when in selection mode) */}
           {selectionMode && selectedMaterialIds.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
@@ -1584,19 +1586,19 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         </TabsContent>
 
         {/* Remaining tabs unchanged - keeping them from original file */}
-        <TabsContent value="ready">
+        <TabsContent value="ready" className="px-2 sm:px-4">
           <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="at_shop" />
         </TabsContent>
 
-        <TabsContent value="pull">
+        <TabsContent value="pull" className="px-2 sm:px-4">
           <ReadyForJobMaterials userId={userId} currentJobId={job.id} statusFilter="ready_to_pull" />
         </TabsContent>
 
-        <TabsContent value="bundles">
+        <TabsContent value="bundles" className="px-2 sm:px-4">
           {/* Bundles tab content - keeping original */}
         </TabsContent>
 
-        <TabsContent value="order">
+        <TabsContent value="order" className="h-full">
           <MaterialsCatalogBrowser
             job={job}
             userId={userId}
