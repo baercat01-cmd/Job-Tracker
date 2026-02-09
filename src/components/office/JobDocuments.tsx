@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -41,7 +41,11 @@ import {
   User,
   FolderPlus,
   X,
-  Plus
+  Plus,
+  Eye,
+  EyeOff,
+  Edit2,
+  Check
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -55,6 +59,7 @@ interface JobDocument {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  visible_to_crew: boolean;
   latest_file_url?: string;
 }
 
@@ -67,6 +72,14 @@ interface DocumentRevision {
   uploaded_by: string | null;
   uploaded_at: string;
   uploader_name?: string;
+}
+
+interface PendingUpload {
+  file: File;
+  id: string;
+  name: string;
+  category: string;
+  visible_to_crew: boolean;
 }
 
 interface JobDocumentsProps {
@@ -98,7 +111,13 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
   const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
 
   // Upload mode
-  const [uploadMode, setUploadMode] = useState<'new' | 'revision' | null>(null);
+  const [uploadMode, setUploadMode] = useState<'new' | 'revision' | 'bulk' | null>(null);
+
+  // Bulk upload state
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New document state
   const [newDocName, setNewDocName] = useState('');
@@ -121,6 +140,11 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
 
   // Upload loading
   const [uploading, setUploading] = useState(false);
+  
+  // Edit mode for documents
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState('');
 
   useEffect(() => {
     loadDocuments();
@@ -246,6 +270,195 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     setRevisionDescription('');
   }
 
+  function openBulkUpload() {
+    setUploadMode('bulk');
+    setPendingUploads([]);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    handleFiles(files);
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      handleFiles(files);
+    }
+  }
+
+  function handleFiles(files: File[]) {
+    const newUploads: PendingUpload[] = files.map(file => ({
+      file,
+      id: Math.random().toString(36).substring(7),
+      name: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
+      category: DEFAULT_CATEGORIES[0],
+      visible_to_crew: false, // Default to hidden from crew
+    }));
+
+    setPendingUploads(prev => [...prev, ...newUploads]);
+  }
+
+  function removePendingUpload(id: string) {
+    setPendingUploads(prev => prev.filter(u => u.id !== id));
+  }
+
+  function updatePendingUpload(id: string, updates: Partial<PendingUpload>) {
+    setPendingUploads(prev => prev.map(u => 
+      u.id === id ? { ...u, ...updates } : u
+    ));
+  }
+
+  async function processBulkUploads() {
+    if (pendingUploads.length === 0) {
+      toast.error('No files to upload');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const upload of pendingUploads) {
+        try {
+          // Upload file to storage
+          const fileExt = upload.file.name.split('.').pop();
+          const timestamp = Date.now();
+          const fileName = `${job.id}/documents/${timestamp}_${upload.file.name}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('job-files')
+            .upload(fileName, upload.file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('job-files')
+            .getPublicUrl(fileName);
+
+          // Create document record
+          const { data: docData, error: docError } = await supabase
+            .from('job_documents')
+            .insert({
+              job_id: job.id,
+              name: upload.name.trim(),
+              category: upload.category,
+              current_version: 1,
+              visible_to_crew: upload.visible_to_crew,
+              created_by: profile?.id,
+            })
+            .select()
+            .single();
+
+          if (docError) throw docError;
+
+          // Create first revision (v1)
+          const { error: revError } = await supabase
+            .from('job_document_revisions')
+            .insert({
+              document_id: docData.id,
+              version_number: 1,
+              file_url: publicUrl,
+              revision_description: 'Initial upload',
+              uploaded_by: profile?.id,
+            });
+
+          if (revError) throw revError;
+
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to upload ${upload.name}:`, error);
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}`);
+      }
+      if (failCount > 0) {
+        toast.error(`Failed to upload ${failCount} document${failCount > 1 ? 's' : ''}`);
+      }
+
+      if (successCount > 0) {
+        setUploadMode(null);
+        setPendingUploads([]);
+        loadDocuments();
+        loadCategories();
+        onUpdate();
+      }
+    } catch (error: any) {
+      console.error('Bulk upload error:', error);
+      toast.error(`Upload failed: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function startEditDocument(doc: JobDocument) {
+    setEditingDocId(doc.id);
+    setEditName(doc.name);
+    setEditCategory(doc.category);
+  }
+
+  async function saveDocumentEdits(docId: string) {
+    try {
+      const { error } = await supabase
+        .from('job_documents')
+        .update({
+          name: editName.trim(),
+          category: editCategory,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      toast.success('Document updated');
+      setEditingDocId(null);
+      loadDocuments();
+    } catch (error: any) {
+      console.error('Error updating document:', error);
+      toast.error('Failed to update document');
+    }
+  }
+
+  async function toggleCrewVisibility(docId: string, currentValue: boolean) {
+    try {
+      const { error } = await supabase
+        .from('job_documents')
+        .update({
+          visible_to_crew: !currentValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      toast.success(!currentValue ? 'Document is now visible to crew' : 'Document hidden from crew');
+      loadDocuments();
+    } catch (error: any) {
+      console.error('Error toggling visibility:', error);
+      toast.error('Failed to update visibility');
+    }
+  }
+
   async function uploadNewDocument() {
     if (!isOffice) {
       toast.error('Only office staff can upload documents');
@@ -260,18 +473,11 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
     try {
       setUploading(true);
 
-      // Upload file to storage
-      // It's safer to check if newDocFile exists before accessing its properties
-      // although the check above already covers this for the `if (!newDocFile)` case.
-      // TypeScript might still complain if not explicitly handled here.
-      if (!newDocFile) {
-          throw new Error("File not selected for upload.");
-      }
       const fileExt = newDocFile.name.split('.').pop();
       const timestamp = Date.now();
       const fileName = `${job.id}/documents/${timestamp}_${newDocFile.name}`;
 
-      const { error: uploadError, data: uploadData } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('job-files')
         .upload(fileName, newDocFile);
 
@@ -289,6 +495,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           name: newDocName.trim(),
           category: newDocCategory,
           current_version: 1,
+          visible_to_crew: false, // Default to hidden
           created_by: profile?.id,
         })
         .select()
@@ -342,10 +549,6 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       const newVersion = document.current_version + 1;
 
       // Upload file to storage
-      // Similar check for revisionFile as newDocFile
-      if (!revisionFile) {
-          throw new Error("File not selected for revision upload.");
-      }
       const fileExt = revisionFile.name.split('.').pop();
       const timestamp = Date.now();
       const fileName = `${job.id}/documents/${timestamp}_v${newVersion}_${revisionFile.name}`;
@@ -465,9 +668,13 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       {isOffice && (
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
-            <Button onClick={openNewDocument} className="gradient-primary">
+            <Button onClick={openBulkUpload} className="gradient-primary">
               <FileUp className="w-4 h-4 mr-2" />
-              Upload New Document
+              Bulk Upload
+            </Button>
+            <Button onClick={openNewDocument} variant="outline">
+              <FileUp className="w-4 h-4 mr-2" />
+              Upload Single
             </Button>
             <Button onClick={openRevisionUpload} variant="outline">
               <Upload className="w-4 h-4 mr-2" />
@@ -492,67 +699,313 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         </Card>
       ) : (
         <div className="space-y-3">
-          {documents.map((doc) => (
-            <Card key={doc.id}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <CardTitle className="text-base mb-1">{doc.name}</CardTitle>
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <Badge variant="outline" className="text-xs">
-                        {doc.category}
-                      </Badge>
-                      <Badge className="text-xs bg-primary/10 text-primary">
-                        v{doc.current_version}
-                      </Badge>
-                      <span className="text-xs">
-                        Updated {new Date(doc.updated_at).toLocaleDateString()}
-                      </span>
+          {documents.map((doc) => {
+            const isEditing = editingDocId === doc.id;
+            
+            return (
+              <Card key={doc.id} className={doc.visible_to_crew ? 'border-l-4 border-l-green-500' : ''}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      {isEditing ? (
+                        <div className="space-y-2 mb-2">
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="text-base font-semibold"
+                            placeholder="Document name"
+                          />
+                          <Select value={editCategory} onValueChange={setEditCategory}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((cat) => (
+                                <SelectItem key={cat} value={cat}>
+                                  {cat}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <>
+                          <CardTitle className="text-base mb-1">{doc.name}</CardTitle>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                            <Badge variant="outline" className="text-xs">
+                              {doc.category}
+                            </Badge>
+                            <Badge className="text-xs bg-primary/10 text-primary">
+                              v{doc.current_version}
+                            </Badge>
+                            {doc.visible_to_crew ? (
+                              <Badge className="text-xs bg-green-500 text-white">
+                                <Eye className="w-3 h-3 mr-1" />
+                                Crew Visible
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                <EyeOff className="w-3 h-3 mr-1" />
+                                Office Only
+                              </Badge>
+                            )}
+                            <span className="text-xs">
+                              Updated {new Date(doc.updated_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isEditing ? (
+                        <>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => saveDocumentEdits(doc.id)}
+                          >
+                            <Check className="w-4 h-4 mr-1" />
+                            Save
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingDocId(null)}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          {doc.latest_file_url && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              asChild
+                            >
+                              <a 
+                                href={doc.latest_file_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1"
+                              >
+                                <FileText className="w-4 h-4" />
+                                View
+                              </a>
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openRevisionLog(doc.id)}
+                          >
+                            <History className="w-4 h-4 mr-1" />
+                            History
+                          </Button>
+                          {isOffice && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => startEditDocument(doc)}
+                                title="Edit name and category"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant={doc.visible_to_crew ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => toggleCrewVisibility(doc.id, doc.visible_to_crew)}
+                                title={doc.visible_to_crew ? "Hide from crew" : "Show to crew"}
+                              >
+                                {doc.visible_to_crew ? (
+                                  <Eye className="w-4 h-4" />
+                                ) : (
+                                  <EyeOff className="w-4 h-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeletingDoc(doc)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {doc.latest_file_url && (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        asChild
-                      >
-                        <a 
-                          href={doc.latest_file_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1"
-                        >
-                          <FileText className="w-4 h-4" />
-                          View
-                        </a>
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openRevisionLog(doc.id)}
-                    >
-                      <History className="w-4 h-4 mr-1" />
-                      History
-                    </Button>
-                    {isOffice && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeletingDoc(doc)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
-          ))}
+                </CardHeader>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={uploadMode === 'bulk'} onOpenChange={() => setUploadMode(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Documents</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Drag and Drop Zone */}
+            <div
+              ref={dropZoneRef}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                isDragging 
+                  ? 'border-primary bg-primary/5' 
+                  : 'border-muted-foreground/25 hover:border-primary/50'
+              }`}
+            >
+              <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">
+                Drag and drop files here
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                or click the button below to browse
+              </p>
+              <Input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleFileSelect}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.dwg"
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FileUp className="w-4 h-4 mr-2" />
+                Browse Files
+              </Button>
+            </div>
+
+            {/* Pending Uploads List */}
+            {pendingUploads.length > 0 && (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold">
+                    Files to Upload ({pendingUploads.length})
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Categorize and rename before uploading
+                  </p>
+                </div>
+                
+                {pendingUploads.map((upload) => (
+                  <Card key={upload.id} className="p-3">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                          {upload.file.name}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Document Name</Label>
+                          <Input
+                            value={upload.name}
+                            onChange={(e) => updatePendingUpload(upload.id, { name: e.target.value })}
+                            placeholder="Enter document name"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label className="text-xs">Category</Label>
+                          <Select
+                            value={upload.category}
+                            onValueChange={(value) => updatePendingUpload(upload.id, { category: value })}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((cat) => (
+                                <SelectItem key={cat} value={cat}>
+                                  {cat}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={upload.visible_to_crew}
+                            onCheckedChange={(checked) => 
+                              updatePendingUpload(upload.id, { visible_to_crew: checked })
+                            }
+                            id={`crew-visible-${upload.id}`}
+                          />
+                          <Label htmlFor={`crew-visible-${upload.id}`} className="text-xs cursor-pointer">
+                            {upload.visible_to_crew ? (
+                              <span className="text-green-600 flex items-center gap-1">
+                                <Eye className="w-3 h-3" />
+                                Visible to crew
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <EyeOff className="w-3 h-3" />
+                                Office only
+                              </span>
+                            )}
+                          </Label>
+                        </div>
+                        
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removePendingUpload(upload.id)}
+                          className="h-7 text-destructive hover:text-destructive"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-between">
+              <div className="text-sm text-muted-foreground">
+                {pendingUploads.length > 0 && (
+                  <p>
+                    💡 Tip: Documents are hidden from crew by default. Toggle visibility for each file.
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setUploadMode(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={processBulkUploads}
+                  disabled={uploading || pendingUploads.length === 0}
+                  className="gradient-primary"
+                >
+                  {uploading ? 'Uploading...' : `Upload ${pendingUploads.length} File${pendingUploads.length !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Upload New Document Dialog */}
       <Dialog open={uploadMode === 'new'} onOpenChange={() => setUploadMode(null)}>
@@ -815,7 +1268,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                           <Badge variant="secondary" className="text-xs">
                             {docCount} {docCount === 1 ? 'doc' : 'docs'}
                           </Badge>
-                        )} {/* This is where the syntax error was likely reported */}
+                        )}
                         {isDefault && (
                           <Badge variant="outline" className="text-xs">
                             Default

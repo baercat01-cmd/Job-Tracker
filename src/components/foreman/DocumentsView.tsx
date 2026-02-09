@@ -74,11 +74,12 @@ export function DocumentsView({ job, userId }: DocumentsViewProps) {
     try {
       setLoading(true);
       
-      // Load documents
+      // Load documents - ONLY show crew-visible documents
       const { data: docsData, error: docsError } = await supabase
         .from('job_documents')
         .select('*')
         .eq('job_id', job.id)
+        .eq('visible_to_crew', true)
         .order('updated_at', { ascending: false });
 
       if (docsError) throw docsError;
