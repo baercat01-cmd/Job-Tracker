@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -35,6 +35,7 @@ import { Package, Calendar as CalendarIcon } from 'lucide-react';
 import { TodayTasksSidebar } from './TodayTasksSidebar';
 import { ShopMaterialsDialog } from './ShopMaterialsDialog';
 import { Warehouse } from 'lucide-react';
+import { JobBudgetManagement } from './JobBudgetManagement';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -55,10 +56,14 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
   const [crewOrderCounts, setCrewOrderCounts] = useState<Record<string, number>>({});
   const [showShopMaterialsDialog, setShowShopMaterialsDialog] = useState(false);
+  const [jobBudgets, setJobBudgets] = useState<Record<string, any>>({});
+  const [showBudgetDialog, setShowBudgetDialog] = useState(false);
+  const [budgetJobId, setBudgetJobId] = useState<string | null>(null);
 
   useEffect(() => {
     loadJobs();
     loadCrewOrderCounts();
+    loadJobBudgets();
 
     // Subscribe to material changes to update crew order counts in real-time
     const materialsChannel = supabase
@@ -271,6 +276,30 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
     } catch (error: any) {
       console.error('Error loading crew order counts:', error);
     }
+  }
+
+  async function loadJobBudgets() {
+    try {
+      const { data, error } = await supabase
+        .from('job_budgets')
+        .select('*');
+
+      if (error) throw error;
+
+      const budgetsMap: Record<string, any> = {};
+      (data || []).forEach(budget => {
+        budgetsMap[budget.job_id] = budget;
+      });
+
+      setJobBudgets(budgetsMap);
+    } catch (error: any) {
+      console.error('Error loading job budgets:', error);
+    }
+  }
+
+  function openBudgetDialog(jobId: string) {
+    setBudgetJobId(jobId);
+    setShowBudgetDialog(true);
   }
 
   async function reloadSelectedJob() {
@@ -749,6 +778,56 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             </div>
                           )}
 
+                          {/* Financial Summary */}
+                          {jobBudgets[job.id] && (
+                            <div 
+                              className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1">
+                                  <DollarSign className="w-3 h-3 text-green-700" />
+                                  <span className="text-[10px] font-semibold text-green-900">Budget</span>
+                                </div>
+                                <div className="text-[10px] font-bold text-green-700">
+                                  ${jobBudgets[job.id].total_quoted_price.toLocaleString()}
+                                </div>
+                              </div>
+                              {(() => {
+                                const budget = jobBudgets[job.id];
+                                const costs = (budget.total_labor_budget || 0) + (budget.total_materials_budget || 0) + 
+                                            (budget.total_subcontractor_budget || 0) + (budget.total_equipment_budget || 0) + 
+                                            (budget.other_costs || 0);
+                                const profit = budget.total_quoted_price - costs - (budget.overhead_allocation || 0);
+                                const margin = budget.total_quoted_price > 0 ? (profit / budget.total_quoted_price) * 100 : 0;
+                                return (
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[9px] text-green-700">Margin</span>
+                                    <div className="flex items-center gap-0.5">
+                                      {margin >= 15 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-green-600" />
+                                      ) : margin >= 10 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-yellow-600" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-red-600" />
+                                      )}
+                                      <span className={`text-[9px] font-semibold ${
+                                        margin >= 15 ? 'text-green-600' : 
+                                        margin >= 10 ? 'text-yellow-600' : 
+                                        'text-red-600'
+                                      }`}>
+                                        {margin.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {/* Quick Action Buttons */}
                           <div className="flex gap-0.5 pt-1 border-t">
                             <Button
@@ -781,6 +860,18 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             >
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
                             </Button>
                           </div>
 
@@ -901,6 +992,56 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             </div>
                           </div>
 
+                          {/* Financial Summary */}
+                          {jobBudgets[job.id] && (
+                            <div 
+                              className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1">
+                                  <DollarSign className="w-3 h-3 text-green-700" />
+                                  <span className="text-[10px] font-semibold text-green-900">Budget</span>
+                                </div>
+                                <div className="text-[10px] font-bold text-green-700">
+                                  ${jobBudgets[job.id].total_quoted_price.toLocaleString()}
+                                </div>
+                              </div>
+                              {(() => {
+                                const budget = jobBudgets[job.id];
+                                const costs = (budget.total_labor_budget || 0) + (budget.total_materials_budget || 0) + 
+                                            (budget.total_subcontractor_budget || 0) + (budget.total_equipment_budget || 0) + 
+                                            (budget.other_costs || 0);
+                                const profit = budget.total_quoted_price - costs - (budget.overhead_allocation || 0);
+                                const margin = budget.total_quoted_price > 0 ? (profit / budget.total_quoted_price) * 100 : 0;
+                                return (
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[9px] text-green-700">Margin</span>
+                                    <div className="flex items-center gap-0.5">
+                                      {margin >= 15 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-green-600" />
+                                      ) : margin >= 10 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-yellow-600" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-red-600" />
+                                      )}
+                                      <span className={`text-[9px] font-semibold ${
+                                        margin >= 15 ? 'text-green-600' : 
+                                        margin >= 10 ? 'text-yellow-600' : 
+                                        'text-red-600'
+                                      }`}>
+                                        {margin.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {/* Quick Action Buttons */}
                           <div className="flex gap-0.5 pt-1 border-t">
                             <Button
@@ -933,6 +1074,18 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             >
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
                             </Button>
                           </div>
                         </CardContent>
@@ -1044,6 +1197,56 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
                           </div>
 
+                          {/* Financial Summary */}
+                          {jobBudgets[job.id] && (
+                            <div 
+                              className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1">
+                                  <DollarSign className="w-3 h-3 text-green-700" />
+                                  <span className="text-[10px] font-semibold text-green-900">Budget</span>
+                                </div>
+                                <div className="text-[10px] font-bold text-green-700">
+                                  ${jobBudgets[job.id].total_quoted_price.toLocaleString()}
+                                </div>
+                              </div>
+                              {(() => {
+                                const budget = jobBudgets[job.id];
+                                const costs = (budget.total_labor_budget || 0) + (budget.total_materials_budget || 0) + 
+                                            (budget.total_subcontractor_budget || 0) + (budget.total_equipment_budget || 0) + 
+                                            (budget.other_costs || 0);
+                                const profit = budget.total_quoted_price - costs - (budget.overhead_allocation || 0);
+                                const margin = budget.total_quoted_price > 0 ? (profit / budget.total_quoted_price) * 100 : 0;
+                                return (
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[9px] text-green-700">Margin</span>
+                                    <div className="flex items-center gap-0.5">
+                                      {margin >= 15 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-green-600" />
+                                      ) : margin >= 10 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-yellow-600" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-red-600" />
+                                      )}
+                                      <span className={`text-[9px] font-semibold ${
+                                        margin >= 15 ? 'text-green-600' : 
+                                        margin >= 10 ? 'text-yellow-600' : 
+                                        'text-red-600'
+                                      }`}>
+                                        {margin.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {/* Quick Action Buttons */}
                           <div className="flex gap-0.5 pt-1 border-t">
                             <Button
@@ -1076,6 +1279,18 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             >
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
                             </Button>
                           </div>
                         </CardContent>
@@ -1187,6 +1402,56 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
                           </div>
 
+                          {/* Financial Summary */}
+                          {jobBudgets[job.id] && (
+                            <div 
+                              className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1">
+                                  <DollarSign className="w-3 h-3 text-green-700" />
+                                  <span className="text-[10px] font-semibold text-green-900">Budget</span>
+                                </div>
+                                <div className="text-[10px] font-bold text-green-700">
+                                  ${jobBudgets[job.id].total_quoted_price.toLocaleString()}
+                                </div>
+                              </div>
+                              {(() => {
+                                const budget = jobBudgets[job.id];
+                                const costs = (budget.total_labor_budget || 0) + (budget.total_materials_budget || 0) + 
+                                            (budget.total_subcontractor_budget || 0) + (budget.total_equipment_budget || 0) + 
+                                            (budget.other_costs || 0);
+                                const profit = budget.total_quoted_price - costs - (budget.overhead_allocation || 0);
+                                const margin = budget.total_quoted_price > 0 ? (profit / budget.total_quoted_price) * 100 : 0;
+                                return (
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[9px] text-green-700">Margin</span>
+                                    <div className="flex items-center gap-0.5">
+                                      {margin >= 15 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-green-600" />
+                                      ) : margin >= 10 ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-yellow-600" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-red-600" />
+                                      )}
+                                      <span className={`text-[9px] font-semibold ${
+                                        margin >= 15 ? 'text-green-600' : 
+                                        margin >= 10 ? 'text-yellow-600' : 
+                                        'text-red-600'
+                                      }`}>
+                                        {margin.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {/* Quick Action Buttons */}
                           <div className="flex gap-0.5 pt-1 border-t">
                             <Button
@@ -1219,6 +1484,18 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             >
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openBudgetDialog(job.id);
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
                             </Button>
                           </div>
                         </CardContent>
@@ -1263,6 +1540,28 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           }
         }}
       />
+
+      {/* Budget Management Dialog */}
+      <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {budgetJobId && jobs.find(j => j.id === budgetJobId)?.name} - Budget
+            </DialogTitle>
+          </DialogHeader>
+          {budgetJobId && (
+            <div className="mt-4">
+              <JobBudgetManagement 
+                onUpdate={() => {
+                  loadJobBudgets();
+                  loadJobs();
+                }}
+                jobIdFilter={budgetJobId}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Job Details Dialog */}
       <Dialog open={!!selectedJob} onOpenChange={() => setSelectedJob(null)}>

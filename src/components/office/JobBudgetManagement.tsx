@@ -51,9 +51,10 @@ interface JobBudget {
 
 interface JobBudgetManagementProps {
   onUpdate: () => void;
+  jobIdFilter?: string; // Optional: filter to show only one job's budget
 }
 
-export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
+export function JobBudgetManagement({ onUpdate, jobIdFilter }: JobBudgetManagementProps) {
   const { profile } = useAuth();
   const [budgets, setBudgets] = useState<JobBudget[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -91,24 +92,36 @@ export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
   }
 
   async function loadBudgets() {
-    const { data, error } = await supabase
+    let query = supabase
       .from('job_budgets')
       .select(`
         *,
         job:jobs(id, name, job_number, status)
-      `)
-      .order('created_at', { ascending: false });
+      `);
+    
+    // Filter by job if jobIdFilter is provided
+    if (jobIdFilter) {
+      query = query.eq('job_id', jobIdFilter);
+    }
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw error;
     setBudgets(data || []);
   }
 
   async function loadJobs() {
-    const { data, error } = await supabase
+    let query = supabase
       .from('jobs')
       .select('id, name, job_number, status')
-      .in('status', ['active', 'pending'])
-      .order('name');
+      .in('status', ['active', 'pending', 'quoting', 'prepping', 'on_hold']);
+    
+    // Filter by job if jobIdFilter is provided
+    if (jobIdFilter) {
+      query = query.eq('id', jobIdFilter);
+    }
+    
+    const { data, error } = await query.order('name');
 
     if (error) throw error;
     setJobs(data || []);
@@ -136,7 +149,7 @@ export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
 
   function resetForm() {
     setEditingBudget(null);
-    setSelectedJobId('');
+    setSelectedJobId(jobIdFilter || '');
     setEstimatedLaborHours('');
     setLaborRate('30');
     setTotalMaterialsBudget('');
@@ -281,13 +294,15 @@ export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
   return (
     <>
       <div className="space-y-6">
-        {/* Add Budget Button */}
-        <div className="flex justify-end">
-          <Button onClick={() => openDialog()} className="bg-green-600 hover:bg-green-700">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Job Budget
-          </Button>
-        </div>
+        {/* Add Budget Button - only show if no budget exists or not filtering */}
+        {(!jobIdFilter || budgets.length === 0) && (
+          <div className="flex justify-end">
+            <Button onClick={() => openDialog()} className="bg-green-600 hover:bg-green-700">
+              <Plus className="w-4 h-4 mr-2" />
+              {budgets.length === 0 && jobIdFilter ? 'Create Budget' : 'Add Job Budget'}
+            </Button>
+          </div>
+        )}
 
         {/* Budgets List */}
         <Card>
@@ -420,10 +435,14 @@ export function JobBudgetManagement({ onUpdate }: JobBudgetManagementProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
-            {/* Job Selection */}
+            {/* Job Selection - auto-select if jobIdFilter is provided */}
             <div>
               <Label>Job *</Label>
-              <Select value={selectedJobId} onValueChange={setSelectedJobId} disabled={!!editingBudget}>
+              <Select 
+                value={selectedJobId || (jobIdFilter && !editingBudget ? jobIdFilter : '')} 
+                onValueChange={setSelectedJobId} 
+                disabled={!!editingBudget || !!jobIdFilter}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select job..." />
                 </SelectTrigger>
