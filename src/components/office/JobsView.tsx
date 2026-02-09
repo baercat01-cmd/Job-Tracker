@@ -862,19 +862,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setSelectedTab('financials');
-                              }}
-                            >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
-                            </Button>
                           </div>
 
                         </CardContent>
@@ -1078,19 +1065,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setSelectedTab('financials');
-                              }}
-                            >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
-                            </Button>
                           </div>
                         </CardContent>
                       </Card>
@@ -1285,19 +1259,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setSelectedTab('financials');
-                              }}
-                            >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
-                            </Button>
                           </div>
                         </CardContent>
                       </Card>
@@ -1491,19 +1452,6 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             >
                               <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
                               Schedule
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-1.5 text-[10px] flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setSelectedTab('financials');
-                              }}
-                            >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              {jobBudgets[job.id] ? 'Budget' : 'Add $'}
                             </Button>
                           </div>
                         </CardContent>
