@@ -243,6 +243,9 @@ export function CrewOrdersManagement() {
     if (!confirm('Delete this crew order? This cannot be undone.')) return;
 
     try {
+      // Mark related notifications as read before deleting
+      await markMaterialNotificationsAsRead(orderId);
+
       const { error } = await supabase
         .from('materials')
         .delete()
@@ -255,6 +258,25 @@ export function CrewOrdersManagement() {
     } catch (error: any) {
       console.error('Error deleting order:', error);
       toast.error('Failed to delete order');
+    }
+  }
+
+  async function markMaterialNotificationsAsRead(materialId: string) {
+    try {
+      // Find and mark all notifications related to this material as read
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('type', 'material_request')
+        .eq('reference_id', materialId)
+        .eq('is_read', false);
+
+      if (error) {
+        console.warn('Error marking notifications as read:', error);
+      }
+    } catch (error) {
+      console.warn('Failed to mark notifications as read:', error);
+      // Don't throw - this is a background operation
     }
   }
 
@@ -280,6 +302,11 @@ export function CrewOrdersManagement() {
         .in('id', orderIds);
 
       if (error) throw error;
+
+      // Mark all related notifications as read when approving
+      for (const orderId of orderIds) {
+        await markMaterialNotificationsAsRead(orderId);
+      }
 
       const statusLabel = targetStatus === 'ordered' ? 'Ordered' : 'Pull from Shop';
       toast.success(`${orderIds.length} order(s) approved as "${statusLabel}" and moved to main materials list`);

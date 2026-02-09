@@ -1182,6 +1182,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (!confirm('Delete this material?')) return;
 
     try {
+      // Mark related notifications as read before deleting
+      await markMaterialNotificationsAsRead(materialId);
+
       const { error } = await supabase
         .from('materials')
         .delete()
@@ -1220,6 +1223,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
 
+      // Mark related notifications as read when status changes
+      await markMaterialNotificationsAsRead(materialId);
+
       // Silent success - status updated
 
       // Reload to ensure data consistency
@@ -1229,6 +1235,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       toast.error('Failed to update status');
       // Reload on error to revert optimistic update
       loadMaterials();
+    }
+  }
+
+  async function markMaterialNotificationsAsRead(materialId: string) {
+    try {
+      // Find and mark all notifications related to this material as read
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('type', 'material_request')
+        .eq('reference_id', materialId)
+        .eq('is_read', false);
+
+      if (error) {
+        console.warn('Error marking notifications as read:', error);
+      }
+    } catch (error) {
+      console.warn('Failed to mark notifications as read:', error);
+      // Don't throw - this is a background operation
     }
   }
 
