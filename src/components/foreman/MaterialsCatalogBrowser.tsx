@@ -845,9 +845,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   });
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-x-hidden overflow-y-auto bg-white">
+    <div className="fixed inset-0 w-full h-full overflow-hidden bg-white flex flex-col">
       {/* Fixed top section - Category tabs, Add Custom, and Search fixed to screen top */}
-      <div className="sticky top-0 left-0 right-0 z-50 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4">
+      <div className="flex-shrink-0 bg-white pb-3 pt-3 space-y-3 border-b-2 border-slate-200 px-2 sm:px-4 z-50">
         {/* Category Filter Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
           <Button
@@ -899,10 +899,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         </div>
       </div>
 
-      {/* No spacer needed - using sticky positioning */}
-
-      {/* Rest of content with padding */}
-      <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20 pt-4">
 
         {catalogSearch && catalogLoading ? (
           <Card>
@@ -1145,6 +1144,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             </CardContent>
           </Card>
         ) : null}
+        </div>
       </div>
 
       {/* Edit Material Dialog */}
