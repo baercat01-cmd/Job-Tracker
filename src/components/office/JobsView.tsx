@@ -784,7 +784,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -867,7 +868,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <DollarSign className="w-2.5 h-2.5 mr-0.5" />
@@ -998,7 +1000,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1081,7 +1084,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <DollarSign className="w-2.5 h-2.5 mr-0.5" />
@@ -1203,7 +1207,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1286,7 +1291,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <DollarSign className="w-2.5 h-2.5 mr-0.5" />
@@ -1408,7 +1414,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="p-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded cursor-pointer hover:shadow-sm transition-shadow"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1491,7 +1498,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               className="h-6 px-1.5 text-[10px] flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openBudgetDialog(job.id);
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
                               }}
                             >
                               <DollarSign className="w-2.5 h-2.5 mr-0.5" />

@@ -12,6 +12,7 @@ import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
 import { JobPhotosView } from './JobPhotosView';
+import { JobBudgetManagement } from './JobBudgetManagement';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -805,45 +806,52 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </Button>
             )}
           </div>
-          <TabsList className="grid w-full grid-cols-6 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+          <TabsList className="grid w-full grid-cols-7 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Activity className="w-5 h-5 mr-2" />
-              Overview
+              <Activity className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Overview</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="financials" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <TrendingUp className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Financials</span>
             </TabsTrigger>
             <TabsTrigger 
               value="components" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Target className="w-5 h-5 mr-2" />
-              Components
+              <Target className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Components</span>
             </TabsTrigger>
             <TabsTrigger 
               value="schedule" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Calendar className="w-5 h-5 mr-2" />
-              Schedule
+              <Calendar className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
             <TabsTrigger 
               value="documents" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <FileText className="w-5 h-5 mr-2" />
-              Documents
+              <FileText className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Documents</span>
             </TabsTrigger>
             <TabsTrigger 
               value="materials" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all relative"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all relative"
             >
-              <Package className="w-5 h-5 mr-2" />
-              Materials
+              <Package className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Materials</span>
               {crewOrdersCount > 0 && (
                 <Badge 
                   variant="destructive" 
-                  className="ml-2 bg-red-600 text-white font-bold animate-pulse"
+                  className="ml-1 sm:ml-2 bg-red-600 text-white font-bold animate-pulse text-xs"
                 >
                   {crewOrdersCount}
                 </Badge>
@@ -851,10 +859,10 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             </TabsTrigger>
             <TabsTrigger 
               value="photos" 
-              className="font-bold text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Camera className="w-5 h-5 mr-2" />
-              Photos
+              <Camera className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Photos</span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -1260,6 +1268,14 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </Card>
       )}
 
+        </TabsContent>
+
+        {/* Financials Tab */}
+        <TabsContent value="financials" className="space-y-4 px-4 pt-4">
+          <JobBudgetManagement 
+            onUpdate={() => {}}
+            jobIdFilter={job.id}
+          />
         </TabsContent>
 
         {/* Components Tab */}
