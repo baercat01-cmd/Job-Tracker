@@ -45,6 +45,7 @@ import type { Job } from '@/types';
 import { MaterialsList } from '@/components/foreman/MaterialsList';
 import { ExtrasManagement } from './ExtrasManagement';
 import { CrewOrdersManagement } from './CrewOrdersManagement';
+import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMeasurement, cleanMaterialValue } from '@/lib/utils';
 import { parseCSV, rowsToCSV } from '@/lib/csv-parser';
@@ -469,7 +470,7 @@ function SortableCategoryCard({
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'bundles'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'bundles' | 'workbook'>('manage');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1695,10 +1696,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   return (
     <>
       <div ref={containerRef} className="w-full -mx-2">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles')} className="space-y-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'manage' | 'bundles' | 'workbook')} className="space-y-2">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
             <div className="flex items-center gap-2 w-full">
-              <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm flex-1">
+              <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
               <TabsTrigger 
                 value="manage" 
                 className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-600 data-[state=active]:to-blue-500 data-[state=active]:text-white transition-all shadow-sm"
@@ -1731,6 +1732,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               >
                 <DollarSign className="w-5 h-5" />
                 <span className="text-xs sm:text-base">Extras</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="workbook" 
+                className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold data-[state=active]:bg-gradient-to-br data-[state=active]:from-indigo-600 data-[state=active]:to-indigo-500 data-[state=active]:text-white transition-all shadow-sm"
+              >
+                <Upload className="w-5 h-5" />
+                <span className="text-xs sm:text-base">XLSX Upload</span>
               </TabsTrigger>
               </TabsList>
               <Button
@@ -2064,6 +2072,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
           <TabsContent value="extras" className="space-y-2">
             <ExtrasManagement job={job} userId={userId} />
+          </TabsContent>
+
+          <TabsContent value="workbook" className="space-y-2">
+            <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
+              <CardHeader className="pb-3">
+                <div>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Upload className="w-5 h-5 text-indigo-600" />
+                    Excel Workbook Import (.xlsx)
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    📊 Upload complete Excel workbooks with multiple sheets (e.g., Main Building, Porch, Interior)
+                  </p>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <MaterialWorkbookManager jobId={job.id} />
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
