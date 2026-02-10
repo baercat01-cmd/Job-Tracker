@@ -12,123 +12,59 @@
     <link rel="apple-touch-icon" href="/martin-logo.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Only show the banner on mobile screens */
-        @media (min-width: 768px) {
-            #pwa-top-banner { display: none !important; }
-        }
-    </style>
     <script>
         let deferredPrompt;
-        let validationTimer;
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-        let installAttempts = 0;
 
+        // 1. Status Logger
         const logStatus = (msg, isError = false) => {
             const el = document.getElementById('pwa-status-box');
             if (el) el.innerHTML += `<div class="${isError ? 'text-red-500' : 'text-emerald-500'}">• ${msg}</div>`;
-            console.log('[PWA]', msg);
         };
 
-        // Check if files exist on server
+        // 2. Critical File Check
         async function checkFiles() {
             const files = ['/manifest.json', '/sw.js', '/martin-logo.png'];
             for (const f of files) {
                 try {
                     const r = await fetch(f, { method: 'HEAD' });
-                    if (r.ok) logStatus(`${f.replace('/','')} Found ✓`);
-                    else logStatus(`${f.replace('/','')} 404 ✗`, true);
-                } catch (e) { logStatus(`${f.replace('/','')} Error`, true); }
+                    if (r.ok) logStatus(`${f} Found ✓`);
+                    else logStatus(`${f} NOT FOUND (404) ✗`, true);
+                } catch (e) { logStatus(`${f} Unreachable`, true); }
             }
         }
 
-        // SW Registration with Better Lifecycle Tracking
+        // 3. SW Registration
         if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            navigator.serviceWorker.register('/sw.js?v=306')
-                .then(reg => {
-                    logStatus('SW: Registered ✓');
-                    reg.update();
-                    
-                    // Wait for SW to activate
-                    if (reg.active) {
-                        logStatus('SW: Active ✓');
-                    } else if (reg.installing) {
-                        reg.installing.addEventListener('statechange', function() {
-                            if (this.state === 'activated') {
-                                logStatus('SW: Active ✓');
-                            }
-                        });
-                    } else if (reg.waiting) {
-                        logStatus('SW: Active ✓');
-                    }
-                    
-                    // Start validation timer
-                    startValidationTimer();
-                })
+            navigator.serviceWorker.register('/sw.js?v=303')
+                .then(() => logStatus('Service Worker: Active ✓'))
                 .catch(err => logStatus('SW Error: ' + err.message, true));
         }
 
-        // Chrome Validation Timer
-        function startValidationTimer() {
-            let seconds = 0;
-            logStatus('Chrome: Validating...');
-            
-            validationTimer = setInterval(() => {
-                seconds++;
-                if (seconds === 10 && !deferredPrompt) {
-                    logStatus('Chrome: Still validating (10s)...');
-                }
-                if (seconds === 30 && !deferredPrompt) {
-                    logStatus('Chrome: Still validating (30s)...');
-                }
-                if (seconds > 60 && !deferredPrompt) {
-                    clearInterval(validationTimer);
-                    logStatus('⚠ Chrome validation timeout', true);
-                    logStatus('Use Chrome Menu (⋮) > Install');
-                }
-            }, 1000);
-        }
-
-        // Capture Install Prompt
         window.addEventListener('beforeinstallprompt', (e) => {
-            console.log('[PWA] beforeinstallprompt event fired');
             e.preventDefault();
             deferredPrompt = e;
-            if (validationTimer) clearInterval(validationTimer);
-            logStatus('✅ Ready to Install!');
-            
-            // Make install button pulse
-            const btn = document.getElementById('install-btn-trigger');
-            if (btn) {
-                btn.classList.add('animate-pulse');
-                btn.textContent = 'Install Now';
-            }
-        });
-
-        window.addEventListener('appinstalled', () => {
-            document.getElementById('pwa-top-banner').style.display = 'none';
-            deferredPrompt = null;
-            console.log('PWA installed successfully');
+            logStatus('PWA: Ready to Install ✓');
         });
 
         window.onload = () => {
-            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-            if (isMobile && !isStandalone) {
+            if (!isStandalone) {
                 document.getElementById('pwa-top-banner').style.display = 'flex';
+                checkFiles();
             }
-            checkFiles();
         };
     </script>
 </head>
 <body class="bg-slate-50">
-    <!-- Mobile-Only Banner -->
     <div id="pwa-top-banner" style="display:none;" class="bg-[#4179bc] text-white p-3 flex justify-between items-center sticky top-0 z-[100] shadow-md">
         <div class="flex items-center gap-2">
             <img src="/martin-logo.png" class="w-8 h-8 rounded-lg" alt="Logo">
-            <div id="pwa-status-box" class="text-[7px] font-mono leading-tight bg-black/20 p-1 rounded min-w-[100px]"></div>
+            <div id="pwa-status-box" class="text-[8px] font-mono leading-tight bg-black/20 p-1 rounded min-w-[120px]">
+                <!-- Status logs appear here -->
+            </div>
         </div>
-        <button id="install-btn-trigger" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter">
-            Install
+        <button id="install-btn-trigger" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-lg">
+            Install App
         </button>
     </div>
 
@@ -136,53 +72,20 @@
 
     <script>
         document.getElementById('install-btn-trigger')?.addEventListener('click', async () => {
-            installAttempts++;
-            console.log('[PWA] Install button clicked. Attempt #' + installAttempts);
-            console.log('[PWA] deferredPrompt exists:', !!deferredPrompt);
-            
             if (deferredPrompt) {
-                try {
-                    console.log('[PWA] Calling deferredPrompt.prompt()');
-                    logStatus('Opening install dialog...');
-                    
-                    // Call prompt and wait for it to return
-                    await deferredPrompt.prompt();
-                    
-                    console.log('[PWA] Waiting for user choice...');
-                    const choiceResult = await deferredPrompt.userChoice;
-                    console.log('[PWA] User choice:', choiceResult.outcome);
-                    
-                    if (choiceResult.outcome === 'accepted') {
-                        document.getElementById('pwa-top-banner').style.display = 'none';
-                        logStatus('✅ Installed!');
-                    } else {
-                        logStatus('⚠ Install cancelled', true);
-                        showFallbackInstructions();
-                    }
-                    deferredPrompt = null;
-                } catch (error) {
-                    console.error('[PWA] Error during install prompt:', error);
-                    logStatus('❌ Install failed: ' + error.message, true);
-                    showFallbackInstructions();
-                }
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') document.getElementById('pwa-top-banner').style.display = 'none';
+                deferredPrompt = null;
             } else {
-                console.log('[PWA] No deferredPrompt available, showing fallback');
-                showFallbackInstructions();
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                if (isIOS) {
+                    alert("To install on iPhone: Tap 'Share' (square with arrow), then scroll down and tap 'Add to Home Screen'.");
+                } else {
+                    alert("Chrome hasn't validated the files yet. Ensure the status box shows 'Found ✓' for all files, then try again or use Chrome Menu (⋮) > Install app.");
+                }
             }
         });
-        
-        function showFallbackInstructions() {
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-            const isAndroid = /Android/.test(navigator.userAgent);
-            
-            if (isIOS) {
-                alert("📱 iOS Installation Instructions:\n\n1. Tap the Share button (⬆️ square with arrow)\n2. Scroll down and find 'Add to Home Screen'\n3. Tap 'Add to Home Screen'\n4. Tap 'Add' in the top right corner\n\n✅ The app icon will appear on your home screen!");
-            } else if (isAndroid) {
-                alert("📱 Android Installation Instructions:\n\nMethod 1 (Recommended):\n1. Tap the Chrome menu (⋮) in the top right\n2. Tap 'Install app' or 'Add to Home screen'\n3. Tap 'Install' when prompted\n\nMethod 2:\n1. Tap 'Add Martin OS to Home screen' in the address bar\n2. Confirm installation\n\n✅ The app will install to your device!");
-            } else {
-                alert("To install this app:\n\n1. Open this site in Chrome (mobile or desktop)\n2. Look for 'Install' in the address bar or browser menu\n3. Click Install\n\nOR\n\nUse your browser's 'Add to Home Screen' feature.");
-            }
-        }
     </script>
 
     <script type="module" src="/src/main.tsx"></script>
