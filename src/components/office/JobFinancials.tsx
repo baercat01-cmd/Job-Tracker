@@ -175,20 +175,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         // Calculate totals per category
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
-          // Calculate total cost (what we paid to lumber yard for cost items)
           const totalCost = items.reduce((sum, item) => {
             const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
             return sum + cost;
           }, 0);
 
-          // Calculate lumber yard price (base price before our markup)
-          const lumberyardPrice = items.reduce((sum, item) => {
+          const totalPrice = items.reduce((sum, item) => {
             const price = (item.price_per_unit || 0) * (item.quantity || 0);
             return sum + price;
           }, 0);
-          
-          // Add 10% markup to the lumber yard price for our selling price
-          const totalPrice = lumberyardPrice * 1.10;
 
           const profit = totalPrice - totalCost;
           const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
@@ -602,8 +597,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       <div className="flex items-center gap-3">
                         <h3 className="font-bold text-base text-blue-900">{sheet.sheetName}</h3>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <ChevronDown className="w-5 h-5 text-blue-700" />
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Cost</p>
+                          <p className="font-semibold text-sm text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Price</p>
+                          <p className="font-semibold text-sm text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Profit</p>
+                          <p className="font-semibold text-sm text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Margin</p>
+                          <p className="font-semibold text-sm text-green-700">{sheet.margin.toFixed(1)}%</p>
+                        </div>
+                        <ChevronDown className="w-4 h-4 text-blue-700" />
                       </div>
                     </div>
                   </CollapsibleTrigger>
