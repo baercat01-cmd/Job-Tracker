@@ -790,7 +790,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-screen">
+    <div className="w-full min-w-full">
       <Tabs defaultValue={initialTab} className="w-full">
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
@@ -1309,7 +1309,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </TabsContent>
 
         {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-2 pt-4 -mx-4">
+        <TabsContent value="materials" className="space-y-2 pt-4">
           {profile?.id && (
             <MaterialsManagement job={job} userId={profile.id} />
           )}

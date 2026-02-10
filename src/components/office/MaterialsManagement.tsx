@@ -432,7 +432,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="w-screen overflow-x-auto">
+    <div className="w-full overflow-x-auto">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm flex-1">
@@ -521,20 +521,20 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                         <p>No materials in this sheet</p>
                       </div>
                     ) : (
-                      <table className="w-max min-w-full border-collapse">
+                      <table className="border-collapse" style={{ width: 'auto', minWidth: '100%' }}>
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
-                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[250px]">Material</th>
-                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[140px]">Usage</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[90px]">Qty</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[90px]">Length</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[110px]">Cost/Unit</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[100px]">Markup %</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[110px]">Price/Unit</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[120px]">Ext. Cost</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[120px]">Ext. Price</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[130px]">Status</th>
-                            <th className="text-center p-3 font-bold min-w-[100px]">Actions</th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Length</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Cost/Unit</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Markup %</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Price/Unit</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Ext. Cost</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Ext. Price</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Status</th>
+                            <th className="text-center p-3 font-bold whitespace-nowrap">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -566,7 +566,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       isEven ? 'bg-white' : 'bg-slate-50/50'
                                     }`}
                                   >
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('material_name') ? (
                                         <Input
                                           value={cellValue}
@@ -582,7 +582,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       ) : (
                                         <div 
                                           onClick={() => startCellEdit(item.id, 'material_name', item.material_name)}
-                                          className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] max-w-[400px]"
                                         >
                                           {item.material_name}
                                           {item.notes && (
@@ -592,7 +592,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('usage') ? (
                                         <Input
                                           value={cellValue}
@@ -615,7 +615,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('quantity') ? (
                                         <Input
                                           type="number"
@@ -639,7 +639,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('length') ? (
                                         <Input
                                           value={cellValue}
@@ -662,7 +662,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('cost_per_unit') ? (
                                         <Input
                                           type="number"
@@ -698,7 +698,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('price_per_unit') ? (
                                         <Input
                                           type="number"
@@ -731,7 +731,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       {item.extended_price ? `$${item.extended_price.toFixed(2)}` : '-'}
                                     </td>
 
-                                    <td className="p-1 border-r">
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       <Select
                                         value={item.status || 'not_ordered'}
                                         onValueChange={(value) => updateStatus(item.id, value)}
