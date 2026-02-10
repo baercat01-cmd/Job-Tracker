@@ -555,7 +555,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <Card className="border-2 border-green-200">
           <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2 flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-green-700" />
               Materials Pricing
             </CardTitle>
             <Button onClick={() => openAddDialog()} size="sm" variant="outline">
@@ -566,25 +565,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           <CardContent className="pt-6 space-y-6">
             {/* Materials Grand Totals */}
             {materialsBreakdown.sheetBreakdowns.length > 0 && (
-              <div className="grid grid-cols-4 gap-4 p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
+              <div className="grid grid-cols-4 gap-3 p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
                 <div className="text-center">
-                  <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Cost</p>
-                  <p className="text-2xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs opacity-80">Cost</p>
+                  <p className="text-xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Price</p>
-                  <p className="text-2xl font-bold">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs opacity-80">Price</p>
+                  <p className="text-xl font-bold">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Profit</p>
-                  <p className="text-2xl font-bold text-yellow-400">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs opacity-80">Profit</p>
+                  <p className="text-xl font-bold text-yellow-400">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Profit Margin</p>
-                  <div className="flex items-center justify-center gap-2">
-                    <Percent className="w-5 h-5 text-green-400" />
-                    <p className="text-2xl font-bold text-green-400">{materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
-                  </div>
+                  <p className="text-xs opacity-80">Margin</p>
+                  <p className="text-xl font-bold text-green-400">{materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
                 </div>
               </div>
             )}
@@ -594,34 +590,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Collapsible key={sheetIndex} defaultOpen={false}>
                 <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
                   <CollapsibleTrigger className="w-full">
-                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-4 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
+                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-3 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
                       <div className="flex items-center gap-3">
-                        <FileSpreadsheet className="w-5 h-5 text-blue-700" />
-                        <h3 className="font-bold text-lg text-blue-900">{sheet.sheetName}</h3>
+                        <h3 className="font-bold text-base text-blue-900">{sheet.sheetName}</h3>
                       </div>
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-4">
                         <div className="text-right">
                           <p className="text-xs text-blue-700">Cost</p>
-                          <p className="font-bold text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <p className="font-semibold text-sm text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-blue-700">Price</p>
-                          <p className="font-bold text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <p className="font-semibold text-sm text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-blue-700">Profit</p>
-                          <p className="font-bold text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <p className="font-semibold text-sm text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-blue-700">Margin</p>
-                          <p className="font-bold text-green-700">{sheet.margin.toFixed(1)}%</p>
+                          <p className="font-semibold text-sm text-green-700">{sheet.margin.toFixed(1)}%</p>
                         </div>
-                        <ChevronDown className="w-5 h-5 text-blue-700" />
+                        <ChevronDown className="w-4 h-4 text-blue-700" />
                       </div>
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="p-4 bg-white space-y-3">
+                    <div className="p-3 bg-white space-y-2">
                       {sheet.categories.map((category: any, catIndex: number) => {
                         const materialCategoryKey = `${sheet.sheetName}-${category.name}`;
                         return (
@@ -631,13 +626,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(materialCategoryKey, e, true)}
                           >
-                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-4 py-3 border-b-2">
+                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 border-b">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                    <h4 className="font-bold text-lg text-slate-900">{category.name}</h4>
-                                    <Badge variant="outline" className="text-xs">{category.itemCount} items</Badge>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-semibold text-sm text-slate-900">{category.name}</h4>
+                                    <Badge variant="outline" className="text-xs">{category.itemCount}</Badge>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -669,40 +663,39 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                 </div>
                               </div>
                               {materialFiles[materialCategoryKey] && materialFiles[materialCategoryKey].length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-1 flex flex-wrap gap-2">
                                   {materialFiles[materialCategoryKey].map((url, idx) => (
                                     <a
                                       key={idx}
                                       href={url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                      className="text-xs text-blue-600 hover:underline"
                                     >
-                                      <FileSpreadsheet className="w-3 h-3" />
                                       File {idx + 1}
                                     </a>
                                   ))}
                                 </div>
                               )}
                             </div>
-                            <div className="p-4 hover:bg-slate-50 transition-colors">
+                            <div className="p-2 hover:bg-slate-50 transition-colors">
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-6 text-sm">
+                                <div className="flex items-center gap-4 text-sm">
                                   <div className="text-left">
                                     <p className="text-xs text-muted-foreground">Cost</p>
-                                    <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="font-semibold text-sm">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                   </div>
                                   <div className="text-left">
                                     <p className="text-xs text-muted-foreground">Price</p>
-                                    <p className="font-semibold">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="font-semibold text-sm">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                   </div>
                                   <div className="text-left">
                                     <p className="text-xs text-muted-foreground">Profit</p>
-                                    <p className="font-semibold text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="font-semibold text-sm text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                   </div>
-                                  <div className="text-left min-w-[60px]">
+                                  <div className="text-left">
                                     <p className="text-xs text-muted-foreground">Margin</p>
-                                    <p className={`font-bold ${
+                                    <p className={`font-semibold text-sm ${
                                       category.margin >= 25 ? 'text-green-600' :
                                       category.margin >= 15 ? 'text-yellow-600' :
                                       'text-red-600'
@@ -713,8 +706,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                 </div>
                               </div>
                             </div>
-                            <div className="bg-slate-50 px-4 py-2 text-center text-sm text-muted-foreground border-t">
-                              Drag and drop files here to attach to this category
+                            <div className="bg-slate-50 px-3 py-1.5 text-center text-xs text-muted-foreground border-t">
+                              Drag and drop files here
                             </div>
                           </div>
                         );
@@ -739,9 +732,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
             {customRows.length > 0 && (
               <>
-                <div className="border-t-4 border-orange-200 pt-6">
-                  <h3 className="text-lg font-bold text-orange-900 mb-4 flex items-center gap-2">
-                    <Calculator className="w-5 h-5" />
+                <div className="border-t-4 border-orange-200 pt-4">
+                  <h3 className="text-base font-bold text-orange-900 mb-3">
                     Additional Costs
                   </h3>
                 </div>
@@ -755,15 +747,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(cat, e)}
                       >
-                        <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-4 py-3 border-b-2">
+                        <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 border-b">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h3 className="font-bold text-lg text-slate-900 mb-1">
+                              <h3 className="font-semibold text-sm text-slate-900">
                                 {categoryLabels[cat] || cat}
                               </h3>
-                              <p className="text-sm text-slate-600">
-                                {categoryDescriptions[cat] || 'Custom costs for this category'}
-                              </p>
                             </div>
                             <div className="flex items-center gap-2">
                               <input
@@ -795,16 +784,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             </div>
                           </div>
                           {categoryFiles[cat] && categoryFiles[cat].length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
+                            <div className="mt-1 flex flex-wrap gap-2">
                               {categoryFiles[cat].map((url, idx) => (
                                 <a
                                   key={idx}
                                   href={url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                  className="text-xs text-blue-600 hover:underline"
                                 >
-                                  <FileSpreadsheet className="w-3 h-3" />
                                   File {idx + 1}
                                 </a>
                               ))}
@@ -813,24 +801,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                         <div className="divide-y">
                           {rows.map((row) => (
-                            <div key={row.id} className="p-4 hover:bg-slate-50 transition-colors">
+                            <div key={row.id} className="p-3 hover:bg-slate-50 transition-colors">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
-                                  <div className="font-medium text-slate-900">{row.description}</div>
+                                  <div className="font-medium text-sm text-slate-900">{row.description}</div>
                                   {row.notes && (
-                                    <div className="text-sm text-muted-foreground mt-1">{row.notes}</div>
+                                    <div className="text-xs text-muted-foreground mt-0.5">{row.notes}</div>
                                   )}
-                                  <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                                     <span>Qty: {row.quantity}</span>
-                                    <span>Unit Cost: ${row.unit_cost.toFixed(2)}</span>
+                                    <span>Unit: ${row.unit_cost.toFixed(2)}</span>
                                     <span>Markup: {row.markup_percent.toFixed(1)}%</span>
                                   </div>
                                 </div>
                                 <div className="text-right ml-4">
-                                  <div className="font-bold text-lg text-slate-900">
+                                  <div className="font-bold text-base text-slate-900">
                                     ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </div>
-                                  <div className="text-sm text-muted-foreground">
+                                  <div className="text-xs text-muted-foreground">
                                     Cost: ${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </div>
                                   <div className="flex gap-2 mt-2 justify-end">
@@ -855,8 +843,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             </div>
                           ))}
                         </div>
-                        <div className="bg-slate-50 px-4 py-2 text-center text-sm text-muted-foreground border-t">
-                          Drag and drop files here to attach to this category
+                        <div className="bg-slate-50 px-3 py-1.5 text-center text-xs text-muted-foreground border-t">
+                          Drag and drop files here
                         </div>
                       </div>
                     );
