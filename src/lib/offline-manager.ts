@@ -227,6 +227,21 @@ export async function saveData<T extends { id: string }>(
   }
 }
 
+// Update pending changes count and dispatch event
+export async function updatePendingChangesCount(): Promise<void> {
+  try {
+    const { getPendingSyncCount } = await import('./offline-db');
+    const count = await getPendingSyncCount();
+    
+    // Dispatch event with the count so UI can update
+    window.dispatchEvent(new CustomEvent('pendingchangesupdate', { 
+      detail: { count } 
+    }));
+  } catch (error) {
+    console.error('[OfflineManager] Failed to update pending changes count:', error);
+  }
+}
+
 // Cleanup function
 export function cleanupOfflineManager(): void {
   window.removeEventListener('online', handleOnline);
