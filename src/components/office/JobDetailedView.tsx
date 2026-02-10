@@ -13,7 +13,7 @@ import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
 import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 import { JobPhotosView } from './JobPhotosView';
-import { JobBudgetManagement } from './JobBudgetManagement';
+import { JobFinancials } from './JobFinancials';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -1546,11 +1546,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         {/* Financials Tab */}
         <TabsContent value="financials" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <JobFinancials job={job} />
             <MaterialsPricingBreakdown jobId={job.id} />
-            <JobBudgetManagement 
-              onUpdate={() => {}}
-              jobIdFilter={job.id}
-            />
           </div>
         </TabsContent>
 
