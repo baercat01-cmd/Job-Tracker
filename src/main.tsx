@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { initDB } from './lib/offline-db';
+import { initializeOfflineManager } from './lib/offline-manager';
 
 // Initialize error handling and stress testing
 import './lib/error-handler';
@@ -56,13 +57,38 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Initialize IndexedDB
-initDB()
+// Request persistent storage to prevent data deletion
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().then((persistent) => {
+    if (persistent) {
+      console.log('✅ Persistent storage granted - your data is safe!');
+    } else {
+      console.warn('⚠️ Persistent storage denied - data may be cleared when storage is low');
+    }
+  });
+}
+
+// Check storage quota
+if (navigator.storage && navigator.storage.estimate) {
+  navigator.storage.estimate().then(({ usage, quota }) => {
+    const percentUsed = ((usage || 0) / (quota || 1)) * 100;
+    console.log(`💾 Storage: ${Math.round(percentUsed)}% used (${Math.round((usage || 0) / 1024 / 1024)}MB / ${Math.round((quota || 0) / 1024 / 1024)}MB)`);
+  });
+}
+
+// Initialize IndexedDB and Offline Manager
+Promise.all([
+  initDB(),
+  Promise.resolve(initializeOfflineManager())
+])
   .then(() => {
-    console.log('[IndexedDB] Initialized successfully');
+    console.log('✅ [IndexedDB] Initialized successfully');
+    console.log('✅ [OfflineManager] Initialized successfully');
+    console.log('📦 Offline-First mode: Data persists locally and syncs when online');
+    console.log('🔄 Auto-sync enabled: Changes sync automatically when connection is available');
   })
   .catch((error) => {
-    console.error('[IndexedDB] Initialization failed:', error);
+    console.error('❌ Initialization failed:', error);
   });
 
 // Verify React is loaded correctly
