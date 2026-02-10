@@ -1,12 +1,9 @@
 /**
- * Excel/CSV Workbook Parser
- * Handles parsing CSV files for material imports
- * 
- * NOTE: For Excel files (.xlsx), please convert to CSV first using Excel/Google Sheets:
- * File > Save As > CSV (Comma delimited)
+ * Excel/XLSX Workbook Parser
+ * Handles parsing Excel (.xlsx) files with multiple sheets for material imports
  */
 
-import { parseCSV } from './csv-parser';
+import * as XLSX from 'xlsx';
 
 // Type definitions for parsed workbook data
 export interface ExcelRow {
@@ -23,50 +20,87 @@ export interface ExcelWorkbook {
 }
 
 /**
- * Parse CSV file into structured workbook data
- * Note: Each CSV file represents one sheet. For multi-sheet workbooks,
- * upload multiple CSV files or use a naming convention like "SheetName_data.csv"
+ * Parse Excel (.xlsx) file into structured workbook data with multiple sheets
  */
 export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbook> {
   return new Promise(async (resolve, reject) => {
     try {
-      // Read file as text
-      const text = await file.text();
+      // Read file as array buffer
+      const arrayBuffer = await file.arrayBuffer();
       
-      // Parse CSV
-      const rows = parseCSV(text);
+      // Parse with xlsx library
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       
-      if (rows.length === 0) {
-        reject(new Error('CSV file is empty'));
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        reject(new Error('Excel file contains no sheets'));
         return;
       }
       
-      // Extract sheet name from filename if it's a File object
-      let sheetName = 'Sheet1';
-      if (file instanceof File) {
-        // Remove .csv extension and use as sheet name
-        sheetName = file.name.replace(/\.csv$/i, '');
+      // Process each sheet
+      const sheets: ExcelSheet[] = [];
+      
+      for (const sheetName of workbook.SheetNames) {
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Convert sheet to JSON with header row
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1, // Get as array of arrays first
+          defval: null,
+          blankrows: false,
+        }) as any[][];
+        
+        if (jsonData.length === 0) {
+          continue; // Skip empty sheets
+        }
+        
+        // First row is headers
+        const headers = jsonData[0].map(h => String(h || '').trim());
+        
+        // Convert remaining rows to objects
+        const rows: ExcelRow[] = [];
+        
+        for (let i = 1; i < jsonData.length; i++) {
+          const rowData = jsonData[i];
+          const row: ExcelRow = {};
+          
+          headers.forEach((header, colIndex) => {
+            if (!header) return; // Skip empty headers
+            
+            let value = rowData[colIndex];
+            
+            // Handle different value types
+            if (value === null || value === undefined || value === '') {
+              row[header] = null;
+            } else if (typeof value === 'number') {
+              row[header] = value;
+            } else {
+              row[header] = String(value).trim();
+            }
+          });
+          
+          // Only add row if it has at least one non-null value
+          if (Object.values(row).some(v => v !== null && v !== '')) {
+            rows.push(row);
+          }
+        }
+        
+        if (rows.length > 0) {
+          sheets.push({
+            name: sheetName,
+            rows,
+          });
+        }
       }
       
-      // Convert CSV rows to ExcelRow format
-      const excelRows: ExcelRow[] = rows.map(row => {
-        const excelRow: ExcelRow = {};
-        Object.entries(row).forEach(([key, value]) => {
-          // Try to parse as number if it looks like one
-          const numValue = parseFloat(value);
-          excelRow[key] = !isNaN(numValue) && value.trim() !== '' ? numValue : value;
-        });
-        return excelRow;
-      });
+      if (sheets.length === 0) {
+        reject(new Error('No valid data found in Excel file'));
+        return;
+      }
       
-      resolve({
-        sheets: [{
-          name: sheetName,
-          rows: excelRows,
-        }],
-      });
-    } catch (error) {
-      reject(error);
+      resolve({ sheets });
+    } catch (error: any) {
+      console.error('Error parsing Excel file:', error);
+      reject(new Error('Failed to parse Excel file: ' + error.message));
     }
   });
 }

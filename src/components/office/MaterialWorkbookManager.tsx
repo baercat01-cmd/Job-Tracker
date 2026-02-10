@@ -118,8 +118,11 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Please upload a CSV file. Convert Excel files to CSV first using File > Save As > CSV');
+    const validExtensions = ['.xlsx', '.xls'];
+    const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    
+    if (!hasValidExtension) {
+      toast.error('Please upload an Excel file (.xlsx or .xls)');
       return;
     }
 
@@ -134,7 +137,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
     try {
       setUploading(true);
-      toast.info('Parsing CSV file...');
+      toast.info('Parsing Excel file...');
 
       // Parse the CSV file
       const workbook = await parseExcelWorkbook(selectedFile);
@@ -351,7 +354,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         <div>
           <h2 className="text-2xl font-bold">Material Workbooks</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload CSV files (converted from Excel) for versioned material tracking
+            Upload Excel workbooks (.xlsx) with multiple sheets for versioned material tracking
           </p>
         </div>
         <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
@@ -462,7 +465,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h3 className="text-lg font-semibold mb-2">No Material Workbooks Yet</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Upload your first CSV file (converted from Excel) to get started with versioned material tracking
+              Upload your first Excel workbook to get started with versioned material tracking
             </p>
             <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
               <Upload className="w-4 h-4 mr-2" />
@@ -482,22 +485,22 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
               <p className="font-semibold text-sm flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
-                Expected CSV Structure:
+                Expected Excel Structure:
               </p>
               <ul className="text-sm space-y-1 ml-6 list-disc">
-                <li>Convert your Excel sheets to CSV first (File → Save As → CSV)</li>
-                <li>Each CSV file = one sheet (e.g., "Main_Building.csv", "Porch.csv")</li>
+                <li>Upload entire Excel workbook (.xlsx) with multiple sheets</li>
+                <li>Each sheet = one section (e.g., "Main Building", "Porch", "Interior")</li>
                 <li>Required columns: <strong>Category, Material, Qty</strong></li>
-                <li>Optional: Usage, SKU, Length, Cost per unit, Mark up, etc.</li>
+                <li>Optional columns: Usage, SKU, Length, Cost per unit, CF.Mark Up, Price per unit, Extended cost, Extended price, Taxable</li>
               </ul>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="workbook-file">CSV File (converted from Excel)</Label>
+              <Label htmlFor="workbook-file">Excel File (.xlsx)</Label>
               <Input
                 id="workbook-file"
                 type="file"
-                accept=".csv"
+                accept=".xlsx,.xls"
                 onChange={handleFileSelect}
                 disabled={uploading}
               />
