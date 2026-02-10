@@ -337,6 +337,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         return 'bg-blue-100 text-blue-800 border-blue-300';
       case 'received':
         return 'bg-green-100 text-green-800 border-green-300';
+      case 'pull_from_shop':
+        return 'bg-purple-100 text-purple-800 border-purple-300';
+      case 'ready_for_job':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
       case 'not_ordered':
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
@@ -744,6 +748,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           <SelectItem value="not_ordered">Not Ordered</SelectItem>
                                           <SelectItem value="ordered">Ordered</SelectItem>
                                           <SelectItem value="received">Received</SelectItem>
+                                          <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
+                                          <SelectItem value="ready_for_job">Ready for Job</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </td>
