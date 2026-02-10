@@ -1547,7 +1547,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <TabsContent value="financials" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <JobFinancials job={job} />
-            <MaterialsPricingBreakdown jobId={job.id} />
           </div>
         </TabsContent>
 
