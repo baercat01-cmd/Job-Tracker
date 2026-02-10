@@ -100,6 +100,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [movingItem, setMovingItem] = useState<MaterialItem | null>(null);
   const [moveToSheetId, setMoveToSheetId] = useState<string>('');
   const [moveToCategory, setMoveToCategory] = useState<string>('');
+  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
   const scrollPositionRef = useRef<number>(0);
@@ -148,6 +149,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         ...sheet,
         items: (itemsData || []).filter(item => item.sheet_id === sheet.id),
       }));
+
+      // Extract all unique categories from all items
+      const uniqueCategories = new Set<string>();
+      (itemsData || []).forEach(item => {
+        if (item.category) {
+          uniqueCategories.add(item.category);
+        }
+      });
+      setAllCategories(Array.from(uniqueCategories).sort());
 
       setWorkbook({
         ...workbookData,
@@ -531,8 +541,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Cost/Unit</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Markup %</th>
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Price/Unit</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Ext. Cost</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Ext. Price</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Status</th>
                             <th className="text-center p-3 font-bold whitespace-nowrap">Actions</th>
                           </tr>
@@ -541,7 +549,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={11} className="p-3">
+                                <td colSpan={9} className="p-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
@@ -723,14 +731,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       )}
                                     </td>
 
-                                    <td className="p-2 text-right font-mono font-semibold text-sm border-r bg-slate-100/50">
-                                      {item.extended_cost ? `$${item.extended_cost.toFixed(2)}` : '-'}
-                                    </td>
-
-                                    <td className="p-2 text-right font-mono font-bold text-sm text-primary border-r bg-slate-100/50">
-                                      {item.extended_price ? `$${item.extended_price.toFixed(2)}` : '-'}
-                                    </td>
-
                                     <td className="p-1 border-r whitespace-nowrap">
                                       <Select
                                         value={item.status || 'not_ordered'}
@@ -815,11 +815,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
             <div className="space-y-2">
               <Label htmlFor="move-category">Category</Label>
+              <Select value={moveToCategory} onValueChange={setMoveToCategory}>
+                <SelectTrigger id="move-category">
+                  <SelectValue placeholder="Select or enter category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allCategories.map(category => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
-                id="move-category"
                 value={moveToCategory}
                 onChange={(e) => setMoveToCategory(e.target.value)}
-                placeholder="Enter category name"
+                placeholder="Or type new category name"
+                className="mt-2"
               />
             </div>
 
