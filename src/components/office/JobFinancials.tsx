@@ -175,17 +175,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         // Calculate totals per category
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
+          // Calculate total cost (what we paid to lumber yard for cost items)
           const totalCost = items.reduce((sum, item) => {
             const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
             return sum + cost;
           }, 0);
 
-          // Add 10% markup to the lumber yard price
+          // Calculate lumber yard price (base price before our markup)
           const lumberyardPrice = items.reduce((sum, item) => {
             const price = (item.price_per_unit || 0) * (item.quantity || 0);
             return sum + price;
           }, 0);
           
+          // Add 10% markup to the lumber yard price for our selling price
           const totalPrice = lumberyardPrice * 1.10;
 
           const profit = totalPrice - totalCost;
