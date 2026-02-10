@@ -790,7 +790,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
-    <div className="w-full min-w-full">
+    <div className="w-screen min-h-screen">
       <Tabs defaultValue={initialTab} className="w-full">
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
@@ -881,7 +881,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <div className="h-16" />
 
         {/* Overview Tab - Includes Job Info */}
-        <TabsContent value="overview" className="space-y-4 px-4 pt-4">
+        <TabsContent value="overview" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
           <Card>
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
               <div className="flex items-center justify-between">
@@ -1278,46 +1279,59 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </Card>
       )}
 
+          </div>
         </TabsContent>
 
         {/* Financials Tab */}
-        <TabsContent value="financials" className="space-y-4 px-4 pt-4">
-          <JobBudgetManagement 
-            onUpdate={() => {}}
-            jobIdFilter={job.id}
-          />
+        <TabsContent value="financials" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <JobBudgetManagement 
+              onUpdate={() => {}}
+              jobIdFilter={job.id}
+            />
+          </div>
         </TabsContent>
 
         {/* Components Tab */}
-        <TabsContent value="components" className="space-y-4 px-4 pt-4">
-          <JobComponents job={job} onUpdate={() => {}} />
+        <TabsContent value="components" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <JobComponents job={job} onUpdate={() => {}} />
+          </div>
         </TabsContent>
 
         {/* Schedule Tab */}
-        <TabsContent value="schedule" className="space-y-4 px-4 pt-4">
-          <JobSchedule job={job} />
+        <TabsContent value="schedule" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <JobSchedule job={job} />
+          </div>
         </TabsContent>
 
         {/* Documents Tab */}
-        <TabsContent value="documents" className="space-y-4 px-4 pt-4">
-          <JobDocuments job={job} onUpdate={() => {}} />
+        <TabsContent value="documents" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <JobDocuments job={job} onUpdate={() => {}} />
+          </div>
         </TabsContent>
 
         {/* Photos Tab */}
-        <TabsContent value="photos" className="space-y-4 px-4 pt-4">
-          <JobPhotosView job={job} />
+        <TabsContent value="photos" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <JobPhotosView job={job} />
+          </div>
         </TabsContent>
 
-        {/* Materials Tab */}
-        <TabsContent value="materials" className="space-y-2 pt-4">
+        {/* Materials Tab - Full Width for Spreadsheet */}
+        <TabsContent value="materials" className="space-y-2 pt-4 px-2">
           {profile?.id && (
             <MaterialsManagement job={job} userId={profile.id} />
           )}
         </TabsContent>
 
         {/* Orders Tab */}
-        <TabsContent value="orders" className="space-y-4 px-4 pt-4">
-          <MaterialOrdersManagement jobId={job.id} />
+        <TabsContent value="orders" className="space-y-4 pt-4">
+          <div className="max-w-7xl mx-auto px-6">
+            <MaterialOrdersManagement jobId={job.id} />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
