@@ -93,10 +93,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'extras' | 'upload'>('manage');
-  const [expandedSheets, setExpandedSheets] = useState<Set<string>>(new Set());
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingItem, setEditingItem] = useState<MaterialItem | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
@@ -175,9 +175,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         sheets,
       });
 
-      // Auto-expand first sheet
-      if (sheets.length > 0) {
-        setExpandedSheets(new Set([sheets[0].id]));
+      // Auto-select first sheet
+      if (sheets.length > 0 && !activeSheetId) {
+        setActiveSheetId(sheets[0].id);
       }
     } catch (error: any) {
       console.error('Error loading workbook:', error);
@@ -187,47 +187,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  function toggleSheet(sheetId: string) {
-    setExpandedSheets(prev => {
-      const next = new Set(prev);
-      if (next.has(sheetId)) {
-        next.delete(sheetId);
-      } else {
-        next.add(sheetId);
-      }
-      return next;
-    });
-  }
-
-  function toggleCategory(key: string) {
-    setExpandedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }
-
-  function expandAll() {
-    if (!workbook) return;
-    const allSheets = new Set(workbook.sheets.map(s => s.id));
-    const allCategories = new Set<string>();
-    workbook.sheets.forEach(sheet => {
-      const categories = groupByCategory(sheet.items);
-      categories.forEach(cat => {
-        allCategories.add(`${sheet.id}-${cat.category}`);
-      });
-    });
-    setExpandedSheets(allSheets);
-    setExpandedCategories(allCategories);
-  }
-
-  function collapseAll() {
-    setExpandedSheets(new Set());
-    setExpandedCategories(new Set());
+  function handleSheetChange(sheetId: string) {
+    setActiveSheetId(sheetId);
   }
 
   function groupByCategory(items: MaterialItem[]): CategoryGroup[] {
@@ -405,16 +366,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
-  const filteredSheets = workbook?.sheets.map(sheet => ({
-    ...sheet,
-    items: sheet.items.filter(item =>
-      searchTerm === '' ||
-      item.material_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.category && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item.usage && item.usage.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-    ),
-  })) || [];
+  const activeSheet = workbook?.sheets.find(s => s.id === activeSheetId);
+  const filteredItems = activeSheet?.items.filter(item =>
+    searchTerm === '' ||
+    item.material_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.category && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (item.usage && item.usage.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || [];
+  
+  const categoryGroups = groupByCategory(filteredItems);
 
   if (loading) {
     return (
@@ -426,7 +387,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="w-full -mx-2">
+    <div className="w-full max-w-[98vw] -mx-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm flex-1">
@@ -445,7 +406,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </TabsList>
         </div>
 
-        <TabsContent value="manage" className="space-y-2">
+        <TabsContent value="manage" className="space-y-3">
           {!workbook ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -462,203 +423,189 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             </Card>
           ) : (
             <>
-              {/* Search & Controls */}
-              <Card>
-                <CardContent className="pt-3 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search materials..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-9 pr-9"
-                      />
-                      {searchTerm && (
+              {/* Sheet Tabs - Horizontal across top like Excel */}
+              <Card className="border-2">
+                <CardContent className="p-0">
+                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
+                    <div className="flex items-center gap-1 px-2 py-1 overflow-x-auto">
+                      {workbook.sheets.map((sheet) => (
                         <Button
-                          variant="ghost"
+                          key={sheet.id}
+                          variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                           size="sm"
-                          onClick={() => setSearchTerm('')}
-                          className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                          onClick={() => handleSheetChange(sheet.id)}
+                          className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
                         >
-                          <X className="w-4 h-4" />
+                          <FileSpreadsheet className="w-4 h-4" />
+                          {sheet.sheet_name}
+                          <Badge variant="secondary" className="ml-auto text-xs">
+                            {sheet.items.length}
+                          </Badge>
                         </Button>
-                      )}
+                      ))}
                     </div>
-                    <Button variant="outline" size="sm" onClick={expandAll}>
-                      Expand All
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={collapseAll}>
-                      Collapse All
-                    </Button>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="p-3 bg-white border-b">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search materials in current sheet..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-9 pr-9"
+                        />
+                        {searchTerm && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSearchTerm('')}
+                            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <Button
+                        onClick={() => activeSheetId && openAddItem(activeSheetId, 'New Category')}
+                        className="gradient-primary whitespace-nowrap"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Material
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Spreadsheet View */}
+                  <div className="overflow-x-auto">
+                    {categoryGroups.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
+                        <p>No materials in this sheet</p>
+                      </div>
+                    ) : (
+                      <table className="w-full border-collapse">
+                        <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
+                          <tr>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[200px]">Material</th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[120px]">Category</th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[120px]">Usage</th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[100px]">SKU</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[80px]">Qty</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[80px]">Length</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[100px]">Cost/Unit</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[100px]">Price/Unit</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 min-w-[90px]">Markup %</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[110px]">Ext. Cost</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 min-w-[110px]">Ext. Price</th>
+                            <th className="text-center p-3 font-bold min-w-[120px]">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {categoryGroups.map((catGroup, catIndex) => (
+                            <>
+                              {/* Category Header Row */}
+                              <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
+                                <td colSpan={12} className="p-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
+                                      <h3 className="font-bold text-lg text-indigo-900">{catGroup.category}</h3>
+                                      <Badge variant="outline" className="bg-white">
+                                        {catGroup.items.length} items
+                                      </Badge>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => activeSheetId && openAddItem(activeSheetId, catGroup.category)}
+                                      className="gradient-primary"
+                                    >
+                                      <Plus className="w-4 h-4 mr-1" />
+                                      Add to {catGroup.category}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {/* Material Rows */}
+                              {catGroup.items.map((item, itemIndex) => {
+                                const markupPercent = calculateMarkupPercent(item.cost_per_unit, item.price_per_unit);
+                                const isEven = itemIndex % 2 === 0;
+                                
+                                return (
+                                  <tr
+                                    key={item.id}
+                                    className={`border-b hover:bg-blue-50 transition-colors ${
+                                      isEven ? 'bg-white' : 'bg-slate-50/50'
+                                    }`}
+                                  >
+                                    <td className="p-2 border-r">
+                                      <div className="font-medium text-sm">{item.material_name}</div>
+                                      {item.notes && (
+                                        <div className="text-xs text-muted-foreground mt-1">{item.notes}</div>
+                                      )}
+                                    </td>
+                                    <td className="p-2 text-sm border-r">
+                                      <Badge variant="outline" className="font-normal">
+                                        {item.category}
+                                      </Badge>
+                                    </td>
+                                    <td className="p-2 text-sm border-r">{item.usage || '-'}</td>
+                                    <td className="p-2 text-sm font-mono border-r">{item.sku || '-'}</td>
+                                    <td className="p-2 text-center font-semibold border-r">{item.quantity}</td>
+                                    <td className="p-2 text-center text-sm border-r">{item.length || '-'}</td>
+                                    <td className="p-2 text-right font-mono text-sm border-r">
+                                      {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className="p-2 text-right font-mono text-sm border-r">
+                                      {item.price_per_unit ? `$${item.price_per_unit.toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className="p-2 text-center border-r">
+                                      {markupPercent > 0 ? (
+                                        <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold">
+                                          <Percent className="w-3 h-3 mr-1" />
+                                          {markupPercent.toFixed(1)}%
+                                        </Badge>
+                                      ) : (
+                                        '-'
+                                      )}
+                                    </td>
+                                    <td className="p-2 text-right font-mono font-semibold text-sm border-r">
+                                      {item.extended_cost ? `$${item.extended_cost.toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className="p-2 text-right font-mono font-bold text-sm text-primary border-r">
+                                      {item.extended_price ? `$${item.extended_price.toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className="p-2">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Button size="sm" variant="ghost" onClick={() => openEditItem(item)}>
+                                          <Edit className="w-4 h-4" />
+                                        </Button>
+                                        <Button size="sm" variant="ghost" onClick={() => openMoveItem(item)}>
+                                          <MoveHorizontal className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => deleteItem(item.id)}
+                                          className="text-destructive hover:bg-destructive/10"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Sheets */}
-              <div className="space-y-2">
-                {filteredSheets.map((sheet) => {
-                  const categoryGroups = groupByCategory(sheet.items);
-                  const isSheetExpanded = expandedSheets.has(sheet.id);
-                  
-                  return (
-                    <Card key={sheet.id} className="overflow-hidden border-2">
-                      <Collapsible open={isSheetExpanded} onOpenChange={() => toggleSheet(sheet.id)}>
-                        <CollapsibleTrigger className="w-full">
-                          <CardHeader className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-b-2 border-indigo-200 hover:from-indigo-100 hover:to-indigo-150 transition-colors">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                {isSheetExpanded ? (
-                                  <ChevronDown className="w-5 h-5 text-indigo-600" />
-                                ) : (
-                                  <ChevronRight className="w-5 h-5 text-indigo-600" />
-                                )}
-                                <FileSpreadsheet className="w-6 h-6 text-indigo-600" />
-                                <CardTitle className="text-xl font-bold text-indigo-900">
-                                  {sheet.sheet_name}
-                                </CardTitle>
-                                <Badge variant="secondary" className="ml-2">
-                                  {sheet.items.length} items
-                                </Badge>
-                              </div>
-                            </div>
-                          </CardHeader>
-                        </CollapsibleTrigger>
-                        
-                        <CollapsibleContent>
-                          <CardContent className="p-4 space-y-3">
-                            {categoryGroups.length === 0 ? (
-                              <div className="text-center py-8 text-muted-foreground">
-                                No materials in this sheet
-                              </div>
-                            ) : (
-                              categoryGroups.map((catGroup) => {
-                                const catKey = `${sheet.id}-${catGroup.category}`;
-                                const isCategoryExpanded = expandedCategories.has(catKey);
-                                
-                                return (
-                                  <Card key={catKey} className="border-l-4 border-l-primary">
-                                    <Collapsible open={isCategoryExpanded} onOpenChange={() => toggleCategory(catKey)}>
-                                      <CollapsibleTrigger className="w-full">
-                                        <CardHeader className="bg-muted/30 py-3 hover:bg-muted/50 transition-colors">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                              {isCategoryExpanded ? (
-                                                <ChevronDown className="w-4 h-4" />
-                                              ) : (
-                                                <ChevronRight className="w-4 h-4" />
-                                              )}
-                                              <h3 className="font-bold text-lg">{catGroup.category}</h3>
-                                              <Badge variant="outline">{catGroup.items.length} items</Badge>
-                                            </div>
-                                            <Button
-                                              size="sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                openAddItem(sheet.id, catGroup.category);
-                                              }}
-                                              className="gradient-primary"
-                                            >
-                                              <Plus className="w-4 h-4 mr-1" />
-                                              Add Material
-                                            </Button>
-                                          </div>
-                                        </CardHeader>
-                                      </CollapsibleTrigger>
-                                      
-                                      <CollapsibleContent>
-                                        <div className="overflow-x-auto">
-                                          <table className="w-full">
-                                            <thead className="bg-muted/50 border-b text-xs">
-                                              <tr>
-                                                <th className="text-left p-2">Material</th>
-                                                <th className="text-left p-2">Usage</th>
-                                                <th className="text-left p-2">SKU</th>
-                                                <th className="text-center p-2">Qty</th>
-                                                <th className="text-center p-2">Length</th>
-                                                <th className="text-right p-2">Cost/Unit</th>
-                                                <th className="text-right p-2">Price/Unit</th>
-                                                <th className="text-center p-2">Markup %</th>
-                                                <th className="text-right p-2">Ext. Cost</th>
-                                                <th className="text-right p-2">Ext. Price</th>
-                                                <th className="text-right p-2">Actions</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {catGroup.items.map((item) => {
-                                                const markupPercent = calculateMarkupPercent(item.cost_per_unit, item.price_per_unit);
-                                                
-                                                return (
-                                                  <tr key={item.id} className="border-b hover:bg-muted/20">
-                                                    <td className="p-2">
-                                                      <div className="font-medium">{item.material_name}</div>
-                                                      {item.notes && (
-                                                        <div className="text-xs text-muted-foreground">{item.notes}</div>
-                                                      )}
-                                                    </td>
-                                                    <td className="p-2 text-sm">{item.usage || '-'}</td>
-                                                    <td className="p-2 text-sm font-mono">{item.sku || '-'}</td>
-                                                    <td className="p-2 text-center font-semibold">{item.quantity}</td>
-                                                    <td className="p-2 text-center text-sm">{item.length || '-'}</td>
-                                                    <td className="p-2 text-right font-mono">
-                                                      {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
-                                                    </td>
-                                                    <td className="p-2 text-right font-mono">
-                                                      {item.price_per_unit ? `$${item.price_per_unit.toFixed(2)}` : '-'}
-                                                    </td>
-                                                    <td className="p-2 text-center">
-                                                      {markupPercent > 0 ? (
-                                                        <Badge variant="secondary" className="bg-green-100 text-green-800">
-                                                          <Percent className="w-3 h-3 mr-1" />
-                                                          {markupPercent.toFixed(1)}%
-                                                        </Badge>
-                                                      ) : (
-                                                        '-'
-                                                      )}
-                                                    </td>
-                                                    <td className="p-2 text-right font-mono font-semibold">
-                                                      {item.extended_cost ? `$${item.extended_cost.toFixed(2)}` : '-'}
-                                                    </td>
-                                                    <td className="p-2 text-right font-mono font-semibold text-primary">
-                                                      {item.extended_price ? `$${item.extended_price.toFixed(2)}` : '-'}
-                                                    </td>
-                                                    <td className="p-2">
-                                                      <div className="flex items-center justify-end gap-1">
-                                                        <Button size="sm" variant="ghost" onClick={() => openEditItem(item)}>
-                                                          <Edit className="w-4 h-4" />
-                                                        </Button>
-                                                        <Button size="sm" variant="ghost" onClick={() => openMoveItem(item)}>
-                                                          <MoveHorizontal className="w-4 h-4" />
-                                                        </Button>
-                                                        <Button
-                                                          size="sm"
-                                                          variant="ghost"
-                                                          onClick={() => deleteItem(item.id)}
-                                                          className="text-destructive"
-                                                        >
-                                                          <Trash2 className="w-4 h-4" />
-                                                        </Button>
-                                                      </div>
-                                                    </td>
-                                                  </tr>
-                                                );
-                                              })}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      </CollapsibleContent>
-                                    </Collapsible>
-                                  </Card>
-                                );
-                              })
-                            )}
-                          </CardContent>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </Card>
-                  );
-                })}
-              </div>
             </>
           )}
         </TabsContent>
