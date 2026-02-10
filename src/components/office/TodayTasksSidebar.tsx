@@ -463,7 +463,7 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                       {/* Task Title - Larger */}
                       <p className="font-semibold text-base mb-2 leading-tight">{task.title}</p>
                       
-                      {/* Status and Type - Side by Side */}
+                      {/* Status and Assigned Person - Side by Side */}
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         {isOverdue && (
                           <Badge variant="destructive" className="bg-red-900 text-white font-bold border-2 border-red-950">
@@ -477,9 +477,12 @@ export function TodayTasksSidebar({ onJobSelect, onAddTask }: TodayTasksSidebarP
                         >
                           {task.priority}
                         </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {task.task_type}
-                        </Badge>
+                        {task.assigned_to && (
+                          <Badge variant="outline" className="text-xs">
+                            <User className="w-3 h-3 mr-1" />
+                            {users.find(u => u.id === task.assigned_to)?.username || 'Unknown'}
+                          </Badge>
+                        )}
                       </div>
                       
                       {task.description && (
