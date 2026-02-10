@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 import { Lock, Fingerprint, ArrowLeft } from 'lucide-react';
+import { InstallButton } from '@/components/ui/install-button';
 import { toast } from 'sonner';
 import { verifyPin, authenticateBiometric, isWebAuthnSupported } from '@/lib/auth';
 import type { UserProfile } from '@/types';
@@ -117,6 +118,10 @@ export function LoginPage({ user, onSuccess, onBack }: LoginPageProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {/* Install App Button */}
+            <div className="flex justify-center">
+              <InstallButton />
+            </div>
             <div className="flex justify-center mb-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <Lock className="w-8 h-8 text-primary" />

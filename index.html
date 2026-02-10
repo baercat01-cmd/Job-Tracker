@@ -57,14 +57,17 @@
     <div id="root"></div>
 
     <script>
-        document.getElementById('pwa-install-action')?.addEventListener('click', async () => {
+        // Handle both banner and any other install buttons
+        function handleInstall() {
             if (deferredPrompt) {
                 deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    document.getElementById('pwa-install-banner').style.display = 'none';
-                }
-                deferredPrompt = null;
+                deferredPrompt.userChoice.then((choice) => {
+                    if (choice.outcome === 'accepted') {
+                        const banner = document.getElementById('pwa-install-banner');
+                        if (banner) banner.style.display = 'none';
+                    }
+                    deferredPrompt = null;
+                });
             } else {
                 // Fallback for iOS or if event hasn't fired
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -74,7 +77,16 @@
                     alert("Please use Chrome Menu (⋮) > Install App");
                 }
             }
-        });
+        }
+
+        document.getElementById('pwa-install-action')?.addEventListener('click', handleInstall);
+        
+        // Expose to React components
+        window.triggerPWAInstall = handleInstall;
+        window.isPWAInstallable = () => {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            return !isStandalone;
+        };
     </script>
 
     <script type="module" src="/src/main.tsx"></script>

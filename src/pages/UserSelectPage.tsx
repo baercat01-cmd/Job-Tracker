@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { User, Briefcase, Shield, Settings, DollarSign } from 'lucide-react';
+import { InstallButton } from '@/components/ui/install-button';
 import type { UserProfile } from '@/types';
 import { AdminSetup } from './AdminSetup';
 
@@ -98,6 +99,11 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
           </div>
         </CardHeader>
         <CardContent>
+          {/* Install App Button */}
+          <div className="flex justify-center mb-6">
+            <InstallButton />
+          </div>
+
           {users.length === 0 ? (
             <div className="text-center py-8">
               <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
