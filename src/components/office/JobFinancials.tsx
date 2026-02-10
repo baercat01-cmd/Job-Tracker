@@ -98,6 +98,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // File upload state
   const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
   const [categoryFiles, setCategoryFiles] = useState<Record<string, string[]>>({});
+  const [materialFiles, setMaterialFiles] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     loadData();
@@ -428,7 +429,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   // File upload handlers
-  async function handleFileUpload(category: string, files: FileList) {
+  async function handleFileUpload(category: string, files: FileList, isMaterial: boolean = false) {
     if (!files || files.length === 0) return;
 
     setUploadingFiles(prev => ({ ...prev, [category]: true }));
@@ -452,10 +453,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       const urls = await Promise.all(uploadPromises);
       
-      setCategoryFiles(prev => ({
-        ...prev,
-        [category]: [...(prev[category] || []), ...urls],
-      }));
+      if (isMaterial) {
+        setMaterialFiles(prev => ({
+          ...prev,
+          [category]: [...(prev[category] || []), ...urls],
+        }));
+      } else {
+        setCategoryFiles(prev => ({
+          ...prev,
+          [category]: [...(prev[category] || []), ...urls],
+        }));
+      }
 
       toast.success(`${files.length} file(s) uploaded`);
     } catch (error: any) {
@@ -471,13 +479,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     e.stopPropagation();
   }
 
-  function handleDrop(category: string, e: React.DragEvent) {
+  function handleDrop(category: string, e: React.DragEvent, isMaterial: boolean = false) {
     e.preventDefault();
     e.stopPropagation();
     
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      handleFileUpload(category, files);
+      handleFileUpload(category, files, isMaterial);
     }
   }
 
@@ -613,44 +621,104 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="p-4 bg-white">
-                      <div className="space-y-3">
-                        {sheet.categories.map((category: any, catIndex: number) => (
-                          <div key={catIndex} className="border border-slate-200 rounded-lg overflow-hidden">
-                            <div className="bg-slate-50 p-3 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                <h4 className="font-semibold text-slate-900">{category.name}</h4>
-                                <Badge variant="outline" className="text-xs">{category.itemCount} items</Badge>
+                    <div className="p-4 bg-white space-y-3">
+                      {sheet.categories.map((category: any, catIndex: number) => {
+                        const materialCategoryKey = `${sheet.sheetName}-${category.name}`;
+                        return (
+                          <div 
+                            key={catIndex} 
+                            className="border-2 rounded-lg overflow-hidden"
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(materialCategoryKey, e, true)}
+                          >
+                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-4 py-3 border-b-2">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                    <h4 className="font-bold text-lg text-slate-900">{category.name}</h4>
+                                    <Badge variant="outline" className="text-xs">{category.itemCount} items</Badge>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="file"
+                                    multiple
+                                    onChange={(e) => e.target.files && handleFileUpload(materialCategoryKey, e.target.files, true)}
+                                    className="hidden"
+                                    id={`file-upload-${materialCategoryKey}`}
+                                  />
+                                  <label htmlFor={`file-upload-${materialCategoryKey}`}>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="cursor-pointer"
+                                      asChild
+                                    >
+                                      <span>
+                                        {uploadingFiles[materialCategoryKey] ? (
+                                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                                        ) : (
+                                          <Plus className="w-4 h-4 mr-2" />
+                                        )}
+                                        Attach Files
+                                      </span>
+                                    </Button>
+                                  </label>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-6 text-sm">
-                                <div className="text-right">
-                                  <p className="text-xs text-muted-foreground">Cost</p>
-                                  <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              {materialFiles[materialCategoryKey] && materialFiles[materialCategoryKey].length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {materialFiles[materialCategoryKey].map((url, idx) => (
+                                    <a
+                                      key={idx}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                    >
+                                      <FileSpreadsheet className="w-3 h-3" />
+                                      File {idx + 1}
+                                    </a>
+                                  ))}
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-xs text-muted-foreground">Price</p>
-                                  <p className="font-semibold">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-xs text-muted-foreground">Profit</p>
-                                  <p className="font-semibold text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                </div>
-                                <div className="text-right min-w-[60px]">
-                                  <p className="text-xs text-muted-foreground">Margin</p>
-                                  <p className={`font-bold ${
-                                    category.margin >= 25 ? 'text-green-600' :
-                                    category.margin >= 15 ? 'text-yellow-600' :
-                                    'text-red-600'
-                                  }`}>
-                                    {category.margin.toFixed(1)}%
-                                  </p>
+                              )}
+                            </div>
+                            <div className="p-4 hover:bg-slate-50 transition-colors">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-6 text-sm">
+                                  <div className="text-left">
+                                    <p className="text-xs text-muted-foreground">Cost</p>
+                                    <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-left">
+                                    <p className="text-xs text-muted-foreground">Price</p>
+                                    <p className="font-semibold">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-left">
+                                    <p className="text-xs text-muted-foreground">Profit</p>
+                                    <p className="font-semibold text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-left min-w-[60px]">
+                                    <p className="text-xs text-muted-foreground">Margin</p>
+                                    <p className={`font-bold ${
+                                      category.margin >= 25 ? 'text-green-600' :
+                                      category.margin >= 15 ? 'text-yellow-600' :
+                                      'text-red-600'
+                                    }`}>
+                                      {category.margin.toFixed(1)}%
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             </div>
+                            <div className="bg-slate-50 px-4 py-2 text-center text-sm text-muted-foreground border-t">
+                              Drag and drop files here to attach to this category
+                            </div>
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
                   </CollapsibleContent>
                 </div>
@@ -680,8 +748,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 
                 <div className="space-y-6">
                   {Object.entries(groupedRows).map(([cat, rows]) => {
-                    const hasMultipleItems = rows.length > 1;
-                    
                     return (
                       <div 
                         key={cat} 
@@ -745,7 +811,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             </div>
                           )}
                         </div>
-                        <div className={hasMultipleItems ? "divide-y" : ""}>
+                        <div className="divide-y">
                           {rows.map((row) => (
                             <div key={row.id} className="p-4 hover:bg-slate-50 transition-colors">
                               <div className="flex items-start justify-between">
