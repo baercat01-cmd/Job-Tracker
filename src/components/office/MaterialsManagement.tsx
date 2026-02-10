@@ -446,8 +446,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="w-full flex justify-center">
-      <div className="w-full max-w-7xl px-4">
+    <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm flex-1">
@@ -493,9 +492,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                           size="sm"
                           onClick={() => handleSheetChange(sheet.id)}
-                          className={`min-w-[120px] justify-center font-semibold ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
+                          className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
                         >
+                          <FileSpreadsheet className="w-4 h-4" />
                           {sheet.sheet_name}
+                          <Badge variant="secondary" className="ml-auto text-xs">
+                            {sheet.items.length}
+                          </Badge>
                         </Button>
                       ))}
                     </div>
@@ -852,7 +855,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </div>
         </DialogContent>
       </Dialog>
-      </div>
     </div>
   );
 }
