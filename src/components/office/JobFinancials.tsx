@@ -563,10 +563,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               Add Additional Cost
             </Button>
           </CardHeader>
-          <CardContent className="pt-6 space-y-6">
+          <CardContent className="pt-4 space-y-3">
             {/* Materials Grand Totals */}
             {materialsBreakdown.sheetBreakdowns.length > 0 && (
-              <div className="grid grid-cols-4 gap-3 p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
+              <div className="grid grid-cols-4 gap-2 p-2 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
                 <div className="text-center">
                   <p className="text-xs opacity-80">Cost</p>
                   <p className="text-xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
@@ -587,11 +587,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             )}
 
             {/* Breakdown by Sheet */}
+            <div className="space-y-2">
             {materialsBreakdown.sheetBreakdowns.length > 0 && materialsBreakdown.sheetBreakdowns.map((sheet, sheetIndex) => (
               <Collapsible key={sheetIndex} defaultOpen={false}>
                 <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
                   <CollapsibleTrigger className="w-full">
-                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-3 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
+                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-2 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
                       <div className="flex items-center gap-3">
                         <h3 className="font-bold text-base text-blue-900">{sheet.sheetName}</h3>
                       </div>
@@ -617,7 +618,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="p-3 bg-white space-y-2">
+                    <div className="p-2 bg-white space-y-1">
                       {sheet.categories.map((category: any, catIndex: number) => {
                         const materialCategoryKey = `${sheet.sheetName}-${category.name}`;
                         return (
@@ -627,7 +628,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(materialCategoryKey, e, true)}
                           >
-                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 border-b">
+                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-2 py-1.5 border-b">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
@@ -715,6 +716,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </div>
               </Collapsible>
             ))}
+            </div>
 
             {/* Additional Costs Section - integrated into the same card */}
             {customRows.length === 0 && materialsBreakdown.sheetBreakdowns.length === 0 && (
@@ -730,13 +732,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
             {customRows.length > 0 && (
               <>
-                <div className="border-t-4 border-orange-200 pt-4">
-                  <h3 className="text-base font-bold text-orange-900 mb-3">
+                <div className="border-t-4 border-orange-200 pt-3">
+                  <h3 className="text-base font-bold text-orange-900 mb-2">
                     Additional Costs
                   </h3>
                 </div>
                 
-                <div className="space-y-6">
+                <div className="space-y-2">
                   {Object.entries(groupedRows).map(([cat, rows]) => {
                     return (
                       <div 
@@ -799,7 +801,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                         <div className="divide-y">
                           {rows.map((row) => (
-                            <div key={row.id} className="p-3 hover:bg-slate-50 transition-colors">
+                            <div key={row.id} className="p-2 hover:bg-slate-50 transition-colors">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="font-medium text-sm text-slate-900">{row.description}</div>
