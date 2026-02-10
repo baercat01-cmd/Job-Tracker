@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,6 +52,16 @@ interface LaborPricing {
   updated_at: string;
 }
 
+interface MaterialsBreakdown {
+  sheetBreakdowns: any[];
+  totals: {
+    totalCost: number;
+    totalPrice: number;
+    totalProfit: number;
+    profitMargin: number;
+  };
+}
+
 interface JobFinancialsProps {
   job: Job;
 }
@@ -66,6 +77,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Labor stats
   const [totalClockInHours, setTotalClockInHours] = useState(0);
   const [estimatedHours, setEstimatedHours] = useState(job.estimated_hours || 0);
+
+  // Materials data
+  const [materialsBreakdown, setMaterialsBreakdown] = useState<MaterialsBreakdown>({
+    sheetBreakdowns: [],
+    totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
+  });
 
   // Form state for custom rows
   const [category, setCategory] = useState('subcontractor');
@@ -93,12 +110,130 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         loadCustomRows(),
         loadLaborPricing(),
         loadLaborHours(),
+        loadMaterialsData(),
       ]);
     } catch (error) {
       console.error('Error loading financial data:', error);
       toast.error('Failed to load financial data');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMaterialsData() {
+    try {
+      // Get the working workbook for this job
+      const { data: workbookData, error: workbookError } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working')
+        .maybeSingle();
+
+      if (workbookError) throw workbookError;
+      if (!workbookData) {
+        setMaterialsBreakdown({
+          sheetBreakdowns: [],
+          totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
+        });
+        return;
+      }
+
+      // Get all sheets for this workbook
+      const { data: sheetsData, error: sheetsError } = await supabase
+        .from('material_sheets')
+        .select('*')
+        .eq('workbook_id', workbookData.id)
+        .order('order_index');
+
+      if (sheetsError) throw sheetsError;
+
+      const sheetIds = (sheetsData || []).map(s => s.id);
+
+      // Get all items for these sheets
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('material_items')
+        .select('*')
+        .in('sheet_id', sheetIds);
+
+      if (itemsError) throw itemsError;
+
+      // Calculate breakdown by sheet and category
+      const breakdowns = (sheetsData || []).map(sheet => {
+        const sheetItems = (itemsData || []).filter(item => item.sheet_id === sheet.id);
+
+        // Group by category
+        const categoryMap = new Map<string, any[]>();
+        sheetItems.forEach(item => {
+          const category = item.category || 'Uncategorized';
+          if (!categoryMap.has(category)) {
+            categoryMap.set(category, []);
+          }
+          categoryMap.get(category)!.push(item);
+        });
+
+        // Calculate totals per category
+        const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
+          const totalCost = items.reduce((sum, item) => {
+            const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
+            return sum + cost;
+          }, 0);
+
+          const totalPrice = items.reduce((sum, item) => {
+            const price = (item.price_per_unit || 0) * (item.quantity || 0);
+            return sum + price;
+          }, 0);
+
+          const profit = totalPrice - totalCost;
+          const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
+
+          return {
+            name: categoryName,
+            itemCount: items.length,
+            totalCost,
+            totalPrice,
+            profit,
+            margin,
+          };
+        }).sort((a, b) => a.name.localeCompare(b.name));
+
+        // Calculate sheet totals
+        const sheetTotalCost = categories.reduce((sum, cat) => sum + cat.totalCost, 0);
+        const sheetTotalPrice = categories.reduce((sum, cat) => sum + cat.totalPrice, 0);
+        const sheetProfit = sheetTotalPrice - sheetTotalCost;
+        const sheetMargin = sheetTotalPrice > 0 ? (sheetProfit / sheetTotalPrice) * 100 : 0;
+
+        return {
+          sheetName: sheet.sheet_name,
+          categories,
+          totalCost: sheetTotalCost,
+          totalPrice: sheetTotalPrice,
+          profit: sheetProfit,
+          margin: sheetMargin,
+        };
+      });
+
+      // Calculate grand totals
+      const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
+      const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
+      const grandProfit = grandTotalPrice - grandTotalCost;
+      const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
+
+      setMaterialsBreakdown({
+        sheetBreakdowns: breakdowns,
+        totals: {
+          totalCost: grandTotalCost,
+          totalPrice: grandTotalPrice,
+          totalProfit: grandProfit,
+          profitMargin: grandMargin,
+        }
+      });
+    } catch (error: any) {
+      console.error('Error loading materials breakdown:', error);
+      setMaterialsBreakdown({
+        sheetBreakdowns: [],
+        totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
+      });
     }
   }
 
@@ -371,9 +506,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const laborPrice = totalClockInHours * billableRate;
   const laborProfit = 0;
 
-  // Overall totals
-  const totalCost = grandTotalCost + laborCost;
-  const totalPrice = grandTotalPrice + laborPrice;
+  // Overall totals (including materials)
+  const totalCost = materialsBreakdown.totals.totalCost + grandTotalCost + laborCost;
+  const totalPrice = materialsBreakdown.totals.totalPrice + grandTotalPrice + laborPrice;
   const totalProfit = totalPrice - totalCost;
   const profitMargin = totalPrice > 0 ? (totalProfit / totalPrice) * 100 : 0;
 
@@ -406,79 +541,119 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="space-y-4">
-      {/* Labor Pricing & Hours Section */}
-      <Card className="border-2 border-blue-200">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100">
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-blue-700" />
-            Labor Pricing & Hours
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6 space-y-4">
-          {/* Labor Rate Configuration */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border">
-            <div>
-              <Label>Hourly Labor Rate ($)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={hourlyRate}
-                onChange={(e) => setHourlyRate(e.target.value)}
-                onBlur={saveLaborPricing}
-              />
-            </div>
-            <div>
-              <Label>Billable Rate ($/hr)</Label>
-              <div className="h-10 flex items-center font-bold text-lg text-blue-700">
-                ${billableRate.toFixed(2)}
+      {/* Materials Pricing Breakdown */}
+      {materialsBreakdown.sheetBreakdowns.length > 0 && (
+        <Card className="border-2 border-green-200">
+          <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2">
+            <CardTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-green-700" />
+              Materials Pricing
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-6">
+            {/* Materials Grand Totals */}
+            <div className="grid grid-cols-4 gap-4 p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
+              <div className="text-center">
+                <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Cost</p>
+                <p className="text-2xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Price</p>
+                <p className="text-2xl font-bold">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Materials Profit</p>
+                <p className="text-2xl font-bold text-yellow-400">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs uppercase tracking-wide mb-1 opacity-80">Profit Margin</p>
+                <div className="flex items-center justify-center gap-2">
+                  <Percent className="w-5 h-5 text-green-400" />
+                  <p className="text-2xl font-bold text-green-400">{materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Hours Progress */}
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-4 bg-primary/5 rounded-lg border">
-              <div className="text-3xl font-bold text-primary">{estimatedHours.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Estimated Hours</p>
-            </div>
-            <div className="p-4 bg-muted/50 rounded-lg border">
-              <div className="text-3xl font-bold">{totalClockInHours.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Clock-In Hours</p>
-            </div>
-            <div className={`p-4 rounded-lg border ${
-              isOverBudget 
-                ? 'bg-destructive/10 border-destructive/30' 
-                : 'bg-success/10 border-success/30'
-            }`}>
-              <div className={`text-3xl font-bold ${
-                isOverBudget ? 'text-destructive' : 'text-success'
-              }`}>
-                {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
-                {isOverBudget ? 'Over Budget' : 'Remaining'}
-              </p>
-            </div>
-          </div>
+            {/* Breakdown by Sheet */}
+            {materialsBreakdown.sheetBreakdowns.map((sheet, sheetIndex) => (
+              <Collapsible key={sheetIndex} defaultOpen={false}>
+                <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
+                  <CollapsibleTrigger className="w-full">
+                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-4 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <FileSpreadsheet className="w-5 h-5 text-blue-700" />
+                        <h3 className="font-bold text-lg text-blue-900">{sheet.sheetName}</h3>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Cost</p>
+                          <p className="font-bold text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Price</p>
+                          <p className="font-bold text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Profit</p>
+                          <p className="font-bold text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-blue-700">Margin</p>
+                          <p className="font-bold text-green-700">{sheet.margin.toFixed(1)}%</p>
+                        </div>
+                        <ChevronDown className="w-5 h-5 text-blue-700" />
+                      </div>
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="p-4 bg-white">
+                      <div className="space-y-3">
+                        {sheet.categories.map((category: any, catIndex: number) => (
+                          <div key={catIndex} className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="bg-slate-50 p-3 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                <h4 className="font-semibold text-slate-900">{category.name}</h4>
+                                <Badge variant="outline" className="text-xs">{category.itemCount} items</Badge>
+                              </div>
+                              <div className="flex items-center gap-6 text-sm">
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Cost</p>
+                                  <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Price</p>
+                                  <p className="font-semibold">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Profit</p>
+                                  <p className="font-semibold text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right min-w-[60px]">
+                                  <p className="text-xs text-muted-foreground">Margin</p>
+                                  <p className={`font-bold ${
+                                    category.margin >= 25 ? 'text-green-600' :
+                                    category.margin >= 15 ? 'text-yellow-600' :
+                                    'text-red-600'
+                                  }`}>
+                                    {category.margin.toFixed(1)}%
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Labor Financial Summary */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Labor Cost</p>
-              <p className="text-2xl font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted-foreground">{totalClockInHours.toFixed(2)} hrs × ${laborRate.toFixed(2)}/hr</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Labor Billing</p>
-              <p className="text-2xl font-bold text-blue-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted-foreground">Direct rate, no markup</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Custom Financial Rows */}
+      {/* Additional Costs (Custom Financial Rows) */}
       <Card className="border-2 border-slate-200">
         <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
@@ -623,6 +798,78 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </CardContent>
       </Card>
 
+      {/* Labor Pricing & Hours Section */}
+      <Card className="border-2 border-blue-200">
+        <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100">
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-blue-700" />
+            Labor Pricing & Hours
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          {/* Labor Rate Configuration */}
+          <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border">
+            <div>
+              <Label>Hourly Labor Rate ($)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={hourlyRate}
+                onChange={(e) => setHourlyRate(e.target.value)}
+                onBlur={saveLaborPricing}
+              />
+            </div>
+            <div>
+              <Label>Billable Rate ($/hr)</Label>
+              <div className="h-10 flex items-center font-bold text-lg text-blue-700">
+                ${billableRate.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          {/* Hours Progress */}
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="p-4 bg-primary/5 rounded-lg border">
+              <div className="text-3xl font-bold text-primary">{estimatedHours.toFixed(2)}</div>
+              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Estimated Hours</p>
+            </div>
+            <div className="p-4 bg-muted/50 rounded-lg border">
+              <div className="text-3xl font-bold">{totalClockInHours.toFixed(2)}</div>
+              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">Clock-In Hours</p>
+            </div>
+            <div className={`p-4 rounded-lg border ${
+              isOverBudget 
+                ? 'bg-destructive/10 border-destructive/30' 
+                : 'bg-success/10 border-success/30'
+            }`}>
+              <div className={`text-3xl font-bold ${
+                isOverBudget ? 'text-destructive' : 'text-success'
+              }`}>
+                {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
+                {isOverBudget ? 'Over Budget' : 'Remaining'}
+              </p>
+            </div>
+          </div>
+
+          {/* Labor Financial Summary */}
+          <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Labor Cost</p>
+              <p className="text-2xl font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted-foreground">{totalClockInHours.toFixed(2)} hrs × ${laborRate.toFixed(2)}/hr</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Labor Billing</p>
+              <p className="text-2xl font-bold text-blue-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted-foreground">Direct rate, no markup</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Grand Total Summary */}
       <Card className="border-2 border-slate-900">
         <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
@@ -635,13 +882,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           <div className="space-y-4">
             {/* Category Breakdown */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between py-2 border-b font-semibold">
-                <span>Labor ({totalClockInHours.toFixed(2)} hrs)</span>
-                <div className="flex items-center gap-6">
-                  <span className="text-muted-foreground">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  <span className="min-w-[120px] text-right">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              {materialsBreakdown.totals.totalPrice > 0 && (
+                <div className="flex items-center justify-between py-2 border-b font-semibold">
+                  <span>Materials</span>
+                  <div className="flex items-center gap-6">
+                    <span className="text-muted-foreground">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    <span className="min-w-[120px] text-right">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
-              </div>
+              )}
               {categoryTotals.map((ct) => (
                 <div key={ct.category} className="flex items-center justify-between py-2 border-b">
                   <span>{categoryLabels[ct.category] || ct.category}</span>
@@ -651,6 +900,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   </div>
                 </div>
               ))}
+              <div className="flex items-center justify-between py-2 border-b font-semibold">
+                <span>Labor ({totalClockInHours.toFixed(2)} hrs)</span>
+                <div className="flex items-center gap-6">
+                  <span className="text-muted-foreground">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="min-w-[120px] text-right">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
             </div>
 
             {/* Grand Totals */}
