@@ -13,76 +13,65 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        let deferredPrompt;
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-
-        // 1. Status Logger
-        const logStatus = (msg, isError = false) => {
-            const el = document.getElementById('pwa-status-box');
-            if (el) el.innerHTML += `<div class="${isError ? 'text-red-500' : 'text-emerald-500'}">• ${msg}</div>`;
-        };
-
-        // 2. Critical File Check
-        async function checkFiles() {
-            const files = ['/manifest.json', '/sw.js', '/martin-logo.png'];
-            for (const f of files) {
-                try {
-                    const r = await fetch(f, { method: 'HEAD' });
-                    if (r.ok) logStatus(`${f} Found ✓`);
-                    else logStatus(`${f} NOT FOUND (404) ✗`, true);
-                } catch (e) { logStatus(`${f} Unreachable`, true); }
-            }
-        }
-
-        // 3. SW Registration
+        // 1. Service Worker Registration (Immediate)
         if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            navigator.serviceWorker.register('/sw.js?v=303')
-                .then(() => logStatus('Service Worker: Active ✓'))
-                .catch(err => logStatus('SW Error: ' + err.message, true));
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('PWA: Service Worker Active'))
+                    .catch(err => console.log('PWA: SW Error', err));
+            });
         }
 
+        // 2. Install Logic
+        let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            logStatus('PWA: Ready to Install ✓');
+            // Show the install UI
+            const banner = document.getElementById('pwa-install-banner');
+            if (banner) banner.style.display = 'flex';
         });
 
-        window.onload = () => {
-            if (!isStandalone) {
-                document.getElementById('pwa-top-banner').style.display = 'flex';
-                checkFiles();
-            }
-        };
+        window.addEventListener('appinstalled', () => {
+            const banner = document.getElementById('pwa-install-banner');
+            if (banner) banner.style.display = 'none';
+            deferredPrompt = null;
+        });
     </script>
 </head>
 <body class="bg-slate-50">
-    <div id="pwa-top-banner" style="display:none;" class="bg-[#4179bc] text-white p-3 flex justify-between items-center sticky top-0 z-[100] shadow-md">
-        <div class="flex items-center gap-2">
-            <img src="/martin-logo.png" class="w-8 h-8 rounded-lg" alt="Logo">
-            <div id="pwa-status-box" class="text-[8px] font-mono leading-tight bg-black/20 p-1 rounded min-w-[120px]">
-                <!-- Status logs appear here -->
+    <!-- Clean Install Banner -->
+    <div id="pwa-install-banner" style="display:none;" class="fixed top-0 left-0 right-0 bg-[#4179bc] text-white p-4 flex justify-between items-center z-[100] shadow-xl">
+        <div class="flex items-center gap-3">
+            <img src="/martin-logo.png" class="w-10 h-10 rounded-lg border border-white/20" alt="Logo">
+            <div>
+                <p class="font-black text-sm uppercase tracking-tighter leading-none">Martin Builder OS</p>
+                <p class="text-[10px] opacity-80 font-bold">Install for full offline access</p>
             </div>
         </div>
-        <button id="install-btn-trigger" class="bg-white text-[#4179bc] px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-lg">
-            Install App
+        <button id="pwa-install-action" class="bg-white text-[#4179bc] px-5 py-2 rounded-full text-[11px] font-black uppercase shadow-lg active:scale-95 transition-transform">
+            Install
         </button>
     </div>
 
     <div id="root"></div>
 
     <script>
-        document.getElementById('install-btn-trigger')?.addEventListener('click', async () => {
+        document.getElementById('pwa-install-action')?.addEventListener('click', async () => {
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') document.getElementById('pwa-top-banner').style.display = 'none';
+                if (outcome === 'accepted') {
+                    document.getElementById('pwa-install-banner').style.display = 'none';
+                }
                 deferredPrompt = null;
             } else {
+                // Fallback for iOS or if event hasn't fired
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
                 if (isIOS) {
-                    alert("To install on iPhone: Tap 'Share' (square with arrow), then scroll down and tap 'Add to Home Screen'.");
+                    alert("iOS: Tap 'Share' then 'Add to Home Screen'");
                 } else {
-                    alert("Chrome hasn't validated the files yet. Ensure the status box shows 'Found ✓' for all files, then try again or use Chrome Menu (⋮) > Install app.");
+                    alert("Please use Chrome Menu (⋮) > Install App");
                 }
             }
         });
