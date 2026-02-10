@@ -94,7 +94,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
     order_number: '',
     order_type: 'delivery' as 'delivery' | 'pickup',
     order_date: new Date().toISOString().split('T')[0],
-    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_date: '',
     pickup_user_id: '',
     status: 'pending' as 'pending' | 'confirmed' | 'completed' | 'cancelled',
     notes: '',
@@ -240,13 +240,8 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
   }
 
   async function handleCreateOrder() {
-    if (!formData.job_id || !formData.scheduled_date) {
-      toast.error('Job and scheduled date are required');
-      return;
-    }
-
-    if (formData.order_type === 'pickup' && !formData.pickup_user_id) {
-      toast.error('Please assign a user for pickup');
+    if (!formData.job_id) {
+      toast.error('Job is required');
       return;
     }
 
@@ -259,8 +254,8 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
           order_number: formData.order_number || null,
           order_type: formData.order_type,
           order_date: formData.order_date,
-          scheduled_date: formData.scheduled_date,
-          pickup_user_id: formData.order_type === 'pickup' ? formData.pickup_user_id : null,
+          scheduled_date: formData.scheduled_date || formData.order_date,
+          pickup_user_id: formData.order_type === 'pickup' ? (formData.pickup_user_id || null) : null,
           status: formData.status,
           notes: formData.notes || null,
           total_cost: formData.total_cost ? parseFloat(formData.total_cost) : null,
@@ -276,11 +271,13 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
         await uploadOrderDocuments(orderData.id);
       }
 
-      // Create calendar event
-      await createCalendarEvent(orderData);
+      // Create calendar event (only if scheduled_date provided)
+      if (orderData.scheduled_date) {
+        await createCalendarEvent(orderData);
+      }
 
-      // If pickup, create task and notification
-      if (orderData.order_type === 'pickup' && orderData.pickup_user_id) {
+      // If pickup with user and date, create task and notification
+      if (orderData.order_type === 'pickup' && orderData.pickup_user_id && orderData.scheduled_date) {
         await createPickupTask(orderData);
         await createPickupNotification(orderData);
       }
@@ -291,7 +288,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
       await loadOrders();
     } catch (error: any) {
       console.error('Error creating order:', error);
-      toast.error('Failed to create order');
+      toast.error(`Failed to create order: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -336,6 +333,8 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
   }
 
   async function createCalendarEvent(order: MaterialOrder) {
+    if (!order.scheduled_date) return;
+
     try {
       const job = jobs.find(j => j.id === order.job_id);
       const vendor = vendors.find(v => v.id === order.vendor_id);
@@ -366,6 +365,8 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
   }
 
   async function createPickupTask(order: MaterialOrder) {
+    if (!order.pickup_user_id || !order.scheduled_date) return;
+
     try {
       const vendor = vendors.find(v => v.id === order.vendor_id);
       const job = jobs.find(j => j.id === order.job_id);
@@ -395,6 +396,8 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
   }
 
   async function createPickupNotification(order: MaterialOrder) {
+    if (!order.pickup_user_id || !order.scheduled_date) return;
+
     try {
       const vendor = vendors.find(v => v.id === order.vendor_id);
       const pickupUser = users.find(u => u.id === order.pickup_user_id);
@@ -444,7 +447,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
       order_number: '',
       order_type: 'delivery',
       order_date: new Date().toISOString().split('T')[0],
-      scheduled_date: new Date().toISOString().split('T')[0],
+      scheduled_date: '',
       pickup_user_id: '',
       status: 'pending',
       notes: '',
@@ -524,12 +527,14 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Calendar className="w-3 h-3" />
-                  <span>
-                    {new Date(order.scheduled_date).toLocaleDateString()}
-                  </span>
-                </div>
+                {order.scheduled_date && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Calendar className="w-3 h-3" />
+                    <span>
+                      {new Date(order.scheduled_date).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
                 
                 {order.order_number && (
                   <div className="flex items-center gap-2 text-xs">
@@ -697,7 +702,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
             {/* Dates */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Order Date *</Label>
+                <Label>Order Date</Label>
                 <Input
                   type="date"
                   value={formData.order_date}
@@ -705,7 +710,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                 />
               </div>
               <div className="space-y-2">
-                <Label>Scheduled Date *</Label>
+                <Label>Scheduled Date</Label>
                 <Input
                   type="date"
                   value={formData.scheduled_date}
@@ -717,7 +722,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
             {/* Pickup User (only for pickup orders) */}
             {formData.order_type === 'pickup' && (
               <div className="space-y-2">
-                <Label>Assign Pickup To *</Label>
+                <Label>Assign Pickup To</Label>
                 <Select
                   value={formData.pickup_user_id}
                   onValueChange={(value) => setFormData({ ...formData, pickup_user_id: value })}
@@ -778,10 +783,35 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
               />
             </div>
             
-            {/* File Upload */}
+            {/* File Upload with Drag & Drop */}
             <div className="space-y-2">
               <Label>Documents (PDFs)</Label>
-              <div className="border-2 border-dashed rounded-lg p-4">
+              <div 
+                className="border-2 border-dashed rounded-lg p-4 transition-colors hover:border-primary hover:bg-primary/5"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.add('border-primary', 'bg-primary/10');
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove('border-primary', 'bg-primary/10');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove('border-primary', 'bg-primary/10');
+                  const files = Array.from(e.dataTransfer.files).filter(file => 
+                    file.type === 'application/pdf' || file.name.endsWith('.pdf')
+                  );
+                  if (files.length > 0) {
+                    setSelectedFiles([...selectedFiles, ...files]);
+                  } else {
+                    toast.error('Please upload PDF files only');
+                  }
+                }}
+              >
                 <input
                   type="file"
                   id="order-files"
@@ -789,7 +819,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                   accept=".pdf,application/pdf"
                   onChange={(e) => {
                     const files = Array.from(e.target.files || []);
-                    setSelectedFiles(files);
+                    setSelectedFiles([...selectedFiles, ...files]);
                   }}
                   className="hidden"
                 />
@@ -799,7 +829,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                 >
                   <Upload className="w-8 h-8 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    Click to upload PDFs
+                    Click or drag & drop PDFs here
                   </span>
                 </label>
                 
