@@ -548,6 +548,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   return (
+    <div className="max-w-[1600px] mx-auto px-4">
     <div className="flex gap-4">
       {/* Main Content */}
       <div className="flex-1 space-y-4">
@@ -1093,6 +1094,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }
