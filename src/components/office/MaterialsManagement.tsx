@@ -346,7 +346,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="w-full max-w-[98vw]">
+    <div className="w-screen overflow-x-auto">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm flex-1">
@@ -428,14 +428,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto w-full">
                     {categoryGroups.length === 0 ? (
                       <div className="text-center py-12 text-muted-foreground">
                         <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
                         <p>No materials in this sheet</p>
                       </div>
                     ) : (
-                      <table className="w-full border-collapse">
+                      <table className="w-max min-w-full border-collapse">
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
                             <th className="text-left p-3 font-bold border-r border-slate-600 min-w-[250px]">Material</th>
