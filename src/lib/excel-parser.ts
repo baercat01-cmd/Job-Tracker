@@ -5,14 +5,6 @@
  * NOTE: Requires 'xlsx' library - install with: npm install xlsx
  */
 
-// Conditional import - will gracefully fail if xlsx not installed
-let XLSX: any = null;
-try {
-  XLSX = require('xlsx');
-} catch (e) {
-  console.warn('xlsx library not installed - Excel upload feature disabled');
-}
-
 // Type definitions for parsed workbook data
 export interface ExcelRow {
   [key: string]: string | number | null;
@@ -28,22 +20,36 @@ export interface ExcelWorkbook {
 }
 
 /**
+ * Load xlsx library dynamically
+ */
+async function loadXLSX() {
+  try {
+    const xlsx = await import('xlsx');
+    return xlsx;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
  * Parse Excel (.xlsx) file into structured workbook data with multiple sheets
  */
 export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbook> {
+  // Try to load xlsx library
+  const XLSX = await loadXLSX();
+  
+  if (!XLSX) {
+    throw new Error(
+      '📦 Excel upload feature requires the xlsx library.\n\n' +
+      '✅ To enable this feature:\n' +
+      '1. Run: npm install xlsx\n' +
+      '2. Commit and push package.json changes\n' +
+      '3. Redeploy the app\n\n' +
+      '🔧 Quick fix: npm install xlsx && git add package.json && git commit -m "Add xlsx" && git push'
+    );
+  }
+  
   return new Promise(async (resolve, reject) => {
-    // Check if xlsx library is available
-    if (!XLSX) {
-      reject(new Error(
-        'Excel upload feature requires the xlsx library.\n\n' +
-        'To enable this feature:\n' +
-        '1. Run: npm install xlsx\n' +
-        '2. Commit and push package.json changes\n' +
-        '3. Redeploy the app'
-      ));
-      return;
-    }
-    
     try {
       // Read file as array buffer
       const arrayBuffer = await file.arrayBuffer();
