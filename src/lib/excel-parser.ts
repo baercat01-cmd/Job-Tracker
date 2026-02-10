@@ -1,11 +1,12 @@
 /**
- * Excel Workbook Parser
- * Handles parsing multi-sheet Excel files (.xlsx) for material imports
- * Uses xlsx library to read Excel workbooks
+ * Excel/CSV Workbook Parser
+ * Handles parsing CSV files for material imports
+ * 
+ * NOTE: For Excel files (.xlsx), please convert to CSV first using Excel/Google Sheets:
+ * File > Save As > CSV (Comma delimited)
  */
 
-// Note: This will require adding 'xlsx' package
-// Install with: npm install xlsx
+import { parseCSV } from './csv-parser';
 
 // Type definitions for parsed workbook data
 export interface ExcelRow {
@@ -22,80 +23,51 @@ export interface ExcelWorkbook {
 }
 
 /**
- * Parse Excel file (blob/file) into structured workbook data
+ * Parse CSV file into structured workbook data
+ * Note: Each CSV file represents one sheet. For multi-sheet workbooks,
+ * upload multiple CSV files or use a naming convention like "SheetName_data.csv"
  */
 export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbook> {
-  // Dynamic import of xlsx library
-  // Note: xlsx must be installed: npm install xlsx
-  let XLSX: any;
-  try {
-    XLSX = await import('xlsx');
-  } catch (error) {
-    throw new Error('xlsx library not installed. Please run: npm install xlsx');
-  }
-  
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      try {
-        const data = e.target?.result;
-        if (!data) {
-          reject(new Error('Failed to read file'));
-          return;
-        }
-        
-        // Read workbook
-        const workbook = XLSX.read(data, { type: 'binary' });
-        
-        // Parse all sheets
-        const sheets: ExcelSheet[] = workbook.SheetNames.map(sheetName => {
-          const worksheet = workbook.Sheets[sheetName];
-          
-          // Convert sheet to JSON
-          const rows = XLSX.utils.sheet_to_json(worksheet, {
-            header: 1, // Get as array of arrays first
-            defval: null, // Use null for empty cells
-            blankrows: false, // Skip blank rows
-          }) as any[][];
-          
-          // Extract headers (first row)
-          const headers = rows[0] || [];
-          
-          // Convert to objects
-          const dataRows: ExcelRow[] = rows.slice(1).map(row => {
-            const rowObj: ExcelRow = {};
-            headers.forEach((header, index) => {
-              const key = String(header || `Column${index + 1}`).trim();
-              const value = row[index];
-              
-              // Convert value to string if not null
-              rowObj[key] = value === null || value === undefined 
-                ? null 
-                : typeof value === 'number'
-                ? value
-                : String(value).trim();
-            });
-            return rowObj;
-          });
-          
-          return {
-            name: sheetName,
-            rows: dataRows,
-          };
-        });
-        
-        resolve({ sheets });
-      } catch (error) {
-        reject(error);
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Read file as text
+      const text = await file.text();
+      
+      // Parse CSV
+      const rows = parseCSV(text);
+      
+      if (rows.length === 0) {
+        reject(new Error('CSV file is empty'));
+        return;
       }
-    };
-    
-    reader.onerror = () => {
-      reject(new Error('Failed to read file'));
-    };
-    
-    reader.readAsBinaryString(file);
+      
+      // Extract sheet name from filename if it's a File object
+      let sheetName = 'Sheet1';
+      if (file instanceof File) {
+        // Remove .csv extension and use as sheet name
+        sheetName = file.name.replace(/\.csv$/i, '');
+      }
+      
+      // Convert CSV rows to ExcelRow format
+      const excelRows: ExcelRow[] = rows.map(row => {
+        const excelRow: ExcelRow = {};
+        Object.entries(row).forEach(([key, value]) => {
+          // Try to parse as number if it looks like one
+          const numValue = parseFloat(value);
+          excelRow[key] = !isNaN(numValue) && value.trim() !== '' ? numValue : value;
+        });
+        return excelRow;
+      });
+      
+      resolve({
+        sheets: [{
+          name: sheetName,
+          rows: excelRows,
+        }],
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
