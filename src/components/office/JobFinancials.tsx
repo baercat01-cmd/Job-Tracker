@@ -707,9 +707,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                 </div>
                               </div>
                             </div>
-                            <div className="bg-slate-50 px-3 py-1.5 text-center text-xs text-muted-foreground border-t">
-                              Drag and drop files here
-                            </div>
                           </div>
                         );
                       })}
@@ -816,36 +813,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   </div>
                                 </div>
                                 <div className="text-right ml-4">
-                                  <div className="font-bold text-base text-slate-900">
-                                    ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Cost: ${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </div>
-                                  <div className="flex gap-2 mt-2 justify-end">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => openAddDialog(row)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => deleteRow(row.id)}
-                                      className="text-destructive"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
+                                  <div className="flex items-center gap-2 justify-end">
+                                    <div>
+                                      <div className="font-bold text-base text-slate-900">
+                                        ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Cost: ${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => openAddDialog(row)}
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => deleteRow(row.id)}
+                                        className="text-destructive"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
                           ))}
-                        </div>
-                        <div className="bg-slate-50 px-3 py-1.5 text-center text-xs text-muted-foreground border-t">
-                          Drag and drop files here
                         </div>
                       </div>
                     );
