@@ -2,7 +2,7 @@
 
 import { supabase } from './supabase';
 import { getPendingSyncItems, markSynced, clearSyncedItems, SyncQueueItem, updateSyncMetadata, getSyncMetadata } from './offline-db';
-import { isOnline, setStatus, updatePendingChangesCount } from './offline-manager';
+import { isOnline, updatePendingChangesCount } from './offline-manager';
 import { syncTable } from './offline-sync';
 import { resolveAndSync } from './conflict-resolver';
 import { withRetry, logError, extractHttpStatus, showErrorToast } from './error-handler';
@@ -41,7 +41,6 @@ export async function processSyncQueue(
   }
 
   isProcessing = true;
-  setStatus('syncing');
 
   let succeeded = 0;
   let failed = 0;
@@ -125,7 +124,6 @@ export async function processSyncQueue(
     return { succeeded, failed };
   } finally {
     isProcessing = false;
-    setStatus('online');
   }
 }
 
@@ -244,7 +242,7 @@ export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
     intervalId = setInterval(async () => {
       if (isOnline() && !isProcessing) {
         const pendingCount = await updatePendingChangesCount();
-        if (pendingCount > 0) {
+        if (typeof pendingCount === 'number' && pendingCount > 0) {
           console.log(`[Delta Sync] Periodic sync: ${pendingCount} pending changes`);
           await processSyncQueue(onProgress);
         }
@@ -259,7 +257,7 @@ export function enableAutoSync(onProgress?: SyncProgressCallback): () => void {
   if (isOnline()) {
     setTimeout(() => {
       updatePendingChangesCount().then(count => {
-        if (count > 0) {
+        if (typeof count === 'number' && count > 0) {
           console.log(`[Delta Sync] Initial sync: ${count} pending changes`);
           processSyncQueue(onProgress);
         }

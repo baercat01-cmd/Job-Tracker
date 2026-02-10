@@ -1,11 +1,13 @@
 // Offline Manager - Handles online/offline state and automatic syncing
 
-import { initDB, getAll, put } from './offline-db';
+import { useState, useEffect } from 'react';
+import { initDB, getAll, put, getPendingSyncCount } from './offline-db';
 import { supabase } from './supabase';
 
 // Online state management
 let onlineState = navigator.onLine;
 let syncInProgress = false;
+let pendingChangesCount = 0;
 
 // Event listeners for online/offline status
 const onlineListeners: Set<() => void> = new Set();
@@ -164,13 +166,15 @@ export async function getData<T>(
         const transaction = db.transaction(tableName, 'readwrite');
         const store = transaction.objectStore(tableName);
         
-        // Clear existing data
-        await store.clear();
-        
-        // Store new data
+        // Clear existing data and store new data
+        store.clear();
         data.forEach((item) => store.put(item));
         
-        await transaction.complete;
+        // Wait for transaction to complete
+        await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+        });
       }
       
       return data;
@@ -228,18 +232,72 @@ export async function saveData<T extends { id: string }>(
 }
 
 // Update pending changes count and dispatch event
-export async function updatePendingChangesCount(): Promise<void> {
+export async function updatePendingChangesCount(): Promise<number> {
   try {
-    const { getPendingSyncCount } = await import('./offline-db');
     const count = await getPendingSyncCount();
+    pendingChangesCount = count;
     
     // Dispatch event with the count so UI can update
     window.dispatchEvent(new CustomEvent('pendingchangesupdate', { 
       detail: { count } 
     }));
+    
+    return count;
   } catch (error) {
     console.error('[OfflineManager] Failed to update pending changes count:', error);
+    return 0;
   }
+}
+
+// React hook for connection status
+export function useConnectionStatus(): 'online' | 'offline' | 'syncing' {
+  const [status, setStatus] = useState<'online' | 'offline' | 'syncing'>(
+    onlineState ? 'online' : 'offline'
+  );
+
+  useEffect(() => {
+    const handleOnlineChange = () => setStatus('online');
+    const handleOfflineChange = () => setStatus('offline');
+    const handleConnectionChange = (e: any) => setStatus(e.detail.online ? 'online' : 'offline');
+
+    window.addEventListener('online', handleOnlineChange);
+    window.addEventListener('offline', handleOfflineChange);
+    window.addEventListener('connectionchange', handleConnectionChange);
+
+    return () => {
+      window.removeEventListener('online', handleOnlineChange);
+      window.removeEventListener('offline', handleOfflineChange);
+      window.removeEventListener('connectionchange', handleConnectionChange);
+    };
+  }, []);
+
+  return status;
+}
+
+// React hook for pending changes count
+export function usePendingChangesCount(): number {
+  const [count, setCount] = useState(pendingChangesCount);
+
+  useEffect(() => {
+    // Update immediately
+    updatePendingChangesCount().then(setCount);
+
+    // Listen for changes
+    const handleUpdate = (e: any) => setCount(e.detail.count);
+    window.addEventListener('pendingchangesupdate', handleUpdate);
+
+    // Poll periodically
+    const interval = setInterval(() => {
+      updatePendingChangesCount().then(setCount);
+    }, 10000); // Every 10 seconds
+
+    return () => {
+      window.removeEventListener('pendingchangesupdate', handleUpdate);
+      clearInterval(interval);
+    };
+  }, []);
+
+  return count;
 }
 
 // Cleanup function

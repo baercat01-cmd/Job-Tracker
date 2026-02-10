@@ -26,7 +26,13 @@ export interface ExcelWorkbook {
  */
 export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbook> {
   // Dynamic import of xlsx library
-  const XLSX = await import('xlsx');
+  // Note: xlsx must be installed: npm install xlsx
+  let XLSX: any;
+  try {
+    XLSX = await import('xlsx');
+  } catch (error) {
+    throw new Error('xlsx library not installed. Please run: npm install xlsx');
+  }
   
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
