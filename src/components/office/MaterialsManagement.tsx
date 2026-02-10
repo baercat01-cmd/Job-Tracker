@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -102,6 +102,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [moveToCategory, setMoveToCategory] = useState<string>('');
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
+  const scrollPositionRef = useRef<number>(0);
 
   useEffect(() => {
     loadWorkbook();
@@ -226,19 +227,50 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         updateData.extended_price = qty && price ? qty * price : null;
       }
 
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      // Optimistic update - update local state immediately
+      if (workbook) {
+        const updatedWorkbook = {
+          ...workbook,
+          sheets: workbook.sheets.map(sheet => ({
+            ...sheet,
+            items: sheet.items.map(i => 
+              i.id === item.id 
+                ? { ...i, ...updateData }
+                : i
+            ),
+          })),
+        };
+        setWorkbook(updatedWorkbook);
+      }
+
+      setEditingCell(null);
+      setCellValue('');
+
+      // Save to database in background
       const { error } = await supabase
         .from('material_items')
         .update(updateData)
         .eq('id', item.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error saving cell:', error);
+        toast.error('Failed to save');
+        // Reload on error to revert optimistic update
+        await loadWorkbook();
+      }
 
-      setEditingCell(null);
-      setCellValue('');
-      await loadWorkbook();
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
+
     } catch (error: any) {
       console.error('Error saving cell:', error);
       toast.error('Failed to save');
+      await loadWorkbook();
     }
   }
 
@@ -249,6 +281,25 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   async function updateStatus(itemId: string, newStatus: string) {
     try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      // Optimistic update
+      if (workbook) {
+        const updatedWorkbook = {
+          ...workbook,
+          sheets: workbook.sheets.map(sheet => ({
+            ...sheet,
+            items: sheet.items.map(i => 
+              i.id === itemId 
+                ? { ...i, status: newStatus, updated_at: new Date().toISOString() }
+                : i
+            ),
+          })),
+        };
+        setWorkbook(updatedWorkbook);
+      }
+
       const { error } = await supabase
         .from('material_items')
         .update({
@@ -258,10 +309,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         .eq('id', itemId);
 
       if (error) throw error;
-      await loadWorkbook();
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
     } catch (error: any) {
       console.error('Error updating status:', error);
       toast.error('Failed to update status');
+      await loadWorkbook();
     }
   }
 
@@ -281,6 +337,21 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (!confirm('Delete this material?')) return;
 
     try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      // Optimistic update
+      if (workbook) {
+        const updatedWorkbook = {
+          ...workbook,
+          sheets: workbook.sheets.map(sheet => ({
+            ...sheet,
+            items: sheet.items.filter(i => i.id !== itemId),
+          })),
+        };
+        setWorkbook(updatedWorkbook);
+      }
+
       const { error } = await supabase
         .from('material_items')
         .delete()
@@ -288,10 +359,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
       if (error) throw error;
       toast.success('Material deleted');
-      await loadWorkbook();
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
     } catch (error: any) {
       console.error('Error deleting item:', error);
       toast.error('Failed to delete material');
+      await loadWorkbook();
     }
   }
 
@@ -306,6 +382,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     if (!movingItem) return;
 
     try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
       const { error } = await supabase
         .from('material_items')
         .update({
@@ -319,7 +398,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       toast.success('Material moved');
       setShowMoveDialog(false);
       setMovingItem(null);
+      
+      // Reload to reflect move across sheets
       await loadWorkbook();
+
+      // Restore scroll position after reload
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
     } catch (error: any) {
       console.error('Error moving item:', error);
       toast.error('Failed to move material');
