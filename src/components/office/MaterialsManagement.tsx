@@ -524,14 +524,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto w-full">
+                  <div className="overflow-x-auto">
                     {categoryGroups.length === 0 ? (
                       <div className="text-center py-12 text-muted-foreground">
                         <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
                         <p>No materials in this sheet</p>
                       </div>
                     ) : (
-                      <table className="border-collapse" style={{ width: 'auto', minWidth: '100%' }}>
+                      <div className="inline-block min-w-full">
+                        <table className="border-collapse w-auto">
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
@@ -770,6 +771,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     )}
                   </div>
                 </CardContent>

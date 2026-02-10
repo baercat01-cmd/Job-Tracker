@@ -84,6 +84,269 @@ interface PersonGroup {
   clock_in_hours: number;
 }
 
+interface MaterialsPricingBreakdownProps {
+  jobId: string;
+}
+
+function MaterialsPricingBreakdown({ jobId }: MaterialsPricingBreakdownProps) {
+  const [loading, setLoading] = useState(true);
+  const [sheetBreakdowns, setSheetBreakdowns] = useState<any[]>([]);
+  const [totals, setTotals] = useState({ totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 });
+
+  useEffect(() => {
+    loadMaterialsBreakdown();
+  }, [jobId]);
+
+  async function loadMaterialsBreakdown() {
+    try {
+      setLoading(true);
+
+      // Get the working workbook for this job
+      const { data: workbookData, error: workbookError } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('status', 'working')
+        .maybeSingle();
+
+      if (workbookError) throw workbookError;
+      if (!workbookData) {
+        setLoading(false);
+        return;
+      }
+
+      // Get all sheets for this workbook
+      const { data: sheetsData, error: sheetsError } = await supabase
+        .from('material_sheets')
+        .select('*')
+        .eq('workbook_id', workbookData.id)
+        .order('order_index');
+
+      if (sheetsError) throw sheetsError;
+
+      const sheetIds = (sheetsData || []).map(s => s.id);
+
+      // Get all items for these sheets
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('material_items')
+        .select('*')
+        .in('sheet_id', sheetIds);
+
+      if (itemsError) throw itemsError;
+
+      // Calculate breakdown by sheet and category
+      const breakdowns = (sheetsData || []).map(sheet => {
+        const sheetItems = (itemsData || []).filter(item => item.sheet_id === sheet.id);
+
+        // Group by category
+        const categoryMap = new Map<string, any[]>();
+        sheetItems.forEach(item => {
+          const category = item.category || 'Uncategorized';
+          if (!categoryMap.has(category)) {
+            categoryMap.set(category, []);
+          }
+          categoryMap.get(category)!.push(item);
+        });
+
+        // Calculate totals per category
+        const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
+          const totalCost = items.reduce((sum, item) => {
+            const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
+            return sum + cost;
+          }, 0);
+
+          const totalPrice = items.reduce((sum, item) => {
+            const price = (item.price_per_unit || 0) * (item.quantity || 0);
+            return sum + price;
+          }, 0);
+
+          const profit = totalPrice - totalCost;
+          const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
+
+          return {
+            name: categoryName,
+            itemCount: items.length,
+            totalCost,
+            totalPrice,
+            profit,
+            margin,
+          };
+        }).sort((a, b) => a.name.localeCompare(b.name));
+
+        // Calculate sheet totals
+        const sheetTotalCost = categories.reduce((sum, cat) => sum + cat.totalCost, 0);
+        const sheetTotalPrice = categories.reduce((sum, cat) => sum + cat.totalPrice, 0);
+        const sheetProfit = sheetTotalPrice - sheetTotalCost;
+        const sheetMargin = sheetTotalPrice > 0 ? (sheetProfit / sheetTotalPrice) * 100 : 0;
+
+        return {
+          sheetName: sheet.sheet_name,
+          categories,
+          totalCost: sheetTotalCost,
+          totalPrice: sheetTotalPrice,
+          profit: sheetProfit,
+          margin: sheetMargin,
+        };
+      });
+
+      setSheetBreakdowns(breakdowns);
+
+      // Calculate grand totals
+      const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
+      const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
+      const grandProfit = grandTotalPrice - grandTotalCost;
+      const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
+
+      setTotals({
+        totalCost: grandTotalCost,
+        totalPrice: grandTotalPrice,
+        totalProfit: grandProfit,
+        profitMargin: grandMargin,
+      });
+
+    } catch (error: any) {
+      console.error('Error loading materials breakdown:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading materials pricing...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (sheetBreakdowns.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5" />
+            Materials Pricing Breakdown
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8 text-muted-foreground">
+          No materials data available for this job
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-2">
+      <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2">
+        <CardTitle className="flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-green-700" />
+          Materials Pricing Breakdown
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-6 space-y-6">
+        {/* Grand Totals */}
+        <div className="grid grid-cols-4 gap-4 p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide mb-1">Total Cost</p>
+            <p className="text-2xl font-bold">${totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide mb-1">Total Price</p>
+            <p className="text-2xl font-bold">${totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide mb-1">Total Profit</p>
+            <p className="text-2xl font-bold text-yellow-400">${totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide mb-1">Profit Margin</p>
+            <p className="text-2xl font-bold text-green-400">{totals.profitMargin.toFixed(1)}%</p>
+          </div>
+        </div>
+
+        {/* Breakdown by Sheet */}
+        {sheetBreakdowns.map((sheet, sheetIndex) => (
+          <Collapsible key={sheetIndex} defaultOpen={sheetIndex === 0}>
+            <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
+              <CollapsibleTrigger className="w-full">
+                <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-4 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <FileSpreadsheet className="w-5 h-5 text-blue-700" />
+                    <h3 className="font-bold text-lg text-blue-900">{sheet.sheetName}</h3>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-right">
+                      <p className="text-xs text-blue-700">Cost</p>
+                      <p className="font-bold text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-blue-700">Price</p>
+                      <p className="font-bold text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-blue-700">Profit</p>
+                      <p className="font-bold text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-blue-700">Margin</p>
+                      <p className="font-bold text-green-700">{sheet.margin.toFixed(1)}%</p>
+                    </div>
+                    <ChevronDown className="w-5 h-5 text-blue-700" />
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="p-4 bg-white">
+                  <div className="space-y-3">
+                    {sheet.categories.map((category: any, catIndex: number) => (
+                      <div key={catIndex} className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="bg-slate-50 p-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <h4 className="font-semibold text-slate-900">{category.name}</h4>
+                            <Badge variant="outline" className="text-xs">{category.itemCount} items</Badge>
+                          </div>
+                          <div className="flex items-center gap-6 text-sm">
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Cost</p>
+                              <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Price</p>
+                              <p className="font-semibold">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Profit</p>
+                              <p className="font-semibold text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-right min-w-[60px]">
+                              <p className="text-xs text-muted-foreground">Margin</p>
+                              <p className={`font-bold ${
+                                category.margin >= 25 ? 'text-green-600' :
+                                category.margin >= 15 ? 'text-yellow-600' :
+                                'text-red-600'
+                              }`}>
+                                {category.margin.toFixed(1)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 interface DailyLog {
   id: string;
   log_date: string;
@@ -1283,6 +1546,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         {/* Financials Tab */}
         <TabsContent value="financials" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <MaterialsPricingBreakdown jobId={job.id} />
             <JobBudgetManagement 
               onUpdate={() => {}}
               jobIdFilter={job.id}
