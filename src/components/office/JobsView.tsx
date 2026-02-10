@@ -34,8 +34,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Package, Calendar as CalendarIcon } from 'lucide-react';
 import { TodayTasksSidebar } from './TodayTasksSidebar';
 import { ShopMaterialsDialog } from './ShopMaterialsDialog';
-import { Warehouse } from 'lucide-react';
+import { Warehouse, ShoppingCart } from 'lucide-react';
 import { JobBudgetManagement } from './JobBudgetManagement';
+import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 
 interface JobsViewProps {
   showArchived?: boolean;
@@ -56,6 +57,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [statusFilter, setStatusFilter] = useState<'active' | 'quoting' | 'on_hold'>('active');
   const [crewOrderCounts, setCrewOrderCounts] = useState<Record<string, number>>({});
   const [showShopMaterialsDialog, setShowShopMaterialsDialog] = useState(false);
+  const [showOrdersDialog, setShowOrdersDialog] = useState(false);
   const [jobBudgets, setJobBudgets] = useState<Record<string, any>>({});
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [budgetJobId, setBudgetJobId] = useState<string | null>(null);
@@ -352,6 +354,15 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
               >
                 <Warehouse className="w-4 h-4 mr-2" />
                 Shop Materials
+              </Button>
+              <Button 
+                onClick={() => setShowOrdersDialog(true)} 
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-initial bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white"
+              >
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Orders
               </Button>
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
@@ -1496,6 +1507,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           }
         }}
       />
+
+      {/* Material Orders Dialog */}
+      <Dialog open={showOrdersDialog} onOpenChange={setShowOrdersDialog}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Material Orders
+            </DialogTitle>
+          </DialogHeader>
+          <MaterialOrdersManagement />
+        </DialogContent>
+      </Dialog>
 
       {/* Budget Management Dialog */}
       <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>

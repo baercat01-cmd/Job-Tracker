@@ -11,6 +11,7 @@ import { MaterialsManagement } from './MaterialsManagement';
 import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
+import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 import { JobPhotosView } from './JobPhotosView';
 import { JobBudgetManagement } from './JobBudgetManagement';
 import { useAuth } from '@/hooks/useAuth';
@@ -865,6 +866,15 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               <span className="hidden sm:inline">Photos</span>
             </TabsTrigger>
           </TabsList>
+          <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 mt-0">
+            <TabsTrigger 
+              value="orders" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <Package className="w-5 h-5 sm:mr-2" />
+              <span>Material Orders</span>
+            </TabsTrigger>
+          </TabsList>
         </div>
         
         {/* Add spacer to prevent content from hiding under fixed header */}
@@ -1303,6 +1313,11 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           {profile?.id && (
             <MaterialsManagement job={job} userId={profile.id} />
           )}
+        </TabsContent>
+
+        {/* Orders Tab */}
+        <TabsContent value="orders" className="space-y-4 px-4 pt-4">
+          <MaterialOrdersManagement jobId={job.id} />
         </TabsContent>
       </Tabs>
     </div>
