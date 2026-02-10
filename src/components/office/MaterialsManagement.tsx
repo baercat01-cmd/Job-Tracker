@@ -346,7 +346,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   }
 
   return (
-    <div className="w-full max-w-[99vw] -mx-6">
+    <div className="w-full max-w-[98vw]">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <TabsList className="grid w-full grid-cols-3 h-14 bg-white shadow-sm flex-1">
