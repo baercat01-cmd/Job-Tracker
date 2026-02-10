@@ -1,9 +1,17 @@
 /**
  * Excel/XLSX Workbook Parser
  * Handles parsing Excel (.xlsx) files with multiple sheets for material imports
+ * 
+ * NOTE: Requires 'xlsx' library - install with: npm install xlsx
  */
 
-import * as XLSX from 'xlsx';
+// Conditional import - will gracefully fail if xlsx not installed
+let XLSX: any = null;
+try {
+  XLSX = require('xlsx');
+} catch (e) {
+  console.warn('xlsx library not installed - Excel upload feature disabled');
+}
 
 // Type definitions for parsed workbook data
 export interface ExcelRow {
@@ -24,6 +32,18 @@ export interface ExcelWorkbook {
  */
 export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbook> {
   return new Promise(async (resolve, reject) => {
+    // Check if xlsx library is available
+    if (!XLSX) {
+      reject(new Error(
+        'Excel upload feature requires the xlsx library.\n\n' +
+        'To enable this feature:\n' +
+        '1. Run: npm install xlsx\n' +
+        '2. Commit and push package.json changes\n' +
+        '3. Redeploy the app'
+      ));
+      return;
+    }
+    
     try {
       // Read file as array buffer
       const arrayBuffer = await file.arrayBuffer();
