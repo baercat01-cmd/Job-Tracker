@@ -227,7 +227,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
               extended_cost: parseNumericValue(row['Extended cost'] || row['extended_cost']),
               extended_price: parseNumericValue(row['Extended price'] || row['extended_price']),
-              taxable: row['Taxable'] === 1 || row['Taxable'] === '1' || row['Taxable'] === true,
+              taxable: true, // All materials are taxable by default (only labor is not taxed)
               notes: null,
               order_index: itemIndex++,
             };
