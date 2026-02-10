@@ -86,6 +86,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showVendorDialog, setShowVendorDialog] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<MaterialOrder | null>(null);
+  const [editingOrder, setEditingOrder] = useState<MaterialOrder | null>(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -292,6 +293,42 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
     }
   }
 
+  async function handleUpdateOrder() {
+    if (!editingOrder) return;
+
+    try {
+      const { error: orderError } = await supabase
+        .from('material_orders')
+        .update({
+          vendor_id: formData.vendor_id || null,
+          order_number: formData.order_number || null,
+          order_type: formData.order_type,
+          order_date: formData.order_date,
+          scheduled_date: formData.scheduled_date || formData.order_date,
+          pickup_user_id: formData.order_type === 'pickup' ? (formData.pickup_user_id || null) : null,
+          status: formData.status,
+          notes: formData.notes || null,
+          total_cost: formData.total_cost ? parseFloat(formData.total_cost) : null,
+        })
+        .eq('id', editingOrder.id);
+
+      if (orderError) throw orderError;
+
+      // Upload any new files
+      if (selectedFiles.length > 0) {
+        await uploadOrderDocuments(editingOrder.id);
+      }
+
+      toast.success('Order updated successfully');
+      resetForm();
+      setEditingOrder(null);
+      await loadOrders();
+    } catch (error: any) {
+      console.error('Error updating order:', error);
+      toast.error(`Failed to update order: ${error.message || 'Unknown error'}`);
+    }
+  }
+
   async function uploadOrderDocuments(orderId: string) {
     try {
       setUploadingFiles(true);
@@ -455,6 +492,24 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
     });
     setSelectedFiles([]);
     setSelectedOrder(null);
+    setEditingOrder(null);
+  }
+
+  function startEditOrder(order: MaterialOrder) {
+    setEditingOrder(order);
+    setFormData({
+      job_id: order.job_id,
+      vendor_id: order.vendor_id || '',
+      order_number: order.order_number || '',
+      order_type: order.order_type,
+      order_date: order.order_date,
+      scheduled_date: order.scheduled_date || '',
+      pickup_user_id: order.pickup_user_id || '',
+      status: order.status,
+      notes: order.notes || '',
+      total_cost: order.total_cost?.toString() || '',
+    });
+    setShowCreateDialog(true);
   }
 
   function getStatusColor(status: string) {
@@ -583,8 +638,23 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDeleteOrder(order.id)}
-                    className="h-7 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      startEditOrder(order);
+                    }}
+                    className="h-7 text-xs flex-1"
+                  >
+                    <Edit className="w-3 h-3 mr-1" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteOrder(order.id);
+                    }}
+                    className="h-7 text-xs flex-1 text-red-600 hover:text-red-700"
                   >
                     <Trash2 className="w-3 h-3 mr-1" />
                     Delete
@@ -596,14 +666,14 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
         </div>
       )}
 
-      {/* Create Order Dialog */}
+      {/* Create/Edit Order Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={(open) => {
         setShowCreateDialog(open);
         if (!open) resetForm();
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Material Order</DialogTitle>
+            <DialogTitle>{editingOrder ? 'Edit Material Order' : 'Create Material Order'}</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
@@ -614,6 +684,7 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                 <Select
                   value={formData.job_id}
                   onValueChange={(value) => setFormData({ ...formData, job_id: value })}
+                  disabled={!!editingOrder}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select job..." />
@@ -626,6 +697,9 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
                     ))}
                   </SelectContent>
                 </Select>
+                {editingOrder && (
+                  <p className="text-xs text-muted-foreground">Job cannot be changed when editing</p>
+                )}
               </div>
             )}
             
@@ -862,11 +936,11 @@ export function MaterialOrdersManagement({ jobId }: MaterialOrdersManagementProp
             {/* Actions */}
             <div className="flex gap-2 pt-4">
               <Button
-                onClick={handleCreateOrder}
+                onClick={editingOrder ? handleUpdateOrder : handleCreateOrder}
                 disabled={uploadingFiles}
                 className="flex-1"
               >
-                {uploadingFiles ? 'Uploading...' : 'Create Order'}
+                {uploadingFiles ? 'Uploading...' : editingOrder ? 'Update Order' : 'Create Order'}
               </Button>
               <Button
                 type="button"
