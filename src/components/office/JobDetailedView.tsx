@@ -881,8 +881,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <div className="h-16" />
 
         {/* Overview Tab - Includes Job Info */}
-        <TabsContent value="overview" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="overview" className="space-y-4 pt-4 px-6">
           <Card>
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
               <div className="flex items-center justify-between">
@@ -1279,45 +1278,34 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </Card>
       )}
 
-          </div>
         </TabsContent>
 
         {/* Financials Tab */}
-        <TabsContent value="financials" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="financials" className="space-y-4 pt-4 px-6">
             <JobBudgetManagement 
               onUpdate={() => {}}
               jobIdFilter={job.id}
             />
-          </div>
         </TabsContent>
 
         {/* Components Tab */}
-        <TabsContent value="components" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="components" className="space-y-4 pt-4 px-6">
             <JobComponents job={job} onUpdate={() => {}} />
-          </div>
         </TabsContent>
 
         {/* Schedule Tab */}
-        <TabsContent value="schedule" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="schedule" className="space-y-4 pt-4 px-6">
             <JobSchedule job={job} />
-          </div>
         </TabsContent>
 
         {/* Documents Tab */}
-        <TabsContent value="documents" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="documents" className="space-y-4 pt-4 px-6">
             <JobDocuments job={job} onUpdate={() => {}} />
-          </div>
         </TabsContent>
 
         {/* Photos Tab */}
-        <TabsContent value="photos" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="photos" className="space-y-4 pt-4 px-6">
             <JobPhotosView job={job} />
-          </div>
         </TabsContent>
 
         {/* Materials Tab - Full Width for Spreadsheet */}
@@ -1328,10 +1316,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </TabsContent>
 
         {/* Orders Tab */}
-        <TabsContent value="orders" className="space-y-4 pt-4">
-          <div className="max-w-7xl mx-auto px-6">
+        <TabsContent value="orders" className="space-y-4 pt-4 px-6">
             <MaterialOrdersManagement jobId={job.id} />
-          </div>
         </TabsContent>
       </Tabs>
     </div>
