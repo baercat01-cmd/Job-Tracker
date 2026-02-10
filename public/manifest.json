@@ -8,16 +8,16 @@
   "theme_color": "#4179bc",
   "icons": [
     {
-      "src": "/martin-logo.png",
+      "src": "/martin-logo.png?v=3",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "/martin-logo.png",
+      "src": "/martin-logo.png?v=3",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }

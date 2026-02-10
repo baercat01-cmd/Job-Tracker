@@ -1,4 +1,4 @@
-const CACHE_NAME = 'martin-os-v1';
+const CACHE_NAME = 'martin-os-v3';
 const ASSETS = [
   '/',
   '/index.html',
