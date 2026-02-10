@@ -1543,10 +1543,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         </DialogContent>
       </Dialog>
 
-      {/* Job Details Dialog */}
+      {/* Job Details Dialog - Full Screen */}
       <Dialog open={!!selectedJob} onOpenChange={() => setSelectedJob(null)}>
-        <DialogContent className="h-screen max-w-5xl flex flex-col p-0">
-          <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0">
+        <DialogContent className="h-screen w-screen max-w-none flex flex-col p-0 m-0 rounded-none">
+          <DialogHeader className="px-2 pt-2 pb-2 border-b shrink-0 bg-white">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-xl">
                 {selectedJob?.name}
@@ -1564,7 +1564,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
             </div>
           </DialogHeader>
           {selectedJob && (
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex-1 overflow-y-auto w-full">
               <JobDetailedView 
                 job={selectedJob} 
                 onBack={() => setSelectedJob(null)}
