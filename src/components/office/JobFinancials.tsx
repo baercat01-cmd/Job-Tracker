@@ -90,6 +90,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     sheetBreakdowns: [],
     totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
   });
+  
+  // Material sheet description editing
+  const [showSheetDescDialog, setShowSheetDescDialog] = useState(false);
+  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
+  const [sheetDescription, setSheetDescription] = useState('');
+  const [materialSheets, setMaterialSheets] = useState<any[]>([]);
 
   // Form state for custom rows
   const [category, setCategory] = useState('subcontractor');
@@ -169,6 +175,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (itemsError) throw itemsError;
 
+      // Store sheets data for editing
+      setMaterialSheets(sheetsData || []);
+      
       // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
         const sheetItems = (itemsData || []).filter(item => item.sheet_id === sheet.id);
@@ -215,7 +224,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         const sheetMargin = sheetTotalPrice > 0 ? (sheetProfit / sheetTotalPrice) * 100 : 0;
 
         return {
+          sheetId: sheet.id,
           sheetName: sheet.sheet_name,
+          sheetDescription: sheet.description || '',
           categories,
           totalCost: sheetTotalCost,
           totalPrice: sheetTotalPrice,
@@ -450,6 +461,34 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error saving row:', error);
       toast.error(`Failed to save row: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  function openSheetDescDialog(sheetId: string, currentDescription: string) {
+    setEditingSheetId(sheetId);
+    setSheetDescription(currentDescription || '');
+    setShowSheetDescDialog(true);
+  }
+
+  async function saveSheetDescription() {
+    if (!editingSheetId) return;
+
+    try {
+      const { error } = await supabase
+        .from('material_sheets')
+        .update({ description: sheetDescription || null })
+        .eq('id', editingSheetId);
+
+      if (error) throw error;
+
+      toast.success('Description saved');
+      setShowSheetDescDialog(false);
+      setEditingSheetId(null);
+      setSheetDescription('');
+      await loadMaterialsData();
+    } catch (error: any) {
+      console.error('Error saving sheet description:', error);
+      toast.error('Failed to save description');
     }
   }
 
@@ -934,9 +973,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
                       <CollapsibleTrigger className="w-full">
                         <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-1">
                             <ChevronDown className="w-5 h-5 text-blue-700" />
-                            <div>
+                            <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
                                 <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
@@ -944,12 +983,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   {markup.toFixed(1)}% markup
                                 </Badge>
                               </div>
-                              <p className="text-sm text-blue-700">{sheet.categories.length} categories of building materials</p>
+                              <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
+                                {sheet.sheetDescription || '(No description provided)'}
+                              </p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs text-slate-600 mb-1">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-600 mb-1">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
+                              }}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
                           </div>
                         </div>
                       </CollapsibleTrigger>
@@ -1133,6 +1186,38 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Material Sheet Description Dialog */}
+      <Dialog open={showSheetDescDialog} onOpenChange={setShowSheetDescDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Material Description</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={sheetDescription}
+                onChange={(e) => setSheetDescription(e.target.value)}
+                placeholder="e.g., All materials for the main building structure including framing, roofing, and exterior"
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                This description will appear under the material section title in the proposal
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={saveSheetDescription} className="flex-1">
+                Save Description
+              </Button>
+              <Button variant="outline" onClick={() => setShowSheetDescDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
