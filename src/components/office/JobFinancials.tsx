@@ -674,9 +674,252 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         {/* Cost Breakdown Tab - Original View */}
         <TabsContent value="cost-breakdown">
-          {/* Cost breakdown code stays the same */}
-          <div className="text-center py-8 text-muted-foreground">
-            <p>Switch to Proposal tab for full financial breakdown</p>
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                    Materials
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Cost:</span>
+                      <span className="font-semibold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Price:</span>
+                      <span className="font-bold text-blue-600">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t">
+                      <span className="text-muted-foreground">Profit:</span>
+                      <span className="font-bold text-green-600">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    Labor
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Hours:</span>
+                      <span className="font-semibold">{totalLaborHours.toFixed(1)} hrs</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Rate:</span>
+                      <span className="font-semibold">${laborRate.toFixed(2)}/hr</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t">
+                      <span className="text-muted-foreground">Total:</span>
+                      <span className="font-bold text-amber-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-green-600" />
+                    Project Total
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Cost:</span>
+                      <span className="font-semibold">${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Price:</span>
+                      <span className="font-bold text-blue-600">${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t">
+                      <span className="text-muted-foreground">Profit:</span>
+                      <span className="font-bold text-green-600">${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({profitMargin.toFixed(1)}%)</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Materials Breakdown */}
+            {materialsBreakdown.sheetBreakdowns.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                    Materials Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => (
+                      <div key={idx} className="border rounded-lg overflow-hidden">
+                        <div className="bg-blue-50 p-3 border-b">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-bold text-blue-900">{sheet.sheetName}</h3>
+                            <div className="text-right">
+                              <p className="text-sm text-blue-700">Cost: ${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <p className="font-bold text-blue-900">Price: ${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="space-y-3">
+                            {sheet.categories.map((category: any, catIdx: number) => (
+                              <div key={catIdx} className="flex items-center justify-between py-2 border-b last:border-0">
+                                <div>
+                                  <p className="font-semibold text-slate-900">{category.name}</p>
+                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                </div>
+                                <div className="text-right">
+                                  <div className="flex gap-4 text-sm">
+                                    <div>
+                                      <p className="text-muted-foreground">Cost</p>
+                                      <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Price</p>
+                                      <p className="font-bold text-blue-600">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Profit</p>
+                                      <p className="font-bold text-green-600">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Additional Costs Breakdown */}
+            {customRows.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-orange-600" />
+                    Additional Costs
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {Object.entries(groupedRows).map(([cat, rows]) => {
+                      const catTotal = rows.reduce((sum, r) => sum + r.total_cost, 0);
+                      const catPrice = rows.reduce((sum, r) => sum + r.selling_price, 0);
+                      const catProfit = catPrice - catTotal;
+                      
+                      return (
+                        <div key={cat} className="border rounded-lg overflow-hidden">
+                          <div className="bg-orange-50 p-3 border-b flex items-center justify-between">
+                            <h3 className="font-bold text-orange-900">{categoryLabels[cat] || cat}</h3>
+                            <div className="flex gap-4 text-sm">
+                              <div className="text-right">
+                                <p className="text-orange-700">Cost</p>
+                                <p className="font-semibold">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-orange-700">Price</p>
+                                <p className="font-bold text-orange-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-orange-700">Profit</p>
+                                <p className="font-bold text-green-600">${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            {rows.map((row) => (
+                              <div key={row.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                                <div>
+                                  <p className="font-medium">{row.description}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {row.quantity} × ${row.unit_cost.toFixed(2)}
+                                    {row.markup_percent > 0 && (
+                                      <span className="ml-2 text-green-600">+{row.markup_percent}%</span>
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="flex gap-4 text-sm text-right">
+                                  <div>
+                                    <p className="text-muted-foreground">Cost</p>
+                                    <p className="font-semibold">${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Price</p>
+                                    <p className="font-bold text-blue-600">${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Progress Tracking */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-amber-600" />
+                  Labor Progress
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between text-sm">
+                    <span>Budgeted Hours:</span>
+                    <span className="font-semibold">{totalLaborHours.toFixed(1)} hrs</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Actual Hours (Clock-ins):</span>
+                    <span className={`font-semibold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+                      {totalClockInHours.toFixed(1)} hrs
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress:</span>
+                      <span className={`font-bold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+                        {progressPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${isOverBudget ? 'bg-red-500' : 'bg-green-500'}`}
+                        style={{ width: `${Math.min(progressPercent, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  {isOverBudget && (
+                    <p className="text-sm text-red-600 font-medium">
+                      ⚠️ Over budget by {(totalClockInHours - totalLaborHours).toFixed(1)} hours
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
