@@ -32,6 +32,7 @@ import {
   FileSpreadsheet,
   MoveHorizontal,
   Percent,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -39,6 +40,7 @@ import { ExtrasManagement } from './ExtrasManagement';
 import { CrewMaterialProcessing } from './CrewMaterialProcessing';
 import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { MaterialItemPhotos } from './MaterialItemPhotos';
+import { PhotoRecoveryTool } from './PhotoRecoveryTool';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -94,7 +96,7 @@ interface CategoryGroup {
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'extras' | 'crew-orders' | 'upload'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'extras' | 'crew-orders' | 'upload' | 'photo-recovery'>('manage');
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -467,10 +469,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm flex-1">
+          <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Material Workbook</span>
+              <span className="text-xs sm:text-base">Workbook</span>
             </TabsTrigger>
             <TabsTrigger value="extras" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <DollarSign className="w-5 h-5" />
@@ -482,7 +484,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             </TabsTrigger>
             <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <Upload className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Upload New</span>
+              <span className="text-xs sm:text-base">Upload</span>
+            </TabsTrigger>
+            <TabsTrigger value="photo-recovery" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
+              <ImageIcon className="w-5 h-5" />
+              <span className="text-xs sm:text-base">Photos</span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -822,6 +828,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
         <TabsContent value="upload" className="space-y-2">
           <MaterialWorkbookManager jobId={job.id} />
+        </TabsContent>
+
+        <TabsContent value="photo-recovery" className="space-y-2">
+          <PhotoRecoveryTool jobId={job.id} />
         </TabsContent>
       </Tabs>
 
