@@ -264,7 +264,7 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           job_id: jobId,
           name: packageName.trim(),
           description: packageDescription.trim() || null,
-          status: 'not_ordered',
+          status: 'pending', // Database value for 'not_ordered' UI status
           created_by: userId,
         })
         .select()
