@@ -175,6 +175,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   async function loadPackages() {
     try {
+      console.log('Loading packages for job:', job.id);
+      
       const { data, error } = await supabase
         .from('material_bundles')
         .select(`
@@ -187,10 +189,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         .eq('job_id', job.id)
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading packages:', error);
+        throw error;
+      }
+      
+      console.log('Loaded packages:', data?.length || 0);
       setPackages(data || []);
     } catch (error: any) {
       console.error('Error loading packages:', error);
+      toast.error('Failed to load packages');
     }
   }
 
@@ -302,6 +310,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setAddingMaterialsToPackage(true);
 
     try {
+      console.log('Adding materials to package:', {
+        packageId: targetPackageId,
+        materialCount: selectedMaterialsForPackageAdd.size,
+      });
+      
       // Get existing materials in the target package
       const targetPackage = packages.find(p => p.id === targetPackageId);
       const existingMaterialIds = new Set(
@@ -312,6 +325,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       const materialsToAdd = Array.from(selectedMaterialsForPackageAdd).filter(
         id => !existingMaterialIds.has(id)
       );
+
+      console.log('Materials to add after filtering:', materialsToAdd.length);
 
       if (materialsToAdd.length === 0) {
         toast.error('All selected materials are already in this package');
@@ -329,16 +344,21 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         .from('material_bundle_items')
         .insert(bundleItems);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error inserting bundle items:', error);
+        throw error;
+      }
+      
+      console.log('Successfully added materials to package');
 
       toast.success(`Added ${materialsToAdd.length} material${materialsToAdd.length !== 1 ? 's' : ''} to package`);
       setShowAddToPackageDialog(false);
       setPackageSelectionMode(false);
       setSelectedMaterialsForPackageAdd(new Set());
-      loadPackages();
+      await loadPackages();
     } catch (error: any) {
       console.error('Error adding materials to package:', error);
-      toast.error('Failed to add materials to package');
+      toast.error(`Failed to add materials to package: ${error.message || 'Unknown error'}`);
     } finally {
       setAddingMaterialsToPackage(false);
     }
@@ -800,7 +820,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 onClick={togglePackageSelectionMode}
                                 size="sm"
                                 variant="outline"
-                                className="whitespace-nowrap"
+                                className="whitespace-nowrap bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
                               >
                                 <Package className="w-4 h-4 mr-1" />
                                 Select for Package

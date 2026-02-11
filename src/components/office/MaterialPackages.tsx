@@ -387,6 +387,8 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
 
   async function updatePackageStatus(packageId: string, newStatus: string) {
     try {
+      console.log('Updating package status:', { packageId, newStatus });
+      
       // Update bundle status
       const { error: bundleError } = await supabase
         .from('material_bundles')
@@ -396,7 +398,12 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
         })
         .eq('id', packageId);
 
-      if (bundleError) throw bundleError;
+      if (bundleError) {
+        console.error('Error updating bundle status:', bundleError);
+        throw bundleError;
+      }
+
+      console.log('Bundle status updated successfully');
 
       // Get all material items in this bundle
       const { data: bundleItems, error: itemsError } = await supabase
@@ -404,11 +411,18 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
         .select('material_item_id')
         .eq('bundle_id', packageId);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('Error fetching bundle items:', itemsError);
+        throw itemsError;
+      }
+
+      console.log('Found bundle items:', bundleItems?.length || 0);
 
       // Update all material items to match the bundle status
       if (bundleItems && bundleItems.length > 0) {
         const materialItemIds = bundleItems.map(item => item.material_item_id);
+        
+        console.log('Updating material items:', materialItemIds);
         
         const { error: updateError } = await supabase
           .from('material_items')
@@ -418,14 +432,23 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           })
           .in('id', materialItemIds);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('Error updating material items:', updateError);
+          throw updateError;
+        }
+        
+        console.log('Material items updated successfully');
+        
+        toast.success(`Package status updated - ${bundleItems.length} material${bundleItems.length !== 1 ? 's' : ''} updated in workbook`);
+      } else {
+        toast.success('Package status updated (no materials in package)');
       }
-
-      toast.success('Package status updated - all materials updated in workbook');
-      loadPackages();
+      
+      // Reload packages to show updated status
+      await loadPackages();
     } catch (error: any) {
       console.error('Error updating package status:', error);
-      toast.error('Failed to update status');
+      toast.error(`Failed to update status: ${error.message || 'Unknown error'}`);
     }
   }
 
