@@ -379,6 +379,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
 
+    console.log('Starting saveCustomRow:', {
+      category,
+      description,
+      quantity,
+      unitCost,
+      markupPercent,
+      notes,
+      jobId: job.id,
+      editingRow: editingRow?.id,
+      insertAfterIndex
+    });
+
     const qty = parseFloat(quantity) || 1;
     const cost = parseFloat(unitCost) || 0;
     const markup = parseFloat(markupPercent) || 0;
@@ -424,30 +436,56 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       order_index: targetOrderIndex,
     };
 
+    console.log('Prepared rowData:', rowData);
+
     try {
       if (editingRow) {
-        const { error } = await supabase
+        console.log('Updating existing row:', editingRow.id);
+        const { data, error } = await supabase
           .from('custom_financial_rows')
           .update(rowData)
-          .eq('id', editingRow.id);
+          .eq('id', editingRow.id)
+          .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Update error:', error);
+          throw error;
+        }
+        console.log('Update successful:', data);
         toast.success('Row updated');
       } else {
-        const { error } = await supabase
+        console.log('Inserting new row');
+        const { data, error } = await supabase
           .from('custom_financial_rows')
-          .insert([rowData]);
+          .insert([rowData])
+          .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Insert error details:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          });
+          throw error;
+        }
+        console.log('Insert successful:', data);
         toast.success(category === 'labor' ? 'Labor row added' : 'Row added');
       }
 
       setShowAddDialog(false);
       resetForm();
+      console.log('Reloading custom rows...');
       await loadCustomRows();
+      console.log('Reload complete');
     } catch (error: any) {
-      console.error('Error saving row:', error);
-      toast.error('Failed to save row');
+      console.error('Error saving row:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+      toast.error(`Failed to save row: ${error.message || 'Unknown error'}`);
     }
   }
 
