@@ -189,7 +189,18 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
         .eq('material_id', material.id);
 
       if (photosError) throw photosError;
-      setMaterialPhotos(photosData || []);
+      
+      // Type assertion to handle Supabase's foreign key select
+      const typedPhotos = (photosData || []).map((photo: any) => ({
+        id: photo.id,
+        material_id: photo.material_id,
+        photo_url: photo.photo_url,
+        uploaded_by: photo.uploaded_by,
+        timestamp: photo.timestamp,
+        user_profiles: Array.isArray(photo.user_profiles) ? photo.user_profiles[0] : photo.user_profiles,
+      }));
+      
+      setMaterialPhotos(typedPhotos);
     } catch (error: any) {
       console.error('Error loading material photos:', error);
       setMaterialPhotos([]);
@@ -662,7 +673,16 @@ function PhotoPreviewWithViewer({ materialId, materialName }: { materialId: stri
         .order('timestamp', { ascending: false });
 
       if (!error && data) {
-        setPhotos(data);
+        // Type assertion to handle Supabase's foreign key select
+        const typedPhotos = data.map((photo: any) => ({
+          id: photo.id,
+          material_id: photo.material_id,
+          photo_url: photo.photo_url,
+          uploaded_by: photo.uploaded_by,
+          timestamp: photo.timestamp,
+          user_profiles: Array.isArray(photo.user_profiles) ? photo.user_profiles[0] : photo.user_profiles,
+        }));
+        setPhotos(typedPhotos);
       }
     } catch (error) {
       console.error('Error loading photos:', error);

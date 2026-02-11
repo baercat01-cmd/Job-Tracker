@@ -65,7 +65,17 @@ export function MaterialPhotoManager({
         .order('timestamp', { ascending: false });
 
       if (error) throw error;
-      setPhotos(data || []);
+      
+      // Type assertion to handle Supabase's foreign key select
+      const typedPhotos = (data || []).map((photo: any) => ({
+        id: photo.id,
+        photo_url: photo.photo_url,
+        timestamp: photo.timestamp,
+        uploaded_by: photo.uploaded_by,
+        user_profiles: Array.isArray(photo.user_profiles) ? photo.user_profiles[0] : photo.user_profiles,
+      }));
+      
+      setPhotos(typedPhotos);
     } catch (error: any) {
       console.error('Error loading photos:', error);
     } finally {
