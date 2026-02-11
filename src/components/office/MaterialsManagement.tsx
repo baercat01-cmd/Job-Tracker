@@ -38,6 +38,7 @@ import type { Job } from '@/types';
 import { ExtrasManagement } from './ExtrasManagement';
 import { CrewMaterialProcessing } from './CrewMaterialProcessing';
 import { MaterialWorkbookManager } from './MaterialWorkbookManager';
+import { MaterialItemPhotos } from './MaterialItemPhotos';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -777,6 +778,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
                                     <td className="p-1">
                                       <div className="flex items-center justify-center gap-1">
+                                        <MaterialItemPhotos 
+                                          materialItemId={item.id}
+                                          materialName={item.material_name}
+                                        />
                                         <Button size="sm" variant="ghost" onClick={() => openMoveItem(item)} title="Move">
                                           <MoveHorizontal className="w-4 h-4" />
                                         </Button>

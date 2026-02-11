@@ -256,19 +256,26 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
 
       // Migrate photos from old material to new material_items
       if (materialPhotos.length > 0 && newItem) {
-        // Store photo references in notes or create a photo link system
-        const photoUrls = materialPhotos.map(p => p.photo_url);
-        const photoNotes = materialPhotos.length > 0 
-          ? `\n\nCrew Photos (${materialPhotos.length}): ${photoUrls.join(', ')}` 
-          : '';
+        // Insert photos into material_item_photos table
+        const photoInserts = materialPhotos.map(photo => ({
+          material_item_id: newItem.id,
+          photo_url: photo.photo_url,
+          uploaded_by: photo.uploaded_by,
+          timestamp: photo.timestamp,
+          caption: `Crew photo by ${photo.user_profiles?.username || 'Unknown'}`,
+        }));
 
-        // Update the item with photo information in notes
-        await supabase
-          .from('material_items')
-          .update({
-            notes: (selectedMaterial.notes || '') + photoNotes,
-          })
-          .eq('id', newItem.id);
+        const { error: photoInsertError } = await supabase
+          .from('material_item_photos')
+          .insert(photoInserts);
+
+        if (photoInsertError) {
+          console.error('Error migrating photos:', photoInsertError);
+          // Don't fail the whole operation, just log it
+          toast.error('Photos migrated with warnings');
+        } else {
+          console.log(`Migrated ${materialPhotos.length} photos to new material item`);
+        }
       }
 
       // Delete from old materials table
