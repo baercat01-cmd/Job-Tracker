@@ -204,6 +204,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           sheetBreakdowns: [],
           totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
         });
+        setMaterialSheets([]);
         return;
       }
 
@@ -227,7 +228,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (itemsError) throw itemsError;
 
       // Store sheets data for editing
-      setMaterialSheets(sheetsData || []);
+      if (JSON.stringify(sheetsData || []) !== JSON.stringify(materialSheets)) {
+        setMaterialSheets(sheetsData || []);
+      }
       
       // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
@@ -278,6 +281,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           sheetId: sheet.id,
           sheetName: sheet.sheet_name,
           sheetDescription: sheet.description || '',
+          orderIndex: sheet.order_index,
           categories,
           totalCost: sheetTotalCost,
           totalPrice: sheetTotalPrice,
@@ -314,6 +318,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           sheetBreakdowns: [],
           totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
         });
+        setMaterialSheets([]);
       }
     }
   }
@@ -538,61 +543,81 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function handleDragStart(e: React.DragEvent, rowId: string) {
-    setDraggedRowId(rowId);
+  function handleDragStart(e: React.DragEvent, itemId: string, itemType: 'material' | 'custom') {
+    const dragData = JSON.stringify({ id: itemId, type: itemType });
+    setDraggedRowId(itemId);
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/json', dragData);
   }
 
-  function handleDragOver(e: React.DragEvent, rowId: string) {
+  function handleDragOver(e: React.DragEvent, itemId: string) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverRowId(rowId);
+    setDragOverRowId(itemId);
   }
 
   function handleDragLeave() {
     setDragOverRowId(null);
   }
 
-  async function handleDrop(e: React.DragEvent, targetRowId: string) {
+  async function handleDrop(e: React.DragEvent, targetId: string, targetType: 'material' | 'custom') {
     e.preventDefault();
     
-    if (!draggedRowId || draggedRowId === targetRowId) {
-      setDraggedRowId(null);
-      setDragOverRowId(null);
-      return;
-    }
-
-    const draggedRow = customRows.find(r => r.id === draggedRowId);
-    const targetRow = customRows.find(r => r.id === targetRowId);
-
-    if (!draggedRow || !targetRow) {
+    if (!draggedRowId || draggedRowId === targetId) {
       setDraggedRowId(null);
       setDragOverRowId(null);
       return;
     }
 
     try {
-      // Calculate new order index (place before target)
-      const sortedRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
-      const targetIndex = sortedRows.findIndex(r => r.id === targetRowId);
-      const prevRow = sortedRows[targetIndex - 1];
+      const dragDataStr = e.dataTransfer.getData('application/json');
+      const dragData = JSON.parse(dragDataStr);
+      const { id: draggedId, type: draggedType } = dragData;
+
+      // Create unified list of all items with their order_index
+      const allItems = [
+        ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
+          id: sheet.sheetId,
+          type: 'material' as const,
+          orderIndex: sheet.orderIndex,
+        })),
+        ...customRows.map(row => ({
+          id: row.id,
+          type: 'custom' as const,
+          orderIndex: row.order_index,
+        })),
+      ].sort((a, b) => a.orderIndex - b.orderIndex);
+
+      const targetIndex = allItems.findIndex(item => item.id === targetId);
+      const prevItem = allItems[targetIndex - 1];
+      const targetItem = allItems[targetIndex];
       
       let newOrderIndex: number;
-      if (prevRow) {
-        newOrderIndex = (prevRow.order_index + targetRow.order_index) / 2;
+      if (prevItem) {
+        newOrderIndex = (prevItem.orderIndex + targetItem.orderIndex) / 2;
       } else {
-        newOrderIndex = targetRow.order_index - 1;
+        newOrderIndex = targetItem.orderIndex - 1;
       }
 
-      const { error } = await supabase
-        .from('custom_financial_rows')
-        .update({ order_index: newOrderIndex })
-        .eq('id', draggedRowId);
+      // Update the appropriate table based on dragged item type
+      if (draggedType === 'material') {
+        const { error } = await supabase
+          .from('material_sheets')
+          .update({ order_index: newOrderIndex })
+          .eq('id', draggedId);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('custom_financial_rows')
+          .update({ order_index: newOrderIndex })
+          .eq('id', draggedId);
+
+        if (error) throw error;
+      }
 
       toast.success('Row moved');
-      await loadCustomRows();
+      await Promise.all([loadMaterialsData(), loadCustomRows()]);
     } catch (error: any) {
       console.error('Error reordering row:', error);
       toast.error('Failed to reorder row');
@@ -900,160 +925,191 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
             {/* Proposal Layout: Content on left, Project Total on right */}
             <div className="flex gap-6 items-start">
-              {/* All Rows Column - Same Width */}
+              {/* All Rows Column - Mixed materials and custom rows */}
               <div className="flex-1 space-y-3">
-                {/* Building Materials Sections */}
-                {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                  <div className="space-y-3">
-                    {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
-                const sheetCost = sheet.totalPrice;
-                const sheetPrice = sheetCost * (1 + markup / 100);
+                {/* Create unified list of all items sorted by order_index */}
+                {(() => {
+                  const allItems = [
+                    ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
+                      type: 'material' as const,
+                      id: sheet.sheetId,
+                      orderIndex: sheet.orderIndex,
+                      data: sheet,
+                    })),
+                    ...customRows.map(row => ({
+                      type: 'custom' as const,
+                      id: row.id,
+                      orderIndex: row.order_index,
+                      data: row,
+                    })),
+                  ].sort((a, b) => a.orderIndex - b.orderIndex);
 
-                return (
-                  <Collapsible key={idx} defaultOpen={false}>
-                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
-                      <CollapsibleTrigger className="w-full">
-                        <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
-                          <div className="flex items-center gap-3 flex-1">
-                            <ChevronDown className="w-5 h-5 text-blue-700" />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
-                                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
-                                  <Percent className="w-3 h-3 mr-1" />
-                                  {markup.toFixed(1)}% markup
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
-                                {sheet.sheetDescription || '(No description provided)'}
-                              </p>
+                  return allItems.map((item) => {
+                    if (item.type === 'material') {
+                      const sheet = item.data as typeof materialsBreakdown.sheetBreakdowns[0];
+                      const sheetCost = sheet.totalPrice;
+                      const sheetPrice = sheetCost * (1 + markup / 100);
+                      const isDragging = draggedRowId === sheet.sheetId;
+                      const isDragOver = dragOverRowId === sheet.sheetId;
+
+                      return (
+                        <div
+                          key={item.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, sheet.sheetId, 'material')}
+                          onDragOver={(e) => handleDragOver(e, sheet.sheetId)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, sheet.sheetId, 'material')}
+                          className={`transition-all ${
+                            isDragging ? 'opacity-50 scale-95' : ''
+                          } ${
+                            isDragOver ? 'border-t-4 border-t-primary' : ''
+                          }`}
+                        >
+                          <Collapsible defaultOpen={false}>
+                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                              <CollapsibleTrigger className="w-full">
+                                <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <div className="cursor-grab active:cursor-grabbing">
+                                      <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                      </svg>
+                                    </div>
+                                    <ChevronDown className="w-5 h-5 text-blue-700" />
+                                    <div className="flex-1">
+                                      <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                                      <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
+                                        {sheet.sheetDescription || '(No description provided)'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        <p className="text-xs font-semibold text-green-700">+{markup.toFixed(1)}%</p>
+                                      </div>
+                                      <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
+                                      }}
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="p-4 space-y-2">
+                                  {sheet.categories.map((category: any, catIndex: number) => {
+                                    const catCost = category.totalPrice;
+                                    const catPrice = catCost * (1 + markup / 100);
+
+                                    return (
+                                      <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200">
+                                        <div className="flex-1">
+                                          <p className="font-semibold text-slate-900">{category.name}</p>
+                                          <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                        </div>
+                                        <div className="text-right">
+                                          <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                          <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </CollapsibleContent>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="text-xs text-slate-600 mb-1">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                              <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
-                              }}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </div>
+                          </Collapsible>
                         </div>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="p-4 space-y-2">
-                          {sheet.categories.map((category: any, catIndex: number) => {
-                            const catCost = category.totalPrice;
-                            const catPrice = catCost * (1 + markup / 100);
+                      );
+                    } else {
+                      // Custom row (labor, materials, equipment, etc.)
+                      const row = item.data as CustomFinancialRow;
+                      const rowCost = row.selling_price;
+                      const rowPrice = rowCost * (1 + markup / 100);
 
-                            return (
-                              <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200">
+                      const bgColor = row.category === 'labor' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-orange-50 hover:bg-orange-100';
+                      const textColor = row.category === 'labor' ? 'text-amber-900' : 'text-orange-900';
+                      const iconColor = row.category === 'labor' ? 'text-amber-700' : 'text-orange-700';
+                      const isDragging = draggedRowId === row.id;
+                      const isDragOver = dragOverRowId === row.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, row.id, 'custom')}
+                          onDragOver={(e) => handleDragOver(e, row.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, row.id, 'custom')}
+                          className={`transition-all ${
+                            isDragging ? 'opacity-50 scale-95' : ''
+                          } ${
+                            isDragOver ? 'border-t-4 border-t-primary' : ''
+                          }`}
+                        >
+                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                            <div className={`${bgColor} transition-colors p-3 flex items-center justify-between border-b`}>
+                              <div className="flex items-center gap-3 flex-1">
+                                <div className="cursor-grab active:cursor-grabbing">
+                                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                  </svg>
+                                </div>
+                                <Clock className={`w-5 h-5 ${iconColor}`} />
                                 <div className="flex-1">
-                                  <p className="font-semibold text-slate-900">{category.name}</p>
-                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <div className="flex items-center gap-2">
+                                    <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
+                                    {!row.taxable && (
+                                      <Badge variant="outline" className="bg-slate-100 text-slate-800">
+                                        No Tax
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </CollapsibleContent>
-                    </div>
-                    </Collapsible>
-                    );
-                  })}
-                  </div>
-                )}
-
-                {/* All Custom Rows (labor, materials, subs, etc.) - sorted by order_index - DRAG AND DROP */}
-                {sortedCustomRows.map((row, rowIndex) => {
-                const rowCost = row.selling_price;
-                const rowPrice = rowCost * (1 + markup / 100);
-
-                const bgColor = row.category === 'labor' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-orange-50 hover:bg-orange-100';
-                const textColor = row.category === 'labor' ? 'text-amber-900' : 'text-orange-900';
-                const iconColor = row.category === 'labor' ? 'text-amber-700' : 'text-orange-700';
-                const isDragging = draggedRowId === row.id;
-                const isDragOver = dragOverRowId === row.id;
-
-                return (
-                  <div
-                    key={row.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, row.id)}
-                    onDragOver={(e) => handleDragOver(e, row.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, row.id)}
-                    className={`transition-all ${
-                      isDragging ? 'opacity-50 scale-95' : ''
-                    } ${
-                      isDragOver ? 'border-t-4 border-t-primary' : ''
-                    }`}
-                  >
-                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
-                      <div className={`${bgColor} transition-colors p-3 flex items-center justify-between border-b`}>
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="cursor-grab active:cursor-grabbing">
-                            <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                            </svg>
-                          </div>
-                          <Clock className={`w-5 h-5 ${iconColor}`} />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
-                              {row.markup_percent > 0 && (
-                                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
-                                  <Percent className="w-3 h-3 mr-1" />
-                                  {row.markup_percent.toFixed(1)}% markup
-                                </Badge>
-                              )}
-                              {!row.taxable && (
-                                <Badge variant="outline" className="bg-slate-100 text-slate-800">
-                                  No Tax
-                                </Badge>
-                              )}
+                              <div className="flex items-center gap-3">
+                                <div className="text-right">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <p className="text-xs text-slate-600">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    {row.markup_percent > 0 && (
+                                      <p className="text-xs font-semibold text-green-700">+{row.markup_percent.toFixed(1)}%</p>
+                                    )}
+                                    <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
+                                  </div>
+                                  <p className={`text-2xl font-bold ${textColor}`}>${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openAddDialog(row)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => deleteRow(row.id)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className={`text-2xl font-bold ${textColor}`}>${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            <p className="text-xs text-slate-500">
-                              Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openAddDialog(row)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deleteRow(row.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                      );
+                    }
+                  });
+                })()}
 
                 {/* Subcontractor Estimates */}
                 <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
