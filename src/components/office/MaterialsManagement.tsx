@@ -697,7 +697,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          <TabsList className="grid w-full grid-cols-7 h-14 bg-white shadow-sm flex-1">
+          <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
               <span className="text-xs sm:text-base">Workbook</span>
@@ -710,21 +710,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               <Plus className="w-5 h-5" />
               <span className="text-xs sm:text-base">Add to Package</span>
             </TabsTrigger>
-            <TabsTrigger value="extras" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <DollarSign className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Extras</span>
-            </TabsTrigger>
             <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <Percent className="w-5 h-5" />
+              <Package className="w-5 h-5" />
               <span className="text-xs sm:text-base">Crew Orders</span>
             </TabsTrigger>
             <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <Upload className="w-5 h-5" />
               <span className="text-xs sm:text-base">Upload</span>
-            </TabsTrigger>
-            <TabsTrigger value="photo-recovery" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <ImageIcon className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Photos</span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -1256,20 +1248,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           )}
         </TabsContent>
 
-        <TabsContent value="extras" className="space-y-2">
-          <ExtrasManagement job={job} userId={userId} />
-        </TabsContent>
-
         <TabsContent value="crew-orders" className="space-y-2">
           <CrewMaterialProcessing jobId={job.id} />
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">
           <MaterialWorkbookManager jobId={job.id} />
-        </TabsContent>
-
-        <TabsContent value="photo-recovery" className="space-y-2">
-          <PhotoRecoveryTool jobId={job.id} />
         </TabsContent>
       </Tabs>
 
