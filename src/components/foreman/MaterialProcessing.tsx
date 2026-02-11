@@ -24,11 +24,11 @@ import type { Job } from '@/types';
 
 interface MaterialItem {
   id: string;
-  sheet_id: string;
+  sheet_id?: string;
   category: string;
   material_name: string;
   quantity: number;
-  status: 'not_ordered' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed';
+  status: 'not_ordered' | 'needed' | 'ordered' | 'at_shop' | 'ready_to_pull' | 'at_job' | 'installed' | 'missing';
   color: string | null;
   date_needed_by: string | null;
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -36,11 +36,15 @@ interface MaterialItem {
   order_requested_at: string | null;
   created_at: string;
   updated_at: string;
+  source?: 'workbook' | 'legacy';
   sheets?: {
     sheet_name: string;
   };
   user_profiles?: {
     username: string;
+  };
+  categories?: {
+    name: string;
   };
 }
 
@@ -57,12 +61,14 @@ const PRIORITY_CONFIG = {
 };
 
 const STATUS_CONFIG = {
-  not_ordered: { label: 'Needed', color: 'bg-gray-100 text-gray-700 border-gray-300', icon: Package },
+  needed: { label: 'Needed', color: 'bg-orange-100 text-orange-700 border-orange-300', icon: Package },
+  not_ordered: { label: 'Not Ordered', color: 'bg-gray-100 text-gray-700 border-gray-300', icon: Package },
   ordered: { label: 'Ordered', color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: Clock },
   at_shop: { label: 'At Shop', color: 'bg-blue-100 text-blue-800 border-blue-300', icon: Package },
   ready_to_pull: { label: 'Pull from Shop', color: 'bg-purple-100 text-purple-800 border-purple-300', icon: Package },
   at_job: { label: 'At Job', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle },
   installed: { label: 'Installed', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: CheckCircle },
+  missing: { label: 'Missing', color: 'bg-red-100 text-red-700 border-red-300', icon: AlertTriangle },
 };
 
 export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
@@ -80,9 +86,9 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
   useEffect(() => {
     loadMaterials();
 
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('material_processing_changes')
+    // Subscribe to real-time changes for both tables
+    const itemsChannel = supabase
+      .channel('material_processing_items')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'material_items' },
         () => {
@@ -91,8 +97,19 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
       )
       .subscribe();
 
+    const legacyChannel = supabase
+      .channel('material_processing_legacy')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'materials', filter: `job_id=eq.${job.id}` },
+        () => {
+          loadMaterials();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(itemsChannel);
+      supabase.removeChannel(legacyChannel);
     };
   }, [job.id]);
 
@@ -100,44 +117,79 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
     try {
       setLoading(true);
 
-      // Get the working workbook for this job
-      const { data: workbookData, error: workbookError } = await supabase
+      const allMaterials: MaterialItem[] = [];
+
+      // Load from new workbook system (material_items)
+      const { data: workbookData } = await supabase
         .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
         .eq('status', 'working')
         .maybeSingle();
 
-      if (workbookError) throw workbookError;
-      if (!workbookData) {
-        setMaterials([]);
-        return;
+      if (workbookData) {
+        const { data: sheetsData } = await supabase
+          .from('material_sheets')
+          .select('id')
+          .eq('workbook_id', workbookData.id);
+
+        if (sheetsData && sheetsData.length > 0) {
+          const sheetIds = sheetsData.map(s => s.id);
+
+          const { data: itemsData } = await supabase
+            .from('material_items')
+            .select(`
+              *,
+              sheets:material_sheets(sheet_name),
+              user_profiles:requested_by(username)
+            `)
+            .in('sheet_id', sheetIds);
+
+          if (itemsData) {
+            allMaterials.push(...(itemsData as any).map((item: any) => ({
+              ...item,
+              material_name: item.material_name || item.name,
+              source: 'workbook',
+            })));
+          }
+        }
       }
 
-      // Get all sheets for this workbook
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .eq('workbook_id', workbookData.id);
-
-      if (sheetsError) throw sheetsError;
-
-      const sheetIds = (sheetsData || []).map(s => s.id);
-
-      // Get all items with user profile info
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('material_items')
+      // Load from deprecated materials table (crew-ordered materials)
+      const { data: legacyData } = await supabase
+        .from('materials')
         .select(`
           *,
-          sheets:material_sheets(sheet_name),
-          user_profiles:requested_by(username)
+          categories:materials_categories(name),
+          user_profiles:ordered_by(username)
         `)
-        .in('sheet_id', sheetIds)
-        .order('created_at', { ascending: false });
+        .eq('job_id', job.id);
 
-      if (itemsError) throw itemsError;
+      if (legacyData) {
+        allMaterials.push(...legacyData.map((mat: any) => ({
+          id: mat.id,
+          category: mat.categories?.name || 'Materials',
+          material_name: mat.name,
+          quantity: mat.quantity,
+          status: mat.status,
+          color: mat.color,
+          date_needed_by: mat.date_needed_by,
+          priority: mat.priority || 'medium',
+          requested_by: mat.ordered_by,
+          order_requested_at: mat.order_requested_at,
+          created_at: mat.created_at,
+          updated_at: mat.updated_at,
+          source: 'legacy',
+          user_profiles: mat.user_profiles ? { username: mat.user_profiles.username } : undefined,
+        })));
+      }
 
-      setMaterials((itemsData as any) || []);
+      // Sort by most recent first
+      allMaterials.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setMaterials(allMaterials);
     } catch (error: any) {
       console.error('Error loading materials:', error);
       toast.error('Failed to load materials');
@@ -169,12 +221,17 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
 
       // If changing to ordered, set request tracking
       if (!selectedMaterial.requested_by) {
-        updateData.requested_by = userId;
+        if (selectedMaterial.source === 'legacy') {
+          updateData.ordered_by = userId;
+        } else {
+          updateData.requested_by = userId;
+        }
         updateData.order_requested_at = new Date().toISOString();
       }
 
+      const table = selectedMaterial.source === 'legacy' ? 'materials' : 'material_items';
       const { error } = await supabase
-        .from('material_items')
+        .from(table)
         .update(updateData)
         .eq('id', selectedMaterial.id);
 
@@ -193,12 +250,14 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
 
   // Group materials by status
   const groupedMaterials = {
+    needed: materials.filter(m => m.status === 'needed'),
     not_ordered: materials.filter(m => m.status === 'not_ordered'),
     ordered: materials.filter(m => m.status === 'ordered'),
     at_shop: materials.filter(m => m.status === 'at_shop'),
     ready_to_pull: materials.filter(m => m.status === 'ready_to_pull'),
     at_job: materials.filter(m => m.status === 'at_job'),
     installed: materials.filter(m => m.status === 'installed'),
+    missing: materials.filter(m => m.status === 'missing'),
   };
 
   if (loading) {
@@ -253,6 +312,9 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
                         <p className="text-xs text-muted-foreground mt-1">
                           Sheet: {material.sheets.sheet_name}
                         </p>
+                      )}
+                      {material.source === 'legacy' && (
+                        <Badge variant="outline" className="mt-1 text-xs">Field Request</Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
