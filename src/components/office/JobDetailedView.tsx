@@ -14,6 +14,7 @@ import { JobDocuments } from './JobDocuments';
 import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
+import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -1070,7 +1071,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </Button>
             )}
           </div>
-          <TabsList className="grid w-full grid-cols-7 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+          <TabsList className="grid w-full grid-cols-8 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
@@ -1127,6 +1128,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             >
               <Camera className="w-5 h-5 sm:mr-2" />
               <span className="hidden sm:inline">Photos</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="subcontractors" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <Briefcase className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Subs</span>
             </TabsTrigger>
           </TabsList>
           <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 mt-0">
@@ -1589,6 +1597,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <TabsContent value="orders" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <MaterialOrdersManagement jobId={job.id} />
+          </div>
+        </TabsContent>
+
+        {/* Subcontractors Tab */}
+        <TabsContent value="subcontractors" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <SubcontractorEstimatesManagement jobId={job.id} />
           </div>
         </TabsContent>
       </Tabs>
