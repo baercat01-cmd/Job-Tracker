@@ -115,11 +115,9 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
 
       if (error) throw error;
 
-      // Filter for materials actually ordered by crew from field catalog
+      // Filter for materials actually ordered by crew (must have both ordered_by and order_requested_at)
       const crewMaterials = (data || []).filter((mat: any) => 
-        mat.import_source === 'field_catalog' &&
-        mat.ordered_by !== null && 
-        mat.order_requested_at !== null
+        mat.ordered_by !== null && mat.order_requested_at !== null
       );
 
       setMaterials(crewMaterials);
@@ -201,7 +199,7 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
 
       const nextOrderIndex = (maxData?.order_index || -1) + 1;
 
-      // Insert into material_items (workbook system) - preserve crew order tracking
+      // Insert into material_items (workbook system)
       const { error: insertError } = await supabase
         .from('material_items')
         .insert({
@@ -220,13 +218,6 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
           taxable: true,
           notes: selectedMaterial.notes,
           order_index: nextOrderIndex,
-          // Preserve crew order tracking
-          status: selectedMaterial.status || 'not_ordered',
-          color: selectedMaterial.color,
-          date_needed_by: selectedMaterial.date_needed_by,
-          priority: selectedMaterial.priority || 'medium',
-          requested_by: selectedMaterial.ordered_by,
-          order_requested_at: selectedMaterial.order_requested_at,
         });
 
       if (insertError) throw insertError;
