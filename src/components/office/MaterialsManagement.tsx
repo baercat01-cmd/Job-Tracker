@@ -370,6 +370,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     );
   }
 
+  function getMaterialPackageNames(materialId: string): string[] {
+    return packages
+      .filter(pkg => 
+        pkg.bundle_items?.some((item: any) => item.material_item_id === materialId)
+      )
+      .map(pkg => pkg.name);
+  }
+
   function groupByCategory(items: MaterialItem[]): CategoryGroup[] {
     const categoryMap = new Map<string, MaterialItem[]>();
     
@@ -959,7 +967,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           onClick={() => startCellEdit(item.id, 'material_name', item.material_name)}
                                           className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] max-w-[400px]"
                                         >
-                                          {item.material_name}
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span>{item.material_name}</span>
+                                            {getMaterialPackageNames(item.id).map((packageName) => (
+                                              <Badge 
+                                                key={packageName}
+                                                variant="outline" 
+                                                className="bg-purple-50 text-purple-700 border-purple-300 text-xs"
+                                              >
+                                                <Package className="w-3 h-3 mr-1" />
+                                                {packageName}
+                                              </Badge>
+                                            ))}
+                                          </div>
                                           {item.notes && (
                                             <div className="text-xs text-muted-foreground mt-1">{item.notes}</div>
                                           )}
