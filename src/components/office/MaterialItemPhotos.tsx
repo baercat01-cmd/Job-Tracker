@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Image as ImageIcon, X, Download, User, Calendar } from 'lucide-react';
+import { Image as ImageIcon, X, Download, User, Calendar, Upload, FileImage } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface MaterialItemPhoto {
@@ -34,6 +36,11 @@ export function MaterialItemPhotos({ materialItemId, materialName }: MaterialIte
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<MaterialItemPhoto | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadCaption, setUploadCaption] = useState('');
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   useEffect(() => {
     loadPhotos();
@@ -98,32 +105,139 @@ export function MaterialItemPhotos({ materialItemId, materialName }: MaterialIte
     }
   }
 
-  if (loading) {
-    return null;
+  function openUploadDialog() {
+    setSelectedFiles([]);
+    setUploadCaption('');
+    setShowUploadDialog(true);
   }
 
-  if (photos.length === 0) {
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length !== files.length) {
+      toast.error('Only image files are allowed');
+    }
+    
+    setSelectedFiles(imageFiles);
+  }
+
+  async function uploadPhotos() {
+    if (selectedFiles.length === 0) {
+      toast.error('Please select at least one photo');
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Upload each file
+      const uploadPromises = selectedFiles.map(async (file) => {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${materialItemId}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `material-photos/${fileName}`;
+
+        // Upload to storage
+        const { error: uploadError } = await supabase.storage
+          .from('job-files')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('job-files')
+          .getPublicUrl(filePath);
+
+        // Insert photo record
+        const { error: insertError } = await supabase
+          .from('material_item_photos')
+          .insert({
+            material_item_id: materialItemId,
+            photo_url: publicUrl,
+            uploaded_by: user.id,
+            timestamp: new Date().toISOString(),
+            caption: uploadCaption.trim() || null,
+          });
+
+        if (insertError) throw insertError;
+      });
+
+      await Promise.all(uploadPromises);
+
+      toast.success(`${selectedFiles.length} photo${selectedFiles.length !== 1 ? 's' : ''} uploaded successfully`);
+      setShowUploadDialog(false);
+      setSelectedFiles([]);
+      setUploadCaption('');
+      loadPhotos();
+    } catch (error: any) {
+      console.error('Error uploading photos:', error);
+      toast.error('Failed to upload photos');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (loading) {
     return null;
   }
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setShowDialog(true)}
-        className="gap-2"
-      >
-        <ImageIcon className="w-4 h-4" />
-        {photos.length} Photo{photos.length !== 1 ? 's' : ''}
-      </Button>
+      <div className="flex items-center gap-1">
+        {photos.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDialog(true)}
+            className="gap-2"
+          >
+            <ImageIcon className="w-4 h-4" />
+            {photos.length}
+          </Button>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground">
+            <ImageIcon className="w-3 h-3 mr-1" />
+            0
+          </Badge>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={openUploadDialog}
+          className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+          title="Upload photos"
+        >
+          <Upload className="w-4 h-4" />
+        </Button>
+      </div>
 
+      {/* Photos Gallery Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ImageIcon className="w-5 h-5" />
-              Photos - {materialName}
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-5 h-5" />
+                Photos - {materialName}
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowDialog(false);
+                  openUploadDialog();
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Photos
+              </Button>
             </DialogTitle>
           </DialogHeader>
 
@@ -213,6 +327,95 @@ export function MaterialItemPhotos({ materialItemId, materialName }: MaterialIte
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Upload Photos Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-5 h-5" />
+              Upload Photos - {materialName}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="photo-files">Select Photos</Label>
+              <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  id="photo-files"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full"
+                >
+                  <FileImage className="w-4 h-4 mr-2" />
+                  Choose Image Files
+                </Button>
+                {selectedFiles.length > 0 && (
+                  <div className="mt-3">
+                    <Badge variant="secondary" className="text-sm">
+                      {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+                    </Badge>
+                    <div className="mt-2 space-y-1">
+                      {selectedFiles.map((file, index) => (
+                        <p key={index} className="text-xs text-muted-foreground truncate">
+                          {file.name}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="caption">Caption (Optional)</Label>
+              <Input
+                id="caption"
+                value={uploadCaption}
+                onChange={(e) => setUploadCaption(e.target.value)}
+                placeholder="Add a description for these photos..."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={uploadPhotos}
+                disabled={uploading || selectedFiles.length === 0}
+                className="flex-1"
+              >
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload {selectedFiles.length > 0 ? `${selectedFiles.length} Photo${selectedFiles.length !== 1 ? 's' : ''}` : 'Photos'}
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowUploadDialog(false)}
+                disabled={uploading}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
