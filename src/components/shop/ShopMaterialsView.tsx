@@ -206,8 +206,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }));
       
       // Filter to only include packages that have materials with pull_from_shop or ready_for_job status
+      // Note: Database stores 'picked_up' for pull_from_shop and 'delivered' for ready_for_job
       const packagesWithShopMaterials = transformedPackages.filter(pkg => 
         pkg.bundle_items.some(item => 
+          item.material_items.status === 'picked_up' || 
+          item.material_items.status === 'delivered' ||
           item.material_items.status === 'pull_from_shop' || 
           item.material_items.status === 'ready_for_job'
         )
@@ -346,11 +349,18 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   });
 
   // Group packages by whether they have any pull_from_shop materials or are fully ready
+  // Note: Database stores 'picked_up' for pull_from_shop and 'delivered' for ready_for_job
   const pullFromShopPackages = filteredPackages.filter(pkg => 
-    pkg.bundle_items.some(item => item.material_items.status === 'pull_from_shop')
+    pkg.bundle_items.some(item => 
+      item.material_items.status === 'picked_up' || 
+      item.material_items.status === 'pull_from_shop'
+    )
   );
   const readyForJobPackages = filteredPackages.filter(pkg => 
-    pkg.bundle_items.every(item => item.material_items.status === 'ready_for_job')
+    pkg.bundle_items.every(item => 
+      item.material_items.status === 'delivered' || 
+      item.material_items.status === 'ready_for_job'
+    )
   );
 
   if (loading) {
@@ -447,7 +457,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           {pullFromShopPackages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
             const pullFromShopItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'pull_from_shop'
+              item => item.material_items.status === 'picked_up' || item.material_items.status === 'pull_from_shop'
             );
             
             return (
@@ -573,10 +583,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           {readyForJobPackages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
             const readyItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'ready_for_job'
+              item => item.material_items.status === 'delivered' || item.material_items.status === 'ready_for_job'
             );
             const pullItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'pull_from_shop'
+              item => item.material_items.status === 'picked_up' || item.material_items.status === 'pull_from_shop'
             );
             
             return (
