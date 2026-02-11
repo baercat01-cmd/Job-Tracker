@@ -36,7 +36,7 @@ import {
 import { toast } from 'sonner';
 import type { Job } from '@/types';
 import { ExtrasManagement } from './ExtrasManagement';
-import { CrewOrdersManagement } from './CrewOrdersManagement';
+import { CrewMaterialProcessing } from './CrewMaterialProcessing';
 import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -795,7 +795,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </TabsContent>
 
         <TabsContent value="crew-orders" className="space-y-2">
-          <CrewOrdersManagement jobId={job.id} />
+          <CrewMaterialProcessing jobId={job.id} />
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">
