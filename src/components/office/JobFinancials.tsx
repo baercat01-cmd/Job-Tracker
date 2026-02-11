@@ -1356,6 +1356,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
             </div>
           </div>
+          </div>
         </TabsContent>
       </Tabs>
 
