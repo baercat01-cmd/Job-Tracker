@@ -718,14 +718,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                         </div>
                       )}
 
-                      {/* Scope of Work */}
-                      {estimate.scope_of_work && (
-                        <div>
-                          <h4 className="font-semibold mb-2 text-sm">Scope of Work</h4>
-                          <p className="text-sm text-muted-foreground">{estimate.scope_of_work}</p>
-                        </div>
-                      )}
-
                       {/* Materials */}
                       {materials.length > 0 && (
                         <div>
