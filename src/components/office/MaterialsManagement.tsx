@@ -70,6 +70,9 @@ interface MaterialItem {
   status: string;
   created_at: string;
   updated_at: string;
+  sheets?: {
+    sheet_name: string;
+  };
 }
 
 interface MaterialSheet {
