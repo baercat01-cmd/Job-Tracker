@@ -762,12 +762,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Clock className={`w-5 h-5 ${iconColor}`} />
                           <div className="flex-1">
                             <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
-                            <p className={`text-sm ${iconColor}`}>
+                            {row.notes && (
+                              <p className="text-sm text-slate-700 mt-1 font-medium leading-snug">{row.notes}</p>
+                            )}
+                            <p className={`text-xs ${iconColor} mt-1`}>
                               {row.category === 'labor' 
                                 ? `${row.quantity.toFixed(2)} hours × $${row.unit_cost.toFixed(2)}/hr`
                                 : `${row.quantity} × $${row.unit_cost.toFixed(2)}`}
                             </p>
-                            {row.notes && <p className="text-xs text-slate-600 mt-1">{row.notes}</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -941,13 +943,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             </div>
 
             <div>
-              <Label>Notes</Label>
+              <Label>Description (shown when collapsed)</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional notes..."
-                rows={2}
+                placeholder="e.g., All electrical wiring and fixtures for garage and apartment"
+                rows={3}
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                This will be visible in the collapsed row to provide context
+              </p>
             </div>
 
             {/* Preview */}
