@@ -261,7 +261,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       if (estimateError) throw estimateError;
 
       // Trigger AI extraction
-      const { error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
+      toast.info('AI is extracting data from the PDF...');
+      
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
         body: {
           documentId: estimateData.id,
           documentType: 'estimate',
@@ -273,7 +275,8 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         console.error('AI extraction error:', functionError);
         toast.error('Document uploaded but AI extraction failed - you can manually enter data');
       } else {
-        toast.success('Estimate uploaded - AI is extracting data...');
+        console.log('AI extraction response:', functionData);
+        toast.success('Estimate uploaded and data extracted successfully!');
       }
 
       setShowUploadDialog(false);
@@ -347,7 +350,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       if (invoiceError) throw invoiceError;
 
       // Trigger AI extraction
-      const { error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
+      toast.info('AI is extracting data from the PDF...');
+      
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
         body: {
           documentId: invoiceData.id,
           documentType: 'invoice',
@@ -359,7 +364,8 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         console.error('AI extraction error:', functionError);
         toast.error('Document uploaded but AI extraction failed');
       } else {
-        toast.success('Invoice uploaded - AI is extracting data...');
+        console.log('AI extraction response:', functionData);
+        toast.success('Invoice uploaded and data extracted successfully!');
       }
 
       setShowInvoiceUploadDialog(false);

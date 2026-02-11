@@ -845,6 +845,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              $
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1048,6 +1061,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              $
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1242,6 +1268,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              $
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="h-6 px-1.5 text-[10px] flex-1 relative"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1433,6 +1472,19 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
                           {/* Quick Action Buttons */}
                           <div className="flex gap-0.5 pt-1 border-t">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedJob(job);
+                                setSelectedTab('financials');
+                              }}
+                            >
+                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
+                              $
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
