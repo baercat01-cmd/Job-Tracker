@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -667,21 +666,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  function handleDrop(category: string, e: React.DragEvent, isMaterial: boolean = false) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFileUpload(category, files, isMaterial);
-    }
-  }
-
   // Filter labor rows and calculate total labor hours
   const laborRows = customRows.filter(r => r.category === 'labor');
   const totalLaborHours = laborRows.reduce((sum, r) => sum + r.quantity, 0);
@@ -805,86 +789,35 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           <TabsTrigger value="proposal">Proposal</TabsTrigger>
         </TabsList>
 
-        {/* Cost Breakdown Tab - Original View */}
+        {/* Cost Breakdown Tab - Materials Only */}
         <TabsContent value="cost-breakdown">
           <div className="max-w-6xl mx-auto space-y-6">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                    Materials
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Cost:</span>
-                      <span className="font-semibold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Price:</span>
-                      <span className="font-bold text-blue-600">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-sm pt-2 border-t">
-                      <span className="text-muted-foreground">Profit:</span>
-                      <span className="font-bold text-green-600">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
+            {/* Summary Card - Materials Only */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-medium flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                  Materials Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Cost</p>
+                    <p className="text-2xl font-semibold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-600" />
-                    Labor
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Hours:</span>
-                      <span className="font-semibold">{totalLaborHours.toFixed(1)} hrs</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rate:</span>
-                      <span className="font-semibold">${laborRate.toFixed(2)}/hr</span>
-                    </div>
-                    <div className="flex justify-between text-sm pt-2 border-t">
-                      <span className="text-muted-foreground">Total:</span>
-                      <span className="font-bold text-amber-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Price</p>
+                    <p className="text-2xl font-bold text-blue-600">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-green-600" />
-                    Project Total
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Cost:</span>
-                      <span className="font-semibold">${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Price:</span>
-                      <span className="font-bold text-blue-600">${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-sm pt-2 border-t">
-                      <span className="text-muted-foreground">Profit:</span>
-                      <span className="font-bold text-green-600">${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({profitMargin.toFixed(1)}%)</span>
-                    </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Profit</p>
+                    <p className="text-2xl font-bold text-green-600">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-xs text-muted-foreground">Margin: {materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Materials Breakdown */}
             {materialsBreakdown.sheetBreakdowns.length > 0 && (
@@ -942,117 +875,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </CardContent>
               </Card>
             )}
-
-            {/* Additional Costs Breakdown */}
-            {customRows.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-orange-600" />
-                    Additional Costs
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {Object.entries(groupedRows).map(([cat, rows]) => {
-                      const catTotal = rows.reduce((sum, r) => sum + r.total_cost, 0);
-                      const catPrice = rows.reduce((sum, r) => sum + r.selling_price, 0);
-                      const catProfit = catPrice - catTotal;
-                      
-                      return (
-                        <div key={cat} className="border rounded-lg overflow-hidden">
-                          <div className="bg-orange-50 p-3 border-b flex items-center justify-between">
-                            <h3 className="font-bold text-orange-900">{categoryLabels[cat] || cat}</h3>
-                            <div className="flex gap-4 text-sm">
-                              <div className="text-right">
-                                <p className="text-orange-700">Cost</p>
-                                <p className="font-semibold">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-orange-700">Price</p>
-                                <p className="font-bold text-orange-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-orange-700">Profit</p>
-                                <p className="font-bold text-green-600">${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="p-4 space-y-2">
-                            {rows.map((row) => (
-                              <div key={row.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                                <div>
-                                  <p className="font-medium">{row.description}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {row.quantity} × ${row.unit_cost.toFixed(2)}
-                                    {row.markup_percent > 0 && (
-                                      <span className="ml-2 text-green-600">+{row.markup_percent}%</span>
-                                    )}
-                                  </p>
-                                </div>
-                                <div className="flex gap-4 text-sm text-right">
-                                  <div>
-                                    <p className="text-muted-foreground">Cost</p>
-                                    <p className="font-semibold">${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Price</p>
-                                    <p className="font-bold text-blue-600">${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Progress Tracking */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-amber-600" />
-                  Labor Progress
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between text-sm">
-                    <span>Budgeted Hours:</span>
-                    <span className="font-semibold">{totalLaborHours.toFixed(1)} hrs</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Actual Hours (Clock-ins):</span>
-                    <span className={`font-semibold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
-                      {totalClockInHours.toFixed(1)} hrs
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress:</span>
-                      <span className={`font-bold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
-                        {progressPercent.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${isOverBudget ? 'bg-red-500' : 'bg-green-500'}`}
-                        style={{ width: `${Math.min(progressPercent, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                  {isOverBudget && (
-                    <p className="text-sm text-red-600 font-medium">
-                      ⚠️ Over budget by {(totalClockInHours - totalLaborHours).toFixed(1)} hours
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </TabsContent>
 
@@ -1076,13 +898,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </Button>
             </div>
 
-            {/* Proposal Sections */}
-            <div className="space-y-3">
-              {/* Building Materials Section with Project Total beside it */}
-              {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                <div className="flex gap-6 items-start">
-                  {/* Materials Column */}
-                  <div className="flex-1 space-y-3">
+            {/* Proposal Layout: Content on left, Project Total on right */}
+            <div className="flex gap-6 items-start">
+              {/* All Rows Column - Same Width */}
+              <div className="flex-1 space-y-3">
+                {/* Building Materials Sections */}
+                {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                  <div className="space-y-3">
                     {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
                 const sheetCost = sheet.totalPrice;
                 const sheetPrice = sheetCost * (1 + markup / 100);
@@ -1151,58 +973,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     );
                   })}
                   </div>
+                )}
 
-                  {/* Project Total Box */}
-                  <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg sticky top-4" style={{ minWidth: '400px', maxWidth: '450px' }}>
-                    <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
-                      <h3 className="text-xl font-bold flex items-center gap-2">
-                        <DollarSign className="w-6 h-6 text-amber-400" />
-                        Project Total
-                      </h3>
-                    </div>
-                    <div className="p-6 space-y-4">
-                      {/* Breakdown */}
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between py-2 border-b border-slate-200">
-                          <span className="font-semibold text-slate-700">Materials</span>
-                          <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        {subcontractorEstimates.length > 0 && (
-                          <div className="flex justify-between py-2 border-b border-slate-200">
-                            <span className="font-semibold text-slate-700">Subcontractors</span>
-                            <span className="font-bold text-slate-900">${proposalSubcontractorPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {customRows.length > 0 && (
-                          <div className="flex justify-between py-2 border-b border-slate-200">
-                            <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
-                            <span className="font-bold text-slate-900">${(proposalAdditionalPrice + proposalLaborPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Totals */}
-                      <div className="space-y-3 pt-4 border-t-2 border-slate-200">
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-600">Subtotal</span>
-                          <span className="font-semibold text-lg text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-600">Sales Tax (7%)</span>
-                          <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
-                          <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
-                          <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* All Rows (labor, materials, subs, etc.) - sorted by order_index - DRAG AND DROP */}
-              {sortedCustomRows.map((row, rowIndex) => {
+                {/* All Custom Rows (labor, materials, subs, etc.) - sorted by order_index - DRAG AND DROP */}
+                {sortedCustomRows.map((row, rowIndex) => {
                 const rowCost = row.selling_price;
                 const rowPrice = rowCost * (1 + markup / 100);
 
@@ -1281,20 +1055,66 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 );
               })}
 
-              {/* Subcontractor Estimates */}
-              <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
-                <div className="bg-purple-50 p-3 border-b">
-                  <div className="flex items-center gap-3">
-                    <Briefcase className="w-5 h-5 text-purple-700" />
-                    <h3 className="text-lg font-bold text-purple-900">Subcontractors</h3>
+                {/* Subcontractor Estimates */}
+                <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                  <div className="bg-purple-50 p-3 border-b">
+                    <div className="flex items-center gap-3">
+                      <Briefcase className="w-5 h-5 text-purple-700" />
+                      <h3 className="text-lg font-bold text-purple-900">Subcontractors</h3>
+                    </div>
                   </div>
-                </div>
-                <div className="p-4">
-                  <SubcontractorEstimatesManagement jobId={job.id} />
+                  <div className="p-4">
+                    <SubcontractorEstimatesManagement jobId={job.id} />
+                  </div>
                 </div>
               </div>
 
+              {/* Project Total Box - Sticky on Right Side */}
+              <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg sticky top-4" style={{ minWidth: '400px', maxWidth: '450px' }}>
+                <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <DollarSign className="w-6 h-6 text-amber-400" />
+                    Project Total
+                  </h3>
+                </div>
+                <div className="p-6 space-y-4">
+                  {/* Breakdown */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between py-2 border-b border-slate-200">
+                      <span className="font-semibold text-slate-700">Materials</span>
+                      <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    {subcontractorEstimates.length > 0 && (
+                      <div className="flex justify-between py-2 border-b border-slate-200">
+                        <span className="font-semibold text-slate-700">Subcontractors</span>
+                        <span className="font-bold text-slate-900">${proposalSubcontractorPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {customRows.length > 0 && (
+                      <div className="flex justify-between py-2 border-b border-slate-200">
+                        <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
+                        <span className="font-bold text-slate-900">${(proposalAdditionalPrice + proposalLaborPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                  </div>
 
+                  {/* Totals */}
+                  <div className="space-y-3 pt-4 border-t-2 border-slate-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Subtotal</span>
+                      <span className="font-semibold text-lg text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Sales Tax (7%)</span>
+                      <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
+                      <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
+                      <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </TabsContent>
