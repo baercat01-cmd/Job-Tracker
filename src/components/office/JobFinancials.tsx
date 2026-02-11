@@ -40,6 +40,7 @@ interface CustomFinancialRow {
   selling_price: number;
   notes: string | null;
   order_index: number;
+  taxable: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -98,6 +99,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [markupPercent, setMarkupPercent] = useState('0');
   const [notes, setNotes] = useState('');
   const [insertAfterIndex, setInsertAfterIndex] = useState<number | null>(null);
+  const [insertAfterMaterial, setInsertAfterMaterial] = useState<{ sheetIndex: number; categoryIndex: number } | null>(null);
+  const [taxable, setTaxable] = useState(true);
 
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
@@ -334,7 +337,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function openAddDialog(row?: CustomFinancialRow, insertAfter?: number) {
+  function openAddDialog(
+    row?: CustomFinancialRow,
+    insertAfter?: number,
+    insertAfterMaterialCategory?: { sheetIndex: number; categoryIndex: number }
+  ) {
     if (row) {
       setEditingRow(row);
       setCategory(row.category);
@@ -343,22 +350,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setUnitCost(row.unit_cost.toString());
       setMarkupPercent(row.markup_percent.toString());
       setNotes(row.notes || '');
+      setTaxable(row.taxable !== undefined ? row.taxable : true);
       setInsertAfterIndex(null);
+      setInsertAfterMaterial(null);
     } else {
       resetForm();
       setInsertAfterIndex(insertAfter !== undefined ? insertAfter : null);
+      setInsertAfterMaterial(insertAfterMaterialCategory || null);
     }
-    setShowAddDialog(true);
-  }
-
-  function openLaborDialog(insertAfter?: number) {
-    resetForm();
-    setCategory('labor');
-    setDescription('Labor & Installation');
-    setQuantity('1');
-    setUnitCost('60');
-    setMarkupPercent('0');
-    setInsertAfterIndex(insertAfter !== undefined ? insertAfter : null);
     setShowAddDialog(true);
   }
 
@@ -370,7 +369,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setUnitCost('60');
     setMarkupPercent('0');
     setNotes('');
+    setTaxable(true);
     setInsertAfterIndex(null);
+    setInsertAfterMaterial(null);
   }
 
   async function saveCustomRow() {
@@ -378,18 +379,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.error('Please fill in description and ' + (category === 'labor' ? 'hourly rate' : 'unit cost'));
       return;
     }
-
-    console.log('Starting saveCustomRow:', {
-      category,
-      description,
-      quantity,
-      unitCost,
-      markupPercent,
-      notes,
-      jobId: job.id,
-      editingRow: editingRow?.id,
-      insertAfterIndex
-    });
 
     const qty = parseFloat(quantity) || 1;
     const cost = parseFloat(unitCost) || 0;
@@ -400,23 +389,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     let targetOrderIndex: number;
 
     if (editingRow) {
-      // Keep existing order_index when editing
       targetOrderIndex = editingRow.order_index;
+    } else if (insertAfterMaterial !== null) {
+      // Insert after a material category - use a negative index
+      targetOrderIndex = -1000 * (insertAfterMaterial.sheetIndex + 1) - (insertAfterMaterial.categoryIndex + 1);
     } else if (insertAfterIndex !== null) {
-      // Insert between rows
       const sortedRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
       const insertAfterRow = sortedRows[insertAfterIndex];
       const nextRow = sortedRows[insertAfterIndex + 1];
       
       if (nextRow) {
-        // Insert between two rows - use midpoint
         targetOrderIndex = (insertAfterRow.order_index + nextRow.order_index) / 2;
       } else {
-        // Insert after last row
         targetOrderIndex = insertAfterRow.order_index + 1;
       }
     } else {
-      // Add at the end
       const maxOrderIndex = customRows.length > 0 
         ? Math.max(...customRows.map(r => r.order_index))
         : -1;
@@ -433,58 +420,35 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       markup_percent: markup,
       selling_price: sellingPrice,
       notes: notes || null,
+      taxable: taxable,
       order_index: targetOrderIndex,
     };
 
-    console.log('Prepared rowData:', rowData);
-
     try {
       if (editingRow) {
-        console.log('Updating existing row:', editingRow.id);
         const { data, error } = await supabase
           .from('custom_financial_rows')
           .update(rowData)
           .eq('id', editingRow.id)
           .select();
 
-        if (error) {
-          console.error('Update error:', error);
-          throw error;
-        }
-        console.log('Update successful:', data);
+        if (error) throw error;
         toast.success('Row updated');
       } else {
-        console.log('Inserting new row');
         const { data, error } = await supabase
           .from('custom_financial_rows')
           .insert([rowData])
           .select();
 
-        if (error) {
-          console.error('Insert error details:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          });
-          throw error;
-        }
-        console.log('Insert successful:', data);
+        if (error) throw error;
         toast.success(category === 'labor' ? 'Labor row added' : 'Row added');
       }
 
       setShowAddDialog(false);
       resetForm();
-      console.log('Reloading custom rows...');
       await loadCustomRows();
-      console.log('Reload complete');
     } catch (error: any) {
-      console.error('Error saving row:', {
-        error,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
+      console.error('Error saving row:', error);
       toast.error(`Failed to save row: ${error.message || 'Unknown error'}`);
     }
   }
@@ -608,28 +572,39 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // Proposal calculations with markup and tax
   const markup = parseFloat(proposalMarkup) || 0;
-  const TAX_RATE = 0.07; // 7% tax on final total only
+  const TAX_RATE = 0.07; // 7% tax
   
-  // Materials: cost = original price, price = original price + markup
+  // Materials: cost = original price, price = original price + markup (always taxable)
   const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
   const proposalMaterialsPrice = proposalMaterialsCost * (1 + markup / 100);
   
-  // Additional costs with markup (no tax yet)
-  const proposalAdditionalCost = grandTotalPrice;
-  const proposalAdditionalPrice = proposalAdditionalCost * (1 + markup / 100);
+  // Separate custom rows into taxable and non-taxable
+  const taxableRows = customRows.filter(r => r.taxable);
+  const nonTaxableRows = customRows.filter(r => !r.taxable);
+  
+  const taxableAdditionalCost = taxableRows.reduce((sum, r) => sum + r.selling_price, 0);
+  const taxableAdditionalPrice = taxableAdditionalCost * (1 + markup / 100);
+  
+  const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => sum + r.selling_price, 0);
+  const nonTaxableAdditionalPrice = nonTaxableAdditionalCost * (1 + markup / 100);
   
   // Labor (no markup, no tax)
   const proposalLaborCost = laborPrice;
   const proposalLaborPrice = laborPrice;
   
-  // Subtotal before tax
-  const proposalSubtotal = proposalMaterialsPrice + proposalAdditionalPrice + proposalLaborPrice;
+  // Calculate subtotals
+  const taxableSubtotal = proposalMaterialsPrice + taxableAdditionalPrice;
+  const nonTaxableSubtotal = nonTaxableAdditionalPrice + proposalLaborPrice;
   
-  // Tax calculated only on the final subtotal
-  const proposalTotalTax = proposalSubtotal * TAX_RATE;
+  // Tax calculated only on taxable items
+  const proposalTotalTax = taxableSubtotal * TAX_RATE;
   
-  // Grand total with tax
+  // Grand total
+  const proposalSubtotal = taxableSubtotal + nonTaxableSubtotal;
   const proposalGrandTotal = proposalSubtotal + proposalTotalTax;
+  
+  const proposalAdditionalCost = taxableAdditionalCost + nonTaxableAdditionalCost;
+  const proposalAdditionalPrice = taxableAdditionalPrice + nonTaxableAdditionalPrice;
   
   const proposalTotalCost = proposalMaterialsCost + proposalAdditionalCost + proposalLaborCost;
   const proposalProfit = proposalGrandTotal - proposalTotalCost;
@@ -935,15 +910,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
             </div>
 
-            {/* Add Row Controls */}
+            {/* Add Row Control */}
             <div className="flex gap-2 mb-4">
-              <Button onClick={() => openLaborDialog()} variant="outline" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Labor Row
-              </Button>
               <Button onClick={() => openAddDialog()} variant="outline" size="sm">
                 <Plus className="w-4 h-4 mr-2" />
-                Add Other Cost
+                Add Row
               </Button>
             </div>
 
@@ -989,14 +960,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             const catPrice = catCost * (1 + markup / 100);
 
                             return (
-                              <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200 last:border-0">
-                                <div className="flex-1">
-                                  <p className="font-semibold text-slate-900">{category.name}</p>
-                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                              <div key={catIndex}>
+                                <div className="flex items-start justify-between py-2 border-b border-slate-200">
+                                  <div className="flex-1">
+                                    <p className="font-semibold text-slate-900">{category.name}</p>
+                                    <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
                                 </div>
-                                <div className="text-right">
-                                  <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                
+                                {/* Insert Row Button */}
+                                <div className="flex justify-center py-1">
+                                  <Button
+                                    onClick={() => openAddDialog(undefined, undefined, { sheetIndex: idx, categoryIndex: catIndex })}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs text-muted-foreground hover:text-primary"
+                                  >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Add Row Here
+                                  </Button>
                                 </div>
                               </div>
                             );
@@ -1076,6 +1062,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   {row.markup_percent.toFixed(1)}% markup
                                 </Badge>
                               )}
+                              {!row.taxable && (
+                                <Badge variant="outline" className="bg-slate-100 text-slate-800">
+                                  No Tax
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
                               {row.notes || '(No description provided)'}
@@ -1108,16 +1099,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       </div>
                     </div>
 
-                    {/* Insert Labor Row Button */}
+                    {/* Insert Row Button */}
                     <div className="flex justify-center my-2">
                       <Button
-                        onClick={() => openLaborDialog(rowIndex)}
+                        onClick={() => openAddDialog(undefined, rowIndex)}
                         variant="ghost"
                         size="sm"
                         className="text-xs text-muted-foreground hover:text-primary"
                       >
                         <Plus className="w-3 h-3 mr-1" />
-                        Insert Labor Here
+                        Add Row Here
                       </Button>
                     </div>
                   </div>
@@ -1147,7 +1138,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingRow ? 'Edit' : 'Add'} {category === 'labor' ? 'Labor Row' : 'Financial Row'}</DialogTitle>
+            <DialogTitle>{editingRow ? 'Edit' : 'Add'} Financial Row</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1212,19 +1203,40 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </p>
             </div>
 
-            <div>
-              <Label>Markup (%) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.1"
-                value={markupPercent}
-                onChange={(e) => setMarkupPercent(e.target.value)}
-                placeholder="0"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Individual markup for this row only
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Markup (%) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={markupPercent}
+                  onChange={(e) => setMarkupPercent(e.target.value)}
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Individual markup for this row
+                </p>
+              </div>
+              
+              <div>
+                <Label>Tax Settings</Label>
+                <div className="flex items-center space-x-2 h-10">
+                  <input
+                    type="checkbox"
+                    id="taxable"
+                    checked={taxable}
+                    onChange={(e) => setTaxable(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <label htmlFor="taxable" className="text-sm font-medium cursor-pointer">
+                    Subject to tax
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {taxable ? '7% tax will be applied' : 'No tax applied'}
+                </p>
+              </div>
             </div>
 
             {/* Preview */}
