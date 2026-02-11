@@ -18,12 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import type { Job } from '@/types';
 
 interface CustomFinancialRow {
@@ -1214,6 +1215,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Subcontractor Documents Section */}
+                <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
+                  <CardHeader className="bg-gradient-to-r from-emerald-800 to-emerald-900 border-b-2 border-emerald-700">
+                    <CardTitle className="flex items-center gap-2 text-yellow-500">
+                      <Briefcase className="w-5 h-5" />
+                      Subcontractor Estimates & Invoices
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <SubcontractorEstimatesManagement jobId={job.id} />
+                  </CardContent>
+                </Card>
 
                 {/* Labor Section */}
                 <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
