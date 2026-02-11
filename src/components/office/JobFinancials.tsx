@@ -1121,9 +1121,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
-                              {row.notes || '(No description provided)'}
-                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -1273,19 +1270,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   placeholder="60.00"
                 />
               </div>
-            </div>
-
-            <div>
-              <Label>Custom Description</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g., All electrical wiring and fixtures for garage and apartment"
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                This description will appear under the title in the proposal
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
