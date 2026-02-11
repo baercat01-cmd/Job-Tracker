@@ -495,6 +495,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  // Filter labor rows and calculate total labor hours
+  const laborRows = customRows.filter(r => r.category === 'labor');
+  const totalLaborHours = laborRows.reduce((sum, r) => sum + r.quantity, 0);
+  
   // Calculate totals
   const groupedRows = customRows.reduce((acc, row) => {
     if (!acc[row.category]) {
@@ -513,11 +517,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const grandTotalCost = categoryTotals.reduce((sum, ct) => sum + ct.totalCost, 0);
   const grandTotalPrice = categoryTotals.reduce((sum, ct) => sum + ct.totalPrice, 0);
 
-  // Labor calculations (no markup) - use ESTIMATED hours for pricing
+  // Labor calculations (no markup) - use TOTAL LABOR HOURS from labor rows for pricing
   const laborRate = parseFloat(hourlyRate) || 60;
   const billableRate = laborRate;
-  const laborCost = estimatedHours * laborRate;
-  const laborPrice = estimatedHours * billableRate;
+  const laborCost = totalLaborHours * laborRate;
+  const laborPrice = totalLaborHours * billableRate;
   const laborProfit = 0;
 
   // Overall totals (including materials)
@@ -556,11 +560,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalProfit = proposalGrandTotal - proposalTotalCost;
   const proposalMargin = proposalGrandTotal > 0 ? (proposalProfit / proposalGrandTotal) * 100 : 0;
 
-  // Progress calculations
-  const progressPercent = estimatedHours > 0 ? Math.min((totalClockInHours / estimatedHours) * 100, 100) : 0;
-  const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
+  // Progress calculations - use total labor hours from labor rows
+  const progressPercent = totalLaborHours > 0 ? Math.min((totalClockInHours / totalLaborHours) * 100, 100) : 0;
+  const isOverBudget = totalClockInHours > totalLaborHours && totalLaborHours > 0;
 
   const categoryLabels: Record<string, string> = {
+    labor: 'Labor',
     subcontractor: 'Subcontractors',
     materials: 'Additional Materials',
     equipment: 'Equipment',
@@ -568,6 +573,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   };
 
   const categoryDescriptions: Record<string, string> = {
+    labor: 'Labor hours and installation work for this project',
     subcontractor: 'Third-party contractors and specialized services for this project',
     materials: 'Additional materials not included in the main material workbook',
     equipment: 'Rental equipment, tools, and machinery costs',
@@ -937,8 +943,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     {/* Hours Progress */}
                     <div className="space-y-3">
                       <div className="p-3 bg-primary/5 rounded-lg border">
-                        <div className="text-2xl font-bold text-primary text-center">{estimatedHours.toFixed(2)}</div>
-                        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Estimated Hours</p>
+                        <div className="text-2xl font-bold text-primary text-center">{totalLaborHours.toFixed(2)}</div>
+                        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Total Labor Hours</p>
                       </div>
                       <div className="p-3 bg-muted/50 rounded-lg border">
                         <div className="text-2xl font-bold text-center">{totalClockInHours.toFixed(2)}</div>
@@ -952,7 +958,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         <div className={`text-2xl font-bold text-center ${
                           isOverBudget ? 'text-destructive' : 'text-success'
                         }`}>
-                          {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
+                          {isOverBudget ? '+' : ''}{(totalClockInHours - totalLaborHours).toFixed(2)}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">
                           {isOverBudget ? 'Over Budget' : 'Remaining'}
@@ -965,12 +971,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       <div className="text-center">
                         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Labor Cost</p>
                         <p className="text-xl font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
+                        <p className="text-xs text-muted-foreground">{totalLaborHours.toFixed(2)} labor hrs × ${laborRate.toFixed(2)}/hr</p>
                       </div>
                       <div className="text-center border-t pt-3">
                         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Labor Billing</p>
                         <p className="text-xl font-bold text-blue-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
+                        <p className="text-xs text-muted-foreground">{totalLaborHours.toFixed(2)} labor hrs × ${laborRate.toFixed(2)}/hr</p>
                       </div>
                     </div>
                   </CardContent>
@@ -1248,7 +1254,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         <div className="flex-1">
                           <p className="font-semibold text-slate-900">Labor & Installation</p>
                           <p className="text-sm text-slate-600">
-                            {estimatedHours.toFixed(2)} estimated hours × ${laborRate.toFixed(2)}/hr
+                            {totalLaborHours.toFixed(2)} hours × ${laborRate.toFixed(2)}/hr
                           </p>
                           <p className="text-xs text-slate-500 mt-1">
                             Clock-in hours: {totalClockInHours.toFixed(2)} {isOverBudget && <span className="text-red-600 font-semibold">(Over budget)</span>}
@@ -1357,6 +1363,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="labor">Labor</SelectItem>
                   <SelectItem value="subcontractor">Subcontractor</SelectItem>
                   <SelectItem value="materials">Additional Materials</SelectItem>
                   <SelectItem value="equipment">Equipment</SelectItem>
@@ -1376,7 +1383,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Quantity</Label>
+                <Label>{category === 'labor' ? 'Hours' : 'Quantity'}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -1386,7 +1393,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 />
               </div>
               <div>
-                <Label>Unit Cost ($) *</Label>
+                <Label>{category === 'labor' ? 'Rate ($/hr)' : 'Unit Cost ($)'} *</Label>
                 <Input
                   type="number"
                   min="0"
