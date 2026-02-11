@@ -34,6 +34,8 @@ import {
   ChevronRight,
   Package,
   Users,
+  Percent,
+  Edit,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,6 +52,7 @@ interface SubcontractorEstimate {
   contact_email: string | null;
   contact_phone: string | null;
   total_amount: number | null;
+  markup_percent: number;
   scope_of_work: string | null;
   notes: string | null;
   exclusions: string | null;
@@ -107,10 +110,13 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showInvoiceUploadDialog, setShowInvoiceUploadDialog] = useState(false);
   const [showVarianceDialog, setShowVarianceDialog] = useState(false);
+  const [showMarkupDialog, setShowMarkupDialog] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<SubcontractorEstimate | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<SubcontractorInvoice | null>(null);
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'estimates' | 'invoices'>('estimates');
+  const [editingMarkup, setEditingMarkup] = useState<SubcontractorEstimate | null>(null);
+  const [markupValue, setMarkupValue] = useState('0');
 
   // Upload form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -324,6 +330,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
           file_name: selectedFile.name,
           extraction_status: 'pending',
           uploaded_by: profile?.id || null,
+          markup_percent: 0,
         })
         .select()
         .single();
@@ -525,6 +532,36 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
     setShowVarianceDialog(true);
   }
 
+  function openMarkupDialog(estimate: SubcontractorEstimate) {
+    setEditingMarkup(estimate);
+    setMarkupValue((estimate.markup_percent || 0).toString());
+    setShowMarkupDialog(true);
+  }
+
+  async function saveMarkup() {
+    if (!editingMarkup) return;
+
+    const markup = parseFloat(markupValue) || 0;
+
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ markup_percent: markup })
+        .eq('id', editingMarkup.id);
+
+      if (error) throw error;
+
+      toast.success('Markup updated');
+      setShowMarkupDialog(false);
+      setEditingMarkup(null);
+      setMarkupValue('0');
+      loadEstimates();
+    } catch (error: any) {
+      console.error('Error saving markup:', error);
+      toast.error('Failed to save markup');
+    }
+  }
+
   function toggleDetails(id: string) {
     setExpandedDetails(prev => {
       const newSet = new Set(prev);
@@ -645,6 +682,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
             estimates.map((estimate) => {
               const isExpanded = expandedDetails.has(estimate.id);
               const { materials, labor } = categorizeLineItems(estimate.line_items || []);
+              const baseAmount = estimate.total_amount || 0;
+              const markup = estimate.markup_percent || 0;
+              const markedUpAmount = baseAmount * (1 + markup / 100);
 
               return (
                 <Card key={estimate.id} className="border hover:border-primary/50 transition-colors">
@@ -661,7 +701,15 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                       )}
                       {getStatusIcon(estimate.extraction_status)}
                       <div>
-                        <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name}</h3>
+                          {markup > 0 && (
+                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                              <Percent className="w-3 h-3 mr-1" />
+                              {markup.toFixed(1)}% markup
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {new Date(estimate.uploaded_at).toLocaleDateString()}
                         </p>
@@ -670,10 +718,26 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
+                        {markup > 0 && (
+                          <p className="text-xs text-slate-600 mb-1">
+                            Base: ${baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </p>
+                        )}
                         <p className="text-2xl font-bold text-primary">
-                          ${(estimate.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ${markedUpAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openMarkupDialog(estimate);
+                        }}
+                        title="Edit markup"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -795,6 +859,14 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                           <Eye className="w-4 h-4 mr-2" />
                           View PDF
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openMarkupDialog(estimate)}
+                        >
+                          <Percent className="w-4 h-4 mr-2" />
+                          Edit Markup
+                        </Button>
                         {invoices.some(inv => inv.estimate_id === estimate.id) && (
                           <Button
                             size="sm"
@@ -815,7 +887,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </div>
       )}
 
-      {/* Invoices Tab */}
+      {/* Invoices Tab - unchanged, keeping original code */}
       {activeTab === 'invoices' && (
         <div className="space-y-2">
           {invoices.length === 0 ? (
@@ -998,7 +1070,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </div>
       )}
 
-      {/* Upload Estimate Dialog */}
+      {/* Upload Estimate Dialog - keeping original */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1091,7 +1163,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </DialogContent>
       </Dialog>
 
-      {/* Upload Invoice Dialog */}
+      {/* Upload Invoice Dialog - keeping original code */}
       <Dialog open={showInvoiceUploadDialog} onOpenChange={setShowInvoiceUploadDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1201,7 +1273,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </DialogContent>
       </Dialog>
 
-      {/* Variance Comparison Dialog */}
+      {/* Variance Comparison Dialog - keeping original */}
       {selectedEstimate && (
         <Dialog open={showVarianceDialog} onOpenChange={setShowVarianceDialog}>
           <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -1332,6 +1404,64 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Edit Markup Dialog */}
+      <Dialog open={showMarkupDialog} onOpenChange={setShowMarkupDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Markup Percentage</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Estimate</Label>
+              <p className="text-sm font-semibold">{editingMarkup?.company_name || editingMarkup?.file_name}</p>
+            </div>
+
+            <div>
+              <Label>Base Amount</Label>
+              <p className="text-2xl font-bold text-slate-900">
+                ${(editingMarkup?.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="markup">Markup Percentage (%)</Label>
+              <Input
+                id="markup"
+                type="number"
+                min="0"
+                step="0.1"
+                value={markupValue}
+                onChange={(e) => setMarkupValue(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            {/* Preview */}
+            {editingMarkup && markupValue && (
+              <div className="bg-green-50 p-4 rounded-lg border-2 border-green-200">
+                <p className="text-sm text-muted-foreground mb-1">Marked-up Price:</p>
+                <p className="text-3xl font-bold text-green-700">
+                  ${((editingMarkup.total_amount || 0) * (1 + (parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Profit: ${((editingMarkup.total_amount || 0) * ((parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={saveMarkup} className="flex-1">
+                <Percent className="w-4 h-4 mr-2" />
+                Save Markup
+              </Button>
+              <Button variant="outline" onClick={() => setShowMarkupDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
