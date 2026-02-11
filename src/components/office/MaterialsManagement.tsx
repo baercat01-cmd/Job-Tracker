@@ -33,6 +33,7 @@ import {
   MoveHorizontal,
   Percent,
   Image as ImageIcon,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -41,6 +42,7 @@ import { CrewMaterialProcessing } from './CrewMaterialProcessing';
 import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { MaterialItemPhotos } from './MaterialItemPhotos';
 import { PhotoRecoveryTool } from './PhotoRecoveryTool';
+import { MaterialPackages } from './MaterialPackages';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -96,7 +98,7 @@ interface CategoryGroup {
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'extras' | 'crew-orders' | 'upload' | 'photo-recovery'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'packages' | 'extras' | 'crew-orders' | 'upload' | 'photo-recovery'>('manage');
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -469,10 +471,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
+          <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
               <span className="text-xs sm:text-base">Workbook</span>
+            </TabsTrigger>
+            <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
+              <Package className="w-5 h-5" />
+              <span className="text-xs sm:text-base">Packages</span>
             </TabsTrigger>
             <TabsTrigger value="extras" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <DollarSign className="w-5 h-5" />
@@ -816,6 +822,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               </Card>
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="packages" className="space-y-2">
+          <MaterialPackages jobId={job.id} userId={userId} />
         </TabsContent>
 
         <TabsContent value="extras" className="space-y-2">
