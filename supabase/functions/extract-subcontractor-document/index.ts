@@ -68,20 +68,16 @@ Deno.serve(async (req) => {
               {
                 type: 'text',
                 text: documentType === 'estimate' 
-                  ? `Analyze this ENTIRE multi-page subcontractor estimate/quote PDF document. Process ALL pages and extract every piece of information.
-
-IMPORTANT: This document may have multiple pages. You MUST read and extract data from EVERY page, not just the first page.
-
-Return a JSON object with:
+                  ? `Extract all information from this subcontractor estimate/quote PDF. Return a JSON object with:
 {
   "company_name": "Company name",
   "contact_name": "Contact person",
-  "contact_email": "Email address",
+  "contact_email": "Email",
   "contact_phone": "Phone number",
   "total_amount": 12345.67,
-  "scope_of_work": "Detailed description of all work to be performed (combine info from all pages)",
-  "notes": "Any additional notes, terms, or conditions (from all pages)",
-  "exclusions": "What's not included (from all pages)",
+  "scope_of_work": "Brief description of work",
+  "notes": "Any additional notes",
+  "exclusions": "What's not included",
   "line_items": [
     {
       "description": "Item description",
@@ -93,15 +89,11 @@ Return a JSON object with:
   ]
 }
 
-Extract EVERY line item from EVERY page with their descriptions, quantities, unit prices, and totals. If quantity or unit price is not specified, leave as null but ensure total_price is captured. Combine all line items from all pages into a single array. Return ONLY the JSON object, no other text.`
-                  : `Analyze this ENTIRE multi-page subcontractor invoice PDF document. Process ALL pages and extract every piece of information.
-
-IMPORTANT: This document may have multiple pages. You MUST read and extract data from EVERY page, not just the first page.
-
-Return a JSON object with:
+Extract all line items with their descriptions, quantities, unit prices, and totals. If quantity or unit price is not specified, leave as null but ensure total_price is captured. Return ONLY the JSON object, no other text.`
+                  : `Extract all information from this subcontractor invoice PDF. Return a JSON object with:
 {
   "company_name": "Company name",
-  "invoice_number": "Invoice number",
+  "invoice_number": "Invoice #",
   "invoice_date": "YYYY-MM-DD",
   "total_amount": 12345.67,
   "line_items": [
@@ -115,7 +107,7 @@ Return a JSON object with:
   ]
 }
 
-Extract EVERY line item from EVERY page. Combine all line items from all pages into a single array. Return ONLY the JSON object, no other text.`
+Extract all line items. Return ONLY the JSON object, no other text.`
               },
               {
                 type: 'image_url',
@@ -126,7 +118,7 @@ Extract EVERY line item from EVERY page. Combine all line items from all pages i
             ],
           },
         ],
-        max_tokens: 16000,
+        max_tokens: 4096,
         temperature: 0,
       }),
     });
