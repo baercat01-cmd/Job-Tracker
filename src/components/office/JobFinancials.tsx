@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useVisibilityPolling } from '@/hooks/usePolling';
+import { AutoRefreshIndicator } from '@/components/ui/auto-refresh-indicator';
 import {
   Dialog,
   DialogContent,
@@ -118,6 +120,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
   const [categoryFiles, setCategoryFiles] = useState<Record<string, string[]>>({});
   const [materialFiles, setMaterialFiles] = useState<Record<string, string[]>>({});
+
+  // Use polling for auto-refresh
+  const { lastUpdated, refresh } = useVisibilityPolling(
+    async () => {
+      await loadData();
+      return null;
+    },
+    {
+      interval: 5000, // 5 seconds
+      enabled: true,
+    }
+  );
 
   useEffect(() => {
     loadData();
@@ -1010,12 +1024,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
             {/* Header */}
-            <div className="mb-6 bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center gap-3">
-              <Calculator className="w-6 h-6 text-slate-700" />
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
-                <p className="text-sm text-slate-600">{job.name}</p>
+            <div className="mb-6 bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Calculator className="w-6 h-6 text-slate-700" />
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
+                  <p className="text-sm text-slate-600">{job.name}</p>
+                </div>
               </div>
+              <AutoRefreshIndicator lastUpdated={lastUpdated} />
             </div>
 
             {/* Add Row Control */}
