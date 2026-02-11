@@ -150,10 +150,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading packages with pull_from_shop or ready_for_job status...');
+      console.log('🔍 Loading packages with materials that need shop processing...');
       
-      // Get packages that are either pull_from_shop or ready_for_job
-      // Database statuses: picked_up (pull_from_shop), delivered (ready_for_job)
+      // Get ALL packages that contain materials with pull_from_shop or ready_for_job status
       const { data, error } = await supabase
         .from('material_bundles')
         .select(`
@@ -184,7 +183,6 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             )
           )
         `)
-        .in('status', ['picked_up', 'delivered'])
         .order('name');
 
       if (error) {
@@ -192,7 +190,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         throw error;
       }
 
-      console.log(`✅ Found ${data?.length || 0} packages for shop`);
+      console.log(`📦 Found ${data?.length || 0} total packages`);
       
       // Transform Supabase response to match our interface
       const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => ({
@@ -207,7 +205,17 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         })),
       }));
       
-      setPackages(transformedPackages);
+      // Filter to only include packages that have materials with pull_from_shop or ready_for_job status
+      const packagesWithShopMaterials = transformedPackages.filter(pkg => 
+        pkg.bundle_items.some(item => 
+          item.material_items.status === 'pull_from_shop' || 
+          item.material_items.status === 'ready_for_job'
+        )
+      );
+      
+      console.log(`✅ Found ${packagesWithShopMaterials.length} packages with shop materials`);
+      
+      setPackages(packagesWithShopMaterials);
     } catch (error: any) {
       console.error('Error loading packages:', error);
       toast.error('Failed to load packages');
@@ -337,9 +345,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     return matchesSearch && matchesJob;
   });
 
-  // Group packages by status
-  const pullFromShopPackages = filteredPackages.filter(pkg => pkg.status === 'picked_up');
-  const readyForJobPackages = filteredPackages.filter(pkg => pkg.status === 'delivered');
+  // Group packages by whether they have any pull_from_shop materials or are fully ready
+  const pullFromShopPackages = filteredPackages.filter(pkg => 
+    pkg.bundle_items.some(item => item.material_items.status === 'pull_from_shop')
+  );
+  const readyForJobPackages = filteredPackages.filter(pkg => 
+    pkg.bundle_items.every(item => item.material_items.status === 'ready_for_job')
+  );
 
   if (loading) {
     return (
@@ -752,7 +764,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                 : 'No packages to process'}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Packages with "Pull from Shop" or "Ready for Job" status will appear here
+              Packages with materials that have "Pull from Shop" or "Ready for Job" status will appear here
             </p>
           </CardContent>
         </Card>
