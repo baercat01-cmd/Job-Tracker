@@ -81,7 +81,7 @@ export function PhotoRecoveryTool({ jobId }: PhotoRecoveryToolProps) {
         if (!materialExists) {
           orphaned.push({
             ...photo,
-            uploaded_by_name: photo.user_profiles?.username || null,
+            uploaded_by_name: (photo.user_profiles as any)?.username || null,
           });
         }
       }
