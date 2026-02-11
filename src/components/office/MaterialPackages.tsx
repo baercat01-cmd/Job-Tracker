@@ -257,6 +257,14 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
     setSaving(true);
 
     try {
+      console.log('Creating package with data:', {
+        job_id: jobId,
+        name: packageName.trim(),
+        description: packageDescription.trim() || null,
+        status: 'not_ordered',
+        created_by: userId,
+      });
+
       // Create bundle first without materials (materials are optional)
       const { data: bundleData, error: bundleError } = await supabase
         .from('material_bundles')
@@ -265,12 +273,17 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           name: packageName.trim(),
           description: packageDescription.trim() || null,
           status: 'not_ordered',
-          created_by: userId,
+          created_by: userId || null,
         })
         .select()
         .single();
 
-      if (bundleError) throw bundleError;
+      if (bundleError) {
+        console.error('Error creating bundle:', bundleError);
+        throw bundleError;
+      }
+
+      console.log('Package created successfully:', bundleData);
 
       // Add materials to bundle if any selected
       if (selectedMaterialIds.size > 0) {
@@ -283,7 +296,12 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           .from('material_bundle_items')
           .insert(bundleItems);
 
-        if (itemsError) throw itemsError;
+        if (itemsError) {
+          console.error('Error adding materials to bundle:', itemsError);
+          throw itemsError;
+        }
+
+        console.log('Materials added to package successfully');
       }
 
       toast.success('Package created');
@@ -291,7 +309,7 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
       loadPackages();
     } catch (error: any) {
       console.error('Error creating package:', error);
-      toast.error('Failed to create package');
+      toast.error(`Failed to create package: ${error.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
