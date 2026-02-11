@@ -112,6 +112,10 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSubcontractor, setSelectedSubcontractor] = useState('');
   const [selectedEstimateForInvoice, setSelectedEstimateForInvoice] = useState('');
+  
+  // Drag and drop state
+  const [isDraggingEstimate, setIsDraggingEstimate] = useState(false);
+  const [isDraggingInvoice, setIsDraggingInvoice] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -210,6 +214,50 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       setInvoices(data || []);
     } catch (error: any) {
       console.error('Error loading invoices:', error);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent, type: 'estimate' | 'invoice') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'estimate') {
+      setIsDraggingEstimate(true);
+    } else {
+      setIsDraggingInvoice(true);
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent, type: 'estimate' | 'invoice') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'estimate') {
+      setIsDraggingEstimate(false);
+    } else {
+      setIsDraggingInvoice(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, type: 'estimate' | 'invoice') {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (type === 'estimate') {
+      setIsDraggingEstimate(false);
+    } else {
+      setIsDraggingInvoice(false);
+    }
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      
+      // Check if it's a PDF
+      if (file.type === 'application/pdf') {
+        setSelectedFile(file);
+        toast.success(`${file.name} ready to upload`);
+      } else {
+        toast.error('Please upload a PDF file');
+      }
     }
   }
 
@@ -773,18 +821,49 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
             <DialogTitle>Upload Subcontractor Estimate</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="estimate-file">PDF File *</Label>
-              <Input
+            {/* Drag and Drop Zone */}
+            <div
+              onDragOver={(e) => handleDragOver(e, 'estimate')}
+              onDragLeave={(e) => handleDragLeave(e, 'estimate')}
+              onDrop={(e) => handleDrop(e, 'estimate')}
+              onClick={() => document.getElementById('estimate-file')?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                isDraggingEstimate
+                  ? 'border-primary bg-primary/5 scale-[1.02]'
+                  : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
+              }`}
+            >
+              <Upload className={`w-12 h-12 mx-auto mb-4 ${
+                isDraggingEstimate ? 'text-primary animate-bounce' : 'text-muted-foreground'
+              }`} />
+              {selectedFile ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-primary">{selectedFile.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Click to change or drag a different file
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">
+                    {isDraggingEstimate ? 'Drop PDF here' : 'Drag & drop PDF here'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    or click to browse files
+                  </p>
+                </div>
+              )}
+              <input
                 id="estimate-file"
                 type="file"
                 accept=".pdf"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                className="hidden"
               />
-              <p className="text-xs text-muted-foreground">
-                AI will automatically extract company info, line items, and totals
-              </p>
             </div>
+            <p className="text-xs text-muted-foreground text-center">
+              AI will automatically extract company info, line items, and totals
+            </p>
 
             <div className="space-y-2">
               <Label htmlFor="subcontractor">Subcontractor (Optional)</Label>
@@ -835,13 +914,44 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
             <DialogTitle>Upload Subcontractor Invoice</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="invoice-file">PDF File *</Label>
-              <Input
+            {/* Drag and Drop Zone */}
+            <div
+              onDragOver={(e) => handleDragOver(e, 'invoice')}
+              onDragLeave={(e) => handleDragLeave(e, 'invoice')}
+              onDrop={(e) => handleDrop(e, 'invoice')}
+              onClick={() => document.getElementById('invoice-file')?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                isDraggingInvoice
+                  ? 'border-primary bg-primary/5 scale-[1.02]'
+                  : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
+              }`}
+            >
+              <Upload className={`w-12 h-12 mx-auto mb-4 ${
+                isDraggingInvoice ? 'text-primary animate-bounce' : 'text-muted-foreground'
+              }`} />
+              {selectedFile ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-primary">{selectedFile.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Click to change or drag a different file
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">
+                    {isDraggingInvoice ? 'Drop PDF here' : 'Drag & drop PDF here'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    or click to browse files
+                  </p>
+                </div>
+              )}
+              <input
                 id="invoice-file"
                 type="file"
                 accept=".pdf"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                className="hidden"
               />
             </div>
 
