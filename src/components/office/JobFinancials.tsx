@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
@@ -73,6 +74,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [laborPricing, setLaborPricing] = useState<LaborPricing | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
+  
+  // Proposal markup state
+  const [proposalMarkup, setProposalMarkup] = useState('10');
   
   // Labor stats
   const [totalClockInHours, setTotalClockInHours] = useState(0);
@@ -520,6 +524,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const totalProfit = totalPrice - totalCost;
   const profitMargin = totalPrice > 0 ? (totalProfit / totalPrice) * 100 : 0;
 
+  // Proposal calculations with markup
+  const markup = parseFloat(proposalMarkup) || 0;
+  const proposalMaterialsPrice = materialsBreakdown.totals.totalPrice * (1 + markup / 100);
+  const proposalTotalPrice = proposalMaterialsPrice;
+  const proposalProfit = proposalTotalPrice - materialsBreakdown.totals.totalCost;
+  const proposalMargin = proposalTotalPrice > 0 ? (proposalProfit / proposalTotalPrice) * 100 : 0;
+
   // Progress calculations
   const progressPercent = estimatedHours > 0 ? Math.min((totalClockInHours / estimatedHours) * 100, 100) : 0;
   const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
@@ -549,163 +560,560 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      <div className="max-w-[1600px] mx-auto px-4">
-        <div className="flex gap-4">
-      {/* Main Content */}
-      <div className="flex-1 space-y-4">
-        {/* Materials Pricing Breakdown + Additional Costs in ONE card */}
-        <Card className="border-2 border-green-200">
-          <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2 flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              Materials Pricing
-            </CardTitle>
-            <Button onClick={() => openAddDialog()} size="sm" variant="outline">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Additional Cost
-            </Button>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            {/* Materials Grand Totals */}
-            {materialsBreakdown.sheetBreakdowns.length > 0 && (
-              <div className="grid grid-cols-4 gap-2 p-2 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
-                <div className="text-center">
-                  <p className="text-xs opacity-80">Cost</p>
-                  <p className="text-xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs opacity-80">Price</p>
-                  <p className="text-xl font-bold">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs opacity-80">Profit</p>
-                  <p className="text-xl font-bold text-yellow-400">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs opacity-80">Margin</p>
-                  <p className="text-xl font-bold text-green-400">{materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
-                </div>
-              </div>
-            )}
+      <Tabs defaultValue="cost-breakdown" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="cost-breakdown">Cost Breakdown</TabsTrigger>
+          <TabsTrigger value="proposal">Proposal</TabsTrigger>
+        </TabsList>
 
-            {/* Breakdown by Sheet */}
-            <div className="space-y-2">
-            {materialsBreakdown.sheetBreakdowns.length > 0 && materialsBreakdown.sheetBreakdowns.map((sheet, sheetIndex) => (
-              <Collapsible key={sheetIndex} defaultOpen={false}>
-                <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
-                  <CollapsibleTrigger className="w-full">
-                    <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-2 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-base text-blue-900">{sheet.sheetName}</h3>
+        {/* Cost Breakdown Tab - Original View */}
+        <TabsContent value="cost-breakdown">
+          <div className="max-w-[1600px] mx-auto px-4">
+            <div className="flex gap-4">
+              {/* Main Content */}
+              <div className="flex-1 space-y-4">
+                {/* Materials Pricing Breakdown + Additional Costs */}
+                <Card className="border-2 border-green-200">
+                  <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2 flex flex-row items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      Materials Pricing
+                    </CardTitle>
+                    <Button onClick={() => openAddDialog()} size="sm" variant="outline">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Additional Cost
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-3">
+                    {/* Materials Grand Totals */}
+                    {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                      <div className="grid grid-cols-4 gap-2 p-2 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg">
+                        <div className="text-center">
+                          <p className="text-xs opacity-80">Cost</p>
+                          <p className="text-xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs opacity-80">Price</p>
+                          <p className="text-xl font-bold">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs opacity-80">Profit</p>
+                          <p className="text-xl font-bold text-yellow-400">${materialsBreakdown.totals.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs opacity-80">Margin</p>
+                          <p className="text-xl font-bold text-green-400">{materialsBreakdown.totals.profitMargin.toFixed(1)}%</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-xs text-blue-700">Cost</p>
-                          <p className="font-semibold text-sm text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-blue-700">Price</p>
-                          <p className="font-semibold text-sm text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-blue-700">Profit</p>
-                          <p className="font-semibold text-sm text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-blue-700">Margin</p>
-                          <p className="font-semibold text-sm text-green-700">{sheet.margin.toFixed(1)}%</p>
-                        </div>
-                        <ChevronDown className="w-4 h-4 text-blue-700" />
-                      </div>
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="p-2 bg-white space-y-1">
-                      {sheet.categories.map((category: any, catIndex: number) => {
-                        const materialCategoryKey = `${sheet.sheetName}-${category.name}`;
-                        return (
-                          <div 
-                            key={catIndex} 
-                            className="border-2 rounded-lg overflow-hidden"
-                            onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(materialCategoryKey, e, true)}
-                          >
-                            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-2 py-1.5 border-b">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="font-semibold text-sm text-slate-900">{category.name}</h4>
-                                    <Badge variant="outline" className="text-xs">{category.itemCount}</Badge>
-                                  </div>
+                    )}
+
+                    {/* Breakdown by Sheet */}
+                    <div className="space-y-2">
+                      {materialsBreakdown.sheetBreakdowns.length > 0 && materialsBreakdown.sheetBreakdowns.map((sheet, sheetIndex) => (
+                        <Collapsible key={sheetIndex} defaultOpen={false}>
+                          <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
+                            <CollapsibleTrigger className="w-full">
+                              <div className="bg-gradient-to-r from-blue-100 to-blue-50 p-2 flex items-center justify-between hover:from-blue-200 hover:to-blue-100 transition-colors">
+                                <div className="flex items-center gap-3">
+                                  <h3 className="font-bold text-base text-blue-900">{sheet.sheetName}</h3>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="file"
-                                    multiple
-                                    onChange={(e) => e.target.files && handleFileUpload(materialCategoryKey, e.target.files, true)}
-                                    className="hidden"
-                                    id={`file-upload-${materialCategoryKey}`}
-                                  />
-                                  <label htmlFor={`file-upload-${materialCategoryKey}`}>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="cursor-pointer"
-                                      asChild
-                                    >
-                                      <span>
-                                        {uploadingFiles[materialCategoryKey] ? (
-                                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
-                                        ) : (
-                                          <Plus className="w-4 h-4 mr-2" />
-                                        )}
-                                        Attach Files
-                                      </span>
-                                    </Button>
-                                  </label>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right">
+                                    <p className="text-xs text-blue-700">Cost</p>
+                                    <p className="font-semibold text-sm text-blue-900">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs text-blue-700">Price</p>
+                                    <p className="font-semibold text-sm text-blue-900">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs text-blue-700">Profit</p>
+                                    <p className="font-semibold text-sm text-green-700">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs text-blue-700">Margin</p>
+                                    <p className="font-semibold text-sm text-green-700">{sheet.margin.toFixed(1)}%</p>
+                                  </div>
+                                  <ChevronDown className="w-4 h-4 text-blue-700" />
                                 </div>
                               </div>
-                              {materialFiles[materialCategoryKey] && materialFiles[materialCategoryKey].length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-2">
-                                  {materialFiles[materialCategoryKey].map((url, idx) => (
-                                    <a
-                                      key={idx}
-                                      href={url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:underline"
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <div className="p-2 bg-white space-y-1">
+                                {sheet.categories.map((category: any, catIndex: number) => {
+                                  const materialCategoryKey = `${sheet.sheetName}-${category.name}`;
+                                  return (
+                                    <div 
+                                      key={catIndex} 
+                                      className="border-2 rounded-lg overflow-hidden"
+                                      onDragOver={handleDragOver}
+                                      onDrop={(e) => handleDrop(materialCategoryKey, e, true)}
                                     >
-                                      File {idx + 1}
-                                    </a>
+                                      <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-2 py-1.5 border-b">
+                                        <div className="flex items-start justify-between">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                              <h4 className="font-semibold text-sm text-slate-900">{category.name}</h4>
+                                              <Badge variant="outline" className="text-xs">{category.itemCount}</Badge>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="file"
+                                              multiple
+                                              onChange={(e) => e.target.files && handleFileUpload(materialCategoryKey, e.target.files, true)}
+                                              className="hidden"
+                                              id={`file-upload-${materialCategoryKey}`}
+                                            />
+                                            <label htmlFor={`file-upload-${materialCategoryKey}`}>
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                className="cursor-pointer"
+                                                asChild
+                                              >
+                                                <span>
+                                                  {uploadingFiles[materialCategoryKey] ? (
+                                                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                                                  ) : (
+                                                    <Plus className="w-4 h-4 mr-2" />
+                                                  )}
+                                                  Attach Files
+                                                </span>
+                                              </Button>
+                                            </label>
+                                          </div>
+                                        </div>
+                                        {materialFiles[materialCategoryKey] && materialFiles[materialCategoryKey].length > 0 && (
+                                          <div className="mt-1 flex flex-wrap gap-2">
+                                            {materialFiles[materialCategoryKey].map((url, idx) => (
+                                              <a
+                                                key={idx}
+                                                href={url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-xs text-blue-600 hover:underline"
+                                              >
+                                                File {idx + 1}
+                                              </a>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="p-2 hover:bg-slate-50 transition-colors">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-4 text-sm">
+                                            <div className="text-left">
+                                              <p className="text-xs text-muted-foreground">Cost</p>
+                                              <p className="font-semibold text-sm">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                            <div className="text-left">
+                                              <p className="text-xs text-muted-foreground">Price</p>
+                                              <p className="font-semibold text-sm">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                            <div className="text-left">
+                                              <p className="text-xs text-muted-foreground">Profit</p>
+                                              <p className="font-semibold text-sm text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                            <div className="text-left">
+                                              <p className="text-xs text-muted-foreground">Margin</p>
+                                              <p className={`font-semibold text-sm ${
+                                                category.margin >= 25 ? 'text-green-600' :
+                                                category.margin >= 15 ? 'text-yellow-600' :
+                                                'text-red-600'
+                                              }`}>
+                                                {category.margin.toFixed(1)}%
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </CollapsibleContent>
+                          </div>
+                        </Collapsible>
+                      ))}
+                    </div>
+
+                    {/* Additional Costs Section */}
+                    {customRows.length === 0 && materialsBreakdown.sheetBreakdowns.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>No materials or additional costs added yet</p>
+                        <Button onClick={() => openAddDialog()} variant="outline" className="mt-4">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add First Cost
+                        </Button>
+                      </div>
+                    )}
+
+                    {customRows.length > 0 && (
+                      <>
+                        <div className="border-t-4 border-orange-200 pt-3">
+                          <h3 className="text-base font-bold text-orange-900 mb-2">
+                            Additional Costs
+                          </h3>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          {Object.entries(groupedRows).map(([cat, rows]) => {
+                            return (
+                              <div 
+                                key={cat} 
+                                className="border-2 rounded-lg overflow-hidden"
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(cat, e)}
+                              >
+                                <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 border-b">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <h3 className="font-semibold text-sm text-slate-900">
+                                        {categoryLabels[cat] || cat}
+                                      </h3>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="file"
+                                        multiple
+                                        onChange={(e) => e.target.files && handleFileUpload(cat, e.target.files)}
+                                        className="hidden"
+                                        id={`file-upload-${cat}`}
+                                      />
+                                      <label htmlFor={`file-upload-${cat}`}>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          className="cursor-pointer"
+                                          asChild
+                                        >
+                                          <span>
+                                            {uploadingFiles[cat] ? (
+                                              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+                                            ) : (
+                                              <Plus className="w-4 h-4 mr-2" />
+                                            )}
+                                            Attach Files
+                                          </span>
+                                        </Button>
+                                      </label>
+                                      <Badge variant="secondary">{rows.length} items</Badge>
+                                    </div>
+                                  </div>
+                                  {categoryFiles[cat] && categoryFiles[cat].length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-2">
+                                      {categoryFiles[cat].map((url, idx) => (
+                                        <a
+                                          key={idx}
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs text-blue-600 hover:underline"
+                                        >
+                                          File {idx + 1}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="divide-y">
+                                  {rows.map((row) => (
+                                    <div key={row.id} className="p-2 hover:bg-slate-50 transition-colors">
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <div className="font-medium text-sm text-slate-900">{row.description}</div>
+                                          {row.notes && (
+                                            <div className="text-xs text-muted-foreground mt-0.5">{row.notes}</div>
+                                          )}
+                                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                                            <span>Qty: {row.quantity}</span>
+                                            <span>Unit: ${row.unit_cost.toFixed(2)}</span>
+                                            <span>Markup: {row.markup_percent.toFixed(1)}%</span>
+                                          </div>
+                                        </div>
+                                        <div className="text-right ml-4">
+                                          <div className="flex items-center gap-2 justify-end">
+                                            <div>
+                                              <div className="font-bold text-base text-slate-900">
+                                                ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">
+                                                Cost: ${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                              </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => openAddDialog(row)}
+                                              >
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => deleteRow(row.id)}
+                                                className="text-destructive"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
-                              )}
-                            </div>
-                            <div className="p-2 hover:bg-slate-50 transition-colors">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4 text-sm">
-                                  <div className="text-left">
-                                    <p className="text-xs text-muted-foreground">Cost</p>
-                                    <p className="font-semibold text-sm">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-left">
-                                    <p className="text-xs text-muted-foreground">Price</p>
-                                    <p className="font-semibold text-sm">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-left">
-                                    <p className="text-xs text-muted-foreground">Profit</p>
-                                    <p className="font-semibold text-sm text-green-700">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-left">
-                                    <p className="text-xs text-muted-foreground">Margin</p>
-                                    <p className={`font-semibold text-sm ${
-                                      category.margin >= 25 ? 'text-green-600' :
-                                      category.margin >= 15 ? 'text-yellow-600' :
-                                      'text-red-600'
-                                    }`}>
-                                      {category.margin.toFixed(1)}%
-                                    </p>
-                                  </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sidebar - Labor & Summary */}
+              <div className="w-96 space-y-4">
+                {/* Labor Pricing & Hours Section */}
+                <Card className="border-2 border-blue-200">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100">
+                    <CardTitle className="flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-blue-700" />
+                      Labor & Hours
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6 space-y-4">
+                    {/* Labor Rate Configuration */}
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Hourly Labor Rate ($)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={hourlyRate}
+                          onChange={(e) => setHourlyRate(e.target.value)}
+                          onBlur={saveLaborPricing}
+                        />
+                      </div>
+                      <div>
+                        <Label>Billable Rate ($/hr)</Label>
+                        <div className="h-10 flex items-center font-bold text-lg text-blue-700">
+                          ${billableRate.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hours Progress */}
+                    <div className="space-y-3">
+                      <div className="p-3 bg-primary/5 rounded-lg border">
+                        <div className="text-2xl font-bold text-primary text-center">{estimatedHours.toFixed(2)}</div>
+                        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Estimated Hours</p>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg border">
+                        <div className="text-2xl font-bold text-center">{totalClockInHours.toFixed(2)}</div>
+                        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Clock-In Hours</p>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${
+                        isOverBudget 
+                          ? 'bg-destructive/10 border-destructive/30' 
+                          : 'bg-success/10 border-success/30'
+                      }`}>
+                        <div className={`text-2xl font-bold text-center ${
+                          isOverBudget ? 'text-destructive' : 'text-success'
+                        }`}>
+                          {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">
+                          {isOverBudget ? 'Over Budget' : 'Remaining'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Labor Financial Summary */}
+                    <div className="space-y-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Labor Cost</p>
+                        <p className="text-xl font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
+                      </div>
+                      <div className="text-center border-t pt-3">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Labor Billing</p>
+                        <p className="text-xl font-bold text-blue-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Grand Total Summary */}
+                <Card className="border-2 border-slate-900">
+                  <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5" />
+                      Financial Summary
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      {/* Category Breakdown */}
+                      <div className="space-y-2">
+                        {materialsBreakdown.totals.totalPrice > 0 && (
+                          <div className="flex items-center justify-between py-2 border-b font-semibold text-sm">
+                            <span>Materials</span>
+                            <span className="text-right">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {categoryTotals.map((ct) => (
+                          <div key={ct.category} className="flex items-center justify-between py-2 border-b text-sm">
+                            <span>{categoryLabels[ct.category] || ct.category}</span>
+                            <span className="text-right">${ct.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between py-2 border-b font-semibold text-sm">
+                          <span>Labor</span>
+                          <span className="text-right">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+
+                      {/* Grand Totals */}
+                      <div className="space-y-3 p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg mt-6">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs uppercase tracking-wide opacity-80">Total Cost</p>
+                          <p className="text-lg font-bold">${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs uppercase tracking-wide opacity-80">Total Price</p>
+                          <p className="text-lg font-bold">${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-white/20 pt-3">
+                          <p className="text-xs uppercase tracking-wide opacity-80">Total Profit</p>
+                          <p className="text-lg font-bold text-yellow-400">${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs uppercase tracking-wide opacity-80">Profit Margin</p>
+                          <div className="flex items-center gap-2">
+                            <Percent className="w-4 h-4 text-green-400" />
+                            <p className="text-lg font-bold text-green-400">{profitMargin.toFixed(1)}%</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Proposal Tab - Pricing with Markup */}
+        <TabsContent value="proposal">
+          <div className="max-w-[1600px] mx-auto px-4">
+            <Card className="border-2 border-purple-200">
+              <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5 text-purple-700" />
+                  Customer Proposal Pricing
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-6">
+                {/* Markup Control */}
+                <div className="max-w-md">
+                  <Label className="text-base font-semibold">Proposal Markup Percentage</Label>
+                  <div className="flex gap-3 items-center mt-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={proposalMarkup}
+                      onChange={(e) => setProposalMarkup(e.target.value)}
+                      className="w-32 text-lg font-bold"
+                    />
+                    <span className="text-lg font-semibold">%</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProposalMarkup('10')}
+                      className="ml-auto"
+                    >
+                      Reset to 10%
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    This markup will be applied to all materials pricing for the customer proposal
+                  </p>
+                </div>
+
+                {/* Pricing Breakdown */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg border">
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">Materials Cost</p>
+                      <p className="text-2xl font-bold">${materialsBreakdown.totals.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">Original Price</p>
+                      <p className="text-2xl font-bold text-blue-600">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">Applied Markup</p>
+                      <p className="text-2xl font-bold text-purple-600">{markup.toFixed(1)}%</p>
+                    </div>
+                  </div>
+
+                  {/* Proposal Totals */}
+                  <div className="space-y-3 p-6 bg-gradient-to-r from-purple-900 to-purple-800 text-white rounded-lg">
+                    <div className="flex items-center justify-between pb-3 border-b border-white/20">
+                      <p className="text-sm uppercase tracking-wide opacity-80">Proposal Materials Price</p>
+                      <p className="text-3xl font-bold">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm uppercase tracking-wide opacity-80">Total Profit</p>
+                      <p className="text-2xl font-bold text-yellow-300">${proposalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm uppercase tracking-wide opacity-80">Profit Margin</p>
+                      <div className="flex items-center gap-2">
+                        <Percent className="w-5 h-5 text-green-300" />
+                        <p className="text-2xl font-bold text-green-300">{proposalMargin.toFixed(1)}%</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Materials Breakdown Preview */}
+                  {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                    <div className="space-y-2 mt-6">
+                      <h3 className="font-semibold text-lg mb-3">Materials Breakdown (with Proposal Markup)</h3>
+                      {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
+                        const proposalSheetPrice = sheet.totalPrice * (1 + markup / 100);
+                        const proposalSheetProfit = proposalSheetPrice - sheet.totalCost;
+                        const proposalSheetMargin = proposalSheetPrice > 0 ? (proposalSheetProfit / proposalSheetPrice) * 100 : 0;
+
+                        return (
+                          <div key={idx} className="border-2 border-purple-200 rounded-lg p-4 bg-purple-50/50">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-semibold text-purple-900">{sheet.sheetName}</h4>
+                              <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Cost</p>
+                                  <p className="font-semibold">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Proposal Price</p>
+                                  <p className="font-bold text-purple-700 text-lg">${proposalSheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Profit</p>
+                                  <p className="font-semibold text-green-700">${proposalSheetProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Margin</p>
+                                  <p className="font-semibold text-green-700">{proposalSheetMargin.toFixed(1)}%</p>
                                 </div>
                               </div>
                             </div>
@@ -713,281 +1121,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         );
                       })}
                     </div>
-                  </CollapsibleContent>
+                  )}
                 </div>
-              </Collapsible>
-            ))}
-            </div>
-
-            {/* Additional Costs Section - integrated into the same card */}
-            {customRows.length === 0 && materialsBreakdown.sheetBreakdowns.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>No materials or additional costs added yet</p>
-                <Button onClick={() => openAddDialog()} variant="outline" className="mt-4">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add First Cost
-                </Button>
-              </div>
-            )}
-
-            {customRows.length > 0 && (
-              <>
-                <div className="border-t-4 border-orange-200 pt-3">
-                  <h3 className="text-base font-bold text-orange-900 mb-2">
-                    Additional Costs
-                  </h3>
-                </div>
-                
-                <div className="space-y-2">
-                  {Object.entries(groupedRows).map(([cat, rows]) => {
-                    return (
-                      <div 
-                        key={cat} 
-                        className="border-2 rounded-lg overflow-hidden"
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => handleDrop(cat, e)}
-                      >
-                        <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 border-b">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-sm text-slate-900">
-                                {categoryLabels[cat] || cat}
-                              </h3>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="file"
-                                multiple
-                                onChange={(e) => e.target.files && handleFileUpload(cat, e.target.files)}
-                                className="hidden"
-                                id={`file-upload-${cat}`}
-                              />
-                              <label htmlFor={`file-upload-${cat}`}>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="cursor-pointer"
-                                  asChild
-                                >
-                                  <span>
-                                    {uploadingFiles[cat] ? (
-                                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
-                                    ) : (
-                                      <Plus className="w-4 h-4 mr-2" />
-                                    )}
-                                    Attach Files
-                                  </span>
-                                </Button>
-                              </label>
-                              <Badge variant="secondary">{rows.length} items</Badge>
-                            </div>
-                          </div>
-                          {categoryFiles[cat] && categoryFiles[cat].length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              {categoryFiles[cat].map((url, idx) => (
-                                <a
-                                  key={idx}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-blue-600 hover:underline"
-                                >
-                                  File {idx + 1}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="divide-y">
-                          {rows.map((row) => (
-                            <div key={row.id} className="p-2 hover:bg-slate-50 transition-colors">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="font-medium text-sm text-slate-900">{row.description}</div>
-                                  {row.notes && (
-                                    <div className="text-xs text-muted-foreground mt-0.5">{row.notes}</div>
-                                  )}
-                                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                    <span>Qty: {row.quantity}</span>
-                                    <span>Unit: ${row.unit_cost.toFixed(2)}</span>
-                                    <span>Markup: {row.markup_percent.toFixed(1)}%</span>
-                                  </div>
-                                </div>
-                                <div className="text-right ml-4">
-                                  <div className="flex items-center gap-2 justify-end">
-                                    <div>
-                                      <div className="font-bold text-base text-slate-900">
-                                        ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        Cost: ${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => openAddDialog(row)}
-                                      >
-                                        Edit
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => deleteRow(row.id)}
-                                        className="text-destructive"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Sidebar - Labor & Summary */}
-      <div className="w-96 space-y-4">
-        {/* Labor Pricing & Hours Section */}
-        <Card className="border-2 border-blue-200">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100">
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-700" />
-              Labor & Hours
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6 space-y-4">
-            {/* Labor Rate Configuration */}
-            <div className="space-y-4">
-              <div>
-                <Label>Hourly Labor Rate ($)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={hourlyRate}
-                  onChange={(e) => setHourlyRate(e.target.value)}
-                  onBlur={saveLaborPricing}
-                />
-              </div>
-              <div>
-                <Label>Billable Rate ($/hr)</Label>
-                <div className="h-10 flex items-center font-bold text-lg text-blue-700">
-                  ${billableRate.toFixed(2)}
-                </div>
-              </div>
-            </div>
-
-            {/* Hours Progress */}
-            <div className="space-y-3">
-              <div className="p-3 bg-primary/5 rounded-lg border">
-                <div className="text-2xl font-bold text-primary text-center">{estimatedHours.toFixed(2)}</div>
-                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Estimated Hours</p>
-              </div>
-              <div className="p-3 bg-muted/50 rounded-lg border">
-                <div className="text-2xl font-bold text-center">{totalClockInHours.toFixed(2)}</div>
-                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">Clock-In Hours</p>
-              </div>
-              <div className={`p-3 rounded-lg border ${
-                isOverBudget 
-                  ? 'bg-destructive/10 border-destructive/30' 
-                  : 'bg-success/10 border-success/30'
-              }`}>
-                <div className={`text-2xl font-bold text-center ${
-                  isOverBudget ? 'text-destructive' : 'text-success'
-                }`}>
-                  {isOverBudget ? '+' : ''}{(totalClockInHours - estimatedHours).toFixed(2)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wide text-center">
-                  {isOverBudget ? 'Over Budget' : 'Remaining'}
-                </p>
-              </div>
-            </div>
-
-            {/* Labor Financial Summary */}
-            <div className="space-y-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Labor Cost</p>
-                <p className="text-xl font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
-              </div>
-              <div className="text-center border-t pt-3">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Labor Billing</p>
-                <p className="text-xl font-bold text-blue-600">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-muted-foreground">{estimatedHours.toFixed(2)} est hrs × ${laborRate.toFixed(2)}/hr</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Grand Total Summary */}
-        <Card className="border-2 border-slate-900">
-          <CardHeader className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Financial Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="space-y-4">
-              {/* Category Breakdown */}
-              <div className="space-y-2">
-                {materialsBreakdown.totals.totalPrice > 0 && (
-                  <div className="flex items-center justify-between py-2 border-b font-semibold text-sm">
-                    <span>Materials</span>
-                    <span className="text-right">${materialsBreakdown.totals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                {categoryTotals.map((ct) => (
-                  <div key={ct.category} className="flex items-center justify-between py-2 border-b text-sm">
-                    <span>{categoryLabels[ct.category] || ct.category}</span>
-                    <span className="text-right">${ct.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between py-2 border-b font-semibold text-sm">
-                  <span>Labor</span>
-                  <span className="text-right">${laborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-
-              {/* Grand Totals */}
-              <div className="space-y-3 p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg mt-6">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide opacity-80">Total Cost</p>
-                  <p className="text-lg font-bold">${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide opacity-80">Total Price</p>
-                  <p className="text-lg font-bold">${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="flex items-center justify-between border-t border-white/20 pt-3">
-                  <p className="text-xs uppercase tracking-wide opacity-80">Total Profit</p>
-                  <p className="text-lg font-bold text-yellow-400">${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide opacity-80">Profit Margin</p>
-                  <div className="flex items-center gap-2">
-                    <Percent className="w-4 h-4 text-green-400" />
-                    <p className="text-lg font-bold text-green-400">{profitMargin.toFixed(1)}%</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Add/Edit Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -1095,8 +1235,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           </div>
         </DialogContent>
       </Dialog>
-        </div>
-      </div>
     </div>
   );
 }
