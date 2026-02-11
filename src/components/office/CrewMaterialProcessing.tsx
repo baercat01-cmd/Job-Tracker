@@ -115,11 +115,9 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
 
       if (error) throw error;
 
-      // Filter for field requests and materials with order request data
+      // Filter for materials actually ordered by crew (must have both ordered_by and order_requested_at)
       const crewMaterials = (data || []).filter((mat: any) => 
-        mat.import_source === 'field_catalog' || 
-        mat.ordered_by !== null ||
-        mat.order_requested_at !== null
+        mat.ordered_by !== null && mat.order_requested_at !== null
       );
 
       setMaterials(crewMaterials);
@@ -373,12 +371,10 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
                       </div>
                     )}
 
-                    {/* Field Request Badge */}
-                    {material.import_source === 'field_catalog' && (
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-                        Field Request
-                      </Badge>
-                    )}
+                    {/* Crew Ordered Badge */}
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+                      Crew Ordered
+                    </Badge>
                   </div>
                 </div>
 
