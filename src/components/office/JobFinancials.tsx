@@ -97,6 +97,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [sheetDescription, setSheetDescription] = useState('');
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
 
+  // Subcontractor estimates
+  const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
+
   // Form state for custom rows
   const [category, setCategory] = useState('subcontractor');
   const [description, setDescription] = useState('');
@@ -128,12 +131,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         loadLaborPricing(),
         loadLaborHours(),
         loadMaterialsData(),
+        loadSubcontractorEstimates(),
       ]);
     } catch (error) {
       console.error('Error loading financial data:', error);
       toast.error('Failed to load financial data');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSubcontractorEstimates() {
+    try {
+      const { data, error } = await supabase
+        .from('subcontractor_estimates')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSubcontractorEstimates(data || []);
+    } catch (error: any) {
+      console.error('Error loading subcontractor estimates:', error);
+      setSubcontractorEstimates([]);
     }
   }
 
@@ -672,8 +692,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalLaborCost = laborPrice;
   const proposalLaborPrice = laborPrice;
   
+  // Subcontractor estimates (with their individual markups, then proposal markup, taxable)
+  const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
+    const baseAmount = est.total_amount || 0;
+    const estMarkup = est.markup_percent || 0;
+    return sum + (baseAmount * (1 + estMarkup / 100));
+  }, 0);
+  const proposalSubcontractorPrice = subcontractorBaseCost * (1 + markup / 100);
+  
   // Calculate subtotals
-  const taxableSubtotal = proposalMaterialsPrice + taxableAdditionalPrice;
+  const taxableSubtotal = proposalMaterialsPrice + taxableAdditionalPrice + proposalSubcontractorPrice;
   const nonTaxableSubtotal = nonTaxableAdditionalPrice + proposalLaborPrice;
   
   // Tax calculated only on taxable items
@@ -686,7 +714,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalAdditionalCost = taxableAdditionalCost + nonTaxableAdditionalCost;
   const proposalAdditionalPrice = taxableAdditionalPrice + nonTaxableAdditionalPrice;
   
-  const proposalTotalCost = proposalMaterialsCost + proposalAdditionalCost + proposalLaborCost;
+  const proposalTotalCost = proposalMaterialsCost + proposalAdditionalCost + proposalLaborCost + subcontractorBaseCost;
   const proposalProfit = proposalGrandTotal - proposalTotalCost;
   const proposalMargin = proposalGrandTotal > 0 ? (proposalProfit / proposalGrandTotal) * 100 : 0;
 
@@ -1089,6 +1117,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <span className="font-semibold text-slate-700">Materials</span>
                           <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
+                        {subcontractorEstimates.length > 0 && (
+                          <div className="flex justify-between py-2 border-b border-slate-200">
+                            <span className="font-semibold text-slate-700">Subcontractors</span>
+                            <span className="font-bold text-slate-900">${proposalSubcontractorPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
                         {customRows.length > 0 && (
                           <div className="flex justify-between py-2 border-b border-slate-200">
                             <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
