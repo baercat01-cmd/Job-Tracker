@@ -100,6 +100,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Subcontractor estimates
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
 
+  // Tab state - persist across re-renders
+  const [activeTab, setActiveTab] = useState('cost-breakdown');
+
   // Form state for custom rows
   const [category, setCategory] = useState('subcontractor');
   const [description, setDescription] = useState('');
@@ -778,7 +781,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      <Tabs defaultValue="cost-breakdown" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="cost-breakdown">Cost Breakdown</TabsTrigger>
           <TabsTrigger value="proposal">Proposal</TabsTrigger>
