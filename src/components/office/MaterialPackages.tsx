@@ -364,7 +364,8 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
 
   async function updatePackageStatus(packageId: string, newStatus: string) {
     try {
-      const { error } = await supabase
+      // Update bundle status
+      const { error: bundleError } = await supabase
         .from('material_bundles')
         .update({
           status: newStatus,
@@ -372,7 +373,32 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
         })
         .eq('id', packageId);
 
-      if (error) throw error;
+      if (bundleError) throw bundleError;
+
+      // Get all material items in this bundle
+      const { data: bundleItems, error: itemsError } = await supabase
+        .from('material_bundle_items')
+        .select('material_item_id')
+        .eq('bundle_id', packageId);
+
+      if (itemsError) throw itemsError;
+
+      // Update all material items to match the bundle status
+      if (bundleItems && bundleItems.length > 0) {
+        const materialItemIds = bundleItems.map(item => item.material_item_id);
+        
+        const { error: updateError } = await supabase
+          .from('material_items')
+          .update({
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .in('id', materialItemIds);
+
+        if (updateError) throw updateError;
+      }
+
+      toast.success('Package status updated - all materials updated in workbook');
       loadPackages();
     } catch (error: any) {
       console.error('Error updating package status:', error);
