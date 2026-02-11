@@ -818,7 +818,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         <div className="flex items-center gap-3 flex-1">
                           <Clock className={`w-5 h-5 ${iconColor}`} />
                           <div className="flex-1">
-                            <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
+                              {row.markup_percent > 0 && (
+                                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                                  <Percent className="w-3 h-3 mr-1" />
+                                  {row.markup_percent.toFixed(1)}% markup
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
                               {row.notes || '(No description provided)'}
                             </p>
