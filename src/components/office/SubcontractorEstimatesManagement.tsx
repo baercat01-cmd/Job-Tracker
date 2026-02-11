@@ -590,35 +590,42 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center gap-2">
-            <FileText className="w-6 h-6" />
-            Subcontractor Documents
-          </CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Upload estimates and invoices - AI will automatically extract data
-          </p>
-        </CardHeader>
-      </Card>
-
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <Button
-          variant={activeTab === 'estimates' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('estimates')}
-          className="rounded-b-none"
-        >
-          Estimates ({estimates.length})
-        </Button>
-        <Button
-          variant={activeTab === 'invoices' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('invoices')}
-          className="rounded-b-none"
-        >
-          Invoices ({invoices.length})
-        </Button>
+      <div className="flex gap-2 border-b items-center justify-between">
+        <div className="flex gap-2">
+          <Button
+            variant={activeTab === 'estimates' ? 'default' : 'ghost'}
+            onClick={() => setActiveTab('estimates')}
+            className="rounded-b-none"
+          >
+            Estimates ({estimates.length})
+          </Button>
+          <Button
+            variant={activeTab === 'invoices' ? 'default' : 'ghost'}
+            onClick={() => setActiveTab('invoices')}
+            className="rounded-b-none"
+          >
+            Invoices ({invoices.length})
+          </Button>
+        </div>
+        <div className="flex gap-2 pb-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowUploadDialog(true)}
+          >
+            <Upload className="w-4 h-4 mr-1" />
+            Upload Estimate
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowInvoiceUploadDialog(true)}
+          >
+            <Upload className="w-4 h-4 mr-1" />
+            Upload Invoice
+          </Button>
+        </div>
       </div>
 
       {/* Estimates Tab */}
@@ -802,17 +809,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                     </div>
                   )}
                 </Card>
-              );
+              );  
             })
           )}
-          
-          {/* Upload Button at Bottom */}
-          <div className="pt-4 border-t">
-            <Button onClick={() => setShowUploadDialog(true)} className="w-full">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload New Estimate
-            </Button>
-          </div>
         </div>
       )}
 
@@ -996,14 +995,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
               );
             })
           )}
-
-          {/* Upload Button at Bottom */}
-          <div className="pt-4 border-t">
-            <Button onClick={() => setShowInvoiceUploadDialog(true)} className="w-full">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload New Invoice
-            </Button>
-          </div>
         </div>
       )}
 

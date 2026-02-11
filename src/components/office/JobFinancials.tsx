@@ -1086,13 +1086,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 const sheetTotal = sheetPrice + sheetTax;
 
                 return (
-                  <Collapsible key={idx} defaultOpen={true}>
+                  <Collapsible key={idx} defaultOpen={false}>
                     <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
                       <CollapsibleTrigger className="w-full">
                         <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
                           <div className="flex items-center gap-3">
                             <ChevronDown className="w-5 h-5 text-blue-700" />
-                            <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                            <div>
+                              <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                              <p className="text-sm text-blue-700">{sheet.categories.length} categories of building materials</p>
+                            </div>
                           </div>
                           <div className="text-right">
                             <p className="text-2xl font-bold text-blue-900">${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
@@ -1155,13 +1158,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 const catTotal = catTotalPrice + catTax;
 
                 return (
-                  <Collapsible key={cat} defaultOpen={true}>
+                  <Collapsible key={cat} defaultOpen={false}>
                     <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
                       <CollapsibleTrigger className="w-full">
                         <div className="bg-orange-50 hover:bg-orange-100 transition-colors p-3 flex items-center justify-between border-b">
                           <div className="flex items-center gap-3">
                             <ChevronDown className="w-5 h-5 text-orange-700" />
-                            <h3 className="text-lg font-bold text-orange-900">{categoryLabels[cat] || cat}</h3>
+                            <div>
+                              <h3 className="text-lg font-bold text-orange-900">{categoryLabels[cat] || cat}</h3>
+                              <p className="text-sm text-orange-700">{categoryDescriptions[cat] || ''}</p>
+                            </div>
                             <Badge variant="outline">{rows.length} items</Badge>
                           </div>
                           <div className="text-right">
@@ -1235,13 +1241,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
 
               {/* Labor Section */}
-              <Collapsible defaultOpen={true}>
+              <Collapsible defaultOpen={false}>
                 <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
                   <CollapsibleTrigger className="w-full">
                     <div className="bg-amber-50 hover:bg-amber-100 transition-colors p-3 flex items-center justify-between border-b">
                       <div className="flex items-center gap-3">
                         <ChevronDown className="w-5 h-5 text-amber-700" />
-                        <h3 className="text-lg font-bold text-amber-900">Labor</h3>
+                        <div>
+                          <h3 className="text-lg font-bold text-amber-900">Labor</h3>
+                          <p className="text-sm text-amber-700">{totalLaborHours.toFixed(2)} hours of labor and installation work</p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="text-2xl font-bold text-amber-900">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
@@ -1290,7 +1299,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </Collapsible>
 
               {/* Grand Total Summary */}
-              <div className="border-2 border-blue-700 rounded-lg overflow-hidden bg-white mt-6">
+              <div className="flex justify-end mt-6">
+                <div className="border-2 border-blue-700 rounded-lg overflow-hidden bg-white w-full max-w-2xl">
                 <div className="bg-blue-700 p-4 text-white">
                   <h3 className="text-xl font-bold">Project Total</h3>
                 </div>
