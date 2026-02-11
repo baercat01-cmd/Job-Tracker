@@ -723,11 +723,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <div className="flex items-center gap-3">
                             <ChevronDown className="w-5 h-5 text-blue-700" />
                             <div>
-                              <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                                  <Percent className="w-3 h-3 mr-1" />
+                                  {markup.toFixed(1)}% markup
+                                </Badge>
+                              </div>
                               <p className="text-sm text-blue-700">{sheet.categories.length} categories of building materials</p>
                             </div>
                           </div>
                           <div className="text-right">
+                            <p className="text-xs text-slate-600 mb-1">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                           </div>
                         </div>
