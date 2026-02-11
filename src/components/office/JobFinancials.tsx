@@ -248,8 +248,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function loadCustomRows() {
     const { data, error } = await supabase
       .from('custom_financial_rows')
-      .eq('job_id', job.id)
       .select('*')
+      .eq('job_id', job.id)
       .order('order_index');
 
     if (error) {
