@@ -389,6 +389,13 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
     try {
       console.log('Updating package status:', { packageId, newStatus });
       
+      // Optimistic update - update UI immediately
+      setPackages(prev => prev.map(pkg => 
+        pkg.id === packageId 
+          ? { ...pkg, status: mapStatusToDatabase(newStatus) }
+          : pkg
+      ));
+      
       // Map UI status to database status values
       const dbStatus = mapStatusToDatabase(newStatus);
       
@@ -403,6 +410,8 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
 
       if (bundleError) {
         console.error('Error updating bundle status:', bundleError);
+        // Revert optimistic update on error
+        await loadPackages();
         throw bundleError;
       }
 
@@ -446,9 +455,6 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
       } else {
         toast.success('Package status updated (no materials in package)');
       }
-      
-      // Reload packages to show updated status
-      await loadPackages();
     } catch (error: any) {
       console.error('Error updating package status:', error);
       toast.error(`Failed to update status: ${error.message || 'Unknown error'}`);
