@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Upload,
   FileSpreadsheet,
@@ -30,10 +31,12 @@ import {
   Plus,
   AlertCircle,
   CheckCircle,
+  ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { parseExcelWorkbook, validateMaterialWorkbook, normalizeColumnName, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
+import { CrewMaterialProcessing } from './CrewMaterialProcessing';
 
 interface MaterialWorkbook {
   id: string;
@@ -352,9 +355,9 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Material Workbooks</h2>
+          <h2 className="text-2xl font-bold">Material Management</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload Excel workbooks (.xlsx) with multiple sheets for versioned material tracking
+            Manage material workbooks and process crew material requests
           </p>
         </div>
         <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
@@ -363,117 +366,137 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         </Button>
       </div>
 
-      {/* Working Version */}
-      {workingVersion && (
-        <Card className="border-2 border-green-500">
-          <CardHeader className="bg-green-50">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <LockOpen className="w-5 h-5 text-green-600" />
-                Working Version (v{workingVersion.version_number})
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => viewWorkbook(workingVersion)}
-                >
-                  <Eye className="w-4 h-4 mr-1" />
-                  View
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => lockWorkbook(workingVersion.id)}
-                  className="bg-amber-600 hover:bg-amber-700"
-                >
-                  <Lock className="w-4 h-4 mr-1" />
-                  Lock Version
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => deleteWorkbook(workingVersion.id)}
-                  className="text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Created:</span>{' '}
-                {new Date(workingVersion.created_at).toLocaleDateString()}
-              </div>
-              <Badge variant="outline" className="bg-green-100 text-green-800">
-                Quoting Mode - Editable
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Tabs */}
+      <Tabs defaultValue="workbooks" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="workbooks" className="flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4" />
+            Material Workbooks
+          </TabsTrigger>
+          <TabsTrigger value="crew-orders" className="flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4" />
+            Crew Orders
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Locked Versions */}
-      {lockedVersions.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Locked Versions</h3>
-          <div className="grid gap-2">
-            {lockedVersions.map((workbook) => (
-              <Card key={workbook.id} className="border-2 border-slate-300">
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Lock className="w-5 h-5 text-slate-600" />
-                      <div>
-                        <p className="font-semibold">Version {workbook.version_number}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Locked on {new Date(workbook.locked_at!).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => viewWorkbook(workbook)}
-                      >
-                        <Eye className="w-4 h-4 mr-1" />
-                        View
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteWorkbook(workbook.id)}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+        <TabsContent value="workbooks" className="space-y-4">
+          {/* Working Version */}
+          {workingVersion && (
+            <Card className="border-2 border-green-500">
+              <CardHeader className="bg-green-50">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <LockOpen className="w-5 h-5 text-green-600" />
+                    Working Version (v{workingVersion.version_number})
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => viewWorkbook(workingVersion)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => lockWorkbook(workingVersion.id)}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      <Lock className="w-4 h-4 mr-1" />
+                      Lock Version
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => deleteWorkbook(workingVersion.id)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Created:</span>{' '}
+                    {new Date(workingVersion.created_at).toLocaleDateString()}
+                  </div>
+                  <Badge variant="outline" className="bg-green-100 text-green-800">
+                    Quoting Mode - Editable
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-      {/* No Workbooks */}
-      {workbooks.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-lg font-semibold mb-2">No Material Workbooks Yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Upload your first Excel workbook to get started with versioned material tracking
-            </p>
-            <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload First Workbook
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          {/* Locked Versions */}
+          {lockedVersions.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold">Locked Versions</h3>
+              <div className="grid gap-2">
+                {lockedVersions.map((workbook) => (
+                  <Card key={workbook.id} className="border-2 border-slate-300">
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Lock className="w-5 h-5 text-slate-600" />
+                          <div>
+                            <p className="font-semibold">Version {workbook.version_number}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Locked on {new Date(workbook.locked_at!).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => viewWorkbook(workbook)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            View
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deleteWorkbook(workbook.id)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No Workbooks */}
+          {workbooks.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="text-lg font-semibold mb-2">No Material Workbooks Yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Upload your first Excel workbook to get started with versioned material tracking
+                </p>
+                <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload First Workbook
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="crew-orders">
+          <CrewMaterialProcessing jobId={jobId} />
+        </TabsContent>
+      </Tabs>
 
       {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
