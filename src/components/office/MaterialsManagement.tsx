@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ import {
   Package,
   CheckSquare,
   Square,
+  CheckCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -125,12 +127,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [newNotes, setNewNotes] = useState('');
   const [saving, setSaving] = useState(false);
   
-  // Add to package state
+  // Package state
   const [packages, setPackages] = useState<any[]>([]);
-  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
-  const [packageSheetId, setPackageSheetId] = useState<string>('');
-  const [selectedMaterialsForPackage, setSelectedMaterialsForPackage] = useState<Set<string>>(new Set());
-  const [addingToPackage, setAddingToPackage] = useState(false);
+  
+  // Package selection mode in workbook
+  const [packageSelectionMode, setPackageSelectionMode] = useState(false);
+  const [selectedMaterialsForPackageAdd, setSelectedMaterialsForPackageAdd] = useState<Set<string>>(new Set());
+  const [showAddToPackageDialog, setShowAddToPackageDialog] = useState(false);
+  const [targetPackageId, setTargetPackageId] = useState('');
+  const [addingMaterialsToPackage, setAddingMaterialsToPackage] = useState(false);
 
   useEffect(() => {
     loadWorkbook();
@@ -244,9 +249,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       if (sheets.length > 0 && !activeSheetId) {
         setActiveSheetId(sheets[0].id);
       }
-      if (sheets.length > 0 && !packageSheetId) {
-        setPackageSheetId(sheets[0].id);
-      }
     } catch (error: any) {
       console.error('Error loading workbook:', error);
       toast.error('Failed to load materials');
@@ -259,54 +261,64 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setActiveSheetId(sheetId);
   }
 
-  function handlePackageSheetChange(sheetId: string) {
-    setPackageSheetId(sheetId);
+  function togglePackageSelectionMode() {
+    setPackageSelectionMode(!packageSelectionMode);
+    setSelectedMaterialsForPackageAdd(new Set());
   }
 
-  function toggleMaterialForPackage(materialId: string) {
-    const newSet = new Set(selectedMaterialsForPackage);
+  function toggleMaterialForPackageAdd(materialId: string) {
+    const newSet = new Set(selectedMaterialsForPackageAdd);
     if (newSet.has(materialId)) {
       newSet.delete(materialId);
     } else {
       newSet.add(materialId);
     }
-    setSelectedMaterialsForPackage(newSet);
+    setSelectedMaterialsForPackageAdd(newSet);
   }
 
-  async function addSelectedMaterialsToPackage() {
-    if (!selectedPackageId) {
+  function openAddToPackageDialog() {
+    if (selectedMaterialsForPackageAdd.size === 0) {
+      toast.error('Please select at least one material');
+      return;
+    }
+    setTargetPackageId('');
+    setShowAddToPackageDialog(true);
+  }
+
+  async function addSelectedMaterialsToSelectedPackage() {
+    if (!targetPackageId) {
       toast.error('Please select a package');
       return;
     }
 
-    if (selectedMaterialsForPackage.size === 0) {
-      toast.error('Please select at least one material');
+    if (selectedMaterialsForPackageAdd.size === 0) {
+      toast.error('No materials selected');
       return;
     }
 
-    setAddingToPackage(true);
+    setAddingMaterialsToPackage(true);
 
     try {
-      // Get existing materials in package
-      const selectedPackage = packages.find(p => p.id === selectedPackageId);
+      // Get existing materials in the target package
+      const targetPackage = packages.find(p => p.id === targetPackageId);
       const existingMaterialIds = new Set(
-        selectedPackage?.bundle_items?.map((item: any) => item.material_item_id) || []
+        targetPackage?.bundle_items?.map((item: any) => item.material_item_id) || []
       );
 
-      // Filter out materials that are already in the package
-      const materialsToAdd = Array.from(selectedMaterialsForPackage).filter(
+      // Filter out materials already in the package
+      const materialsToAdd = Array.from(selectedMaterialsForPackageAdd).filter(
         id => !existingMaterialIds.has(id)
       );
 
       if (materialsToAdd.length === 0) {
         toast.error('All selected materials are already in this package');
-        setAddingToPackage(false);
+        setAddingMaterialsToPackage(false);
         return;
       }
 
       // Add materials to package
       const bundleItems = materialsToAdd.map(materialId => ({
-        bundle_id: selectedPackageId,
+        bundle_id: targetPackageId,
         material_item_id: materialId,
       }));
 
@@ -317,21 +329,22 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
       if (error) throw error;
 
       toast.success(`Added ${materialsToAdd.length} material${materialsToAdd.length !== 1 ? 's' : ''} to package`);
-      setSelectedMaterialsForPackage(new Set());
+      setShowAddToPackageDialog(false);
+      setPackageSelectionMode(false);
+      setSelectedMaterialsForPackageAdd(new Set());
       loadPackages();
     } catch (error: any) {
       console.error('Error adding materials to package:', error);
       toast.error('Failed to add materials to package');
     } finally {
-      setAddingToPackage(false);
+      setAddingMaterialsToPackage(false);
     }
   }
 
-  // Check if a material is already in the selected package
-  function isMaterialInPackage(materialId: string): boolean {
-    if (!selectedPackageId) return false;
-    const selectedPackage = packages.find(p => p.id === selectedPackageId);
-    return selectedPackage?.bundle_items?.some((item: any) => item.material_item_id === materialId) || false;
+  function isMaterialInAnyPackage(materialId: string): boolean {
+    return packages.some(pkg => 
+      pkg.bundle_items?.some((item: any) => item.material_item_id === materialId)
+    );
   }
 
   function groupByCategory(items: MaterialItem[]): CategoryGroup[] {
@@ -755,14 +768,52 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           </Button>
                         ))}
                       </div>
-                      <Button
-                        onClick={() => openAddDialog()}
-                        size="sm"
-                        className="gradient-primary whitespace-nowrap"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Material
-                      </Button>
+                      <div className="flex gap-2">
+                        {packageSelectionMode ? (
+                          <>
+                            <Button
+                              onClick={openAddToPackageDialog}
+                              size="sm"
+                              disabled={selectedMaterialsForPackageAdd.size === 0}
+                              className="bg-green-600 hover:bg-green-700 whitespace-nowrap"
+                            >
+                              <Package className="w-4 h-4 mr-1" />
+                              Add to Package ({selectedMaterialsForPackageAdd.size})
+                            </Button>
+                            <Button
+                              onClick={togglePackageSelectionMode}
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            {packages.length > 0 && (
+                              <Button
+                                onClick={togglePackageSelectionMode}
+                                size="sm"
+                                variant="outline"
+                                className="whitespace-nowrap"
+                              >
+                                <Package className="w-4 h-4 mr-1" />
+                                Select for Package
+                              </Button>
+                            )}
+                            <Button
+                              onClick={() => openAddDialog()}
+                              size="sm"
+                              className="gradient-primary whitespace-nowrap"
+                            >
+                              <Plus className="w-4 h-4 mr-1" />
+                              Add Material
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -801,6 +852,11 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                         <table className="border-collapse w-auto">
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
+                            {packageSelectionMode && (
+                              <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
+                                <CheckSquare className="w-5 h-5 mx-auto" />
+                              </th>
+                            )}
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
@@ -816,7 +872,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={9} className="p-3">
+                                <td colSpan={packageSelectionMode ? 10 : 9} className="p-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
@@ -845,10 +901,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 return (
                                   <tr
                                     key={item.id}
-                                    className={`border-b hover:bg-blue-50 transition-colors ${
-                                      isEven ? 'bg-white' : 'bg-slate-50/50'
+                                    className={`border-b transition-colors ${
+                                      packageSelectionMode && selectedMaterialsForPackageAdd.has(item.id)
+                                        ? 'bg-blue-100 hover:bg-blue-200'
+                                        : `hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50/50'}`
                                     }`}
                                   >
+                                    {packageSelectionMode && (
+                                      <td className="p-1 border-r whitespace-nowrap">
+                                        <div className="flex items-center justify-center">
+                                          <Checkbox
+                                            checked={selectedMaterialsForPackageAdd.has(item.id)}
+                                            onCheckedChange={() => toggleMaterialForPackageAdd(item.id)}
+                                            disabled={isMaterialInAnyPackage(item.id)}
+                                          />
+                                        </div>
+                                      </td>
+                                    )}
                                     <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('material_name') ? (
                                         <Input
@@ -1312,6 +1381,69 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 Move Material
               </Button>
               <Button variant="outline" onClick={() => setShowMoveDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add to Package Dialog */}
+      <Dialog open={showAddToPackageDialog} onOpenChange={setShowAddToPackageDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Materials to Package</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Adding {selectedMaterialsForPackageAdd.size} material{selectedMaterialsForPackageAdd.size !== 1 ? 's' : ''} to a package
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="target-package">Select Package *</Label>
+              <Select value={targetPackageId} onValueChange={setTargetPackageId}>
+                <SelectTrigger id="target-package">
+                  <SelectValue placeholder="Choose a package..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {packages.map((pkg) => (
+                    <SelectItem key={pkg.id} value={pkg.id}>
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4" />
+                        {pkg.name}
+                        <Badge variant="secondary" className="ml-2">
+                          {pkg.bundle_items?.length || 0} items
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={addSelectedMaterialsToSelectedPackage}
+                disabled={addingMaterialsToPackage || !targetPackageId}
+                className="flex-1"
+              >
+                {addingMaterialsToPackage ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Add to Package
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowAddToPackageDialog(false)}
+                disabled={addingMaterialsToPackage}
+              >
                 Cancel
               </Button>
             </div>
