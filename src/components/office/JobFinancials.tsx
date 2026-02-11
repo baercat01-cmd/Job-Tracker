@@ -646,17 +646,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         {/* Proposal Tab */}
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
-            {/* Header with Markup Control */}
-            <div className="mb-6 flex items-center justify-between bg-white border-2 border-slate-300 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <Calculator className="w-6 h-6 text-blue-700" />
+            {/* Header with Markup Control and Project Total */}
+            <div className="mb-6 flex items-start justify-between gap-6">
+              {/* Left: Header Info */}
+              <div className="bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center gap-3 flex-1">
+                <Calculator className="w-6 h-6 text-slate-700" />
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
                   <p className="text-sm text-slate-600">{job.name}</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div>
+                <div className="ml-auto">
                   <Label className="text-sm font-semibold text-slate-700">Markup %</Label>
                   <div className="flex gap-2 items-center mt-1">
                     <Input
@@ -670,9 +669,48 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     <span className="font-semibold">%</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-slate-600">Grand Total</p>
-                  <p className="text-3xl font-bold text-blue-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+
+              {/* Right: Project Total Box */}
+              <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg" style={{ minWidth: '400px', maxWidth: '450px' }}>
+                <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <DollarSign className="w-6 h-6 text-amber-400" />
+                    Project Total
+                  </h3>
+                </div>
+                <div className="p-6 space-y-4">
+                  {/* Breakdown */}
+                  <div className="space-y-2 text-sm">
+                    {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                      <div className="flex justify-between py-2 border-b border-slate-200">
+                        <span className="font-semibold text-slate-700">Materials</span>
+                        <span className="font-bold text-slate-900">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {customRows.length > 0 && (
+                      <div className="flex justify-between py-2 border-b border-slate-200">
+                        <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
+                        <span className="font-bold text-slate-900">${(proposalAdditionalTotal + proposalLaborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Totals */}
+                  <div className="space-y-3 pt-4 border-t-2 border-slate-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Subtotal</span>
+                      <span className="font-semibold text-lg text-slate-900">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600">Sales Tax (7%)</span>
+                      <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
+                      <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
+                      <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -828,47 +866,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </div>
               </div>
 
-              {/* Grand Total */}
-              <div className="flex justify-end mt-6">
-                <div className="border-2 border-blue-700 rounded-lg overflow-hidden bg-white w-full max-w-2xl">
-                  <div className="bg-blue-700 p-4 text-white">
-                    <h3 className="text-xl font-bold">Project Total</h3>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {/* Breakdown */}
-                    <div className="space-y-2 text-sm">
-                      {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                        <div className="flex justify-between py-2 border-b">
-                          <span className="font-semibold text-slate-700">Materials</span>
-                          <span className="font-bold">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )}
-                      {customRows.length > 0 && (
-                        <div className="flex justify-between py-2 border-b">
-                          <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
-                          <span className="font-bold">${(proposalAdditionalTotal + proposalLaborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Totals */}
-                    <div className="space-y-3 pt-4 border-t-2">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600">Subtotal</span>
-                        <span className="font-semibold text-lg">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600">Sales Tax (7%)</span>
-                        <span className="font-semibold text-lg">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between pt-3 border-t-2">
-                        <span className="text-xl font-bold text-blue-900">GRAND TOTAL</span>
-                        <span className="text-3xl font-bold text-blue-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </TabsContent>
