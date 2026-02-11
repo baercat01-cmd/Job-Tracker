@@ -42,18 +42,25 @@ Deno.serve(async (req) => {
 
     // Call OnSpace AI with the PDF
     const onspaceApiKey = Deno.env.get('ONSPACE_AI_API_KEY');
+    const onspaceBaseUrl = Deno.env.get('ONSPACE_AI_BASE_URL');
+    
     if (!onspaceApiKey) {
       throw new Error('ONSPACE_AI_API_KEY not configured');
     }
+    if (!onspaceBaseUrl) {
+      throw new Error('ONSPACE_AI_BASE_URL not configured');
+    }
 
-    const aiResponse = await fetch('https://api.onspace.ai/v1/chat/completions', {
+    console.log('Using OnSpace AI Base URL:', onspaceBaseUrl);
+
+    const aiResponse = await fetch(`${onspaceBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${onspaceApiKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'google/gemini-3-flash-preview',
         messages: [
           {
             role: 'user',
@@ -103,11 +110,9 @@ Extract all line items with their descriptions, quantities, unit prices, and tot
 Extract all line items. Return ONLY the JSON object, no other text.`
               },
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'application/pdf',
-                  data: pdfBase64,
+                type: 'image_url',
+                image_url: {
+                  url: `data:application/pdf;base64,${pdfBase64}`,
                 },
               },
             ],
@@ -120,7 +125,17 @@ Extract all line items. Return ONLY the JSON object, no other text.`
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      throw new Error(`OnSpace AI error: ${errorText}`);
+      console.error('OnSpace AI error response:', errorText);
+      console.error('Status code:', aiResponse.status);
+      console.error('Status text:', aiResponse.statusText);
+      
+      // Update status to failed
+      await supabase
+        .from(table)
+        .update({ extraction_status: 'failed' })
+        .eq('id', documentId);
+      
+      throw new Error(`OnSpace AI error (${aiResponse.status}): ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
@@ -220,24 +235,6 @@ Extract all line items. Return ONLY the JSON object, no other text.`
 
   } catch (error: any) {
     console.error('Error:', error);
-    
-    // Try to update status to failed if we have documentId and documentType
-    try {
-      const { documentId, documentType } = await req.json();
-      if (documentId && documentType) {
-        const table = documentType === 'estimate' 
-          ? 'subcontractor_estimates' 
-          : 'subcontractor_invoices';
-        
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        await supabase
-          .from(table)
-          .update({ extraction_status: 'failed' })
-          .eq('id', documentId);
-      }
-    } catch (updateError) {
-      console.error('Failed to update error status:', updateError);
-    }
     
     return new Response(
       JSON.stringify({ error: error.message || 'Unknown error' }),
