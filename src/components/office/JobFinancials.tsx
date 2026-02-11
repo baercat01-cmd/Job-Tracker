@@ -120,11 +120,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [materialFiles, setMaterialFiles] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    loadData();
+    loadData(false); // Initial load with spinner
+    
+    // Set up polling for real-time updates (every 5 seconds)
+    const pollInterval = setInterval(() => {
+      loadData(true); // Silent updates during polling
+    }, 5000);
+    
+    return () => clearInterval(pollInterval);
   }, [job.id]);
 
-  async function loadData() {
-    setLoading(true);
+  async function loadData(silent = false) {
+    // Only show loading spinner on initial load, not during polling
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       await Promise.all([
         loadCustomRows(),
@@ -135,9 +145,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       ]);
     } catch (error) {
       console.error('Error loading financial data:', error);
-      toast.error('Failed to load financial data');
+      if (!silent) {
+        toast.error('Failed to load financial data');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -150,10 +164,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSubcontractorEstimates(data || []);
+      const newData = data || [];
+      if (JSON.stringify(newData) !== JSON.stringify(subcontractorEstimates)) {
+        setSubcontractorEstimates(newData);
+      }
     } catch (error: any) {
       console.error('Error loading subcontractor estimates:', error);
-      setSubcontractorEstimates([]);
+      if (subcontractorEstimates.length > 0) {
+        setSubcontractorEstimates([]);
+      }
     }
   }
 
@@ -291,7 +310,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
     
-    setCustomRows(data || []);
+    // Only update if data actually changed to prevent unnecessary re-renders
+    const newData = data || [];
+    if (JSON.stringify(newData) !== JSON.stringify(customRows)) {
+      setCustomRows(newData);
+    }
   }
 
   async function loadLaborPricing() {
@@ -307,10 +330,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
 
     if (data) {
-      setLaborPricing(data);
-      setHourlyRate(data.hourly_rate.toString());
+      if (JSON.stringify(data) !== JSON.stringify(laborPricing)) {
+        setLaborPricing(data);
+        setHourlyRate(data.hourly_rate.toString());
+      }
     } else {
-      setHourlyRate('60');
+      if (hourlyRate !== '60') {
+        setHourlyRate('60');
+      }
     }
   }
 
@@ -329,7 +356,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return sum + (entry.total_hours || 0) * (entry.crew_count || 1);
     }, 0);
 
-    setTotalClockInHours(totalHours);
+    if (totalHours !== totalClockInHours) {
+      setTotalClockInHours(totalHours);
+    }
   }
 
   async function saveLaborPricing() {
