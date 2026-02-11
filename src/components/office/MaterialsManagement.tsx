@@ -100,7 +100,7 @@ interface CategoryGroup {
 export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'packages' | 'add-to-package' | 'extras' | 'crew-orders' | 'upload' | 'photo-recovery'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'packages' | 'crew-orders' | 'upload'>('manage');
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -697,7 +697,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
+          <TabsList className="grid w-full grid-cols-4 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
               <span className="text-xs sm:text-base">Workbook</span>
@@ -705,10 +705,6 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
             <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <Package className="w-5 h-5" />
               <span className="text-xs sm:text-base">Packages</span>
-            </TabsTrigger>
-            <TabsTrigger value="add-to-package" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <Plus className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Add to Package</span>
             </TabsTrigger>
             <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <Package className="w-5 h-5" />
@@ -1065,187 +1061,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </TabsContent>
 
         <TabsContent value="packages" className="space-y-2">
-          <MaterialPackages jobId={job.id} userId={userId} />
-        </TabsContent>
-
-        <TabsContent value="add-to-package" className="space-y-3">
-          {!workbook ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Upload a workbook first to add materials to packages
-                </p>
-              </CardContent>
-            </Card>
-          ) : packages.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No Packages Available</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Create a package first in the Packages tab
-                </p>
-                <Button onClick={() => setActiveTab('packages')} className="gradient-primary">
-                  <Package className="w-4 h-4 mr-2" />
-                  Go to Packages
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-2">
-              <CardHeader className="pb-3 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <Label htmlFor="select-package" className="text-sm font-semibold mb-2 block">
-                      Select Package to Add Materials To:
-                    </Label>
-                    <Select value={selectedPackageId} onValueChange={setSelectedPackageId}>
-                      <SelectTrigger id="select-package" className="w-full bg-white border-2">
-                        <SelectValue placeholder="Choose a package..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {packages.map((pkg) => (
-                          <SelectItem key={pkg.id} value={pkg.id}>
-                            <div className="flex items-center gap-2">
-                              <Package className="w-4 h-4" />
-                              {pkg.name}
-                              <Badge variant="secondary" className="ml-2">
-                                {pkg.bundle_items?.length || 0} items
-                              </Badge>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {selectedPackageId && (
-                    <Button
-                      onClick={addSelectedMaterialsToPackage}
-                      disabled={addingToPackage || selectedMaterialsForPackage.size === 0}
-                      size="lg"
-                      className="gradient-primary mt-6"
-                    >
-                      {addingToPackage ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                          Adding...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add {selectedMaterialsForPackage.size} Material{selectedMaterialsForPackage.size !== 1 ? 's' : ''}
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-
-              {selectedPackageId && (
-                <CardContent className="p-0">
-                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
-                    <div className="flex items-center gap-1 overflow-x-auto px-2 py-1">
-                      {workbook.sheets.map((sheet) => (
-                        <Button
-                          key={sheet.id}
-                          variant={packageSheetId === sheet.id ? 'default' : 'ghost'}
-                          size="sm"
-                          onClick={() => handlePackageSheetChange(sheet.id)}
-                          className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${
-                            packageSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'
-                          }`}
-                        >
-                          <FileSpreadsheet className="w-4 h-4" />
-                          {sheet.sheet_name}
-                          <Badge variant="secondary" className="ml-auto text-xs">
-                            {sheet.items.length}
-                          </Badge>
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-4">
-                    {(() => {
-                      const packageSheet = workbook.sheets.find(s => s.id === packageSheetId);
-                      const packageCategoryGroups = packageSheet ? groupByCategory(packageSheet.items) : [];
-                      
-                      return packageCategoryGroups.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground">
-                          <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
-                          <p>No materials in this sheet</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {packageCategoryGroups.map((catGroup) => (
-                            <div key={catGroup.category} className="border-2 rounded-lg overflow-hidden">
-                              <div className="bg-gradient-to-r from-indigo-100 to-indigo-50 p-3 border-b-2 border-indigo-200">
-                                <div className="flex items-center gap-2">
-                                  <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
-                                  <h3 className="font-bold text-lg text-indigo-900">{catGroup.category}</h3>
-                                  <Badge variant="outline" className="bg-white">
-                                    {catGroup.items.length} items
-                                  </Badge>
-                                </div>
-                              </div>
-                              <div className="divide-y">
-                                {catGroup.items.map((item) => {
-                                  const isInPackage = isMaterialInPackage(item.id);
-                                  const isSelected = selectedMaterialsForPackage.has(item.id);
-                                  
-                                  return (
-                                    <div
-                                      key={item.id}
-                                      className={`p-3 flex items-center gap-3 cursor-pointer transition-colors ${
-                                        isInPackage
-                                          ? 'bg-green-50 opacity-60'
-                                          : isSelected
-                                          ? 'bg-blue-50 border-l-4 border-blue-600'
-                                          : 'hover:bg-slate-50'
-                                      }`}
-                                      onClick={() => !isInPackage && toggleMaterialForPackage(item.id)}
-                                    >
-                                      <div className="flex items-center justify-center w-6 h-6">
-                                        {isInPackage ? (
-                                          <CheckSquare className="w-5 h-5 text-green-600" />
-                                        ) : isSelected ? (
-                                          <CheckSquare className="w-5 h-5 text-blue-600" />
-                                        ) : (
-                                          <Square className="w-5 h-5 text-slate-400" />
-                                        )}
-                                      </div>
-                                      <div className="flex-1">
-                                        <div className="font-medium flex items-center gap-2">
-                                          {item.material_name}
-                                          {isInPackage && (
-                                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
-                                              Already in package
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <div className="text-sm text-muted-foreground mt-1">
-                                          {item.usage && <span>{item.usage} • </span>}
-                                          Qty: {item.quantity}
-                                          {item.length && ` • ${item.length}`}
-                                          {item.cost_per_unit && ` • $${item.cost_per_unit.toFixed(2)}`}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
+          <MaterialPackages jobId={job.id} userId={userId} workbook={workbook} />
         </TabsContent>
 
         <TabsContent value="crew-orders" className="space-y-2">

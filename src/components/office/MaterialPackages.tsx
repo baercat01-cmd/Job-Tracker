@@ -29,9 +29,9 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
+  ChevronLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface MaterialItem {
   id: string;
@@ -40,6 +40,8 @@ interface MaterialItem {
   material_name: string;
   quantity: number;
   length: string | null;
+  usage: string | null;
+  cost_per_unit: number | null;
   sheets: {
     sheet_name: string;
   };
@@ -65,15 +67,32 @@ interface MaterialBundle {
   bundle_items: BundleItem[];
 }
 
+interface MaterialWorkbook {
+  id: string;
+  job_id: string;
+  sheets: MaterialSheet[];
+}
+
+interface MaterialSheet {
+  id: string;
+  workbook_id: string;
+  sheet_name: string;
+  items: MaterialItem[];
+}
+
 interface MaterialPackagesProps {
   jobId: string;
   userId: string;
+  workbook?: MaterialWorkbook | null;
 }
 
-export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
+export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesProps) {
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState<'list' | 'add'>('list');
+  const [selectedPackageForAdd, setSelectedPackageForAdd] = useState<string>('');
+  const [selectedSheetId, setSelectedSheetId] = useState<string>('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAddMaterialsDialog, setShowAddMaterialsDialog] = useState(false);
@@ -89,6 +108,11 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
   useEffect(() => {
     loadPackages();
     loadAvailableMaterials();
+
+    // Set initial sheet if workbook is available
+    if (workbook && workbook.sheets.length > 0 && !selectedSheetId) {
+      setSelectedSheetId(workbook.sheets[0].id);
+    }
 
     // Subscribe to changes
     const bundlesChannel = supabase
@@ -115,7 +139,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
       supabase.removeChannel(bundlesChannel);
       supabase.removeChannel(itemsChannel);
     };
-  }, [jobId]);
+  }, [jobId, workbook]);
 
   async function loadPackages() {
     try {
@@ -137,6 +161,8 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
               material_name,
               quantity,
               length,
+              usage,
+              cost_per_unit,
               sheets:material_sheets(sheet_name)
             )
           )
@@ -179,7 +205,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
       // Get all material items
       const { data: itemsData } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, cost_per_unit')
         .in('sheet_id', sheetIds)
         .order('material_name');
 
@@ -228,15 +254,10 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
       return;
     }
 
-    if (selectedMaterialIds.size === 0) {
-      toast.error('Please select at least one material');
-      return;
-    }
-
     setSaving(true);
 
     try {
-      // Create bundle
+      // Create bundle first without materials (materials are optional)
       const { data: bundleData, error: bundleError } = await supabase
         .from('material_bundles')
         .insert({
@@ -251,17 +272,19 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
 
       if (bundleError) throw bundleError;
 
-      // Add materials to bundle
-      const bundleItems = Array.from(selectedMaterialIds).map(materialId => ({
-        bundle_id: bundleData.id,
-        material_item_id: materialId,
-      }));
+      // Add materials to bundle if any selected
+      if (selectedMaterialIds.size > 0) {
+        const bundleItems = Array.from(selectedMaterialIds).map(materialId => ({
+          bundle_id: bundleData.id,
+          material_item_id: materialId,
+        }));
 
-      const { error: itemsError } = await supabase
-        .from('material_bundle_items')
-        .insert(bundleItems);
+        const { error: itemsError } = await supabase
+          .from('material_bundle_items')
+          .insert(bundleItems);
 
-      if (itemsError) throw itemsError;
+        if (itemsError) throw itemsError;
+      }
 
       toast.success('Package created');
       setShowCreateDialog(false);
@@ -444,6 +467,67 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
     setExpandedPackages(newSet);
   }
 
+  function isMaterialInPackage(materialId: string): boolean {
+    if (!selectedPackageForAdd) return false;
+    const pkg = packages.find(p => p.id === selectedPackageForAdd);
+    return pkg?.bundle_items?.some(item => item.material_item_id === materialId) || false;
+  }
+
+  async function addSelectedMaterialsToPackage() {
+    if (!selectedPackageForAdd) {
+      toast.error('Please select a package');
+      return;
+    }
+
+    if (selectedMaterialIds.size === 0) {
+      toast.error('Please select at least one material');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Get existing materials in package
+      const pkg = packages.find(p => p.id === selectedPackageForAdd);
+      const existingMaterialIds = new Set(
+        pkg?.bundle_items?.map(item => item.material_item_id) || []
+      );
+
+      // Filter out materials already in package
+      const materialsToAdd = Array.from(selectedMaterialIds).filter(
+        id => !existingMaterialIds.has(id)
+      );
+
+      if (materialsToAdd.length === 0) {
+        toast.error('All selected materials are already in this package');
+        setSaving(false);
+        return;
+      }
+
+      // Add materials to package
+      const bundleItems = materialsToAdd.map(materialId => ({
+        bundle_id: selectedPackageForAdd,
+        material_item_id: materialId,
+      }));
+
+      const { error } = await supabase
+        .from('material_bundle_items')
+        .insert(bundleItems);
+
+      if (error) throw error;
+
+      toast.success(`Added ${materialsToAdd.length} material${materialsToAdd.length !== 1 ? 's' : ''} to package`);
+      setSelectedMaterialIds(new Set());
+      setActiveView('list');
+      loadPackages();
+    } catch (error: any) {
+      console.error('Error adding materials to package:', error);
+      toast.error('Failed to add materials to package');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function getStatusColor(status: string): string {
     switch (status) {
       case 'ordered':
@@ -460,6 +544,19 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
     }
   }
 
+  // Group materials by category for add view
+  const groupByCategory = (items: MaterialItem[]) => {
+    const categoryMap = new Map<string, MaterialItem[]>();
+    items.forEach(item => {
+      const category = item.category || 'Uncategorized';
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, []);
+      }
+      categoryMap.get(category)!.push(item);
+    });
+    return Array.from(categoryMap.entries()).map(([category, items]) => ({ category, items }));
+  };
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -469,7 +566,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
     );
   }
 
-  // Group materials by sheet
+  // Group materials by sheet for create/edit dialogs
   const materialsBySheet = availableMaterials.reduce((acc, material) => {
     const sheetName = material.sheets.sheet_name;
     if (!acc[sheetName]) {
@@ -478,6 +575,9 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
     acc[sheetName].push(material);
     return acc;
   }, {} as Record<string, MaterialItem[]>);
+
+  const currentSheet = workbook?.sheets.find(s => s.id === selectedSheetId);
+  const categoryGroups = currentSheet ? groupByCategory(currentSheet.items) : [];
 
   return (
     <div className="space-y-4">
@@ -492,14 +592,177 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
             Bundle materials together for easier tracking
           </p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Package
-        </Button>
+        <div className="flex gap-2">
+          {activeView === 'add' && (
+            <Button onClick={() => {
+              setActiveView('list');
+              setSelectedMaterialIds(new Set());
+              setSelectedPackageForAdd('');
+            }} variant="outline">
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Back to Packages
+            </Button>
+          )}
+          {activeView === 'list' && packages.length > 0 && workbook && (
+            <Button onClick={() => setActiveView('add')} variant="outline">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Materials to Package
+            </Button>
+          )}
+          <Button onClick={openCreateDialog}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Package
+          </Button>
+        </div>
       </div>
 
+      {/* Add Materials View */}
+      {activeView === 'add' && workbook && (
+        <Card className="border-2">
+          <CardHeader className="pb-3 border-b bg-gradient-to-r from-blue-50 to-blue-100">
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="select-package" className="text-sm font-semibold mb-2 block">
+                  Select Package to Add Materials To:
+                </Label>
+                <Select value={selectedPackageForAdd} onValueChange={setSelectedPackageForAdd}>
+                  <SelectTrigger id="select-package" className="bg-white border-2">
+                    <SelectValue placeholder="Choose a package..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {packages.map((pkg) => (
+                      <SelectItem key={pkg.id} value={pkg.id}>
+                        <div className="flex items-center gap-2">
+                          <Package className="w-4 h-4" />
+                          {pkg.name}
+                          <Badge variant="secondary" className="ml-2">
+                            {pkg.bundle_items?.length || 0} items
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedPackageForAdd && selectedMaterialIds.size > 0 && (
+                <Button
+                  onClick={addSelectedMaterialsToPackage}
+                  disabled={saving}
+                  className="w-full"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add {selectedMaterialIds.size} Material{selectedMaterialIds.size !== 1 ? 's' : ''}
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          {selectedPackageForAdd && (
+            <CardContent className="p-0">
+              <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
+                <div className="flex items-center gap-1 overflow-x-auto px-2 py-1">
+                  {workbook.sheets.map((sheet) => (
+                    <Button
+                      key={sheet.id}
+                      variant={selectedSheetId === sheet.id ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setSelectedSheetId(sheet.id)}
+                      className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${
+                        selectedSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'
+                      }`}
+                    >
+                      {sheet.sheet_name}
+                      <Badge variant="secondary" className="ml-auto text-xs">
+                        {sheet.items.length}
+                      </Badge>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4">
+                {categoryGroups.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Package className="w-16 h-16 mx-auto mb-3 opacity-50" />
+                    <p>No materials in this sheet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {categoryGroups.map((catGroup) => (
+                      <div key={catGroup.category} className="border-2 rounded-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-indigo-100 to-indigo-50 p-3 border-b-2 border-indigo-200">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg text-indigo-900">{catGroup.category}</h3>
+                            <Badge variant="outline" className="bg-white">
+                              {catGroup.items.length} items
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="divide-y">
+                          {catGroup.items.map((item) => {
+                            const isInPackage = isMaterialInPackage(item.id);
+                            const isSelected = selectedMaterialIds.has(item.id);
+                            
+                            return (
+                              <div
+                                key={item.id}
+                                className={`p-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                                  isInPackage
+                                    ? 'bg-green-50 opacity-60'
+                                    : isSelected
+                                    ? 'bg-blue-50 border-l-4 border-blue-600'
+                                    : 'hover:bg-slate-50'
+                                }`}
+                                onClick={() => !isInPackage && toggleMaterialSelection(item.id)}
+                              >
+                                <div className="flex items-center justify-center w-6 h-6">
+                                  {isInPackage ? (
+                                    <CheckSquare className="w-5 h-5 text-green-600" />
+                                  ) : isSelected ? (
+                                    <CheckSquare className="w-5 h-5 text-blue-600" />
+                                  ) : (
+                                    <Square className="w-5 h-5 text-slate-400" />
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="font-medium flex items-center gap-2">
+                                    {item.material_name}
+                                    {isInPackage && (
+                                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                                        Already in package
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground mt-1">
+                                    {item.usage && <span>{item.usage} • </span>}
+                                    Qty: {item.quantity}
+                                    {item.length && ` • ${item.length}`}
+                                    {item.cost_per_unit && ` • $${item.cost_per_unit.toFixed(2)}`}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       {/* Packages List */}
-      {packages.length === 0 ? (
+      {activeView === 'list' && packages.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
@@ -513,7 +776,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
             </Button>
           </CardContent>
         </Card>
-      ) : (
+      ) : activeView === 'list' ? (
         <div className="space-y-3">
           {packages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
@@ -636,7 +899,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Create Package Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
@@ -667,7 +930,7 @@ export function MaterialPackages({ jobId, userId }: MaterialPackagesProps) {
             </div>
 
             <div className="space-y-2">
-              <Label>Select Materials *</Label>
+              <Label>Select Materials (Optional - you can add materials later)</Label>
               <div className="border rounded-lg max-h-[400px] overflow-y-auto">
                 {Object.entries(materialsBySheet).map(([sheetName, materials]) => (
                   <div key={sheetName} className="border-b last:border-b-0">
