@@ -1311,7 +1311,13 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Export Button removed - no longer needed in crew field view */}
+      {/* Job Name Header */}
+      <div className="sticky top-0 z-40 bg-gradient-to-r from-slate-800 to-slate-700 text-white px-4 py-3 shadow-md border-b-2 border-slate-600">
+        <h1 className="text-lg sm:text-xl font-bold truncate">{job.name}</h1>
+        {job.client_name && (
+          <p className="text-xs sm:text-sm text-slate-300 mt-0.5 truncate">{job.client_name}</p>
+        )}
+      </div>
 
       {/* Status Color Bar - Shows at top when on ready or pull tabs */}
       {activeTab === 'ready' && (
