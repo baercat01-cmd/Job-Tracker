@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1035,326 +1036,307 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           </div>
         </TabsContent>
 
-        {/* Proposal Tab - Complete Project Pricing with Black/Gold/Green Theme */}
+        {/* Proposal Tab - Reorganized like paper proposals with clean sections */}
         <TabsContent value="proposal">
-          <div className="max-w-[1600px] mx-auto px-4">
-            <div className="flex gap-4">
-              {/* Main Content */}
-              <div className="flex-1 space-y-4">
-                {/* Markup Control */}
-                <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
-                  <CardHeader className="bg-gradient-to-r from-yellow-600 to-yellow-700 border-b-2 border-yellow-600">
-                    <CardTitle className="flex items-center gap-2 text-slate-900">
-                      <Calculator className="w-5 h-5" />
-                      Proposal Configuration
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="max-w-md">
-                      <Label className="text-base font-semibold text-yellow-500">Markup Percentage</Label>
-                      <div className="flex gap-3 items-center mt-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={proposalMarkup}
-                          onChange={(e) => setProposalMarkup(e.target.value)}
-                          className="w-32 text-lg font-bold bg-slate-800 border-yellow-600 text-yellow-500"
-                        />
-                        <span className="text-lg font-semibold text-yellow-500">%</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setProposalMarkup('10')}
-                          className="ml-auto border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-slate-900"
-                        >
-                          Reset to 10%
-                        </Button>
-                      </div>
-                      <p className="text-sm text-slate-400 mt-2">
-                        Applied to materials and additional costs • 7% tax on materials • Labor not taxed
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+          <div className="max-w-[1400px] mx-auto px-4">
+            {/* Header with Markup Control */}
+            <div className="mb-6 flex items-center justify-between bg-white border-2 border-slate-300 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <Calculator className="w-6 h-6 text-blue-700" />
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
+                  <p className="text-sm text-slate-600">{job.name}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div>
+                  <Label className="text-sm font-semibold text-slate-700">Markup %</Label>
+                  <div className="flex gap-2 items-center mt-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={proposalMarkup}
+                      onChange={(e) => setProposalMarkup(e.target.value)}
+                      className="w-24 font-bold"
+                    />
+                    <span className="font-semibold">%</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-slate-600">Grand Total</p>
+                  <p className="text-3xl font-bold text-blue-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            </div>
 
-                {/* Materials Section */}
-                {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                  <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
-                    <CardHeader className="bg-gradient-to-r from-emerald-800 to-emerald-900 border-b-2 border-emerald-700">
-                      <CardTitle className="flex items-center gap-2 text-yellow-500">
-                        <FileSpreadsheet className="w-5 h-5" />
-                        Materials
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4 space-y-3">
-                      {/* Materials Summary */}
-                      <div className="grid grid-cols-4 gap-3 p-4 bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg border border-yellow-600/30">
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Cost</p>
-                          <p className="text-lg font-bold text-yellow-500">${proposalMaterialsCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Price (+{markup.toFixed(1)}%)</p>
-                          <p className="text-lg font-bold text-emerald-400">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Tax (7%)</p>
-                          <p className="text-lg font-bold text-yellow-400">${proposalMaterialsTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Total</p>
-                          <p className="text-lg font-bold text-white">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </div>
+            {/* Proposal Sections - Clean layout matching paper proposals */}
+            <div className="space-y-3">
+              {/* Building Materials Section */}
+              {materialsBreakdown.sheetBreakdowns.length > 0 && materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
+                const sheetCost = sheet.totalPrice;
+                const sheetPrice = sheetCost * (1 + markup / 100);
+                const sheetTax = sheetPrice * TAX_RATE;
+                const sheetTotal = sheetPrice + sheetTax;
 
-                      {/* Materials Breakdown */}
-                      <div className="space-y-2">
-                        {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
-                          const sheetCost = sheet.totalPrice;
-                          const sheetPrice = sheetCost * (1 + markup / 100);
-                          const sheetTax = sheetPrice * TAX_RATE;
-                          const sheetTotal = sheetPrice + sheetTax;
+                return (
+                  <Collapsible key={idx} defaultOpen={true}>
+                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                      <CollapsibleTrigger className="w-full">
+                        <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
+                          <div className="flex items-center gap-3">
+                            <ChevronDown className="w-5 h-5 text-blue-700" />
+                            <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-blue-900">${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="p-4 space-y-2">
+                          {sheet.categories.map((category: any, catIndex: number) => {
+                            const catCost = category.totalPrice;
+                            const catPrice = catCost * (1 + markup / 100);
+                            const catTax = catPrice * TAX_RATE;
+                            const catTotal = catPrice + catTax;
 
-                          return (
-                            <div key={idx} className="border border-yellow-600/30 rounded-lg p-3 bg-slate-800/50">
-                              <div className="flex items-center justify-between">
-                                <h4 className="font-semibold text-yellow-500">{sheet.sheetName}</h4>
-                                <div className="flex items-center gap-4">
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Cost</p>
-                                    <p className="font-semibold text-sm text-slate-300">${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Price</p>
-                                    <p className="font-semibold text-sm text-emerald-400">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Tax</p>
-                                    <p className="font-semibold text-sm text-yellow-400">${sheetTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Total</p>
-                                    <p className="font-bold text-white">${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
+                            return (
+                              <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200 last:border-0">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-slate-900">{category.name}</p>
+                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-slate-900">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} + Tax: ${catTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
                               </div>
+                            );
+                          })}
+                          
+                          {/* Sheet Total Breakdown */}
+                          <div className="mt-3 pt-3 border-t-2 border-slate-300 grid grid-cols-4 gap-2 text-sm">
+                            <div className="text-center">
+                              <p className="text-slate-600">Base</p>
+                              <p className="font-semibold">${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                            <div className="text-center">
+                              <p className="text-slate-600">+Markup</p>
+                              <p className="font-semibold">${(sheetPrice - sheetCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-slate-600">+Tax</p>
+                              <p className="font-semibold">${sheetTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-slate-600 font-semibold">Total</p>
+                              <p className="font-bold text-blue-700">${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </div>
+                  </Collapsible>
+                );
+              })}
 
-                {/* Additional Costs Section */}
-                {customRows.length > 0 && (
-                  <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
-                    <CardHeader className="bg-gradient-to-r from-emerald-800 to-emerald-900 border-b-2 border-emerald-700">
-                      <CardTitle className="flex items-center gap-2 text-yellow-500">
-                        <DollarSign className="w-5 h-5" />
-                        Additional Costs
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4 space-y-3">
-                      {/* Additional Costs Summary */}
-                      <div className="grid grid-cols-4 gap-3 p-4 bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg border border-yellow-600/30">
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Cost</p>
-                          <p className="text-lg font-bold text-yellow-500">${proposalAdditionalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Price (+{markup.toFixed(1)}%)</p>
-                          <p className="text-lg font-bold text-emerald-400">${proposalAdditionalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Tax (7%)</p>
-                          <p className="text-lg font-bold text-yellow-400">${proposalAdditionalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-slate-400 mb-1">Total</p>
-                          <p className="text-lg font-bold text-white">${proposalAdditionalTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </div>
+              {/* Additional Costs by Category */}
+              {Object.entries(groupedRows).map(([cat, rows]) => {
+                const catTotalCost = rows.reduce((sum, r) => sum + r.selling_price, 0);
+                const catTotalPrice = catTotalCost * (1 + markup / 100);
+                const catTax = catTotalPrice * TAX_RATE;
+                const catTotal = catTotalPrice + catTax;
 
-                      {/* Category Breakdown */}
-                      <div className="space-y-2">
-                        {Object.entries(groupedRows).map(([cat, rows]) => {
-                          const catTotalCost = rows.reduce((sum, r) => sum + r.selling_price, 0);
-                          const catTotalPrice = catTotalCost * (1 + markup / 100);
-                          const catTax = catTotalPrice * TAX_RATE;
-                          const catTotal = catTotalPrice + catTax;
+                return (
+                  <Collapsible key={cat} defaultOpen={true}>
+                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                      <CollapsibleTrigger className="w-full">
+                        <div className="bg-orange-50 hover:bg-orange-100 transition-colors p-3 flex items-center justify-between border-b">
+                          <div className="flex items-center gap-3">
+                            <ChevronDown className="w-5 h-5 text-orange-700" />
+                            <h3 className="text-lg font-bold text-orange-900">{categoryLabels[cat] || cat}</h3>
+                            <Badge variant="outline">{rows.length} items</Badge>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-orange-900">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="p-4 space-y-2">
+                          {rows.map((row) => {
+                            const rowCost = row.selling_price;
+                            const rowPrice = rowCost * (1 + markup / 100);
+                            const rowTax = rowPrice * TAX_RATE;
+                            const rowTotal = rowPrice + rowTax;
 
-                          return (
-                            <div key={cat} className="border border-yellow-600/30 rounded-lg p-3 bg-slate-800/50">
-                              <div className="flex items-center justify-between">
-                                <h4 className="font-semibold text-yellow-500">{categoryLabels[cat] || cat}</h4>
-                                <div className="flex items-center gap-4">
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Cost</p>
-                                    <p className="font-semibold text-sm text-slate-300">${catTotalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Price</p>
-                                    <p className="font-semibold text-sm text-emerald-400">${catTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Tax</p>
-                                    <p className="font-semibold text-sm text-yellow-400">${catTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs text-slate-400">Total</p>
-                                    <p className="font-bold text-white">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
+                            return (
+                              <div key={row.id} className="flex items-start justify-between py-2 border-b border-slate-200 last:border-0">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-slate-900">{row.description}</p>
+                                  {row.notes && <p className="text-sm text-slate-600">{row.notes}</p>}
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Qty: {row.quantity} × ${row.unit_cost.toFixed(2)}
+                                    {row.markup_percent > 0 && ` (+${row.markup_percent.toFixed(1)}% markup)`}
+                                  </p>
+                                </div>
+                                <div className="text-right ml-4">
+                                  <p className="font-bold text-slate-900">${rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-slate-500">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} + Tax: ${rowTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
                               </div>
+                            );
+                          })}
+
+                          {/* Category Total Breakdown */}
+                          <div className="mt-3 pt-3 border-t-2 border-slate-300 grid grid-cols-4 gap-2 text-sm">
+                            <div className="text-center">
+                              <p className="text-slate-600">Base</p>
+                              <p className="font-semibold">${catTotalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Subcontractor Documents Section */}
-                <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
-                  <CardHeader className="bg-gradient-to-r from-emerald-800 to-emerald-900 border-b-2 border-emerald-700">
-                    <CardTitle className="flex items-center gap-2 text-yellow-500">
-                      <Briefcase className="w-5 h-5" />
-                      Subcontractor Estimates & Invoices
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    <SubcontractorEstimatesManagement jobId={job.id} />
-                  </CardContent>
-                </Card>
-
-                {/* Labor Section */}
-                <Card className="border-2 border-yellow-600/30 bg-gradient-to-br from-slate-900 to-slate-800">
-                  <CardHeader className="bg-gradient-to-r from-emerald-800 to-emerald-900 border-b-2 border-emerald-700">
-                    <CardTitle className="flex items-center gap-2 text-yellow-500">
-                      <Clock className="w-5 h-5" />
-                      Labor
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-3">
-                    {/* Labor Summary */}
-                    <div className="grid grid-cols-4 gap-3 p-4 bg-gradient-to-r from-slate-800 to-slate-900 rounded-lg border border-yellow-600/30">
-                      <div className="text-center">
-                        <p className="text-xs text-slate-400 mb-1">Cost</p>
-                        <p className="text-lg font-bold text-yellow-500">${proposalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-slate-400 mb-1">Price</p>
-                        <p className="text-lg font-bold text-emerald-400">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-slate-400 mb-1">Tax</p>
-                        <p className="text-lg font-bold text-slate-500">$0.00</p>
-                        <p className="text-xs text-slate-500">Not Taxed</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-slate-400 mb-1">Total</p>
-                        <p className="text-lg font-bold text-white">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
+                            <div className="text-center">
+                              <p className="text-slate-600">+Markup</p>
+                              <p className="font-semibold">${(catTotalPrice - catTotalCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-slate-600">+Tax</p>
+                              <p className="font-semibold">${catTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-slate-600 font-semibold">Total</p>
+                              <p className="font-bold text-orange-700">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
                     </div>
+                  </Collapsible>
+                );
+              })}
 
-                    {/* Labor Details */}
-                    <div className="border border-yellow-600/30 rounded-lg p-3 bg-slate-800/50">
-                      <div className="grid grid-cols-3 gap-4 text-center">
-                        <div>
-                          <p className="text-xs text-slate-400 mb-1">Estimated Hours</p>
-                          <p className="text-lg font-bold text-yellow-500">{estimatedHours.toFixed(2)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400 mb-1">Hourly Rate</p>
-                          <p className="text-lg font-bold text-emerald-400">${laborRate.toFixed(2)}/hr</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400 mb-1">Clock-In Hours</p>
-                          <p className={`text-lg font-bold ${isOverBudget ? 'text-red-400' : 'text-slate-300'}`}>
-                            {totalClockInHours.toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+              {/* Subcontractor Estimates - integrated into proposal sections */}
+              <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                <div className="bg-purple-50 p-3 border-b">
+                  <div className="flex items-center gap-3">
+                    <Briefcase className="w-5 h-5 text-purple-700" />
+                    <h3 className="text-lg font-bold text-purple-900">Subcontractors</h3>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <SubcontractorEstimatesManagement jobId={job.id} />
+                </div>
               </div>
 
-              {/* Sidebar - Proposal Summary */}
-              <div className="w-96">
-                <Card className="border-2 border-yellow-600 bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 sticky top-4">
-                  <CardHeader className="bg-gradient-to-r from-yellow-600 to-yellow-700 border-b-2 border-yellow-600">
-                    <CardTitle className="flex items-center gap-2 text-slate-900">
-                      <TrendingUp className="w-5 h-5" />
-                      Proposal Summary
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6 space-y-4">
-                    {/* Line Items */}
-                    <div className="space-y-3">
-                      {/* Materials */}
-                      {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                        <div className="flex items-center justify-between py-2 border-b border-yellow-600/30">
-                          <span className="text-sm text-yellow-500 font-semibold">Materials</span>
-                          <span className="text-white font-bold">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )}
-                      
-                      {/* Additional Costs */}
-                      {customRows.length > 0 && (
-                        <div className="flex items-center justify-between py-2 border-b border-yellow-600/30">
-                          <span className="text-sm text-yellow-500 font-semibold">Additional Costs</span>
-                          <span className="text-white font-bold">${proposalAdditionalTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )}
-                      
-                      {/* Labor */}
-                      <div className="flex items-center justify-between py-2 border-b border-yellow-600/30">
-                        <span className="text-sm text-yellow-500 font-semibold">Labor</span>
-                        <span className="text-white font-bold">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              {/* Labor Section */}
+              <Collapsible defaultOpen={true}>
+                <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                  <CollapsibleTrigger className="w-full">
+                    <div className="bg-amber-50 hover:bg-amber-100 transition-colors p-3 flex items-center justify-between border-b">
+                      <div className="flex items-center gap-3">
+                        <ChevronDown className="w-5 h-5 text-amber-700" />
+                        <h3 className="text-lg font-bold text-amber-900">Labor</h3>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-amber-900">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                       </div>
                     </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-start justify-between py-2 border-b border-slate-200">
+                        <div className="flex-1">
+                          <p className="font-semibold text-slate-900">Labor & Installation</p>
+                          <p className="text-sm text-slate-600">
+                            {estimatedHours.toFixed(2)} estimated hours × ${laborRate.toFixed(2)}/hr
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Clock-in hours: {totalClockInHours.toFixed(2)} {isOverBudget && <span className="text-red-600 font-semibold">(Over budget)</span>}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-slate-900">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <p className="text-xs text-slate-500">Not taxed</p>
+                        </div>
+                      </div>
 
-                    {/* Subtotals */}
-                    <div className="space-y-3 p-4 bg-slate-800/50 rounded-lg border border-yellow-600/30">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-slate-400 uppercase tracking-wide">Subtotal</p>
-                        <p className="text-lg font-bold text-slate-300">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-slate-400 uppercase tracking-wide">Tax (7%)</p>
-                        <p className="text-lg font-bold text-yellow-400">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                    </div>
-
-                    {/* Grand Total */}
-                    <div className="space-y-3 p-6 bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-lg">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-900/20">
-                        <p className="text-sm uppercase tracking-wide font-bold text-slate-900">Grand Total</p>
-                        <p className="text-3xl font-bold text-slate-900">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-wide text-slate-800">Total Profit</p>
-                        <p className="text-xl font-bold text-emerald-900">${proposalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-wide text-slate-800">Profit Margin</p>
-                        <div className="flex items-center gap-2">
-                          <Percent className="w-4 h-4 text-emerald-900" />
-                          <p className="text-xl font-bold text-emerald-900">{proposalMargin.toFixed(1)}%</p>
+                      <div className="mt-3 pt-3 border-t-2 border-slate-300 grid grid-cols-4 gap-2 text-sm">
+                        <div className="text-center">
+                          <p className="text-slate-600">Base</p>
+                          <p className="font-semibold">${proposalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-slate-600">+Markup</p>
+                          <p className="font-semibold">$0.00</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-slate-600">+Tax</p>
+                          <p className="font-semibold">$0.00</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-slate-600 font-semibold">Total</p>
+                          <p className="font-bold text-amber-700">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                         </div>
                       </div>
                     </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
 
-                    {/* Base Cost Reference */}
-                    <div className="p-4 bg-slate-800/30 rounded-lg border border-emerald-700/30">
-                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Base Cost</p>
-                      <p className="text-lg font-bold text-emerald-400">${proposalTotalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              {/* Grand Total Summary */}
+              <div className="border-2 border-blue-700 rounded-lg overflow-hidden bg-white mt-6">
+                <div className="bg-blue-700 p-4 text-white">
+                  <h3 className="text-xl font-bold">Project Total</h3>
+                </div>
+                <div className="p-6 space-y-4">
+                  {/* Breakdown */}
+                  <div className="space-y-2 text-sm">
+                    {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-semibold text-slate-700">Materials</span>
+                        <span className="font-bold">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {customRows.length > 0 && (
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="font-semibold text-slate-700">Additional Costs</span>
+                        <span className="font-bold">${proposalAdditionalTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-2 border-b">
+                      <span className="font-semibold text-slate-700">Labor</span>
+                      <span className="font-bold">${proposalLaborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="space-y-3 pt-4 border-t-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Subtotal</span>
+                      <span className="font-semibold text-lg">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Sales Tax (7%)</span>
+                      <span className="font-semibold text-lg">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between pt-3 border-t-2">
+                      <span className="text-xl font-bold text-blue-900">GRAND TOTAL</span>
+                      <span className="text-3xl font-bold text-blue-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+
+                  {/* Profit Summary */}
+                  <div className="mt-6 pt-6 border-t-2 grid grid-cols-2 gap-4 bg-green-50 rounded-lg p-4">
+                    <div className="text-center">
+                      <p className="text-sm text-slate-600">Projected Profit</p>
+                      <p className="text-2xl font-bold text-green-700">${proposalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-slate-600">Profit Margin</p>
+                      <p className="text-2xl font-bold text-green-700">{proposalMargin.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
