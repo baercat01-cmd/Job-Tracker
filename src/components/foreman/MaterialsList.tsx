@@ -28,6 +28,7 @@ import { getLocalDateString, cleanMaterialValue } from '@/lib/utils';
 import type { Job } from '@/types';
 import { ReadyForJobMaterials } from './ReadyForJobMaterials';
 import { MaterialsCatalogBrowser } from './MaterialsCatalogBrowser';
+import { MaterialProcessing } from './MaterialProcessing';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface Material {
@@ -92,7 +93,7 @@ interface MaterialsListProps {
   userId: string;
   userRole?: 'office' | 'foreman' | 'shop' | 'crew';
   allowBundleCreation?: boolean;
-  defaultTab?: 'all' | 'ready' | 'pull' | 'bundles' | 'order';
+  defaultTab?: 'all' | 'ready' | 'pull' | 'bundles' | 'order' | 'processing';
 }
 
 const STATUS_CONFIG = {
@@ -126,7 +127,7 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [materialBundleMap, setMaterialBundleMap] = useState<Map<string, { bundleId: string; bundleName: string }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull' | 'bundles' | 'order'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'pull' | 'bundles' | 'order' | 'processing'>(defaultTab);
   const [readyMaterialsCount, setReadyMaterialsCount] = useState(0);
   const [pullFromShopCount, setPullFromShopCount] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -1326,9 +1327,9 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
       )}
 
       {/* Tab Switcher with Swipe Navigation Hints - Mobile Optimized */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'order')} className="w-full">
-        <div className={`relative ${activeTab === 'order' ? '' : 'px-2 sm:px-4 mb-4'}`}>
-          <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-5' : 'grid-cols-4'} bg-slate-100 p-1 rounded-none`}>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'ready' | 'pull' | 'bundles' | 'order' | 'processing')} className="w-full">
+        <div className={`relative ${activeTab === 'order' || activeTab === 'processing' ? '' : 'px-2 sm:px-4 mb-4'}`}>
+          <TabsList className={`grid w-full gap-1 sm:gap-2 ${pullFromShopCount > 0 ? 'grid-cols-6' : 'grid-cols-5'} bg-slate-100 p-1 rounded-none`}>
             <TabsTrigger
               value="all"
               className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
@@ -1380,6 +1381,14 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
                   {bundles.length}
                 </Badge>
               )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="processing"
+              className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3 py-2 sm:py-2.5 data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm rounded-none text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Processing</span>
+              <span className="sm:hidden">Process</span>
             </TabsTrigger>
             <TabsTrigger
               value="order"
@@ -1596,6 +1605,10 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
         <TabsContent value="bundles" className="px-2 sm:px-4">
           {/* Bundles tab content - keeping original */}
+        </TabsContent>
+
+        <TabsContent value="processing" className="px-2 sm:px-4">
+          <MaterialProcessing job={job} userId={userId} />
         </TabsContent>
 
         <TabsContent value="order" className="h-full">
