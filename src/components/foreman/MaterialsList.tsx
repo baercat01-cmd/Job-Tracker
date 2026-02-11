@@ -168,6 +168,11 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
   const [materialNotes, setMaterialNotes] = useState('');
   const [materialPhotos, setMaterialPhotos] = useState<MaterialPhoto[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showPhotoViewer, setShowPhotoViewer] = useState(false);
+  const [viewerPhotos, setViewerPhotos] = useState<MaterialPhoto[]>([]);
+  const [viewerCurrentIndex, setViewerCurrentIndex] = useState(0);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [editQuantity, setEditQuantity] = useState<number>(0);
   const [savingQuantity, setSavingQuantity] = useState(false);
   const [editName, setEditName] = useState('');
@@ -1070,14 +1075,31 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       if (dbError) throw dbError;
 
-      // Silent success - photo uploaded
+      toast.success('Photo uploaded');
       loadMaterialPhotos(selectedMaterial.id);
     } catch (error: any) {
       toast.error('Failed to upload photo');
       console.error(error);
     } finally {
       setUploadingPhoto(false);
+      // Reset file inputs
+      if (photoInputRef.current) photoInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
+  }
+
+  function openPhotoViewer(photos: MaterialPhoto[], startIndex: number = 0) {
+    setViewerPhotos(photos);
+    setViewerCurrentIndex(startIndex);
+    setShowPhotoViewer(true);
+  }
+
+  function nextPhoto() {
+    setViewerCurrentIndex((prev) => (prev + 1) % viewerPhotos.length);
+  }
+
+  function prevPhoto() {
+    setViewerCurrentIndex((prev) => (prev - 1 + viewerPhotos.length) % viewerPhotos.length);
   }
 
   function groupMaterialsByNameAndLength(materials: Material[]): GroupedMaterial[] {

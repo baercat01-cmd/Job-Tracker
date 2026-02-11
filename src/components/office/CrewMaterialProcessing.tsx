@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, User, Clock, AlertTriangle, Package, Palette, ArrowRight, CheckCircle, Image as ImageIcon } from 'lucide-react';
+import { Calendar, User, Clock, AlertTriangle, Package, Palette, ArrowRight, CheckCircle, Image as ImageIcon, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CrewMaterial {
@@ -433,8 +433,8 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
                     </Badge>
                   </div>
 
-                  {/* Show photo count if available */}
-                  <PhotoPreview materialId={material.id} />
+                  {/* Show photo count and viewer if available */}
+                  <PhotoPreviewWithViewer materialId={material.id} materialName={material.name} />
                 </div>
 
                 {/* Action Buttons */}
@@ -635,33 +635,134 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
   );
 }
 
-// Small component to show photo count for a material
-function PhotoPreview({ materialId }: { materialId: string }) {
-  const [photoCount, setPhotoCount] = useState<number>(0);
+// Component to show photo count and viewer for a material
+function PhotoPreviewWithViewer({ materialId, materialName }: { materialId: string; materialName: string }) {
+  const [photos, setPhotos] = useState<MaterialPhoto[]>([]);
+  const [showGallery, setShowGallery] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadPhotoCount() {
-      const { count, error } = await supabase
-        .from('material_photos')
-        .select('*', { count: 'exact', head: true })
-        .eq('material_id', materialId);
-
-      if (!error && count) {
-        setPhotoCount(count);
-      }
-    }
-
-    loadPhotoCount();
+    loadPhotos();
   }, [materialId]);
 
-  if (photoCount === 0) return null;
+  async function loadPhotos() {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('material_photos')
+        .select(`
+          id,
+          photo_url,
+          timestamp,
+          uploaded_by,
+          user_profiles:uploaded_by(username)
+        `)
+        .eq('material_id', materialId)
+        .order('timestamp', { ascending: false });
+
+      if (!error && data) {
+        setPhotos(data);
+      }
+    } catch (error) {
+      console.error('Error loading photos:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) return null;
+  if (photos.length === 0) return null;
 
   return (
-    <div className="mt-2">
-      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-        <ImageIcon className="w-3 h-3 mr-1" />
-        {photoCount} Photo{photoCount !== 1 ? 's' : ''}
-      </Badge>
-    </div>
+    <>
+      <div className="mt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowGallery(true);
+          }}
+          className="bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+        >
+          <Eye className="w-3 h-3 mr-1" />
+          View {photos.length} Photo{photos.length !== 1 ? 's' : ''}
+        </Button>
+      </div>
+
+      {/* Photo Gallery Dialog */}
+      <Dialog open={showGallery} onOpenChange={setShowGallery}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {materialName} - Photo {currentIndex + 1} of {photos.length}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Main Photo */}
+            <div className="relative bg-black rounded-lg overflow-hidden">
+              <img
+                src={photos[currentIndex].photo_url}
+                alt={`Photo ${currentIndex + 1}`}
+                className="w-full max-h-[70vh] object-contain"
+              />
+
+              {/* Navigation */}
+              {photos.length > 1 && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white"
+                  >
+                    ←
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setCurrentIndex((prev) => (prev + 1) % photos.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white"
+                  >
+                    →
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {/* Photo Info */}
+            <div className="text-sm text-muted-foreground">
+              <div>Uploaded: {new Date(photos[currentIndex].timestamp).toLocaleString()}</div>
+              {photos[currentIndex].user_profiles && (
+                <div>By: {(photos[currentIndex].user_profiles as any)?.username}</div>
+              )}
+            </div>
+
+            {/* Thumbnail Strip */}
+            {photos.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto">
+                {photos.map((photo, idx) => (
+                  <div
+                    key={photo.id}
+                    className={`flex-shrink-0 w-20 h-20 rounded border-2 cursor-pointer ${
+                      idx === currentIndex ? 'border-primary' : 'border-slate-200'
+                    }`}
+                    onClick={() => setCurrentIndex(idx)}
+                  >
+                    <img
+                      src={photo.photo_url}
+                      alt={`Thumbnail ${idx + 1}`}
+                      className="w-full h-full object-cover rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
