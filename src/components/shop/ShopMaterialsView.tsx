@@ -55,6 +55,38 @@ interface MaterialBundle {
   };
 }
 
+// Supabase query response type (with arrays from joins)
+interface SupabaseBundleResponse {
+  id: string;
+  job_id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  jobs: Array<{
+    name: string;
+    client_name: string;
+  }>;
+  bundle_items: Array<{
+    id: string;
+    bundle_id: string;
+    material_item_id: string;
+    material_items: Array<{
+      id: string;
+      sheet_id: string;
+      category: string;
+      material_name: string;
+      quantity: number;
+      length: string | null;
+      usage: string | null;
+      status: string;
+      cost_per_unit: number | null;
+      sheets: Array<{
+        sheet_name: string;
+      }>;
+    }>;
+  }>;
+}
+
 interface ShopMaterialsViewProps {
   userId: string;
 }
@@ -161,7 +193,21 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
 
       console.log(`✅ Found ${data?.length || 0} packages for shop`);
-      setPackages(data || []);
+      
+      // Transform Supabase response to match our interface
+      const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => ({
+        ...pkg,
+        jobs: pkg.jobs[0], // Take first element from array
+        bundle_items: pkg.bundle_items.map(item => ({
+          ...item,
+          material_items: {
+            ...item.material_items[0], // Take first element from array
+            sheets: item.material_items[0].sheets[0], // Take first element from array
+          },
+        })),
+      }));
+      
+      setPackages(transformedPackages);
     } catch (error: any) {
       console.error('Error loading packages:', error);
       toast.error('Failed to load packages');
