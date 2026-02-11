@@ -272,6 +272,15 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       return;
     }
 
+    console.log('Starting estimate upload:', {
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      fileType: selectedFile.type,
+      jobId,
+      quoteId,
+      profileId: profile?.id
+    });
+
     setUploading(true);
 
     try {
@@ -280,18 +289,26 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       const fileName = `${Date.now()}_${selectedFile.name}`;
       const filePath = `subcontractor-estimates/${fileName}`;
 
+      console.log('Uploading to storage:', filePath);
       const { error: uploadError } = await supabase.storage
         .from('job-files')
         .upload(filePath, selectedFile);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
+      }
 
+      console.log('File uploaded successfully, getting public URL');
       // Get public URL
       const { data: urlData } = supabase.storage
         .from('job-files')
         .getPublicUrl(filePath);
 
+      console.log('Public URL:', urlData.publicUrl);
+
       // Create estimate record
+      console.log('Creating database record');
       const { data: estimateData, error: estimateError } = await supabase
         .from('subcontractor_estimates')
         .insert({
@@ -306,11 +323,17 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         .select()
         .single();
 
-      if (estimateError) throw estimateError;
+      if (estimateError) {
+        console.error('Database insert error:', estimateError);
+        throw new Error(`Database insert failed: ${estimateError.message}`);
+      }
+
+      console.log('Database record created:', estimateData);
 
       // Trigger AI extraction
       toast.info('AI is extracting data from the PDF...');
       
+      console.log('Invoking AI extraction function');
       const { data: functionData, error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
         body: {
           documentId: estimateData.id,
@@ -333,7 +356,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       loadEstimates();
     } catch (error: any) {
       console.error('Error uploading estimate:', error);
-      toast.error('Failed to upload estimate');
+      toast.error(`Failed to upload estimate: ${error.message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
@@ -350,6 +373,15 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       return;
     }
 
+    console.log('Starting invoice upload:', {
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      fileType: selectedFile.type,
+      jobId,
+      selectedEstimateForInvoice,
+      profileId: profile?.id
+    });
+
     setUploading(true);
 
     try {
@@ -357,22 +389,30 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       const fileName = `${Date.now()}_${selectedFile.name}`;
       const filePath = `subcontractor-invoices/${fileName}`;
 
+      console.log('Uploading to storage:', filePath);
       const { error: uploadError } = await supabase.storage
         .from('job-files')
         .upload(filePath, selectedFile);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
+      }
 
+      console.log('File uploaded successfully, getting public URL');
       // Get public URL
       const { data: urlData } = supabase.storage
         .from('job-files')
         .getPublicUrl(filePath);
+
+      console.log('Public URL:', urlData.publicUrl);
 
       // Get job_id from estimate if not provided
       let finalJobId = jobId;
       if (!finalJobId && selectedEstimateForInvoice) {
         const estimate = estimates.find(e => e.id === selectedEstimateForInvoice);
         finalJobId = estimate?.job_id || null;
+        console.log('Got job_id from estimate:', finalJobId);
       }
 
       if (!finalJobId) {
@@ -380,6 +420,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       }
 
       // Create invoice record
+      console.log('Creating database record');
       const { data: invoiceData, error: invoiceError } = await supabase
         .from('subcontractor_invoices')
         .insert({
@@ -395,11 +436,17 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         .select()
         .single();
 
-      if (invoiceError) throw invoiceError;
+      if (invoiceError) {
+        console.error('Database insert error:', invoiceError);
+        throw new Error(`Database insert failed: ${invoiceError.message}`);
+      }
+
+      console.log('Database record created:', invoiceData);
 
       // Trigger AI extraction
       toast.info('AI is extracting data from the PDF...');
       
+      console.log('Invoking AI extraction function');
       const { data: functionData, error: functionError } = await supabase.functions.invoke('extract-subcontractor-document', {
         body: {
           documentId: invoiceData.id,
@@ -423,7 +470,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       loadInvoices();
     } catch (error: any) {
       console.error('Error uploading invoice:', error);
-      toast.error('Failed to upload invoice');
+      toast.error(`Failed to upload invoice: ${error.message || 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
