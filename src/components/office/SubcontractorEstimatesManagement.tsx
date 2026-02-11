@@ -94,6 +94,7 @@ interface LineItem {
   total_price: number;
   notes: string | null;
   order_index: number;
+  excluded?: boolean;
 }
 
 interface SubcontractorEstimatesManagementProps {
@@ -562,6 +563,29 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
     }
   }
 
+  async function toggleLineItemExclusion(estimateId: string, lineItemId: string, currentExcluded: boolean) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update({ excluded: !currentExcluded })
+        .eq('id', lineItemId);
+
+      if (error) throw error;
+
+      toast.success(currentExcluded ? 'Line item included' : 'Line item excluded');
+      loadEstimates();
+    } catch (error: any) {
+      console.error('Error toggling line item:', error);
+      toast.error('Failed to update line item');
+    }
+  }
+
+  function calculateIncludedTotal(lineItems: LineItem[]): number {
+    return lineItems
+      .filter(item => !item.excluded)
+      .reduce((sum, item) => sum + item.total_price, 0);
+  }
+
   function toggleDetails(id: string) {
     setExpandedDetails(prev => {
       const newSet = new Set(prev);
@@ -682,9 +706,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
             estimates.map((estimate) => {
               const isExpanded = expandedDetails.has(estimate.id);
               const { materials, labor } = categorizeLineItems(estimate.line_items || []);
-              const baseAmount = estimate.total_amount || 0;
+              // Calculate base amount from included line items only
+              const baseAmount = calculateIncludedTotal(estimate.line_items || []);
               const markup = estimate.markup_percent || 0;
               const markedUpAmount = baseAmount * (1 + markup / 100);
+              const hasExcludedItems = (estimate.line_items || []).some(item => item.excluded);
 
               return (
                 <Card key={estimate.id} className="border hover:border-primary/50 transition-colors">
@@ -703,6 +729,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name}</h3>
+                          {hasExcludedItems && (
+                            <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300">
+                              Some items excluded
+                            </Badge>
+                          )}
                           {markup > 0 && (
                             <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
                               <Percent className="w-3 h-3 mr-1" />
@@ -718,9 +749,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        {markup > 0 && (
+                        {(markup > 0 || hasExcludedItems) && (
                           <p className="text-xs text-slate-600 mb-1">
-                            Base: ${baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {hasExcludedItems ? 'Included items: ' : 'Base: '}${baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         )}
                         <p className="text-2xl font-bold text-primary">
@@ -796,19 +827,37 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                             <Package className="w-4 h-4 text-blue-600" />
                             <h4 className="font-semibold">Materials</h4>
                             <Badge variant="outline">{materials.length} items</Badge>
+                            {materials.some(item => item.excluded) && (
+                              <Badge variant="outline" className="bg-slate-100 text-slate-600">
+                                {materials.filter(item => !item.excluded).length} included
+                              </Badge>
+                            )}
                           </div>
                           <div className="space-y-1">
                             {materials.map((item) => (
-                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-blue-50/50 rounded border border-blue-100">
-                                <div className="flex-1">
-                                  <p className="font-medium text-sm">{item.description}</p>
-                                  {item.quantity && item.unit_price && (
-                                    <p className="text-xs text-muted-foreground">
-                                      {item.quantity} × ${item.unit_price.toFixed(2)}
-                                    </p>
-                                  )}
+                              <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded border transition-all ${
+                                item.excluded 
+                                  ? 'bg-slate-100 border-slate-300 opacity-50' 
+                                  : 'bg-blue-50/50 border-blue-100'
+                              }`}>
+                                <div className="flex items-center gap-3 flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!item.excluded}
+                                    onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
+                                    className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                                    title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
+                                  />
+                                  <div className="flex-1">
+                                    <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
+                                    {item.quantity && item.unit_price && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {item.quantity} × ${item.unit_price.toFixed(2)}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                                <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>${item.total_price.toFixed(2)}</p>
                               </div>
                             ))}
                           </div>
@@ -822,19 +871,37 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                             <Users className="w-4 h-4 text-amber-600" />
                             <h4 className="font-semibold">Labor</h4>
                             <Badge variant="outline">{labor.length} items</Badge>
+                            {labor.some(item => item.excluded) && (
+                              <Badge variant="outline" className="bg-slate-100 text-slate-600">
+                                {labor.filter(item => !item.excluded).length} included
+                              </Badge>
+                            )}
                           </div>
                           <div className="space-y-1">
                             {labor.map((item) => (
-                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-amber-50/50 rounded border border-amber-100">
-                                <div className="flex-1">
-                                  <p className="font-medium text-sm">{item.description}</p>
-                                  {item.quantity && item.unit_price && (
-                                    <p className="text-xs text-muted-foreground">
-                                      {item.quantity} hrs × ${item.unit_price.toFixed(2)}
-                                    </p>
-                                  )}
+                              <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded border transition-all ${
+                                item.excluded 
+                                  ? 'bg-slate-100 border-slate-300 opacity-50' 
+                                  : 'bg-amber-50/50 border-amber-100'
+                              }`}>
+                                <div className="flex items-center gap-3 flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!item.excluded}
+                                    onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
+                                    className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                                    title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
+                                  />
+                                  <div className="flex-1">
+                                    <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
+                                    {item.quantity && item.unit_price && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {item.quantity} hrs × ${item.unit_price.toFixed(2)}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                                <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>${item.total_price.toFixed(2)}</p>
                               </div>
                             ))}
                           </div>
@@ -887,7 +954,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </div>
       )}
 
-      {/* Invoices Tab - unchanged, keeping original code */}
+      {/* Invoices Tab - unchanged from original */}
       {activeTab === 'invoices' && (
         <div className="space-y-2">
           {invoices.length === 0 ? (
@@ -1418,9 +1485,9 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
             </div>
 
             <div>
-              <Label>Base Amount</Label>
+              <Label>Base Amount (Included Items)</Label>
               <p className="text-2xl font-bold text-slate-900">
-                ${(editingMarkup?.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ${calculateIncludedTotal(editingMarkup?.line_items || []).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
             </div>
 
@@ -1442,10 +1509,10 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
               <div className="bg-green-50 p-4 rounded-lg border-2 border-green-200">
                 <p className="text-sm text-muted-foreground mb-1">Marked-up Price:</p>
                 <p className="text-3xl font-bold text-green-700">
-                  ${((editingMarkup.total_amount || 0) * (1 + (parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  ${(calculateIncludedTotal(editingMarkup.line_items || []) * (1 + (parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Profit: ${((editingMarkup.total_amount || 0) * ((parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  Profit: ${(calculateIncludedTotal(editingMarkup.line_items || []) * ((parseFloat(markupValue) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
               </div>
             )}
