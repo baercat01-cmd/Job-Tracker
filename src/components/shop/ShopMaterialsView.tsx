@@ -317,7 +317,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     switch (status) {
       case 'pull_from_shop': return 'Pull from Shop';
       case 'ready_for_job': return 'Ready for Job';
-      default: return uiStatus;
+      default: return status;
     }
   }
 
