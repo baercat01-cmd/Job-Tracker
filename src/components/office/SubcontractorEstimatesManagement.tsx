@@ -788,12 +788,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
             <div className="space-y-2">
               <Label htmlFor="subcontractor">Subcontractor (Optional)</Label>
-              <Select value={selectedSubcontractor} onValueChange={setSelectedSubcontractor}>
+              <Select value={selectedSubcontractor || undefined} onValueChange={setSelectedSubcontractor}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select subcontractor..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {subcontractors.map((sub) => (
                     <SelectItem key={sub.id} value={sub.id}>
                       {sub.name} {sub.company_name && `(${sub.company_name})`}
@@ -848,12 +847,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
             <div className="space-y-2">
               <Label htmlFor="linked-estimate">Link to Estimate (Optional)</Label>
-              <Select value={selectedEstimateForInvoice} onValueChange={setSelectedEstimateForInvoice}>
+              <Select value={selectedEstimateForInvoice || undefined} onValueChange={setSelectedEstimateForInvoice}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select estimate to compare..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No estimate</SelectItem>
                   {estimates.map((est) => (
                     <SelectItem key={est.id} value={est.id}>
                       {est.company_name || est.file_name}
@@ -869,12 +867,11 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
             <div className="space-y-2">
               <Label htmlFor="invoice-subcontractor">Subcontractor (Optional)</Label>
-              <Select value={selectedSubcontractor} onValueChange={setSelectedSubcontractor}>
+              <Select value={selectedSubcontractor || undefined} onValueChange={setSelectedSubcontractor}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select subcontractor..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {subcontractors.map((sub) => (
                     <SelectItem key={sub.id} value={sub.id}>
                       {sub.name} {sub.company_name && `(${sub.company_name})`}
