@@ -135,11 +135,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     
     // Set up polling for real-time updates (every 5 seconds)
     const pollInterval = setInterval(() => {
-      loadData(true); // Silent updates during polling
+      // Don't poll while dragging
+      if (!draggedRowId) {
+        loadData(true); // Silent updates during polling
+      }
     }, 5000);
     
     return () => clearInterval(pollInterval);
-  }, [job.id]);
+  }, [job.id, draggedRowId]);
 
   async function loadData(silent = false) {
     // Only show loading spinner on initial load, not during polling
@@ -548,6 +551,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setDraggedRowId(itemId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('application/json', dragData);
+    console.log('Drag started:', itemId, itemType);
   }
 
   function handleDragOver(e: React.DragEvent, itemId: string) {
@@ -562,6 +566,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function handleDrop(e: React.DragEvent, targetId: string, targetType: 'material' | 'custom') {
     e.preventDefault();
+    e.stopPropagation();
     
     if (!draggedRowId || draggedRowId === targetId) {
       setDraggedRowId(null);
@@ -571,8 +576,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
     try {
       const dragDataStr = e.dataTransfer.getData('application/json');
+      if (!dragDataStr) {
+        console.error('No drag data found');
+        return;
+      }
+      
       const dragData = JSON.parse(dragDataStr);
       const { id: draggedId, type: draggedType } = dragData;
+
+      console.log('Dropping:', { draggedId, draggedType, targetId, targetType });
 
       // Create unified list of all items with their order_index
       const allItems = [
@@ -588,16 +600,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         })),
       ].sort((a, b) => a.orderIndex - b.orderIndex);
 
+      console.log('All items:', allItems);
+
+      // Find the dragged item and target item positions
+      const draggedIndex = allItems.findIndex(item => item.id === draggedId);
       const targetIndex = allItems.findIndex(item => item.id === targetId);
-      const prevItem = allItems[targetIndex - 1];
-      const targetItem = allItems[targetIndex];
       
-      let newOrderIndex: number;
-      if (prevItem) {
-        newOrderIndex = (prevItem.orderIndex + targetItem.orderIndex) / 2;
-      } else {
-        newOrderIndex = targetItem.orderIndex - 1;
+      if (draggedIndex === -1 || targetIndex === -1) {
+        console.error('Could not find dragged or target item');
+        return;
       }
+
+      console.log('Indices:', { draggedIndex, targetIndex });
+
+      // Calculate new order index to place dragged item before target
+      let newOrderIndex: number;
+      
+      if (targetIndex === 0) {
+        // Dropping at the very top
+        newOrderIndex = allItems[0].orderIndex / 2;
+      } else {
+        // Place between previous item and target
+        const prevItem = allItems[targetIndex - 1];
+        const targetItem = allItems[targetIndex];
+        newOrderIndex = (prevItem.orderIndex + targetItem.orderIndex) / 2;
+      }
+
+      console.log('New order index:', newOrderIndex);
 
       // Update the appropriate table based on dragged item type
       if (draggedType === 'material') {
@@ -616,11 +645,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         if (error) throw error;
       }
 
+      console.log('Row reordered successfully');
       toast.success('Row moved');
+      
+      // Reload data to reflect changes
       await Promise.all([loadMaterialsData(), loadCustomRows()]);
     } catch (error: any) {
       console.error('Error reordering row:', error);
-      toast.error('Failed to reorder row');
+      toast.error(`Failed to reorder row: ${error.message}`);
     } finally {
       setDraggedRowId(null);
       setDragOverRowId(null);
