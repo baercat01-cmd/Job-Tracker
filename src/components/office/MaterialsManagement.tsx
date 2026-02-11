@@ -109,6 +109,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [cellValue, setCellValue] = useState('');
   const scrollPositionRef = useRef<number>(0);
+  
+  // Add material dialog state
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [addToCategory, setAddToCategory] = useState<string>('');
+  const [newMaterialName, setNewMaterialName] = useState('');
+  const [newUsage, setNewUsage] = useState('');
+  const [newSku, setNewSku] = useState('');
+  const [newQuantity, setNewQuantity] = useState('1');
+  const [newLength, setNewLength] = useState('');
+  const [newCostPerUnit, setNewCostPerUnit] = useState('');
+  const [newMarkup, setNewMarkup] = useState('35');
+  const [newNotes, setNewNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadWorkbook();
@@ -448,6 +461,99 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  function openAddDialog(categoryName?: string) {
+    setAddToCategory(categoryName || '');
+    setNewMaterialName('');
+    setNewUsage('');
+    setNewSku('');
+    setNewQuantity('1');
+    setNewLength('');
+    setNewCostPerUnit('');
+    setNewMarkup('35');
+    setNewNotes('');
+    setShowAddDialog(true);
+  }
+
+  async function addMaterial() {
+    if (!newMaterialName.trim()) {
+      toast.error('Please enter a material name');
+      return;
+    }
+
+    if (!addToCategory.trim()) {
+      toast.error('Please enter a category');
+      return;
+    }
+
+    if (!activeSheetId) {
+      toast.error('No active sheet selected');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const quantity = parseFloat(newQuantity) || 1;
+      const costPerUnit = parseFloat(newCostPerUnit) || null;
+      const markup = parseFloat(newMarkup) || 0;
+      const pricePerUnit = costPerUnit ? costPerUnit * (1 + markup / 100) : null;
+      const extendedCost = costPerUnit ? costPerUnit * quantity : null;
+      const extendedPrice = pricePerUnit ? pricePerUnit * quantity : null;
+
+      // Get max order_index for current sheet and category
+      const { data: maxData } = await supabase
+        .from('material_items')
+        .select('order_index')
+        .eq('sheet_id', activeSheetId)
+        .eq('category', addToCategory.trim())
+        .order('order_index', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextOrderIndex = (maxData?.order_index || -1) + 1;
+
+      // Insert new material
+      const { error } = await supabase
+        .from('material_items')
+        .insert({
+          sheet_id: activeSheetId,
+          category: addToCategory.trim(),
+          usage: newUsage.trim() || null,
+          sku: newSku.trim() || null,
+          material_name: newMaterialName.trim(),
+          quantity,
+          length: newLength.trim() || null,
+          cost_per_unit: costPerUnit,
+          markup_percent: markup / 100,
+          price_per_unit: pricePerUnit,
+          extended_cost: extendedCost,
+          extended_price: extendedPrice,
+          taxable: true,
+          notes: newNotes.trim() || null,
+          order_index: nextOrderIndex,
+          status: 'not_ordered',
+        });
+
+      if (error) throw error;
+
+      toast.success('Material added');
+      setShowAddDialog(false);
+      
+      // Reload workbook to show new material
+      await loadWorkbook();
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
+    } catch (error: any) {
+      console.error('Error adding material:', error);
+      toast.error('Failed to add material');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const activeSheet = workbook?.sheets.find(s => s.id === activeSheetId);
   const filteredItems = activeSheet?.items.filter(item =>
     searchTerm === '' ||
@@ -519,22 +625,32 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
               <Card className="border-2">
                 <CardContent className="p-0">
                   <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
-                    <div className="flex items-center gap-1 px-2 py-1 overflow-x-auto">
-                      {workbook.sheets.map((sheet) => (
-                        <Button
-                          key={sheet.id}
-                          variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
-                          size="sm"
-                          onClick={() => handleSheetChange(sheet.id)}
-                          className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
-                        >
-                          <FileSpreadsheet className="w-4 h-4" />
-                          {sheet.sheet_name}
-                          <Badge variant="secondary" className="ml-auto text-xs">
-                            {sheet.items.length}
-                          </Badge>
-                        </Button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2 px-2 py-1">
+                      <div className="flex items-center gap-1 overflow-x-auto flex-1">
+                        {workbook.sheets.map((sheet) => (
+                          <Button
+                            key={sheet.id}
+                            variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => handleSheetChange(sheet.id)}
+                            className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
+                          >
+                            <FileSpreadsheet className="w-4 h-4" />
+                            {sheet.sheet_name}
+                            <Badge variant="secondary" className="ml-auto text-xs">
+                              {sheet.items.length}
+                            </Badge>
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        onClick={() => openAddDialog()}
+                        size="sm"
+                        className="gradient-primary whitespace-nowrap"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Material
+                      </Button>
                     </div>
                   </div>
 
@@ -597,6 +713,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                         {catGroup.items.length} items
                                       </Badge>
                                     </div>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openAddDialog(catGroup.category)}
+                                      className="bg-indigo-600 hover:bg-indigo-700"
+                                    >
+                                      <Plus className="w-3 h-3 mr-1" />
+                                      Add to {catGroup.category}
+                                    </Button>
                                   </div>
                                 </td>
                               </tr>
@@ -845,6 +969,191 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </TabsContent>
       </Tabs>
 
+      {/* Add Material Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Material to {activeSheet?.sheet_name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-material-name">Material Name *</Label>
+                <Input
+                  id="add-material-name"
+                  value={newMaterialName}
+                  onChange={(e) => setNewMaterialName(e.target.value)}
+                  placeholder="e.g., 2x4 Lumber, Roofing Nails..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-category">Category *</Label>
+                <Select value={addToCategory} onValueChange={setAddToCategory}>
+                  <SelectTrigger id="add-category">
+                    <SelectValue placeholder="Select or type new..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allCategories.map(category => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={addToCategory}
+                  onChange={(e) => setAddToCategory(e.target.value)}
+                  placeholder="Or type new category"
+                  className="mt-2"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-usage">Usage</Label>
+                <Input
+                  id="add-usage"
+                  value={newUsage}
+                  onChange={(e) => setNewUsage(e.target.value)}
+                  placeholder="e.g., Main building, Porch..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-sku">SKU</Label>
+                <Input
+                  id="add-sku"
+                  value={newSku}
+                  onChange={(e) => setNewSku(e.target.value)}
+                  placeholder="Part number or SKU"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-quantity">Quantity *</Label>
+                <Input
+                  id="add-quantity"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newQuantity}
+                  onChange={(e) => setNewQuantity(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-length">Length</Label>
+                <Input
+                  id="add-length"
+                  value={newLength}
+                  onChange={(e) => setNewLength(e.target.value)}
+                  placeholder="e.g., 8', 10', 12'..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add-cost">Cost/Unit ($)</Label>
+                <Input
+                  id="add-cost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newCostPerUnit}
+                  onChange={(e) => setNewCostPerUnit(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add-markup">Markup (%) - Default 35%</Label>
+              <Input
+                id="add-markup"
+                type="number"
+                min="0"
+                step="0.1"
+                value={newMarkup}
+                onChange={(e) => setNewMarkup(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="add-notes">Notes</Label>
+              <Textarea
+                id="add-notes"
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Optional notes or special instructions..."
+                rows={3}
+              />
+            </div>
+
+            {/* Preview */}
+            {newCostPerUnit && newQuantity && (
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200 space-y-2">
+                <h4 className="font-semibold text-green-900">Price Preview</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Cost/Unit:</span>
+                    <span className="ml-2 font-semibold">${parseFloat(newCostPerUnit).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Price/Unit:</span>
+                    <span className="ml-2 font-semibold text-green-700">
+                      ${(parseFloat(newCostPerUnit) * (1 + parseFloat(newMarkup) / 100)).toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Extended Cost:</span>
+                    <span className="ml-2 font-semibold">
+                      ${(parseFloat(newCostPerUnit) * parseFloat(newQuantity)).toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Extended Price:</span>
+                    <span className="ml-2 font-bold text-green-700">
+                      ${(parseFloat(newCostPerUnit) * parseFloat(newQuantity) * (1 + parseFloat(newMarkup) / 100)).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={addMaterial}
+                disabled={saving}
+                className="flex-1"
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Material
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowAddDialog(false)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move Material Dialog */}
       <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
