@@ -104,9 +104,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [unitCost, setUnitCost] = useState('60');
   const [markupPercent, setMarkupPercent] = useState('0');
   const [notes, setNotes] = useState('');
-  const [insertAfterIndex, setInsertAfterIndex] = useState<number | null>(null);
-  const [insertAfterMaterial, setInsertAfterMaterial] = useState<{ sheetIndex: number; categoryIndex: number } | null>(null);
   const [taxable, setTaxable] = useState(true);
+  const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
+  const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
 
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
@@ -348,11 +348,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function openAddDialog(
-    row?: CustomFinancialRow,
-    insertAfter?: number,
-    insertAfterMaterialCategory?: { sheetIndex: number; categoryIndex: number }
-  ) {
+  function openAddDialog(row?: CustomFinancialRow) {
     if (row) {
       setEditingRow(row);
       setCategory(row.category);
@@ -362,12 +358,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setMarkupPercent(row.markup_percent.toString());
       setNotes(row.notes || '');
       setTaxable(row.taxable !== undefined ? row.taxable : true);
-      setInsertAfterIndex(null);
-      setInsertAfterMaterial(null);
     } else {
       resetForm();
-      setInsertAfterIndex(insertAfter !== undefined ? insertAfter : null);
-      setInsertAfterMaterial(insertAfterMaterialCategory || null);
     }
     setShowAddDialog(true);
   }
@@ -381,8 +373,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setMarkupPercent('0');
     setNotes('');
     setTaxable(true);
-    setInsertAfterIndex(null);
-    setInsertAfterMaterial(null);
   }
 
   async function saveCustomRow() {
@@ -401,19 +391,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
     if (editingRow) {
       targetOrderIndex = editingRow.order_index;
-    } else if (insertAfterMaterial !== null) {
-      // Insert after a material category - use a negative index
-      targetOrderIndex = -1000 * (insertAfterMaterial.sheetIndex + 1) - (insertAfterMaterial.categoryIndex + 1);
-    } else if (insertAfterIndex !== null) {
-      const sortedRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
-      const insertAfterRow = sortedRows[insertAfterIndex];
-      const nextRow = sortedRows[insertAfterIndex + 1];
-      
-      if (nextRow) {
-        targetOrderIndex = (insertAfterRow.order_index + nextRow.order_index) / 2;
-      } else {
-        targetOrderIndex = insertAfterRow.order_index + 1;
-      }
     } else {
       const maxOrderIndex = customRows.length > 0 
         ? Math.max(...customRows.map(r => r.order_index))
@@ -489,6 +466,70 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error saving sheet description:', error);
       toast.error('Failed to save description');
+    }
+  }
+
+  function handleDragStart(e: React.DragEvent, rowId: string) {
+    setDraggedRowId(rowId);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e: React.DragEvent, rowId: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverRowId(rowId);
+  }
+
+  function handleDragLeave() {
+    setDragOverRowId(null);
+  }
+
+  async function handleDrop(e: React.DragEvent, targetRowId: string) {
+    e.preventDefault();
+    
+    if (!draggedRowId || draggedRowId === targetRowId) {
+      setDraggedRowId(null);
+      setDragOverRowId(null);
+      return;
+    }
+
+    const draggedRow = customRows.find(r => r.id === draggedRowId);
+    const targetRow = customRows.find(r => r.id === targetRowId);
+
+    if (!draggedRow || !targetRow) {
+      setDraggedRowId(null);
+      setDragOverRowId(null);
+      return;
+    }
+
+    try {
+      // Calculate new order index (place before target)
+      const sortedRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
+      const targetIndex = sortedRows.findIndex(r => r.id === targetRowId);
+      const prevRow = sortedRows[targetIndex - 1];
+      
+      let newOrderIndex: number;
+      if (prevRow) {
+        newOrderIndex = (prevRow.order_index + targetRow.order_index) / 2;
+      } else {
+        newOrderIndex = targetRow.order_index - 1;
+      }
+
+      const { error } = await supabase
+        .from('custom_financial_rows')
+        .update({ order_index: newOrderIndex })
+        .eq('id', draggedRowId);
+
+      if (error) throw error;
+
+      toast.success('Row moved');
+      await loadCustomRows();
+    } catch (error: any) {
+      console.error('Error reordering row:', error);
+      toast.error('Failed to reorder row');
+    } finally {
+      setDraggedRowId(null);
+      setDragOverRowId(null);
     }
   }
 
@@ -1013,29 +1054,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             const catPrice = catCost * (1 + markup / 100);
 
                             return (
-                              <div key={catIndex}>
-                                <div className="flex items-start justify-between py-2 border-b border-slate-200">
-                                  <div className="flex-1">
-                                    <p className="font-semibold text-slate-900">{category.name}</p>
-                                    <p className="text-sm text-slate-600">{category.itemCount} items</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  </div>
+                              <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-slate-900">{category.name}</p>
+                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
                                 </div>
-                                
-                                {/* Insert Row Button */}
-                                <div className="flex justify-center py-1">
-                                  <Button
-                                    onClick={() => openAddDialog(undefined, undefined, { sheetIndex: idx, categoryIndex: catIndex })}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs text-muted-foreground hover:text-primary"
-                                  >
-                                    <Plus className="w-3 h-3 mr-1" />
-                                    Add Row Here
-                                  </Button>
+                                <div className="text-right">
+                                  <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
                               </div>
                             );
@@ -1091,7 +1117,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </div>
               )}
 
-              {/* All Rows (labor, materials, subs, etc.) - sorted by order_index */}
+              {/* All Rows (labor, materials, subs, etc.) - sorted by order_index - DRAG AND DROP */}
               {sortedCustomRows.map((row, rowIndex) => {
                 const rowCost = row.selling_price;
                 const rowPrice = rowCost * (1 + markup / 100);
@@ -1099,12 +1125,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 const bgColor = row.category === 'labor' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-orange-50 hover:bg-orange-100';
                 const textColor = row.category === 'labor' ? 'text-amber-900' : 'text-orange-900';
                 const iconColor = row.category === 'labor' ? 'text-amber-700' : 'text-orange-700';
+                const isDragging = draggedRowId === row.id;
+                const isDragOver = dragOverRowId === row.id;
 
                 return (
-                  <div key={row.id}>
-                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
+                  <div
+                    key={row.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, row.id)}
+                    onDragOver={(e) => handleDragOver(e, row.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, row.id)}
+                    className={`transition-all ${
+                      isDragging ? 'opacity-50 scale-95' : ''
+                    } ${
+                      isDragOver ? 'border-t-4 border-t-primary' : ''
+                    }`}
+                  >
+                    <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                       <div className={`${bgColor} transition-colors p-3 flex items-center justify-between border-b`}>
                         <div className="flex items-center gap-3 flex-1">
+                          <div className="cursor-grab active:cursor-grabbing">
+                            <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                            </svg>
+                          </div>
                           <Clock className={`w-5 h-5 ${iconColor}`} />
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
@@ -1147,19 +1192,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           </Button>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Insert Row Button */}
-                    <div className="flex justify-center my-2">
-                      <Button
-                        onClick={() => openAddDialog(undefined, rowIndex)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-muted-foreground hover:text-primary"
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Add Row Here
-                      </Button>
                     </div>
                   </div>
                 );
