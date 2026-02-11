@@ -149,7 +149,7 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
             allMaterials.push(...(itemsData as any).map((item: any) => ({
               ...item,
               material_name: item.material_name || item.name,
-              source: 'workbook',
+              source: 'workbook' as const,
             })));
           }
         }
@@ -179,7 +179,7 @@ export function MaterialProcessing({ job, userId }: MaterialProcessingProps) {
           order_requested_at: mat.order_requested_at,
           created_at: mat.created_at,
           updated_at: mat.updated_at,
-          source: 'legacy',
+          source: 'legacy' as const,
           user_profiles: mat.user_profiles ? { username: mat.user_profiles.username } : undefined,
         })));
       }
