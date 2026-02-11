@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, User, Clock, AlertTriangle, Package, Palette, ArrowRight, CheckCircle } from 'lucide-react';
+import { Calendar, User, Clock, AlertTriangle, Package, Palette, ArrowRight, CheckCircle, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CrewMaterial {
@@ -40,6 +40,17 @@ interface CrewMaterial {
   categories?: {
     name: string;
   };
+  user_profiles?: {
+    username: string;
+  };
+}
+
+interface MaterialPhoto {
+  id: string;
+  material_id: string;
+  photo_url: string;
+  uploaded_by: string;
+  timestamp: string;
   user_profiles?: {
     username: string;
   };
@@ -67,6 +78,7 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
   const [sheets, setSheets] = useState<MaterialSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMaterial, setSelectedMaterial] = useState<CrewMaterial | null>(null);
+  const [materialPhotos, setMaterialPhotos] = useState<MaterialPhoto[]>([]);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   
   // Move dialog state
@@ -157,7 +169,7 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
     }
   }
 
-  function openMoveDialog(material: CrewMaterial) {
+  async function openMoveDialog(material: CrewMaterial) {
     setSelectedMaterial(material);
     setTargetSheet('');
     setTargetCategory(material.categories?.name || 'Materials');
@@ -165,6 +177,24 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
     setNewUsage(material.use_case || '');
     setNewCostPerUnit('');
     setNewMarkup('35');
+
+    // Load photos for this material
+    try {
+      const { data: photosData, error: photosError } = await supabase
+        .from('material_photos')
+        .select(`
+          *,
+          user_profiles:uploaded_by(username)
+        `)
+        .eq('material_id', material.id);
+
+      if (photosError) throw photosError;
+      setMaterialPhotos(photosData || []);
+    } catch (error: any) {
+      console.error('Error loading material photos:', error);
+      setMaterialPhotos([]);
+    }
+
     setShowMoveDialog(true);
   }
 
@@ -200,7 +230,7 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
       const nextOrderIndex = (maxData?.order_index || -1) + 1;
 
       // Insert into material_items (workbook system)
-      const { error: insertError } = await supabase
+      const { data: newItem, error: insertError } = await supabase
         .from('material_items')
         .insert({
           sheet_id: targetSheet,
@@ -218,9 +248,28 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
           taxable: true,
           notes: selectedMaterial.notes,
           order_index: nextOrderIndex,
-        });
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
+
+      // Migrate photos from old material to new material_items
+      if (materialPhotos.length > 0 && newItem) {
+        // Store photo references in notes or create a photo link system
+        const photoUrls = materialPhotos.map(p => p.photo_url);
+        const photoNotes = materialPhotos.length > 0 
+          ? `\n\nCrew Photos (${materialPhotos.length}): ${photoUrls.join(', ')}` 
+          : '';
+
+        // Update the item with photo information in notes
+        await supabase
+          .from('material_items')
+          .update({
+            notes: (selectedMaterial.notes || '') + photoNotes,
+          })
+          .eq('id', newItem.id);
+      }
 
       // Delete from old materials table
       const { error: deleteError } = await supabase
@@ -376,6 +425,9 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
                       Crew Ordered
                     </Badge>
                   </div>
+
+                  {/* Show photo count if available */}
+                  <PhotoPreview materialId={material.id} />
                 </div>
 
                 {/* Action Buttons */}
@@ -487,6 +539,43 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
                 </div>
               </div>
 
+              {/* Photos Preview */}
+              {materialPhotos.length > 0 && (
+                <div className="border rounded-lg p-3 bg-blue-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ImageIcon className="w-4 h-4 text-blue-700" />
+                    <span className="text-sm font-semibold text-blue-900">
+                      {materialPhotos.length} Photo{materialPhotos.length !== 1 ? 's' : ''} from Crew
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {materialPhotos.slice(0, 6).map((photo) => (
+                      <a
+                        key={photo.id}
+                        href={photo.photo_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative aspect-square rounded-lg overflow-hidden border-2 border-blue-200 hover:border-blue-400 transition-colors"
+                      >
+                        <img
+                          src={photo.photo_url}
+                          alt="Material photo"
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                  {materialPhotos.length > 6 && (
+                    <p className="text-xs text-blue-700 mt-2">
+                      +{materialPhotos.length - 6} more photo{materialPhotos.length - 6 !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ℹ️ Photos will be linked to this material in the workbook
+                  </p>
+                </div>
+              )}
+
               {/* Preview */}
               {newCostPerUnit && (
                 <div className="bg-green-50 p-3 rounded-lg border border-green-200 space-y-1">
@@ -535,6 +624,37 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Small component to show photo count for a material
+function PhotoPreview({ materialId }: { materialId: string }) {
+  const [photoCount, setPhotoCount] = useState<number>(0);
+
+  useEffect(() => {
+    async function loadPhotoCount() {
+      const { count, error } = await supabase
+        .from('material_photos')
+        .select('*', { count: 'exact', head: true })
+        .eq('material_id', materialId);
+
+      if (!error && count) {
+        setPhotoCount(count);
+      }
+    }
+
+    loadPhotoCount();
+  }, [materialId]);
+
+  if (photoCount === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+        <ImageIcon className="w-3 h-3 mr-1" />
+        {photoCount} Photo{photoCount !== 1 ? 's' : ''}
+      </Badge>
     </div>
   );
 }

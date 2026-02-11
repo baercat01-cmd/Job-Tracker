@@ -107,6 +107,23 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
   useEffect(() => {
     loadWorkbook();
+
+    // Subscribe to real-time changes on material_items
+    const itemsChannel = supabase
+      .channel('material_items_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'material_items' },
+        (payload) => {
+          console.log('Material items changed:', payload);
+          // Reload workbook when items are added, updated, or deleted
+          loadWorkbook();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(itemsChannel);
+    };
   }, [job.id]);
 
   async function loadWorkbook() {
