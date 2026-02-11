@@ -116,6 +116,8 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
   // Drag and drop state
   const [isDraggingEstimate, setIsDraggingEstimate] = useState(false);
   const [isDraggingInvoice, setIsDraggingInvoice] = useState(false);
+  const [expandedEstimates, setExpandedEstimates] = useState<Set<string>>(new Set());
+  const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -681,7 +683,10 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                     <div className="border-t pt-4">
                       <h4 className="font-semibold mb-3">Line Items ({estimate.line_items.length})</h4>
                       <div className="space-y-2">
-                        {estimate.line_items.slice(0, 5).map((item) => (
+                        {(expandedEstimates.has(estimate.id) 
+                          ? estimate.line_items 
+                          : estimate.line_items.slice(0, 5)
+                        ).map((item) => (
                           <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded">
                             <div className="flex-1">
                               <p className="font-medium text-sm">{item.description}</p>
@@ -699,9 +704,27 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                           </div>
                         ))}
                         {estimate.line_items.length > 5 && (
-                          <p className="text-xs text-muted-foreground text-center">
-                            + {estimate.line_items.length - 5} more items
-                          </p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setExpandedEstimates(prev => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(estimate.id)) {
+                                  newSet.delete(estimate.id);
+                                } else {
+                                  newSet.add(estimate.id);
+                                }
+                                return newSet;
+                              });
+                            }}
+                            className="w-full mt-2"
+                          >
+                            {expandedEstimates.has(estimate.id) 
+                              ? 'Show Less' 
+                              : `Show ${estimate.line_items.length - 5} More Items`
+                            }
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -828,7 +851,10 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                       <div className="border-t pt-4">
                         <h4 className="font-semibold mb-3">Line Items ({invoice.line_items.length})</h4>
                         <div className="space-y-2">
-                          {invoice.line_items.slice(0, 5).map((item) => (
+                          {(expandedInvoices.has(invoice.id) 
+                            ? invoice.line_items 
+                            : invoice.line_items.slice(0, 5)
+                          ).map((item) => (
                             <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded">
                               <div className="flex-1">
                                 <p className="font-medium text-sm">{item.description}</p>
@@ -846,9 +872,27 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                             </div>
                           ))}
                           {invoice.line_items.length > 5 && (
-                            <p className="text-xs text-muted-foreground text-center">
-                              + {invoice.line_items.length - 5} more items
-                            </p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setExpandedInvoices(prev => {
+                                  const newSet = new Set(prev);
+                                  if (newSet.has(invoice.id)) {
+                                    newSet.delete(invoice.id);
+                                  } else {
+                                    newSet.add(invoice.id);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                              className="w-full mt-2"
+                            >
+                              {expandedInvoices.has(invoice.id) 
+                                ? 'Show Less' 
+                                : `Show ${invoice.line_items.length - 5} More Items`
+                              }
+                            </Button>
                           )}
                         </div>
                       </div>
