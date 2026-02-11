@@ -1316,13 +1316,36 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
             <div className="space-y-2">
               <Label htmlFor="custom-photo">Photo (optional)</Label>
-              <Input
-                id="custom-photo"
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-                className="h-10 cursor-pointer"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <input
+                    id="custom-photo-camera"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById('custom-photo-camera')?.click()}
+                    className="w-full h-10"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Take Photo
+                  </Button>
+                </div>
+                <div>
+                  <Input
+                    id="custom-photo"
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    className="h-10 cursor-pointer"
+                  />
+                </div>
+              </div>
               {photoPreview && (
                 <div className="relative w-full h-40 rounded-lg overflow-hidden border-2 border-green-500">
                   <img

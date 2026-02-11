@@ -723,11 +723,21 @@ function PhotoPreviewWithViewer({ materialId, materialName }: { materialId: stri
           <div className="space-y-4">
             {/* Main Photo */}
             <div className="relative bg-black rounded-lg overflow-hidden">
-              <img
-                src={photos[currentIndex].photo_url}
-                alt={`Photo ${currentIndex + 1}`}
-                className="w-full max-h-[70vh] object-contain"
-              />
+              {photos[currentIndex] && photos[currentIndex].photo_url ? (
+                <img
+                  src={photos[currentIndex].photo_url}
+                  alt={`Photo ${currentIndex + 1}`}
+                  className="w-full max-h-[70vh] object-contain"
+                  onError={(e) => {
+                    console.error('Failed to load image:', photos[currentIndex].photo_url);
+                    e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dominant-baseline="middle"%3EImage not found%3C/text%3E%3C/svg%3E';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-[70vh] flex items-center justify-center text-white">
+                  <p>Image not available</p>
+                </div>
+              )}
 
               {/* Navigation */}
               {photos.length > 1 && (
