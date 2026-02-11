@@ -608,31 +608,30 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // Proposal calculations with markup and tax
   const markup = parseFloat(proposalMarkup) || 0;
-  const TAX_RATE = 0.07; // 7% tax on materials only
+  const TAX_RATE = 0.07; // 7% tax on final total only
   
   // Materials: cost = original price, price = original price + markup
   const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
   const proposalMaterialsPrice = proposalMaterialsCost * (1 + markup / 100);
-  const proposalMaterialsTax = proposalMaterialsPrice * TAX_RATE;
-  const proposalMaterialsTotal = proposalMaterialsPrice + proposalMaterialsTax;
   
-  // Additional costs with markup (also taxed)
+  // Additional costs with markup (no tax yet)
   const proposalAdditionalCost = grandTotalPrice;
   const proposalAdditionalPrice = proposalAdditionalCost * (1 + markup / 100);
-  const proposalAdditionalTax = proposalAdditionalPrice * TAX_RATE;
-  const proposalAdditionalTotal = proposalAdditionalPrice + proposalAdditionalTax;
   
   // Labor (no markup, no tax)
   const proposalLaborCost = laborPrice;
   const proposalLaborPrice = laborPrice;
-  const proposalLaborTax = 0;
-  const proposalLaborTotal = proposalLaborPrice;
   
-  // Grand totals for proposal
+  // Subtotal before tax
+  const proposalSubtotal = proposalMaterialsPrice + proposalAdditionalPrice + proposalLaborPrice;
+  
+  // Tax calculated only on the final subtotal
+  const proposalTotalTax = proposalSubtotal * TAX_RATE;
+  
+  // Grand total with tax
+  const proposalGrandTotal = proposalSubtotal + proposalTotalTax;
+  
   const proposalTotalCost = proposalMaterialsCost + proposalAdditionalCost + proposalLaborCost;
-  const proposalTotalPrice = proposalMaterialsPrice + proposalAdditionalPrice + proposalLaborPrice;
-  const proposalTotalTax = proposalMaterialsTax + proposalAdditionalTax;
-  const proposalGrandTotal = proposalMaterialsTotal + proposalAdditionalTotal + proposalLaborTotal;
   const proposalProfit = proposalGrandTotal - proposalTotalCost;
   const proposalMargin = proposalGrandTotal > 0 ? (proposalProfit / proposalGrandTotal) * 100 : 0;
 
@@ -715,8 +714,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
                 const sheetCost = sheet.totalPrice;
                 const sheetPrice = sheetCost * (1 + markup / 100);
-                const sheetTax = sheetPrice * TAX_RATE;
-                const sheetTotal = sheetPrice + sheetTax;
 
                 return (
                   <Collapsible key={idx} defaultOpen={false}>
@@ -731,7 +728,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-2xl font-bold text-blue-900">${sheetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                           </div>
                         </div>
                       </CollapsibleTrigger>
@@ -740,8 +737,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           {sheet.categories.map((category: any, catIndex: number) => {
                             const catCost = category.totalPrice;
                             const catPrice = catCost * (1 + markup / 100);
-                            const catTax = catPrice * TAX_RATE;
-                            const catTotal = catPrice + catTax;
 
                             return (
                               <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200 last:border-0">
@@ -750,8 +745,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   <p className="text-sm text-slate-600">{category.itemCount} items</p>
                                 </div>
                                 <div className="text-right">
-                                  <p className="font-bold text-slate-900">${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} + Tax: ${catTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="font-bold text-slate-900">${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-slate-500">Base: ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
                               </div>
                             );
@@ -777,12 +772,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between py-2 border-b border-slate-200">
                           <span className="font-semibold text-slate-700">Materials</span>
-                          <span className="font-bold text-slate-900">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                         {customRows.length > 0 && (
                           <div className="flex justify-between py-2 border-b border-slate-200">
                             <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
-                            <span className="font-bold text-slate-900">${(proposalAdditionalTotal + proposalLaborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span className="font-bold text-slate-900">${(proposalAdditionalPrice + proposalLaborPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )}
                       </div>
@@ -791,7 +786,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       <div className="space-y-3 pt-4 border-t-2 border-slate-200">
                         <div className="flex justify-between items-center">
                           <span className="text-slate-600">Subtotal</span>
-                          <span className="font-semibold text-lg text-slate-900">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-semibold text-lg text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-600">Sales Tax (7%)</span>
@@ -811,8 +806,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               {sortedCustomRows.map((row, rowIndex) => {
                 const rowCost = row.selling_price;
                 const rowPrice = rowCost * (1 + markup / 100);
-                const rowTax = row.category === 'labor' ? 0 : rowPrice * TAX_RATE;
-                const rowTotal = rowPrice + rowTax;
 
                 const bgColor = row.category === 'labor' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-orange-50 hover:bg-orange-100';
                 const textColor = row.category === 'labor' ? 'text-amber-900' : 'text-orange-900';
@@ -833,10 +826,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
-                            <p className={`text-2xl font-bold ${textColor}`}>${rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <p className={`text-2xl font-bold ${textColor}`}>${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             <p className="text-xs text-slate-500">
                               Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              {rowTax > 0 && ` + Tax: $${rowTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                             </p>
                           </div>
                           <Button
