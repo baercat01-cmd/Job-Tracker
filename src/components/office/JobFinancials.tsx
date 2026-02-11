@@ -100,8 +100,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Subcontractor estimates
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
 
-  // Tab state - persist across re-renders
-  const [activeTab, setActiveTab] = useState('cost-breakdown');
+  // Tab state - persist across re-renders using localStorage
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem(`job-financials-tab-${job.id}`);
+    return saved || 'cost-breakdown';
+  });
+
+  // Save tab selection to localStorage whenever it changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    localStorage.setItem(`job-financials-tab-${job.id}`, value);
+  };
 
   // Form state for custom rows
   const [category, setCategory] = useState('subcontractor');
@@ -168,6 +177,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (error) throw error;
       const newData = data || [];
+      // Only update if data actually changed
       if (JSON.stringify(newData) !== JSON.stringify(subcontractorEstimates)) {
         setSubcontractorEstimates(newData);
       }
@@ -283,7 +293,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       const grandProfit = grandTotalPrice - grandTotalCost;
       const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
 
-      setMaterialsBreakdown({
+      // Only update if data actually changed to prevent unnecessary re-renders
+      const newBreakdown = {
         sheetBreakdowns: breakdowns,
         totals: {
           totalCost: grandTotalCost,
@@ -291,13 +302,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           totalProfit: grandProfit,
           profitMargin: grandMargin,
         }
-      });
+      };
+      
+      if (JSON.stringify(newBreakdown) !== JSON.stringify(materialsBreakdown)) {
+        setMaterialsBreakdown(newBreakdown);
+      }
     } catch (error: any) {
       console.error('Error loading materials breakdown:', error);
-      setMaterialsBreakdown({
-        sheetBreakdowns: [],
-        totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
-      });
+      // Only update if not already empty
+      if (materialsBreakdown.sheetBreakdowns.length > 0 || materialsBreakdown.totals.totalCost !== 0) {
+        setMaterialsBreakdown({
+          sheetBreakdowns: [],
+          totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
+        });
+      }
     }
   }
 
@@ -781,7 +799,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="cost-breakdown">Cost Breakdown</TabsTrigger>
           <TabsTrigger value="proposal">Proposal</TabsTrigger>
