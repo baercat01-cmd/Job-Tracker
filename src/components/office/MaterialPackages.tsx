@@ -264,7 +264,7 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           job_id: jobId,
           name: packageName.trim(),
           description: packageDescription.trim() || null,
-          status: 'pending', // Database value for 'not_ordered' UI status
+          status: 'not_ordered',
           created_by: userId,
         })
         .select()
@@ -392,18 +392,15 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
       // Optimistic update - update UI immediately
       setPackages(prev => prev.map(pkg => 
         pkg.id === packageId 
-          ? { ...pkg, status: mapStatusToDatabase(newStatus) }
+          ? { ...pkg, status: newStatus }
           : pkg
       ));
       
-      // Map UI status to database status values
-      const dbStatus = mapStatusToDatabase(newStatus);
-      
-      // Update bundle status
+      // Update bundle status (no mapping needed - DB uses same values as UI)
       const { error: bundleError } = await supabase
         .from('material_bundles')
         .update({
-          status: dbStatus,
+          status: newStatus,
           updated_at: new Date().toISOString(),
         })
         .eq('id', packageId);
@@ -560,34 +557,8 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
     }
   }
 
-  // Map database status to UI status
-  function mapStatusToUI(dbStatus: string): string {
-    switch (dbStatus) {
-      case 'pending': return 'not_ordered';
-      case 'preparing': return 'ordered';
-      case 'ready': return 'received';
-      case 'picked_up': return 'pull_from_shop';
-      case 'delivered': return 'ready_for_job';
-      default: return dbStatus;
-    }
-  }
-
-  // Map UI status to database status
-  function mapStatusToDatabase(uiStatus: string): string {
-    switch (uiStatus) {
-      case 'not_ordered': return 'pending';
-      case 'ordered': return 'preparing';
-      case 'received': return 'ready';
-      case 'pull_from_shop': return 'picked_up';
-      case 'ready_for_job': return 'delivered';
-      default: return uiStatus;
-    }
-  }
-
   function getStatusColor(status: string): string {
-    // Use UI status for colors
-    const uiStatus = mapStatusToUI(status);
-    switch (uiStatus) {
+    switch (status) {
       case 'ordered':
         return 'bg-blue-100 text-blue-800 border-blue-300';
       case 'received':
@@ -874,7 +845,7 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
                     </div>
                     <div className="flex items-center gap-2">
                       <Select
-                        value={mapStatusToUI(pkg.status || 'pending')}
+                        value={pkg.status || 'not_ordered'}
                         onValueChange={(value) => updatePackageStatus(pkg.id, value)}
                       >
                         <SelectTrigger className={`h-9 min-w-[150px] text-xs font-semibold border-2 ${getStatusColor(pkg.status || 'pending')}`}>
