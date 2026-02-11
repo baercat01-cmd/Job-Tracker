@@ -67,6 +67,7 @@ interface MaterialItem {
   material_name: string;
   quantity: number;
   length: string | null;
+  color: string | null;
   cost_per_unit: number | null;
   markup_percent: number | null;
   price_per_unit: number | null;
@@ -225,6 +226,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               material_name: String(row['Material'] || row['material'] || '').trim(),
               quantity: parseNumericValue(row['Qty'] || row['qty'] || row['Quantity']) || 0,
               length: String(row['Length'] || row['length'] || '').trim() || null,
+              color: String(row['Color'] || row['color'] || '').trim() || null,
               cost_per_unit: parseNumericValue(row['Cost per unit'] || row['cost_per_unit']),
               markup_percent: parsePercentValue(row['CF.Mark Up'] || row['CF. Mark Up'] || row['Markup']),
               price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
@@ -514,7 +516,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                 <li>Upload entire Excel workbook (.xlsx) with multiple sheets</li>
                 <li>Each sheet = one section (e.g., "Main Building", "Porch", "Interior")</li>
                 <li>Required columns: <strong>Category, Material, Qty</strong></li>
-                <li>Optional columns: Usage, SKU, Length, Cost per unit, CF.Mark Up, Price per unit, Extended cost, Extended price, Taxable</li>
+                <li>Optional columns: Usage, SKU, Length, Color, Cost per unit, CF.Mark Up, Price per unit, Extended cost, Extended price, Taxable</li>
               </ul>
             </div>
 
@@ -607,6 +609,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                         <TableHead>Material</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
                         <TableHead>Length</TableHead>
+                        <TableHead>Color</TableHead>
                         <TableHead className="text-right">Cost/Unit</TableHead>
                         <TableHead className="text-right">Ext. Cost</TableHead>
                       </TableRow>
@@ -618,6 +621,15 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                           <TableCell>{item.material_name}</TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
                           <TableCell>{item.length || '-'}</TableCell>
+                          <TableCell>
+                            {item.color ? (
+                              <Badge variant="outline" className="font-normal">
+                                {item.color}
+                              </Badge>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
                           </TableCell>
