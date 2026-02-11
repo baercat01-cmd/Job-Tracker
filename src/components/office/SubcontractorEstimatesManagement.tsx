@@ -30,6 +30,10 @@ import {
   TrendingDown,
   DollarSign,
   Download,
+  ChevronDown,
+  ChevronRight,
+  Package,
+  Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -116,8 +120,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
   // Drag and drop state
   const [isDraggingEstimate, setIsDraggingEstimate] = useState(false);
   const [isDraggingInvoice, setIsDraggingInvoice] = useState(false);
-  const [expandedEstimates, setExpandedEstimates] = useState<Set<string>>(new Set());
-  const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
+  const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -522,6 +525,34 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
     setShowVarianceDialog(true);
   }
 
+  function toggleDetails(id: string) {
+    setExpandedDetails(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }
+
+  function categorizeLineItems(lineItems: LineItem[]) {
+    const materials: LineItem[] = [];
+    const labor: LineItem[] = [];
+
+    lineItems.forEach(item => {
+      const desc = item.description.toLowerCase();
+      if (desc.includes('labor') || desc.includes('install') || desc.includes('service')) {
+        labor.push(item);
+      } else {
+        materials.push(item);
+      }
+    });
+
+    return { materials, labor };
+  }
+
   function getStatusIcon(status: string) {
     switch (status) {
       case 'completed':
@@ -562,27 +593,13 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
       {/* Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                <FileText className="w-6 h-6" />
-                Subcontractor Documents
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Upload estimates and invoices - AI will automatically extract data
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={() => setShowUploadDialog(true)}>
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Estimate
-              </Button>
-              <Button onClick={() => setShowInvoiceUploadDialog(true)} variant="outline">
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Invoice
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="text-2xl flex items-center gap-2">
+            <FileText className="w-6 h-6" />
+            Subcontractor Documents
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Upload estimates and invoices - AI will automatically extract data
+          </p>
         </CardHeader>
       </Card>
 
@@ -606,7 +623,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
       {/* Estimates Tab */}
       {activeTab === 'estimates' && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {estimates.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -615,63 +632,58 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                 <p className="text-sm text-muted-foreground mb-4">
                   Upload subcontractor estimates and AI will extract the data automatically
                 </p>
-                <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload First Estimate
-                </Button>
               </CardContent>
             </Card>
           ) : (
-            estimates.map((estimate) => (
-              <Card key={estimate.id} className="border-2">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {getStatusIcon(estimate.extraction_status)}
-                        <h3 className="font-bold text-lg">{estimate.company_name || estimate.file_name}</h3>
-                        {getStatusBadge(estimate.extraction_status)}
-                      </div>
-                      {estimate.scope_of_work && (
-                        <p className="text-sm text-muted-foreground mb-2">{estimate.scope_of_work}</p>
+            estimates.map((estimate) => {
+              const isExpanded = expandedDetails.has(estimate.id);
+              const { materials, labor } = categorizeLineItems(estimate.line_items || []);
+
+              return (
+                <Card key={estimate.id} className="border hover:border-primary/50 transition-colors">
+                  {/* Collapsed Row */}
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer"
+                    onClick={() => toggleDetails(estimate.id)}
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
                       )}
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>Uploaded: {new Date(estimate.uploaded_at).toLocaleDateString()}</span>
-                        {estimate.contact_name && <span>Contact: {estimate.contact_name}</span>}
-                        {estimate.contact_email && <span>{estimate.contact_email}</span>}
+                      {getStatusIcon(estimate.extraction_status)}
+                      <div>
+                        <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(estimate.uploaded_at).toLocaleDateString()}
+                        </p>
                       </div>
+                      {getStatusBadge(estimate.extraction_status)}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {estimate.total_amount && (
-                        <div className="text-right mr-4">
-                          <p className="text-sm text-muted-foreground">Total</p>
-                          <p className="text-2xl font-bold text-green-700">
-                            ${estimate.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => window.open(estimate.pdf_url, '_blank')}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        View PDF
-                      </Button>
-                      {invoices.some(inv => inv.estimate_id === estimate.id) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => showVarianceComparison(estimate)}
-                        >
-                          <TrendingUp className="w-4 h-4 mr-2" />
-                          Compare
-                        </Button>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-primary">
+                          ${(estimate.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => deleteEstimate(estimate.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(estimate.pdf_url, '_blank');
+                        }}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteEstimate(estimate.id);
+                        }}
                         className="text-destructive"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -679,73 +691,142 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                     </div>
                   </div>
 
-                  {estimate.line_items && estimate.line_items.length > 0 && (
-                    <div className="border-t pt-4">
-                      <h4 className="font-semibold mb-3">Line Items ({estimate.line_items.length})</h4>
-                      <div className="space-y-2">
-                        {(expandedEstimates.has(estimate.id) 
-                          ? estimate.line_items 
-                          : estimate.line_items.slice(0, 5)
-                        ).map((item) => (
-                          <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{item.description}</p>
-                              {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
+                  {/* Expanded Details */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 space-y-4 border-t">
+                      {/* Contact Info */}
+                      {(estimate.contact_name || estimate.contact_email || estimate.contact_phone) && (
+                        <div className="pt-4 grid grid-cols-3 gap-4 text-sm">
+                          {estimate.contact_name && (
+                            <div>
+                              <p className="text-muted-foreground">Contact</p>
+                              <p className="font-medium">{estimate.contact_name}</p>
                             </div>
-                            <div className="text-right">
-                              {item.quantity && item.unit_price ? (
-                                <p className="text-sm">
-                                  {item.quantity} × ${item.unit_price.toFixed(2)} = ${item.total_price.toFixed(2)}
-                                </p>
-                              ) : (
-                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
-                              )}
+                          )}
+                          {estimate.contact_email && (
+                            <div>
+                              <p className="text-muted-foreground">Email</p>
+                              <p className="font-medium">{estimate.contact_email}</p>
                             </div>
+                          )}
+                          {estimate.contact_phone && (
+                            <div>
+                              <p className="text-muted-foreground">Phone</p>
+                              <p className="font-medium">{estimate.contact_phone}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Scope of Work */}
+                      {estimate.scope_of_work && (
+                        <div>
+                          <h4 className="font-semibold mb-2 text-sm">Scope of Work</h4>
+                          <p className="text-sm text-muted-foreground">{estimate.scope_of_work}</p>
+                        </div>
+                      )}
+
+                      {/* Materials */}
+                      {materials.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Package className="w-4 h-4 text-blue-600" />
+                            <h4 className="font-semibold">Materials</h4>
+                            <Badge variant="outline">{materials.length} items</Badge>
                           </div>
-                        ))}
-                        {estimate.line_items.length > 5 && (
+                          <div className="space-y-1">
+                            {materials.map((item) => (
+                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-blue-50/50 rounded border border-blue-100">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.description}</p>
+                                  {item.quantity && item.unit_price && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {item.quantity} × ${item.unit_price.toFixed(2)}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Labor */}
+                      {labor.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Users className="w-4 h-4 text-amber-600" />
+                            <h4 className="font-semibold">Labor</h4>
+                            <Badge variant="outline">{labor.length} items</Badge>
+                          </div>
+                          <div className="space-y-1">
+                            {labor.map((item) => (
+                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-amber-50/50 rounded border border-amber-100">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.description}</p>
+                                  {item.quantity && item.unit_price && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {item.quantity} hrs × ${item.unit_price.toFixed(2)}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Exclusions */}
+                      {estimate.exclusions && (
+                        <div>
+                          <h4 className="font-semibold mb-2 text-sm">Exclusions</h4>
+                          <p className="text-sm text-muted-foreground">{estimate.exclusions}</p>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2 pt-3 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(estimate.pdf_url, '_blank')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View PDF
+                        </Button>
+                        {invoices.some(inv => inv.estimate_id === estimate.id) && (
                           <Button
-                            variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              setExpandedEstimates(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(estimate.id)) {
-                                  newSet.delete(estimate.id);
-                                } else {
-                                  newSet.add(estimate.id);
-                                }
-                                return newSet;
-                              });
-                            }}
-                            className="w-full mt-2"
+                            variant="outline"
+                            onClick={() => showVarianceComparison(estimate)}
                           >
-                            {expandedEstimates.has(estimate.id) 
-                              ? 'Show Less' 
-                              : `Show ${estimate.line_items.length - 5} More Items`
-                            }
+                            <TrendingUp className="w-4 h-4 mr-2" />
+                            Compare to Invoice
                           </Button>
                         )}
                       </div>
                     </div>
                   )}
-
-                  {estimate.exclusions && (
-                    <div className="border-t pt-4 mt-4">
-                      <h4 className="font-semibold mb-2 text-sm">Exclusions</h4>
-                      <p className="text-sm text-muted-foreground">{estimate.exclusions}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
+                </Card>
+              );
+            })
           )}
+          
+          {/* Upload Button at Bottom */}
+          <div className="pt-4 border-t">
+            <Button onClick={() => setShowUploadDialog(true)} className="w-full">
+              <Upload className="w-4 h-4 mr-2" />
+              Upload New Estimate
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Invoices Tab */}
       {activeTab === 'invoices' && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {invoices.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -754,10 +835,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                 <p className="text-sm text-muted-foreground mb-4">
                   Upload subcontractor invoices to compare with estimates
                 </p>
-                <Button onClick={() => setShowInvoiceUploadDialog(true)}>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload First Invoice
-                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -766,54 +843,138 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
               const variance = relatedEstimate && invoice.total_amount 
                 ? invoice.total_amount - (relatedEstimate.total_amount || 0)
                 : null;
+              const isExpanded = expandedDetails.has(invoice.id);
+              const { materials, labor } = categorizeLineItems(invoice.line_items || []);
 
               return (
-                <Card key={invoice.id} className="border-2">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          {getStatusIcon(invoice.extraction_status)}
-                          <h3 className="font-bold text-lg">
-                            {invoice.company_name || invoice.file_name}
-                          </h3>
-                          {getStatusBadge(invoice.extraction_status)}
-                          <Badge variant={invoice.payment_status === 'paid' ? 'default' : 'outline'}>
-                            {invoice.payment_status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <Card key={invoice.id} className="border hover:border-primary/50 transition-colors">
+                  {/* Collapsed Row */}
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer"
+                    onClick={() => toggleDetails(invoice.id)}
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                      )}
+                      {getStatusIcon(invoice.extraction_status)}
+                      <div>
+                        <h3 className="font-semibold text-lg">{invoice.company_name || invoice.file_name}</h3>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           {invoice.invoice_number && <span>Invoice #{invoice.invoice_number}</span>}
-                          {invoice.invoice_date && (
-                            <span>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</span>
-                          )}
-                          <span>Uploaded: {new Date(invoice.uploaded_at).toLocaleDateString()}</span>
+                          {invoice.invoice_date && <span>{new Date(invoice.invoice_date).toLocaleDateString()}</span>}
                         </div>
-                        {relatedEstimate && (
-                          <p className="text-sm text-blue-600 mt-2">
-                            Linked to estimate: {relatedEstimate.company_name || relatedEstimate.file_name}
-                          </p>
+                      </div>
+                      {getStatusBadge(invoice.extraction_status)}
+                      <Badge variant={invoice.payment_status === 'paid' ? 'default' : 'outline'}>
+                        {invoice.payment_status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-red-700">
+                          ${(invoice.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        {variance !== null && (
+                          <div className={`flex items-center gap-1 justify-end ${variance > 0 ? 'text-red-600' : variance < 0 ? 'text-green-600' : 'text-slate-600'}`}>
+                            {variance > 0 ? <TrendingUp className="w-3 h-3" /> : variance < 0 ? <TrendingDown className="w-3 h-3" /> : null}
+                            <span className="text-xs font-semibold">
+                              {variance > 0 ? '+' : ''}${Math.abs(variance).toFixed(2)}
+                            </span>
+                          </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-right mr-4">
-                          {invoice.total_amount && (
-                            <>
-                              <p className="text-sm text-muted-foreground">Total</p>
-                              <p className="text-2xl font-bold text-red-700">
-                                ${invoice.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              </p>
-                            </>
-                          )}
-                          {variance !== null && (
-                            <div className={`flex items-center gap-1 mt-1 ${variance > 0 ? 'text-red-600' : variance < 0 ? 'text-green-600' : 'text-slate-600'}`}>
-                              {variance > 0 ? <TrendingUp className="w-3 h-3" /> : variance < 0 ? <TrendingDown className="w-3 h-3" /> : null}
-                              <span className="text-xs font-semibold">
-                                {variance > 0 ? '+' : ''}${Math.abs(variance).toFixed(2)}
-                              </span>
-                            </div>
-                          )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(invoice.pdf_url, '_blank');
+                        }}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteInvoice(invoice.id);
+                        }}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Expanded Details */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 space-y-4 border-t">
+                      {relatedEstimate && (
+                        <div className="pt-4">
+                          <p className="text-sm text-blue-600">
+                            Linked to estimate: {relatedEstimate.company_name || relatedEstimate.file_name}
+                          </p>
                         </div>
+                      )}
+
+                      {/* Materials */}
+                      {materials.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Package className="w-4 h-4 text-blue-600" />
+                            <h4 className="font-semibold">Materials</h4>
+                            <Badge variant="outline">{materials.length} items</Badge>
+                          </div>
+                          <div className="space-y-1">
+                            {materials.map((item) => (
+                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-blue-50/50 rounded border border-blue-100">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.description}</p>
+                                  {item.quantity && item.unit_price && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {item.quantity} × ${item.unit_price.toFixed(2)}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Labor */}
+                      {labor.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Users className="w-4 h-4 text-amber-600" />
+                            <h4 className="font-semibold">Labor</h4>
+                            <Badge variant="outline">{labor.length} items</Badge>
+                          </div>
+                          <div className="space-y-1">
+                            {labor.map((item) => (
+                              <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-amber-50/50 rounded border border-amber-100">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.description}</p>
+                                  {item.quantity && item.unit_price && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {item.quantity} hrs × ${item.unit_price.toFixed(2)}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="font-semibold">${item.total_price.toFixed(2)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2 pt-3 border-t">
                         <Button
                           size="sm"
                           variant="outline"
@@ -833,75 +994,24 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                             }}
                           >
                             <TrendingUp className="w-4 h-4 mr-2" />
-                            Compare
+                            Compare to Estimate
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => deleteInvoice(invoice.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
-
-                    {invoice.line_items && invoice.line_items.length > 0 && (
-                      <div className="border-t pt-4">
-                        <h4 className="font-semibold mb-3">Line Items ({invoice.line_items.length})</h4>
-                        <div className="space-y-2">
-                          {(expandedInvoices.has(invoice.id) 
-                            ? invoice.line_items 
-                            : invoice.line_items.slice(0, 5)
-                          ).map((item) => (
-                            <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{item.description}</p>
-                                {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
-                              </div>
-                              <div className="text-right">
-                                {item.quantity && item.unit_price ? (
-                                  <p className="text-sm">
-                                    {item.quantity} × ${item.unit_price.toFixed(2)} = ${item.total_price.toFixed(2)}
-                                  </p>
-                                ) : (
-                                  <p className="font-semibold">${item.total_price.toFixed(2)}</p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                          {invoice.line_items.length > 5 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setExpandedInvoices(prev => {
-                                  const newSet = new Set(prev);
-                                  if (newSet.has(invoice.id)) {
-                                    newSet.delete(invoice.id);
-                                  } else {
-                                    newSet.add(invoice.id);
-                                  }
-                                  return newSet;
-                                });
-                              }}
-                              className="w-full mt-2"
-                            >
-                              {expandedInvoices.has(invoice.id) 
-                                ? 'Show Less' 
-                                : `Show ${invoice.line_items.length - 5} More Items`
-                              }
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
+                  )}
                 </Card>
               );
             })
           )}
+
+          {/* Upload Button at Bottom */}
+          <div className="pt-4 border-t">
+            <Button onClick={() => setShowInvoiceUploadDialog(true)} className="w-full">
+              <Upload className="w-4 h-4 mr-2" />
+              Upload New Invoice
+            </Button>
+          </div>
         </div>
       )}
 
