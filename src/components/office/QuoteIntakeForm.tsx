@@ -17,6 +17,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Save, Send, Briefcase, CheckCircle } from 'lucide-react';
 import { FloorPlanBuilder } from './FloorPlanBuilder';
+import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 
 interface QuoteIntakeFormProps {
@@ -739,7 +741,15 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Main Content Tabs */}
+      <Tabs defaultValue="building" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="building">Building Specs</TabsTrigger>
+          <TabsTrigger value="subcontractors">Subcontractors & Costs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="building">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column - Form Fields */}
         <div className="space-y-6">
           {/* Project Info */}
@@ -1271,15 +1281,33 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           )}
         </div>
 
-        {/* Right Column - Floor Plan Builder */}
-        <div className="lg:sticky lg:top-6 h-fit">
-          <FloorPlanBuilder
-            width={formData.width}
-            length={formData.length}
-            quoteId={currentQuoteId}
-          />
-        </div>
-      </div>
+            {/* Right Column - Floor Plan Builder */}
+            <div className="lg:sticky lg:top-6 h-fit">
+              <FloorPlanBuilder
+                width={formData.width}
+                length={formData.length}
+                quoteId={currentQuoteId}
+              />
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="subcontractors">
+          {currentQuoteId ? (
+            <SubcontractorEstimatesManagement quoteId={currentQuoteId} />
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">Please save the quote first before adding subcontractor costs</p>
+                <Button onClick={handleSaveDraft} className="mt-4" disabled={saving}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Quote
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
