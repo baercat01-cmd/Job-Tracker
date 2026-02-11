@@ -684,72 +684,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         {/* Proposal Tab */}
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
-            {/* Header with Markup Control and Project Total */}
-            <div className="mb-6 flex items-start justify-between gap-6">
-              {/* Left: Header Info */}
-              <div className="bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center gap-3 flex-1">
-                <Calculator className="w-6 h-6 text-slate-700" />
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
-                  <p className="text-sm text-slate-600">{job.name}</p>
-                </div>
-                <div className="ml-auto">
-                  <Label className="text-sm font-semibold text-slate-700">Markup %</Label>
-                  <div className="flex gap-2 items-center mt-1">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={proposalMarkup}
-                      onChange={(e) => setProposalMarkup(e.target.value)}
-                      className="w-24 font-bold"
-                    />
-                    <span className="font-semibold">%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Project Total Box */}
-              <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg" style={{ minWidth: '400px', maxWidth: '450px' }}>
-                <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <DollarSign className="w-6 h-6 text-amber-400" />
-                    Project Total
-                  </h3>
-                </div>
-                <div className="p-6 space-y-4">
-                  {/* Breakdown */}
-                  <div className="space-y-2 text-sm">
-                    {materialsBreakdown.sheetBreakdowns.length > 0 && (
-                      <div className="flex justify-between py-2 border-b border-slate-200">
-                        <span className="font-semibold text-slate-700">Materials</span>
-                        <span className="font-bold text-slate-900">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
-                    {customRows.length > 0 && (
-                      <div className="flex justify-between py-2 border-b border-slate-200">
-                        <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
-                        <span className="font-bold text-slate-900">${(proposalAdditionalTotal + proposalLaborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Totals */}
-                  <div className="space-y-3 pt-4 border-t-2 border-slate-200">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Subtotal</span>
-                      <span className="font-semibold text-lg text-slate-900">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Sales Tax (7%)</span>
-                      <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
-                      <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
-                      <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  </div>
-                </div>
+            {/* Header */}
+            <div className="mb-6 bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center gap-3">
+              <Calculator className="w-6 h-6 text-slate-700" />
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
+                <p className="text-sm text-slate-600">{job.name}</p>
               </div>
             </div>
 
@@ -767,8 +707,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
             {/* Proposal Sections */}
             <div className="space-y-3">
-              {/* Building Materials Section */}
-              {materialsBreakdown.sheetBreakdowns.length > 0 && materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
+              {/* Building Materials Section with Project Total beside it */}
+              {materialsBreakdown.sheetBreakdowns.length > 0 && (
+                <div className="flex gap-6 items-start">
+                  {/* Materials Column */}
+                  <div className="flex-1 space-y-3">
+                    {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => {
                 const sheetCost = sheet.totalPrice;
                 const sheetPrice = sheetCost * (1 + markup / 100);
                 const sheetTax = sheetPrice * TAX_RATE;
@@ -815,9 +759,53 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                       </CollapsibleContent>
                     </div>
-                  </Collapsible>
-                );
-              })}
+                    </Collapsible>
+                    );
+                  })}
+                  </div>
+
+                  {/* Project Total Box */}
+                  <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg sticky top-4" style={{ minWidth: '400px', maxWidth: '450px' }}>
+                    <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <DollarSign className="w-6 h-6 text-amber-400" />
+                        Project Total
+                      </h3>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      {/* Breakdown */}
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between py-2 border-b border-slate-200">
+                          <span className="font-semibold text-slate-700">Materials</span>
+                          <span className="font-bold text-slate-900">${proposalMaterialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        {customRows.length > 0 && (
+                          <div className="flex justify-between py-2 border-b border-slate-200">
+                            <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
+                            <span className="font-bold text-slate-900">${(proposalAdditionalTotal + proposalLaborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Totals */}
+                      <div className="space-y-3 pt-4 border-t-2 border-slate-200">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Subtotal</span>
+                          <span className="font-semibold text-lg text-slate-900">${proposalTotalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Sales Tax (7%)</span>
+                          <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
+                          <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
+                          <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* All Rows (labor, materials, subs, etc.) - sorted by order_index */}
               {sortedCustomRows.map((row, rowIndex) => {
@@ -838,13 +826,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Clock className={`w-5 h-5 ${iconColor}`} />
                           <div className="flex-1">
                             <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
-                            {row.notes && (
-                              <p className="text-sm text-slate-700 mt-1 font-medium leading-snug">{row.notes}</p>
-                            )}
-                            <p className={`text-xs ${iconColor} mt-1`}>
-                              {row.category === 'labor' 
-                                ? `${row.quantity.toFixed(2)} hours × $${row.unit_cost.toFixed(2)}/hr`
-                                : `${row.quantity} × $${row.unit_cost.toFixed(2)}`}
+                            <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
+                              {row.notes || '(No description provided)'}
                             </p>
                           </div>
                         </div>
@@ -967,7 +950,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             </div>
 
             <div>
-              <Label>Markup (%) - Optional</Label>
+              <Label>Custom Description</Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g., All electrical wiring and fixtures for garage and apartment"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                This description will appear under the title in the proposal
+              </p>
+            </div>
+
+            <div>
+              <Label>Markup (%) *</Label>
               <Input
                 type="number"
                 min="0"
@@ -976,18 +972,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 onChange={(e) => setMarkupPercent(e.target.value)}
                 placeholder="0"
               />
-            </div>
-
-            <div>
-              <Label>Description (shown when collapsed)</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g., All electrical wiring and fixtures for garage and apartment"
-                rows={3}
-              />
               <p className="text-xs text-muted-foreground mt-1">
-                This will be visible in the collapsed row to provide context
+                Individual markup for this row only
               </p>
             </div>
 
