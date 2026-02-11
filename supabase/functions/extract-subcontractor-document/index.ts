@@ -22,10 +22,14 @@ Deno.serve(async (req) => {
       ? 'subcontractor_estimates' 
       : 'subcontractor_invoices';
 
-    await supabase
+    const { error: updateError } = await supabase
       .from(table)
       .update({ extraction_status: 'processing' })
       .eq('id', documentId);
+
+    if (updateError) {
+      console.error('Error updating status to processing:', updateError);
+    }
 
     // Fetch the PDF content
     const pdfResponse = await fetch(pdfUrl);
@@ -37,10 +41,16 @@ Deno.serve(async (req) => {
     const pdfBase64 = await blobToBase64(pdfBlob);
 
     // Call OnSpace AI with the PDF
+    const onspaceApiKey = Deno.env.get('ONSPACE_AI_API_KEY');
+    if (!onspaceApiKey) {
+      throw new Error('ONSPACE_AI_API_KEY not configured');
+    }
+
     const aiResponse = await fetch('https://api.onspace.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${onspaceApiKey}`,
       },
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
@@ -210,6 +220,25 @@ Extract all line items. Return ONLY the JSON object, no other text.`
 
   } catch (error: any) {
     console.error('Error:', error);
+    
+    // Try to update status to failed if we have documentId and documentType
+    try {
+      const { documentId, documentType } = await req.json();
+      if (documentId && documentType) {
+        const table = documentType === 'estimate' 
+          ? 'subcontractor_estimates' 
+          : 'subcontractor_invoices';
+        
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        await supabase
+          .from(table)
+          .update({ extraction_status: 'failed' })
+          .eq('id', documentId);
+      }
+    } catch (updateError) {
+      console.error('Failed to update error status:', updateError);
+    }
+    
     return new Response(
       JSON.stringify({ error: error.message || 'Unknown error' }),
       { 
