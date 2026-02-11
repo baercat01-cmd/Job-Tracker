@@ -364,6 +364,70 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     }
   }
 
+  async function addMaterialToPackage(materialId: string, packageId: string) {
+    try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      // Check if already in package
+      const targetPackage = packages.find(p => p.id === packageId);
+      const existingMaterialIds = new Set(
+        targetPackage?.bundle_items?.map((item: any) => item.material_item_id) || []
+      );
+
+      if (existingMaterialIds.has(materialId)) {
+        toast.error('Material is already in this package');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('material_bundle_items')
+        .insert({
+          bundle_id: packageId,
+          material_item_id: materialId,
+        });
+
+      if (error) throw error;
+
+      toast.success('Added to package');
+      await loadPackages();
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
+    } catch (error: any) {
+      console.error('Error adding material to package:', error);
+      toast.error('Failed to add to package');
+    }
+  }
+
+  async function removeMaterialFromPackage(materialId: string, packageId: string) {
+    try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      const { error } = await supabase
+        .from('material_bundle_items')
+        .delete()
+        .eq('bundle_id', packageId)
+        .eq('material_item_id', materialId);
+
+      if (error) throw error;
+
+      toast.success('Removed from package');
+      await loadPackages();
+
+      // Restore scroll position
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
+    } catch (error: any) {
+      console.error('Error removing material from package:', error);
+      toast.error('Failed to remove from package');
+    }
+  }
+
   function isMaterialInAnyPackage(materialId: string): boolean {
     return packages.some(pkg => 
       pkg.bundle_items?.some((item: any) => item.material_item_id === materialId)
@@ -888,6 +952,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 <CheckSquare className="w-5 h-5 mx-auto" />
                               </th>
                             )}
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
+                              <Package className="w-5 h-5 mx-auto" />
+                            </th>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
@@ -903,7 +970,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={packageSelectionMode ? 10 : 9} className="p-3">
+                                <td colSpan={packageSelectionMode ? 11 : 10} className="p-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
@@ -928,6 +995,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 const isEven = itemIndex % 2 === 0;
                                 const isEditingThisCell = (field: string) => 
                                   editingCell?.itemId === item.id && editingCell?.field === field;
+                                const materialPackageNames = getMaterialPackageNames(item.id);
                                 
                                 return (
                                   <tr
@@ -950,6 +1018,77 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                       </td>
                                     )}
                                     <td className="p-1 border-r whitespace-nowrap">
+                                      <div className="min-w-[180px]">
+                                        <Select
+                                          value=""
+                                          onValueChange={(value) => {
+                                            if (value.startsWith('remove-')) {
+                                              const packageId = value.replace('remove-', '');
+                                              removeMaterialFromPackage(item.id, packageId);
+                                            } else {
+                                              addMaterialToPackage(item.id, value);
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-8 text-xs border-2 bg-white">
+                                            <SelectValue placeholder={
+                                              materialPackageNames.length > 0
+                                                ? materialPackageNames.join(', ')
+                                                : 'No package'
+                                            } />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {materialPackageNames.length > 0 && (
+                                              <>
+                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                                  Current Packages:
+                                                </div>
+                                                {packages
+                                                  .filter(pkg => 
+                                                    pkg.bundle_items?.some((bundleItem: any) => bundleItem.material_item_id === item.id)
+                                                  )
+                                                  .map(pkg => (
+                                                    <SelectItem 
+                                                      key={`remove-${pkg.id}`} 
+                                                      value={`remove-${pkg.id}`}
+                                                      className="text-red-600"
+                                                    >
+                                                      <div className="flex items-center gap-2">
+                                                        <X className="w-3 h-3" />
+                                                        Remove from {pkg.name}
+                                                      </div>
+                                                    </SelectItem>
+                                                  ))
+                                                }
+                                                <div className="h-px bg-border my-1" />
+                                              </>
+                                            )}
+                                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                              Add to Package:
+                                            </div>
+                                            {packages
+                                              .filter(pkg => 
+                                                !pkg.bundle_items?.some((bundleItem: any) => bundleItem.material_item_id === item.id)
+                                              )
+                                              .map(pkg => (
+                                                <SelectItem key={pkg.id} value={pkg.id}>
+                                                  <div className="flex items-center gap-2">
+                                                    <Package className="w-3 h-3" />
+                                                    {pkg.name}
+                                                  </div>
+                                                </SelectItem>
+                                              ))
+                                            }
+                                            {packages.length === 0 && (
+                                              <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                                                No packages created yet
+                                              </div>
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </td>
+                                    <td className="p-1 border-r whitespace-nowrap">
                                       {isEditingThisCell('material_name') ? (
                                         <Input
                                           value={cellValue}
@@ -967,19 +1106,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           onClick={() => startCellEdit(item.id, 'material_name', item.material_name)}
                                           className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] max-w-[400px]"
                                         >
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <span>{item.material_name}</span>
-                                            {getMaterialPackageNames(item.id).map((packageName) => (
-                                              <Badge 
-                                                key={packageName}
-                                                variant="outline" 
-                                                className="bg-purple-50 text-purple-700 border-purple-300 text-xs"
-                                              >
-                                                <Package className="w-3 h-3 mr-1" />
-                                                {packageName}
-                                              </Badge>
-                                            ))}
-                                          </div>
+                                          {item.material_name}
                                           {item.notes && (
                                             <div className="text-xs text-muted-foreground mt-1">{item.notes}</div>
                                           )}
