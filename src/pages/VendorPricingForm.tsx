@@ -44,6 +44,18 @@ interface VendorLink {
   };
 }
 
+// Helper function to calculate board feet from material name and length
+function calculateBoardFeet(materialName: string, length: number): number {
+  const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
+  if (!match) return 1;
+  
+  const thickness = parseInt(match[1]);
+  const width = parseInt(match[2]);
+  
+  const boardFeet = (thickness * width * length) / 12;
+  return boardFeet;
+}
+
 export function VendorPricingForm() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -54,7 +66,7 @@ export function VendorPricingForm() {
   const [vendorLink, setVendorLink] = useState<VendorLink | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
-  const [prices, setPrices] = useState<Record<string, { price: string; unitType: string; unitValue: string; notes: string }>>({});
+  const [prices, setPrices] = useState<Record<string, { mbfPrice: string; pricePerPiece: string; unitType: string; unitValue: string; notes: string }>>({});
   const [generalNotes, setGeneralNotes] = useState('');
 
   useEffect(() => {
@@ -124,22 +136,53 @@ export function VendorPricingForm() {
     }
   }
 
-  function updatePrice(materialId: string, field: 'price' | 'unitType' | 'unitValue' | 'notes', value: string) {
-    setPrices(prev => ({
-      ...prev,
-      [materialId]: {
+  function updatePrice(materialId: string, field: 'mbfPrice' | 'pricePerPiece' | 'unitType' | 'unitValue' | 'notes', value: string) {
+    setPrices(prev => {
+      const updated = {
         ...prev[materialId],
         [field]: value,
+      };
+
+      // If MBF price is updated, calculate price per piece
+      if (field === 'mbfPrice' && value) {
+        const material = materials.find(m => m.id === materialId);
+        if (material && material.unit === 'board foot') {
+          const boardFeet = calculateBoardFeet(material.name, material.standard_length);
+          const pricePerBF = parseFloat(value) / 1000; // Convert MBF to price per board foot
+          const pricePerPiece = pricePerBF * boardFeet;
+          updated.pricePerPiece = pricePerPiece.toFixed(2);
+        }
       }
-    }));
+
+      return {
+        ...prev,
+        [materialId]: updated,
+      };
+    });
   }
 
   async function submitPrices() {
     if (!vendorLink) return;
 
     const pricesToSubmit = Object.entries(prices)
-      .filter(([_, data]) => data.price && parseFloat(data.price) > 0)
+      .filter(([_, data]) => {
+        // Check if either MBF price or direct price per piece is entered
+        return (data.mbfPrice && parseFloat(data.mbfPrice) > 0) || 
+               (data.pricePerPiece && parseFloat(data.pricePerPiece) > 0);
+      })
       .map(([materialId, data]) => {
+        const material = materials.find(m => m.id === materialId);
+        
+        // Determine the price per unit to store
+        let pricePerUnit: number;
+        if (material?.unit === 'board foot' && data.mbfPrice) {
+          // For lumber: convert MBF to price per piece
+          pricePerUnit = parseFloat(data.pricePerPiece);
+        } else {
+          // For rebar or direct entry: use the price as-is
+          pricePerUnit = parseFloat(data.pricePerPiece || data.mbfPrice);
+        }
+
         // Build truckload quantity from unit type and value
         let truckloadQty = null;
         if (data.unitType === 'per_piece') {
@@ -151,7 +194,7 @@ export function VendorPricingForm() {
         return {
           material_id: materialId,
           vendor_id: vendorLink.vendor_id,
-          price_per_unit: parseFloat(data.price),
+          price_per_unit: pricePerUnit,
           truckload_quantity: truckloadQty,
           effective_date: effectiveDate,
           notes: data.notes || null,
@@ -231,6 +274,11 @@ export function VendorPricingForm() {
     );
   }
 
+  const pricedCount = Object.values(prices).filter(p => 
+    (p.mbfPrice && parseFloat(p.mbfPrice) > 0) || 
+    (p.pricePerPiece && parseFloat(p.pricePerPiece) > 0)
+  ).length;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 py-8 px-4">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -275,7 +323,7 @@ export function VendorPricingForm() {
                 className="w-48"
               />
               <p className="text-sm text-muted-foreground ml-auto">
-                {Object.values(prices).filter(p => p.price && parseFloat(p.price) > 0).length} of {materials.length} priced
+                {pricedCount} of {materials.length} priced
               </p>
             </div>
           </CardContent>
@@ -288,6 +336,9 @@ export function VendorPricingForm() {
               <DollarSign className="w-5 h-5 text-green-600" />
               Enter Your Prices
             </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Enter price per MBF (thousand board feet) - price per piece will be calculated automatically
+            </p>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -296,15 +347,20 @@ export function VendorPricingForm() {
                   <tr className="border-b-2">
                     <th className="text-left p-3 font-semibold">Material</th>
                     <th className="text-center p-3 font-semibold w-24">Length</th>
-                    <th className="text-left p-3 font-semibold w-40">Price per {materials[0]?.unit || 'Unit'} ($)</th>
+                    <th className="text-center p-3 font-semibold w-24">Board Feet</th>
+                    <th className="text-left p-3 font-semibold w-32">Price/MBF ($)</th>
+                    <th className="text-left p-3 font-semibold w-32">Price/Piece ($)</th>
                     <th className="text-left p-3 font-semibold w-48">Pricing Unit</th>
                     <th className="text-left p-3 font-semibold">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {materials.map((material, idx) => {
-                    const priceData = prices[material.id] || { price: '', unitType: 'unit', unitValue: '1', notes: '' };
+                    const priceData = prices[material.id] || { mbfPrice: '', pricePerPiece: '', unitType: 'unit', unitValue: '1', notes: '' };
                     const isEven = idx % 2 === 0;
+                    const boardFeet = material.unit === 'board foot' 
+                      ? calculateBoardFeet(material.name, material.standard_length)
+                      : null;
 
                     return (
                       <tr key={material.id} className={`hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50'}`}>
@@ -317,15 +373,34 @@ export function VendorPricingForm() {
                         <td className="p-3 text-center font-semibold text-blue-700">
                           {material.standard_length}'
                         </td>
+                        <td className="p-3 text-center font-semibold text-slate-700">
+                          {boardFeet ? `${boardFeet.toFixed(2)} BF` : '-'}
+                        </td>
+                        <td className="p-3">
+                          {boardFeet ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={priceData.mbfPrice}
+                              onChange={(e) => updatePrice(material.id, 'mbfPrice', e.target.value)}
+                              placeholder="715"
+                              className="w-full"
+                            />
+                          ) : (
+                            <div className="text-sm text-muted-foreground text-center">-</div>
+                          )}
+                        </td>
                         <td className="p-3">
                           <Input
                             type="number"
                             min="0"
                             step="0.01"
-                            value={priceData.price}
-                            onChange={(e) => updatePrice(material.id, 'price', e.target.value)}
+                            value={priceData.pricePerPiece}
+                            onChange={(e) => updatePrice(material.id, 'pricePerPiece', e.target.value)}
                             placeholder="0.00"
-                            className="w-full"
+                            className={`w-full ${boardFeet && priceData.mbfPrice ? 'bg-green-50 font-semibold' : ''}`}
+                            readOnly={!!(boardFeet && priceData.mbfPrice)}
                           />
                         </td>
                         <td className="p-3">
@@ -392,7 +467,7 @@ export function VendorPricingForm() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold text-lg mb-1">
-                  Ready to submit {Object.values(prices).filter(p => p.price && parseFloat(p.price) > 0).length} prices?
+                  Ready to submit {pricedCount} prices?
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Your pricing will be sent immediately and the team will be notified
@@ -400,7 +475,7 @@ export function VendorPricingForm() {
               </div>
               <Button
                 onClick={submitPrices}
-                disabled={submitting || Object.values(prices).filter(p => p.price && parseFloat(p.price) > 0).length === 0}
+                disabled={submitting || pricedCount === 0}
                 size="lg"
                 className="bg-green-600 hover:bg-green-700 px-8"
               >
