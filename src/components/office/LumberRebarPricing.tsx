@@ -18,14 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus,
   DollarSign,
   TrendingUp,
   TrendingDown,
-  Edit,
-  Trash2,
   Building2,
   Package,
   LineChart,
@@ -81,13 +78,16 @@ interface PriceEntry {
   material?: Material;
 }
 
-export function LumberRebarPricing() {
+interface LumberRebarPricingProps {
+  category: 'lumber' | 'rebar';
+}
+
+export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<'lumber' | 'rebar'>('lumber');
   
   // Dialogs
   const [showAddPriceDialog, setShowAddPriceDialog] = useState(false);
@@ -97,7 +97,6 @@ export function LumberRebarPricing() {
   
   // Selected items
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
-  const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   
   // Form states
   const [vendorId, setVendorId] = useState('');
@@ -115,7 +114,6 @@ export function LumberRebarPricing() {
   
   // Material form
   const [materialName, setMaterialName] = useState('');
-  const [materialCategory, setMaterialCategory] = useState<'lumber' | 'rebar'>('lumber');
   const [materialUnit, setMaterialUnit] = useState('board foot');
   const [standardLength, setStandardLength] = useState('16');
 
@@ -287,20 +285,20 @@ export function LumberRebarPricing() {
     try {
       console.log('Saving material:', {
         name: materialName,
-        category: materialCategory,
+        category: category,
         unit: materialUnit,
         standard_length: standardLength,
       });
 
       const maxOrder = materials
-        .filter(m => m.category === materialCategory)
+        .filter(m => m.category === category)
         .reduce((max, m) => Math.max(max, m.order_index), 0);
 
       const { data, error } = await supabase
         .from('lumber_rebar_materials')
         .insert([{
           name: materialName,
-          category: materialCategory,
+          category: category,
           unit: materialUnit,
           standard_length: parseFloat(standardLength),
           order_index: maxOrder + 1,
@@ -342,7 +340,6 @@ export function LumberRebarPricing() {
 
   function resetMaterialForm() {
     setMaterialName('');
-    setMaterialCategory('lumber');
     setMaterialUnit('board foot');
     setStandardLength('16');
   }
@@ -409,7 +406,7 @@ export function LumberRebarPricing() {
     return 'stable';
   }
 
-  const filteredMaterials = materials.filter(m => m.category === activeTab);
+  const filteredMaterials = materials.filter(m => m.category === category);
 
   if (loading) {
     return (
@@ -426,17 +423,17 @@ export function LumberRebarPricing() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Building2 className="w-7 h-7 text-blue-600" />
-            Lumber & Rebar Pricing
+            {category === 'lumber' ? <Package className="w-7 h-7 text-blue-600" /> : <Building2 className="w-7 h-7 text-blue-600" />}
+            {category === 'lumber' ? 'Lumber Pricing' : 'Rebar Pricing'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Track material prices across vendors with historical data
+            Track {category} prices across vendors with historical data
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowAddMaterialDialog(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            Add Material
+            Add {category === 'lumber' ? 'Lumber' : 'Rebar'}
           </Button>
           <Button variant="outline" onClick={() => setShowAddVendorDialog(true)}>
             <Users className="w-4 h-4 mr-2" />
@@ -466,141 +463,126 @@ export function LumberRebarPricing() {
         </Card>
       )}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'lumber' | 'rebar')}>
-        <TabsList>
-          <TabsTrigger value="lumber">
-            <Package className="w-4 h-4 mr-2" />
-            Lumber ({materials.filter(m => m.category === 'lumber').length})
-          </TabsTrigger>
-          <TabsTrigger value="rebar">
-            <Building2 className="w-4 h-4 mr-2" />
-            Rebar ({materials.filter(m => m.category === 'rebar').length})
-          </TabsTrigger>
-        </TabsList>
+      {/* Materials List */}
+      {filteredMaterials.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Add materials to start tracking prices
+            </p>
+            <Button onClick={() => setShowAddMaterialDialog(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Material
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredMaterials.map(material => {
+            const materialHistory = getMaterialPriceHistory(material.id);
+            const hasHistory = materialHistory.length > 0;
 
-        <TabsContent value={activeTab} className="mt-6">
-          {filteredMaterials.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No {activeTab} materials yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Add materials to start tracking prices
-                </p>
-                <Button onClick={() => setShowAddMaterialDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Material
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {filteredMaterials.map(material => {
-                const materialHistory = getMaterialPriceHistory(material.id);
-                const hasHistory = materialHistory.length > 0;
+            return (
+              <Card key={material.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{material.name}</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Standard: {material.standard_length}' • Unit: {material.unit}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openPriceHistory(material)}
+                        disabled={!hasHistory}
+                      >
+                        <LineChart className="w-4 h-4 mr-2" />
+                        History
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => openAddPriceDialog(material)}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Price
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {vendors.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p className="mb-2">No vendors added yet</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowAddVendorDialog(true)}
+                      >
+                        Add Vendor
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {vendors.map(vendor => {
+                        const latestPrice = getLatestPrice(material.id, vendor.id);
+                        const trend = getPriceTrend(material.id, vendor.id);
 
-                return (
-                  <Card key={material.id}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <CardTitle className="text-lg">{material.name}</CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            Standard: {material.standard_length}' • Unit: {material.unit}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openPriceHistory(material)}
-                            disabled={!hasHistory}
+                        return (
+                          <div
+                            key={vendor.id}
+                            className={`border rounded-lg p-4 ${
+                              latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
+                            }`}
                           >
-                            <LineChart className="w-4 h-4 mr-2" />
-                            History
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => openAddPriceDialog(material)}
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Price
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {vendors.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <p className="mb-2">No vendors added yet</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setShowAddVendorDialog(true)}
-                          >
-                            Add Vendor
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {vendors.map(vendor => {
-                            const latestPrice = getLatestPrice(material.id, vendor.id);
-                            const trend = getPriceTrend(material.id, vendor.id);
-
-                            return (
-                              <div
-                                key={vendor.id}
-                                className={`border rounded-lg p-4 ${
-                                  latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between mb-2">
-                                  <h4 className="font-semibold text-sm">{vendor.name}</h4>
-                                  {trend && (
-                                    <div className="flex items-center">
-                                      {trend === 'up' && <TrendingUp className="w-4 h-4 text-red-600" />}
-                                      {trend === 'down' && <TrendingDown className="w-4 h-4 text-green-600" />}
-                                    </div>
-                                  )}
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-semibold text-sm">{vendor.name}</h4>
+                              {trend && (
+                                <div className="flex items-center">
+                                  {trend === 'up' && <TrendingUp className="w-4 h-4 text-red-600" />}
+                                  {trend === 'down' && <TrendingDown className="w-4 h-4 text-green-600" />}
                                 </div>
+                              )}
+                            </div>
 
-                                {latestPrice ? (
-                                  <div>
-                                    <div className="flex items-baseline gap-2 mb-1">
-                                      <span className="text-2xl font-bold text-blue-900">
-                                        ${latestPrice.price_per_unit.toFixed(2)}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground">
-                                        per {material.unit}
-                                      </span>
-                                    </div>
-                                    {latestPrice.truckload_quantity && (
-                                      <p className="text-xs text-muted-foreground mb-1">
-                                        Truckload: {latestPrice.truckload_quantity} units
-                                      </p>
-                                    )}
-                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                      <Calendar className="w-3 h-3" />
-                                      {new Date(latestPrice.effective_date).toLocaleDateString()}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">No pricing data</p>
+                            {latestPrice ? (
+                              <div>
+                                <div className="flex items-baseline gap-2 mb-1">
+                                  <span className="text-2xl font-bold text-blue-900">
+                                    ${latestPrice.price_per_unit.toFixed(2)}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    per {material.unit}
+                                  </span>
+                                </div>
+                                {latestPrice.truckload_quantity && (
+                                  <p className="text-xs text-muted-foreground mb-1">
+                                    Truckload: {latestPrice.truckload_quantity} units
+                                  </p>
                                 )}
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  {new Date(latestPrice.effective_date).toLocaleDateString()}
+                                </p>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No pricing data</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Add Price Dialog */}
       <Dialog open={showAddPriceDialog} onOpenChange={setShowAddPriceDialog}>
@@ -616,7 +598,7 @@ export function LumberRebarPricing() {
                   <SelectValue placeholder="Select material..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {materials.filter(m => m.category === activeTab).map(material => (
+                  {materials.filter(m => m.category === category).map(material => (
                     <SelectItem key={material.id} value={material.id}>
                       {material.name}
                     </SelectItem>
@@ -861,7 +843,7 @@ export function LumberRebarPricing() {
       <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Material</DialogTitle>
+            <DialogTitle>Add {category === 'lumber' ? 'Lumber' : 'Rebar'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -869,21 +851,17 @@ export function LumberRebarPricing() {
               <Input
                 value={materialName}
                 onChange={(e) => setMaterialName(e.target.value)}
-                placeholder="e.g., 2x4 SPF"
+                placeholder={category === 'lumber' ? 'e.g., 2x4 SPF' : 'e.g., #4 Rebar'}
               />
             </div>
 
             <div>
-              <Label>Category *</Label>
-              <Select value={materialCategory} onValueChange={(v) => setMaterialCategory(v as 'lumber' | 'rebar')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lumber">Lumber</SelectItem>
-                  <SelectItem value="rebar">Rebar</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Category</Label>
+              <Input
+                value={category === 'lumber' ? 'Lumber' : 'Rebar'}
+                disabled
+                className="bg-slate-100"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -897,6 +875,7 @@ export function LumberRebarPricing() {
                     <SelectItem value="board foot">Board Foot</SelectItem>
                     <SelectItem value="linear foot">Linear Foot</SelectItem>
                     <SelectItem value="sheet">Sheet</SelectItem>
+                    <SelectItem value="piece">Piece</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

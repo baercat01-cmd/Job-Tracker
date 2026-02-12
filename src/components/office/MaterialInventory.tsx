@@ -47,7 +47,7 @@ interface MaterialCatalogItem {
 }
 
 export function MaterialInventory() {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'lumber-pricing' | 'analytics'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'lumber' | 'rebar' | 'analytics'>('catalog');
   const [materials, setMaterials] = useState<MaterialCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -576,8 +576,11 @@ export function MaterialInventory() {
               <TabsTrigger value="catalog" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
                 Material Catalog
               </TabsTrigger>
-              <TabsTrigger value="lumber-pricing" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
-                Lumber & Rebar Pricing
+              <TabsTrigger value="lumber" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
+                Lumber Pricing
+              </TabsTrigger>
+              <TabsTrigger value="rebar" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
+                Rebar Pricing
               </TabsTrigger>
               <TabsTrigger value="analytics" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
                 Analytics
@@ -586,8 +589,12 @@ export function MaterialInventory() {
           </div>
         </div>
 
-        <TabsContent value="lumber-pricing" className="space-y-4">
-          <LumberRebarPricing />
+        <TabsContent value="lumber" className="space-y-4">
+          <LumberRebarPricing category="lumber" />
+        </TabsContent>
+
+        <TabsContent value="rebar" className="space-y-4">
+          <LumberRebarPricing category="rebar" />
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
