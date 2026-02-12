@@ -562,11 +562,29 @@ export function MaterialInventory() {
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="catalog">Material Catalog</TabsTrigger>
-          <TabsTrigger value="lumber-pricing">Lumber & Rebar Pricing</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        {/* Black Header with Navigation Tabs */}
+        <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 border-2 border-yellow-500 rounded-lg p-3 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Package className="w-6 h-6 text-yellow-400" />
+                Material Inventory
+              </h2>
+              <p className="text-yellow-400 text-sm">Manage your master materials catalog and pricing</p>
+            </div>
+            <TabsList className="bg-slate-800 border-2 border-yellow-500">
+              <TabsTrigger value="catalog" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
+                Material Catalog
+              </TabsTrigger>
+              <TabsTrigger value="lumber-pricing" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
+                Lumber & Rebar Pricing
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black text-white">
+                Analytics
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
 
         <TabsContent value="lumber-pricing" className="space-y-4">
           <LumberRebarPricing />
