@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -514,35 +514,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
   }
 
-  function getChartData(materialId: string) {
-    const history = getMaterialPriceHistory(materialId);
-    const vendorData: Record<string, any[]> = {};
-    
-    history.forEach(entry => {
-      const vendorName = entry.vendor?.name || 'Unknown';
-      if (!vendorData[vendorName]) {
-        vendorData[vendorName] = [];
-      }
-      vendorData[vendorName].push({
-        date: entry.effective_date,
-        price: entry.price_per_unit,
-      });
-    });
-
-    const allDates = [...new Set(history.map(h => h.effective_date))].sort();
-    
-    return allDates.map(date => {
-      const dataPoint: any = { date };
-      Object.keys(vendorData).forEach(vendorName => {
-        const entry = vendorData[vendorName].find(e => e.date === date);
-        if (entry) {
-          dataPoint[vendorName] = entry.price;
-        }
-      });
-      return dataPoint;
-    });
-  }
-
   const filteredMaterials = materials.filter(m => m.category === category);
 
   // Get average price based on LATEST price from each vendor
@@ -619,28 +590,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return best ? { vendor: best.vendor?.name || 'Unknown', price: best.price_per_unit } : null;
   }
 
-  // Get vendor comparison data using ONLY latest prices
-  function getVendorComparisonData(materialId: string) {
-    const latestByVendor = new Map<string, PriceEntry>();
-
-    prices
-      .filter(p => p.material_id === materialId)
-      .forEach(price => {
-        const existing = latestByVendor.get(price.vendor_id);
-        if (!existing || new Date(price.effective_date) > new Date(existing.effective_date)) {
-          latestByVendor.set(price.vendor_id, price);
-        }
-      });
-
-    return Array.from(latestByVendor.values())
-      .map(entry => ({
-        vendor: entry.vendor?.name || 'Unknown',
-        price: entry.price_per_unit,
-        date: entry.effective_date,
-      }))
-      .sort((a, b) => a.price - b.price);
-  }
-
   function getPriceHistoryChartData(materialId: string) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - parseInt(timeRange));
@@ -680,29 +629,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       return dataPoint;
     });
   }
-
-  const analyticsData = useMemo(() => {
-    return filteredMaterials.map(material => {
-      const avgPrice = getAveragePrice(material.id);
-      const trend = getPriceTrend(material.id);
-      const vendorCount = getVendorCount(material.id);
-      const bestPrice = getBestPrice(material.id);
-
-      return {
-        material,
-        avgPrice,
-        trend,
-        vendorCount,
-        bestPrice,
-      };
-    });
-  }, [filteredMaterials, prices, timeRange]);
-
-  const trendCounts = useMemo(() => ({
-    up: analyticsData.filter(d => d.trend === 'up').length,
-    down: analyticsData.filter(d => d.trend === 'down').length,
-    stable: analyticsData.filter(d => d.trend === 'stable').length,
-  }), [analyticsData]);
 
   async function generateShareLink(vendor: Vendor) {
     setShareVendor(vendor);
@@ -782,25 +708,23 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     );
   }
 
-  // Get best price info for display
-  const materialPriceInfo = useMemo(() => {
-    return filteredMaterials.map(material => {
-      const bestPrice = getBestPrice(material.id);
-      const avgPrice = getAveragePrice(material.id);
-      const trend = getPriceTrend(material.id);
-      const vendorCount = getVendorCount(material.id);
-      const history = getMaterialPriceHistory(material.id).slice(0, 5);
-      
-      return {
-        material,
-        bestPrice,
-        avgPrice,
-        trend,
-        vendorCount,
-        recentHistory: history,
-      };
-    });
-  }, [filteredMaterials, prices]);
+  // Get best price info for display - REMOVED useMemo to fix infinite loop
+  const materialPriceInfo = filteredMaterials.map(material => {
+    const bestPrice = getBestPrice(material.id);
+    const avgPrice = getAveragePrice(material.id);
+    const trend = getPriceTrend(material.id);
+    const vendorCount = getVendorCount(material.id);
+    const history = getMaterialPriceHistory(material.id).slice(0, 5);
+    
+    return {
+      material,
+      bestPrice,
+      avgPrice,
+      trend,
+      vendorCount,
+      recentHistory: history,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -1075,7 +999,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         </CardContent>
       </Card>
 
-      {/* Vendor Pricing Dialog - THIS WAS MISSING! */}
+      {/* Vendor Pricing Dialog */}
       <Dialog open={showVendorPricingDialog} onOpenChange={setShowVendorPricingDialog}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
