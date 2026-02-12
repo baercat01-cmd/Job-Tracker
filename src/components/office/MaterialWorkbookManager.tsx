@@ -11,6 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -32,6 +33,8 @@ import {
   AlertCircle,
   CheckCircle,
   ShoppingCart,
+  Clock,
+  DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -80,6 +83,18 @@ interface MaterialItem {
   updated_at: string;
 }
 
+interface SheetLabor {
+  id: string;
+  sheet_id: string;
+  description: string;
+  estimated_hours: number;
+  hourly_rate: number;
+  total_labor_cost: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface MaterialWorkbookManagerProps {
   jobId: string;
 }
@@ -94,6 +109,15 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [viewingWorkbook, setViewingWorkbook] = useState<MaterialWorkbook | null>(null);
   const [sheets, setSheets] = useState<MaterialSheet[]>([]);
   const [items, setItems] = useState<MaterialItem[]>([]);
+  const [sheetLabor, setSheetLabor] = useState<Record<string, SheetLabor | null>>({});
+  const [showLaborDialog, setShowLaborDialog] = useState(false);
+  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
+  const [laborForm, setLaborForm] = useState({
+    description: 'Labor & Installation',
+    estimated_hours: 0,
+    hourly_rate: 60,
+    notes: '',
+  });
 
   useEffect(() => {
     loadWorkbooks();
@@ -323,8 +347,25 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       if (sheetsError) throw sheetsError;
       setSheets(sheetsData || []);
 
-      // Load items for first sheet
+      // Load labor for all sheets
       if (sheetsData && sheetsData.length > 0) {
+        const sheetIds = sheetsData.map(s => s.id);
+        const { data: laborData, error: laborError } = await supabase
+          .from('material_sheet_labor')
+          .select('*')
+          .in('sheet_id', sheetIds);
+
+        if (laborError) throw laborError;
+
+        // Create map of sheet_id to labor data
+        const laborMap: Record<string, SheetLabor | null> = {};
+        sheetsData.forEach(sheet => {
+          const labor = laborData?.find(l => l.sheet_id === sheet.id);
+          laborMap[sheet.id] = labor || null;
+        });
+        setSheetLabor(laborMap);
+
+        // Load items for first sheet
         const { data: itemsData, error: itemsError } = await supabase
           .from('material_items')
           .select('*')
@@ -337,6 +378,90 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     } catch (error: any) {
       console.error('Error viewing workbook:', error);
       toast.error('Failed to load workbook details');
+    }
+  }
+
+  function openLaborDialog(sheetId: string) {
+    const existingLabor = sheetLabor[sheetId];
+    setEditingSheetId(sheetId);
+    
+    if (existingLabor) {
+      setLaborForm({
+        description: existingLabor.description,
+        estimated_hours: existingLabor.estimated_hours,
+        hourly_rate: existingLabor.hourly_rate,
+        notes: existingLabor.notes || '',
+      });
+    } else {
+      setLaborForm({
+        description: 'Labor & Installation',
+        estimated_hours: 0,
+        hourly_rate: 60,
+        notes: '',
+      });
+    }
+    
+    setShowLaborDialog(true);
+  }
+
+  async function saveSheetLabor() {
+    if (!editingSheetId) return;
+
+    const existingLabor = sheetLabor[editingSheetId];
+    const laborData = {
+      sheet_id: editingSheetId,
+      description: laborForm.description,
+      estimated_hours: laborForm.estimated_hours,
+      hourly_rate: laborForm.hourly_rate,
+      notes: laborForm.notes || null,
+    };
+
+    try {
+      if (existingLabor) {
+        const { error } = await supabase
+          .from('material_sheet_labor')
+          .update(laborData)
+          .eq('id', existingLabor.id);
+
+        if (error) throw error;
+        toast.success('Labor updated');
+      } else {
+        const { error } = await supabase
+          .from('material_sheet_labor')
+          .insert([laborData]);
+
+        if (error) throw error;
+        toast.success('Labor added');
+      }
+
+      setShowLaborDialog(false);
+      if (viewingWorkbook) {
+        await viewWorkbook(viewingWorkbook);
+      }
+    } catch (error: any) {
+      console.error('Error saving labor:', error);
+      toast.error('Failed to save labor');
+    }
+  }
+
+  async function deleteSheetLabor(laborId: string) {
+    if (!confirm('Delete labor for this section?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('material_sheet_labor')
+        .delete()
+        .eq('id', laborId);
+
+      if (error) throw error;
+      toast.success('Labor deleted');
+      
+      if (viewingWorkbook) {
+        await viewWorkbook(viewingWorkbook);
+      }
+    } catch (error: any) {
+      console.error('Error deleting labor:', error);
+      toast.error('Failed to delete labor');
     }
   }
 
@@ -580,72 +705,236 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Sheet Tabs with Labor Indicators */}
               <div className="flex gap-2">
-                {sheets.map((sheet) => (
-                  <Button
-                    key={sheet.id}
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      const { data, error } = await supabase
-                        .from('material_items')
-                        .select('*')
-                        .eq('sheet_id', sheet.id)
-                        .order('order_index');
-                      if (!error) setItems(data || []);
-                    }}
-                  >
-                    {sheet.sheet_name}
-                  </Button>
-                ))}
+                {sheets.map((sheet) => {
+                  const hasLabor = sheetLabor[sheet.id];
+                  return (
+                    <div key={sheet.id} className="relative">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const { data, error } = await supabase
+                            .from('material_items')
+                            .select('*')
+                            .eq('sheet_id', sheet.id)
+                            .order('order_index');
+                          if (!error) setItems(data || []);
+                        }}
+                      >
+                        {sheet.sheet_name}
+                      </Button>
+                      {hasLabor && (
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {items.length > 0 && (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Material</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead>Length</TableHead>
-                        <TableHead>Color</TableHead>
-                        <TableHead className="text-right">Cost/Unit</TableHead>
-                        <TableHead className="text-right">Ext. Cost</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-medium">{item.category}</TableCell>
-                          <TableCell>{item.material_name}</TableCell>
-                          <TableCell className="text-right">{item.quantity}</TableCell>
-                          <TableCell>{item.length || '-'}</TableCell>
-                          <TableCell>
-                            {item.color ? (
-                              <Badge variant="outline" className="font-normal">
-                                {item.color}
-                              </Badge>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {item.extended_cost ? `$${item.extended_cost.toFixed(2)}` : '-'}
-                          </TableCell>
+                <div className="space-y-4">
+                  {/* Materials Table */}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Material</TableHead>
+                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead>Length</TableHead>
+                          <TableHead>Color</TableHead>
+                          <TableHead className="text-right">Cost/Unit</TableHead>
+                          <TableHead className="text-right">Ext. Cost</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium">{item.category}</TableCell>
+                            <TableCell>{item.material_name}</TableCell>
+                            <TableCell className="text-right">{item.quantity}</TableCell>
+                            <TableCell>{item.length || '-'}</TableCell>
+                            <TableCell>
+                              {item.color ? (
+                                <Badge variant="outline" className="font-normal">
+                                  {item.color}
+                                </Badge>
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {item.extended_cost ? `$${item.extended_cost.toFixed(2)}` : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Labor Section for Current Sheet */}
+                  {sheets.length > 0 && items.length > 0 && (() => {
+                    const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
+                    if (!currentSheet) return null;
+                    
+                    const labor = sheetLabor[currentSheet.id];
+                    
+                    return (
+                      <Card className="border-2 border-amber-300 bg-amber-50">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-amber-700" />
+                              Labor for {currentSheet.sheet_name}
+                            </CardTitle>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openLaborDialog(currentSheet.id)}
+                              >
+                                {labor ? (
+                                  <><Edit className="w-4 h-4 mr-1" /> Edit Labor</>
+                                ) : (
+                                  <><Plus className="w-4 h-4 mr-1" /> Add Labor</>
+                                )}
+                              </Button>
+                              {labor && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-destructive"
+                                  onClick={() => deleteSheetLabor(labor.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          {labor ? (
+                            <div className="grid grid-cols-4 gap-4">
+                              <div>
+                                <p className="text-sm text-muted-foreground">Description</p>
+                                <p className="font-semibold">{labor.description}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Hours</p>
+                                <p className="font-semibold">{labor.estimated_hours} hrs</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Rate</p>
+                                <p className="font-semibold">${labor.hourly_rate}/hr</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-muted-foreground">Total Cost</p>
+                                <p className="text-lg font-bold text-amber-700">
+                                  ${labor.total_labor_cost.toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              No labor added for this section yet
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
                 </div>
               )}
             </div>
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Labor Dialog */}
+      <Dialog open={showLaborDialog} onOpenChange={setShowLaborDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              {sheetLabor[editingSheetId || ''] ? 'Edit' : 'Add'} Labor
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={laborForm.description}
+                onChange={(e) => setLaborForm({ ...laborForm, description: e.target.value })}
+                placeholder="Labor & Installation"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Estimated Hours</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={laborForm.estimated_hours}
+                  onChange={(e) => setLaborForm({ ...laborForm, estimated_hours: parseFloat(e.target.value) || 0 })}
+                  placeholder="40"
+                />
+              </div>
+              <div>
+                <Label>Hourly Rate ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={laborForm.hourly_rate}
+                  onChange={(e) => setLaborForm({ ...laborForm, hourly_rate: parseFloat(e.target.value) || 60 })}
+                  placeholder="60.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={laborForm.notes}
+                onChange={(e) => setLaborForm({ ...laborForm, notes: e.target.value })}
+                placeholder="Additional notes about this labor..."
+                rows={3}
+              />
+            </div>
+
+            {/* Preview */}
+            {laborForm.estimated_hours > 0 && laborForm.hourly_rate > 0 && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Labor Cost</p>
+                    <p className="text-2xl font-bold text-amber-700">
+                      ${(laborForm.estimated_hours * laborForm.hourly_rate).toFixed(2)}
+                    </p>
+                  </div>
+                  <DollarSign className="w-8 h-8 text-amber-500" />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={saveSheetLabor} className="flex-1">
+                {sheetLabor[editingSheetId || ''] ? 'Update' : 'Add'} Labor
+              </Button>
+              <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
