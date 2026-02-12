@@ -11,6 +11,7 @@ import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
+import { VendorPricingForm } from '@/pages/VendorPricingForm';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -215,7 +216,10 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <Routes>
-          {/* All routes use main app authentication */}
+          {/* Public vendor pricing form - no authentication required */}
+          <Route path="/vendor-pricing/:token" element={<VendorPricingForm />} />
+          
+          {/* All other routes use main app authentication */}
           <Route path="/*" element={
             <AuthProvider>
               <AppContent />

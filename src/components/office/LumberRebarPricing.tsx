@@ -29,6 +29,9 @@ import {
   Calendar,
   Users,
   Calculator,
+  Share2,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -103,6 +106,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   
   // Bulk pricing for vendor
   const [bulkPrices, setBulkPrices] = useState<Record<string, { mbf: string; perUnit: string; truckload: string; notes: string }>>({});
+  
+  // Share link dialog
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareVendor, setShareVendor] = useState<Vendor | null>(null);
+  const [shareLink, setShareLink] = useState('');
+  const [shareExpireDays, setShareExpireDays] = useState('30');
+  const [generatingLink, setGeneratingLink] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -340,6 +350,59 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
   const filteredMaterials = materials.filter(m => m.category === category);
 
+  async function generateShareLink(vendor: Vendor) {
+    setShareVendor(vendor);
+    setShareLink('');
+    setGeneratingLink(true);
+    setShowShareDialog(true);
+
+    try {
+      // Generate unique token
+      const token = crypto.randomUUID();
+      
+      // Calculate expiration
+      const expiresAt = shareExpireDays ? (() => {
+        const date = new Date();
+        date.setDate(date.getDate() + parseInt(shareExpireDays));
+        return date.toISOString();
+      })() : null;
+
+      // Create vendor link
+      const { error } = await supabase
+        .from('lumber_rebar_vendor_links')
+        .insert({
+          vendor_id: vendor.id,
+          category,
+          token,
+          expires_at: expiresAt,
+          created_by: profile?.id || null,
+          notes: `Generated for ${vendor.name}`,
+        });
+
+      if (error) throw error;
+
+      // Generate shareable URL
+      const baseUrl = window.location.origin;
+      const link = `${baseUrl}/vendor-pricing/${token}`;
+      setShareLink(link);
+      
+      toast.success('Shareable link created!');
+    } catch (error: any) {
+      console.error('Error generating share link:', error);
+      toast.error('Failed to generate link');
+      setShowShareDialog(false);
+    } finally {
+      setGeneratingLink(false);
+    }
+  }
+
+  function copyToClipboard() {
+    if (shareLink) {
+      navigator.clipboard.writeText(shareLink);
+      toast.success('Link copied to clipboard!');
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -416,10 +479,21 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         </p>
                       </div>
                     )}
-                    <div className="pt-2">
+                    <div className="pt-2 space-y-2">
                       <Button className="w-full" size="sm">
                         <DollarSign className="w-4 h-4 mr-2" />
                         Add Prices
+                      </Button>
+                      <Button
+                        className="w-full bg-purple-600 hover:bg-purple-700"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateShareLink(vendor);
+                        }}
+                      >
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Share Link
                       </Button>
                     </div>
                   </div>
@@ -693,6 +767,93 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Share Link Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-purple-600" />
+              Share Pricing Link - {shareVendor?.name}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Send this link to {shareVendor?.name} so they can submit their prices directly
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {generatingLink ? (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Generating secure link...</p>
+              </div>
+            ) : (
+              <>
+                {/* Generated Link */}
+                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                  <Label className="text-sm font-semibold mb-2 block">Shareable Link:</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={shareLink}
+                      readOnly
+                      className="font-mono text-sm bg-white"
+                    />
+                    <Button onClick={copyToClipboard} variant="outline" size="icon">
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={() => window.open(shareLink, '_blank')}
+                      variant="outline"
+                      size="icon"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Instructions */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h4 className="font-semibold mb-2 text-sm">How to use:</h4>
+                  <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Copy the link above</li>
+                    <li>Send it to {shareVendor?.name} via email or text</li>
+                    <li>They can click the link and enter prices - no login required</li>
+                    <li>You'll be notified when they submit their prices</li>
+                    <li>Prices will automatically appear in your system</li>
+                  </ol>
+                </div>
+
+                {/* Link Details */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Category</p>
+                    <p className="font-semibold">{category === 'lumber' ? 'Lumber' : 'Rebar'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Expires</p>
+                    <p className="font-semibold">
+                      {shareExpireDays ? `${shareExpireDays} days` : 'Never'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Materials</p>
+                    <p className="font-semibold">{filteredMaterials.length} items</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Vendor</p>
+                    <p className="font-semibold">{shareVendor?.name}</p>
+                  </div>
+                </div>
+
+                {/* Security Note */}
+                <div className="text-xs text-muted-foreground bg-slate-50 p-3 rounded border">
+                  🔒 This is a secure, one-time use link. The vendor can only submit prices for the materials in this category.
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Price History Dialog */}
       {selectedMaterial && (
