@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,10 @@ import {
   BarChart3,
   Minus,
   Loader2,
+  Settings,
+  Trash2,
+  Edit,
+  X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -130,6 +135,27 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   
   // Analytics filters
   const [timeRange, setTimeRange] = useState<'30' | '90' | '180' | '365'>('90');
+  
+  // Settings dialog
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'materials' | 'vendors'>('materials');
+  
+  // Material form
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+  const [materialForm, setMaterialForm] = useState({
+    name: '',
+    unit: 'board foot',
+    standard_length: 16,
+  });
+  
+  // Vendor form
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [vendorForm, setVendorForm] = useState({
+    name: '',
+    contact_name: '',
+    phone: '',
+    email: '',
+  });
 
   useEffect(() => {
     loadData();
@@ -306,6 +332,169 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           }
         }));
       }
+    }
+  }
+
+  // Material management functions
+  function openMaterialForm(material?: Material) {
+    if (material) {
+      setEditingMaterial(material);
+      setMaterialForm({
+        name: material.name,
+        unit: material.unit,
+        standard_length: material.standard_length,
+      });
+    } else {
+      setEditingMaterial(null);
+      setMaterialForm({
+        name: '',
+        unit: 'board foot',
+        standard_length: 16,
+      });
+    }
+  }
+
+  async function saveMaterial() {
+    if (!materialForm.name.trim()) {
+      toast.error('Material name is required');
+      return;
+    }
+
+    try {
+      const materialData = {
+        name: materialForm.name.trim(),
+        category,
+        unit: materialForm.unit,
+        standard_length: materialForm.standard_length,
+        active: true,
+        order_index: materials.length,
+      };
+
+      if (editingMaterial) {
+        const { error } = await supabase
+          .from('lumber_rebar_materials')
+          .update(materialData)
+          .eq('id', editingMaterial.id);
+
+        if (error) throw error;
+        toast.success('Material updated successfully');
+      } else {
+        const { error } = await supabase
+          .from('lumber_rebar_materials')
+          .insert(materialData);
+
+        if (error) throw error;
+        toast.success('Material added successfully');
+      }
+
+      setEditingMaterial(null);
+      setMaterialForm({ name: '', unit: 'board foot', standard_length: 16 });
+      await loadMaterials();
+    } catch (error: any) {
+      console.error('Error saving material:', error);
+      toast.error('Failed to save material');
+    }
+  }
+
+  async function deleteMaterial(material: Material) {
+    if (!confirm(`Are you sure you want to delete "${material.name}"? This will also delete all associated prices.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_materials')
+        .delete()
+        .eq('id', material.id);
+
+      if (error) throw error;
+      toast.success('Material deleted successfully');
+      await loadMaterials();
+    } catch (error: any) {
+      console.error('Error deleting material:', error);
+      toast.error('Failed to delete material');
+    }
+  }
+
+  // Vendor management functions
+  function openVendorForm(vendor?: Vendor) {
+    if (vendor) {
+      setEditingVendor(vendor);
+      setVendorForm({
+        name: vendor.name,
+        contact_name: vendor.contact_name || '',
+        phone: vendor.phone || '',
+        email: vendor.email || '',
+      });
+    } else {
+      setEditingVendor(null);
+      setVendorForm({
+        name: '',
+        contact_name: '',
+        phone: '',
+        email: '',
+      });
+    }
+  }
+
+  async function saveVendor() {
+    if (!vendorForm.name.trim()) {
+      toast.error('Vendor name is required');
+      return;
+    }
+
+    try {
+      const vendorData = {
+        name: vendorForm.name.trim(),
+        contact_name: vendorForm.contact_name.trim() || null,
+        phone: vendorForm.phone.trim() || null,
+        email: vendorForm.email.trim() || null,
+        active: true,
+      };
+
+      if (editingVendor) {
+        const { error } = await supabase
+          .from('lumber_rebar_vendors')
+          .update(vendorData)
+          .eq('id', editingVendor.id);
+
+        if (error) throw error;
+        toast.success('Vendor updated successfully');
+      } else {
+        const { error } = await supabase
+          .from('lumber_rebar_vendors')
+          .insert(vendorData);
+
+        if (error) throw error;
+        toast.success('Vendor added successfully');
+      }
+
+      setEditingVendor(null);
+      setVendorForm({ name: '', contact_name: '', phone: '', email: '' });
+      await loadVendors();
+    } catch (error: any) {
+      console.error('Error saving vendor:', error);
+      toast.error('Failed to save vendor');
+    }
+  }
+
+  async function deleteVendor(vendor: Vendor) {
+    if (!confirm(`Are you sure you want to delete "${vendor.name}"? This will also delete all associated prices.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_vendors')
+        .delete()
+        .eq('id', vendor.id);
+
+      if (error) throw error;
+      toast.success('Vendor deleted successfully');
+      await loadVendors();
+    } catch (error: any) {
+      console.error('Error deleting vendor:', error);
+      toast.error('Failed to delete vendor');
     }
   }
 
@@ -626,6 +815,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             {filteredMaterials.length} materials • {vendors.length} vendors
           </p>
         </div>
+        <Button
+          onClick={() => setShowSettingsDialog(true)}
+          variant="outline"
+          className="flex items-center gap-2"
+        >
+          <Settings className="w-4 h-4" />
+          Settings
+        </Button>
       </div>
 
       {/* Vendor Tabs for Adding Prices */}
@@ -639,7 +836,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         <CardContent>
           {vendors.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground">
-              <p>No vendors added yet. Add vendors in Settings.</p>
+              <p>No vendors added yet. Click Settings to add vendors.</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -697,6 +894,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             <div className="text-center py-12 text-muted-foreground">
               <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p>No {category} materials found</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => setShowSettingsDialog(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Materials
+              </Button>
             </div>
           ) : (
             <div className="divide-y">
@@ -870,329 +1075,266 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         </CardContent>
       </Card>
 
-      {/* Legacy: Hidden content for backward compatibility */}
-      <div className="hidden">
-          {/* Vendor Cards */}
-          {vendors.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {vendors.map(vendor => {
-                const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
-                const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
-                const totalMaterials = filteredMaterials.length;
-                const pricesCount = materialsWithPrices.size;
-                const latestPrice = vendorPrices[0];
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              {category === 'lumber' ? 'Lumber' : 'Rebar'} Settings
+            </DialogTitle>
+          </DialogHeader>
 
-                return (
-                  <Card 
-                    key={vendor.id}
-                    className="cursor-pointer hover:shadow-lg transition-all border-2 hover:border-blue-400"
-                    onClick={() => openVendorPricing(vendor)}
-                  >
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-lg flex items-center gap-2">
-                            <Users className="w-5 h-5 text-blue-600" />
-                            {vendor.name}
-                          </CardTitle>
-                          {vendor.contact_name && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {vendor.contact_name}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-blue-600">
-                            {pricesCount}/{totalMaterials}
-                          </div>
-                          <p className="text-xs text-muted-foreground">priced</p>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {vendor.phone && (
-                          <p className="text-sm text-muted-foreground">📞 {vendor.phone}</p>
-                        )}
-                        {vendor.email && (
-                          <p className="text-sm text-muted-foreground">✉️ {vendor.email}</p>
-                        )}
-                        {latestPrice && (
-                          <div className="pt-2 border-t">
-                            <p className="text-xs text-muted-foreground">
-                              Last updated: {new Date(latestPrice.effective_date).toLocaleDateString()}
-                            </p>
-                          </div>
-                        )}
-                        <div className="pt-2 space-y-2">
-                          <Button className="w-full" size="sm">
-                            <DollarSign className="w-4 h-4 mr-2" />
-                            Add Prices
-                          </Button>
-                          <Button
-                            className="w-full bg-purple-600 hover:bg-purple-700"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              generateShareLink(vendor);
-                            }}
-                          >
-                            <Share2 className="w-4 h-4 mr-2" />
-                            Share Link
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">No vendors yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Add vendors in Settings to start tracking prices
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'materials' | 'vendors')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="materials">
+                <Package className="w-4 h-4 mr-2" />
+                Materials ({filteredMaterials.length})
+              </TabsTrigger>
+              <TabsTrigger value="vendors">
+                <Users className="w-4 h-4 mr-2" />
+                Vendors ({vendors.length})
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Materials Reference List */}
-          <details className="mt-6">
-            <summary className="cursor-pointer font-semibold text-sm text-slate-700 hover:text-slate-900 mb-4 flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              View All Materials ({filteredMaterials.length})
-            </summary>
-            {filteredMaterials.length === 0 ? (
+            {/* Materials Tab */}
+            <TabsContent value="materials" className="space-y-4">
+              {/* Add/Edit Material Form */}
               <Card>
-                <CardContent className="py-12 text-center">
-                  <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                  <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Add materials to start tracking prices
-                  </p>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {editingMaterial ? 'Edit Material' : 'Add New Material'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2">
+                      <Label>Material Name *</Label>
+                      <Input
+                        value={materialForm.name}
+                        onChange={(e) => setMaterialForm(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="e.g., 2x4, 2x6, etc."
+                      />
+                    </div>
+                    <div>
+                      <Label>Unit</Label>
+                      <Select
+                        value={materialForm.unit}
+                        onValueChange={(value) => setMaterialForm(prev => ({ ...prev, unit: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="board foot">Board Foot</SelectItem>
+                          <SelectItem value="linear foot">Linear Foot</SelectItem>
+                          <SelectItem value="piece">Piece</SelectItem>
+                          <SelectItem value="ton">Ton</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Standard Length (feet)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={materialForm.standard_length}
+                      onChange={(e) => setMaterialForm(prev => ({ ...prev, standard_length: parseInt(e.target.value) || 16 }))}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={saveMaterial} className="flex-1">
+                      <Plus className="w-4 h-4 mr-2" />
+                      {editingMaterial ? 'Update Material' : 'Add Material'}
+                    </Button>
+                    {editingMaterial && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setEditingMaterial(null);
+                          setMaterialForm({ name: '', unit: 'board foot', standard_length: 16 });
+                        }}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="space-y-4">
-                {filteredMaterials.map(material => {
-                  const materialHistory = getMaterialPriceHistory(material.id);
-                  const hasHistory = materialHistory.length > 0;
 
-                  return (
-                    <Card key={material.id}>
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
+              {/* Materials List */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Existing Materials</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {filteredMaterials.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p>No materials added yet</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y max-h-96 overflow-y-auto">
+                      {filteredMaterials.map(material => (
+                        <div key={material.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
                           <div>
-                            <CardTitle className="text-lg">{material.name}</CardTitle>
+                            <h4 className="font-semibold">{material.name}</h4>
                             <p className="text-sm text-muted-foreground">
-                              Standard: {material.standard_length}' • Unit: {material.unit}
+                              {material.standard_length}' • {material.unit}
                             </p>
                           </div>
                           <div className="flex gap-2">
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => openPriceHistory(material)}
-                              disabled={!hasHistory}
+                              onClick={() => openMaterialForm(material)}
                             >
-                              <LineChartIcon className="w-4 h-4 mr-2" />
-                              History
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => deleteMaterial(material)}
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </div>
-                      </CardHeader>
-                      <CardContent>
-                        {vendors.length === 0 ? (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <p className="mb-2">No vendors added yet</p>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {vendors.map(vendor => {
-                              const latestPrice = getLatestPrice(material.id, vendor.id);
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                              return (
-                                <div
-                                  key={vendor.id}
-                                  className={`border rounded-lg p-4 ${
-                                    latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between mb-2">
-                                    <h4 className="font-semibold text-sm">{vendor.name}</h4>
-                                  </div>
-
-                                  {latestPrice ? (
-                                    <div>
-                                      <div className="flex items-baseline gap-2 mb-1">
-                                        <span className="text-2xl font-bold text-blue-900">
-                                          ${latestPrice.price_per_unit.toFixed(2)}
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                          per {material.unit}
-                                        </span>
-                                      </div>
-                                      {latestPrice.truckload_quantity && (
-                                        <p className="text-xs text-muted-foreground mb-1">
-                                          Truckload: {latestPrice.truckload_quantity} units
-                                        </p>
-                                      )}
-                                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                        <Calendar className="w-3 h-3" />
-                                        {new Date(latestPrice.effective_date).toLocaleDateString()}
-                                      </p>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                      <Plus className="w-4 h-4" />
-                                      No pricing yet
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </details>
-      </div>
-
-      {/* Legacy analytics - hidden */}
-      <div className="hidden">
-          {/* Market Trends Summary */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="bg-green-50 border-green-200">
-              <CardContent className="pt-6 pb-4 text-center">
-                <TrendingDown className="w-8 h-8 mx-auto mb-2 text-green-600" />
-                <p className="text-3xl font-bold text-green-900">{trendCounts.down}</p>
-                <p className="text-sm text-green-700 mt-1">Prices Falling</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="pt-6 pb-4 text-center">
-                <Minus className="w-8 h-8 mx-auto mb-2 text-blue-600" />
-                <p className="text-3xl font-bold text-blue-900">{trendCounts.stable}</p>
-                <p className="text-sm text-blue-700 mt-1">Stable Prices</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-red-50 border-red-200">
-              <CardContent className="pt-6 pb-4 text-center">
-                <TrendingUp className="w-8 h-8 mx-auto mb-2 text-red-600" />
-                <p className="text-3xl font-bold text-red-900">{trendCounts.up}</p>
-                <p className="text-sm text-red-700 mt-1">Prices Rising</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Materials Analytics Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Material Price Analysis
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Click any material for detailed vendor comparison and price history
-              </p>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-100 border-b-2">
-                    <tr>
-                      <th className="text-left p-3 font-semibold">Material</th>
-                      <th className="text-center p-3 font-semibold">Length</th>
-                      <th className="text-right p-3 font-semibold">Avg Price</th>
-                      <th className="text-center p-3 font-semibold">Trend</th>
-                      <th className="text-right p-3 font-semibold">Best Price</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {analyticsData.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-12 text-muted-foreground">
-                          <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                          <p>No {category} materials found</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      analyticsData.map((data, idx) => (
-                        <tr
-                          key={data.material.id}
-                          className={`cursor-pointer hover:bg-blue-50 transition-colors ${
-                            idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
-                          }`}
-                          onClick={() => {
-                            setSelectedMaterial(data.material);
-                            setShowMaterialDetailDialog(true);
-                          }}
-                        >
-                          <td className="p-3">
-                            <div className="font-medium">{data.material.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {data.material.unit}
-                            </div>
-                          </td>
-                          <td className="p-3 text-center font-semibold text-blue-700">
-                            {data.material.standard_length}'
-                          </td>
-                          <td className="p-3 text-right font-mono font-semibold">
-                            {data.avgPrice ? `$${data.avgPrice.toFixed(2)}` : '-'}
-                          </td>
-                          <td className="p-3 text-center">
-                            {data.trend === 'up' && (
-                              <Badge className="bg-red-100 text-red-800 border-red-300">
-                                <TrendingUp className="w-3 h-3 mr-1" />
-                                Rising
-                              </Badge>
-                            )}
-                            {data.trend === 'down' && (
-                              <Badge className="bg-green-100 text-green-800 border-green-300">
-                                <TrendingDown className="w-3 h-3 mr-1" />
-                                Falling
-                              </Badge>
-                            )}
-                            {data.trend === 'stable' && (
-                              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
-                                <Minus className="w-3 h-3 mr-1" />
-                                Stable
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-3 text-right">
-                            {data.bestPrice ? (
-                              <div>
-                                <div className="font-mono font-bold text-green-700">
-                                  ${data.bestPrice.price.toFixed(2)}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {data.bestPrice.vendor}
-                                </div>
-                              </div>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                        </tr>
-                      ))
+            {/* Vendors Tab */}
+            <TabsContent value="vendors" className="space-y-4">
+              {/* Add/Edit Vendor Form */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {editingVendor ? 'Edit Vendor' : 'Add New Vendor'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label>Vendor Name *</Label>
+                    <Input
+                      value={vendorForm.name}
+                      onChange={(e) => setVendorForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., ABC Lumber Supply"
+                    />
+                  </div>
+                  <div>
+                    <Label>Contact Name</Label>
+                    <Input
+                      value={vendorForm.contact_name}
+                      onChange={(e) => setVendorForm(prev => ({ ...prev, contact_name: e.target.value }))}
+                      placeholder="Contact person's name"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Phone</Label>
+                      <Input
+                        value={vendorForm.phone}
+                        onChange={(e) => setVendorForm(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="(555) 123-4567"
+                      />
+                    </div>
+                    <div>
+                      <Label>Email</Label>
+                      <Input
+                        type="email"
+                        value={vendorForm.email}
+                        onChange={(e) => setVendorForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="vendor@example.com"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={saveVendor} className="flex-1">
+                      <Plus className="w-4 h-4 mr-2" />
+                      {editingVendor ? 'Update Vendor' : 'Add Vendor'}
+                    </Button>
+                    {editingVendor && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setEditingVendor(null);
+                          setVendorForm({ name: '', contact_name: '', phone: '', email: '' });
+                        }}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancel
+                      </Button>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-      </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-      {/* REST OF THE DIALOGS ARE IDENTICAL - TRUNCATED FOR BREVITY */}
-      {/* Vendor Bulk Pricing Dialog, Share Link Dialog, Price History Dialog, Material Detail Dialog all remain the same */}
+              {/* Vendors List */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Existing Vendors</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {vendors.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p>No vendors added yet</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y max-h-96 overflow-y-auto">
+                      {vendors.map(vendor => (
+                        <div key={vendor.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                          <div>
+                            <h4 className="font-semibold">{vendor.name}</h4>
+                            {vendor.contact_name && (
+                              <p className="text-sm text-muted-foreground">
+                                Contact: {vendor.contact_name}
+                              </p>
+                            )}
+                            <div className="flex gap-4 mt-1">
+                              {vendor.phone && (
+                                <p className="text-sm text-muted-foreground">📞 {vendor.phone}</p>
+                              )}
+                              {vendor.email && (
+                                <p className="text-sm text-muted-foreground">✉️ {vendor.email}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openVendorForm(vendor)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => deleteVendor(vendor)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
