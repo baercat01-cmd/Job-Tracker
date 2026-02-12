@@ -1097,6 +1097,15 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                     </div>
                   </div>
                 </div>
+              ) : sheets.length > 0 && (
+                /* Empty state when sheet exists but has no items */
+                <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
+                  <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-slate-400" />
+                  <h3 className="text-lg font-semibold text-slate-700 mb-2">No Materials Yet</h3>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Click "Add Manual Material" or "Search Catalog" above to add items to this sheet
+                  </p>
+                </div>
               )}
 
               {/* Sheet Tabs with Labor Indicators and Add Material Button */}
@@ -1158,10 +1167,17 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                   )}
                 </div>
                 
-                {/* Add Material Buttons */}
+                {/* Add Material Buttons - Show when viewing working workbook with sheets */}
                 <div className="flex gap-2">
-                  {viewingWorkbook.status === 'working' && items.length > 0 && sheets.length > 0 && (() => {
-                    const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
+                  {viewingWorkbook.status === 'working' && sheets.length > 0 && (() => {
+                    // Get current sheet - either from items or use first sheet if no items yet
+                    let currentSheet;
+                    if (items.length > 0) {
+                      currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
+                    } else {
+                      currentSheet = sheets[0]; // Default to first sheet if no items loaded
+                    }
+                    
                     if (!currentSheet) return null;
                     
                     return (
@@ -1188,7 +1204,8 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                 </div>
               </div>
 
-              {items.length > 0 && (
+              {/* Materials Table - only show if items exist */}
+              {items.length > 0 ? (
                 <div className="space-y-4">
                   {/* Materials Table */}
                   <div className="overflow-x-auto">
