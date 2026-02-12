@@ -1060,7 +1060,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             </DialogHeader>
             <div className="space-y-4">
               {/* Info Banner for Working Workbooks */}
-              {viewingWorkbook.status === 'working' && (
+              {viewingWorkbook.status === 'working' ? (
                 <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <div className="bg-blue-600 text-white p-2 rounded-full">
