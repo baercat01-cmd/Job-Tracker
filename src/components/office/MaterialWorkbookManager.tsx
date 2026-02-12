@@ -1097,8 +1097,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                     </div>
                   </div>
                 </div>
-              ) : sheets.length > 0 && (
-                /* Empty state when sheet exists but has no items */
+              ) : (
                 <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
                   <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-700 mb-2">No Materials Yet</h3>
