@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LumberRebarPricing } from './LumberRebarPricing';
+import { LumberAnalytics } from './LumberAnalytics';
 import {
   Table,
   TableBody,
@@ -44,6 +47,7 @@ interface MaterialCatalogItem {
 }
 
 export function MaterialInventory() {
+  const [activeTab, setActiveTab] = useState<'catalog' | 'lumber-pricing' | 'analytics'>('catalog');
   const [materials, setMaterials] = useState<MaterialCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -557,6 +561,22 @@ export function MaterialInventory() {
 
   return (
     <div className="space-y-6">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="catalog">Material Catalog</TabsTrigger>
+          <TabsTrigger value="lumber-pricing">Lumber & Rebar Pricing</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="lumber-pricing" className="space-y-4">
+          <LumberRebarPricing />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-4">
+          <LumberAnalytics />
+        </TabsContent>
+
+        <TabsContent value="catalog" className="space-y-6">
       {/* Category Tabs */}
       <div className="border-b border-slate-200">
         <div className="flex items-center gap-1 overflow-x-auto pb-0">
@@ -860,6 +880,8 @@ export function MaterialInventory() {
           </div>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
