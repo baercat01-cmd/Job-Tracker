@@ -1060,7 +1060,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             </DialogHeader>
             <div className="space-y-4">
               {/* Info Banner for Working Workbooks */}
-              {viewingWorkbook.status === 'working' ? (
+              {viewingWorkbook.status === 'working' && (
                 <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <div className="bg-blue-600 text-white p-2 rounded-full">
@@ -1096,14 +1096,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                       <p className="text-xs text-muted-foreground mt-1">Use "Add from Catalog" button</p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
-                  <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-slate-400" />
-                  <h3 className="text-lg font-semibold text-slate-700 mb-2">No Materials Yet</h3>
-                  <p className="text-sm text-slate-600 mb-4">
-                    Click "Add Manual Material" or "Search Catalog" above to add items to this sheet
-                  </p>
                 </div>
               )}
 
