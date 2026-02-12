@@ -87,6 +87,7 @@ interface PriceEntry {
   material_id: string;
   vendor_id: string;
   price_per_unit: number;
+  mbf_price: number | null;
   truckload_quantity: number | null;
   effective_date: string;
   notes: string | null;
@@ -316,15 +317,23 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
     const pricesToSave = Object.entries(bulkPrices)
       .filter(([_, price]) => price.perUnit && parseFloat(price.perUnit) > 0)
-      .map(([materialId, price]) => ({
-        material_id: materialId,
-        vendor_id: selectedVendor.id,
-        price_per_unit: parseFloat(price.perUnit),
-        truckload_quantity: price.truckload ? parseInt(price.truckload) : null,
-        effective_date: effectiveDate,
-        notes: price.notes || null,
-        created_by: profile?.id || null,
-      }));
+      .map(([materialId, price]) => {
+        const material = materials.find(m => m.id === materialId);
+        const boardFeet = material && material.unit === 'board foot'
+          ? calculateBoardFeet(material.name, material.standard_length)
+          : null;
+        
+        return {
+          material_id: materialId,
+          vendor_id: selectedVendor.id,
+          price_per_unit: parseFloat(price.perUnit),
+          mbf_price: boardFeet && price.mbf ? parseFloat(price.mbf) : null,
+          truckload_quantity: price.truckload ? parseInt(price.truckload) : null,
+          effective_date: effectiveDate,
+          notes: price.notes || null,
+          created_by: profile?.id || null,
+        };
+      });
 
     if (pricesToSave.length === 0) {
       toast.error('Please enter at least one price');
@@ -1014,63 +1023,74 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                 return acc;
                               }, {} as Record<string, PriceEntry[]>);
 
-                              return Object.entries(vendorGroups).map(([vendorName, entries]) => (
-                                <div key={vendorName} className="space-y-2">
-                                  <div className="font-semibold text-base flex items-center gap-2 text-blue-700">
-                                    <Users className="w-4 h-4" />
-                                    {vendorName}
-                                    <Badge variant="secondary" className="text-xs">
-                                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                                    </Badge>
-                                  </div>
-                                  <div className="space-y-2 pl-6">
-                                    {entries.map(entry => (
-                                      <div
-                                        key={entry.id}
-                                        className="flex items-center justify-between p-3 bg-white rounded-lg border hover:border-blue-300 transition-colors"
-                                      >
-                                        <div className="flex items-center gap-4">
-                                          <div>
-                                            <div className="text-sm font-medium">
-                                              {new Date(entry.effective_date).toLocaleDateString('en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric',
-                                              })}
-                                            </div>
-                                            {entry.notes && (
-                                              <div className="text-xs text-muted-foreground mt-1">
-                                                {entry.notes}
+                              return Object.entries(vendorGroups).map(([vendorName, entries]) => {
+                                const boardFeet = info.material.unit === 'board foot'
+                                  ? calculateBoardFeet(info.material.name, info.material.standard_length)
+                                  : null;
+
+                                return (
+                                  <div key={vendorName} className="space-y-2">
+                                    <div className="font-semibold text-base flex items-center gap-2 text-blue-700">
+                                      <Users className="w-4 h-4" />
+                                      {vendorName}
+                                      <Badge variant="secondary" className="text-xs">
+                                        {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                                      </Badge>
+                                    </div>
+                                    <div className="space-y-2 pl-6">
+                                      {entries.map(entry => (
+                                        <div
+                                          key={entry.id}
+                                          className="flex items-center justify-between p-3 bg-white rounded-lg border hover:border-blue-300 transition-colors"
+                                        >
+                                          <div className="flex items-center gap-4">
+                                            <div>
+                                              <div className="text-sm font-medium">
+                                                {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                                  year: 'numeric',
+                                                })}
                                               </div>
+                                              {entry.notes && (
+                                                <div className="text-xs text-muted-foreground mt-1">
+                                                  {entry.notes}
+                                                </div>
+                                              )}
+                                            </div>
+                                            {entry.mbf_price && boardFeet && (
+                                              <Badge variant="outline" className="bg-blue-50 text-xs">
+                                                ${entry.mbf_price.toFixed(2)}/MBF
+                                              </Badge>
+                                            )}
+                                            {entry.truckload_quantity && (
+                                              <Badge variant="outline" className="text-xs">
+                                                {entry.truckload_quantity} units
+                                              </Badge>
                                             )}
                                           </div>
-                                          {entry.truckload_quantity && (
-                                            <Badge variant="outline" className="text-xs">
-                                              {entry.truckload_quantity} unit truckload
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                          <div className="text-right">
-                                            <div className="text-xl font-bold text-blue-700">
-                                              ${entry.price_per_unit.toFixed(2)}
+                                          <div className="flex items-center gap-3">
+                                            <div className="text-right">
+                                              <div className="text-xl font-bold text-blue-700">
+                                                ${entry.price_per_unit.toFixed(2)}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">per piece</div>
                                             </div>
-                                            <div className="text-xs text-muted-foreground">per {info.material.unit}</div>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                              onClick={() => deletePriceEntry(entry.id, info.material.name, vendorName)}
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </Button>
                                           </div>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                            onClick={() => deletePriceEntry(entry.id, info.material.name, vendorName)}
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </Button>
                                         </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              ));
+                                );
+                              });
                             })()}
                           </div>
                         )}
@@ -1143,7 +1163,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       <th className="text-center p-3 font-semibold w-24">Board Feet</th>
                       <th className="text-left p-3 font-semibold w-32">Price/MBF ($)</th>
                       <th className="text-left p-3 font-semibold w-32">Price/Piece ($)</th>
-                      <th className="text-left p-3 font-semibold w-32">Truckload Qty</th>
+                      <th className="text-left p-3 font-semibold w-32">Units</th>
                       <th className="text-left p-3 font-semibold">Notes</th>
                     </tr>
                   </thead>
@@ -1202,7 +1222,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                               min="0"
                               value={priceData.truckload}
                               onChange={(e) => updateBulkPrice(material.id, 'truckload', e.target.value)}
-                              placeholder="Optional"
+                              placeholder="Qty"
                               className="w-full"
                             />
                           </td>
@@ -1378,20 +1398,26 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                           <tr className="border-b">
                             <th className="text-left p-3 font-semibold">Material</th>
                             <th className="text-center p-3 font-semibold w-32">Effective Date</th>
-                            <th className="text-right p-3 font-semibold w-32">Price/Unit</th>
-                            <th className="text-center p-3 font-semibold w-32">Truckload Qty</th>
+                            <th className="text-right p-3 font-semibold w-32">Price/MBF</th>
+                            <th className="text-right p-3 font-semibold w-32">Price/Piece</th>
+                            <th className="text-center p-3 font-semibold w-24">Units</th>
                             <th className="text-left p-3 font-semibold">Notes</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
                           {submission.entries.map((entry, entryIdx) => {
                             const material = materials.find(m => m.id === entry.material_id);
+                            const boardFeet = material && material.unit === 'board foot'
+                              ? calculateBoardFeet(material.name, material.standard_length)
+                              : null;
+                            
                             return (
                               <tr key={entry.id} className={entryIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                 <td className="p-3">
                                   <div className="font-medium">{material?.name || 'Unknown'}</div>
                                   <div className="text-xs text-muted-foreground">
                                     {material?.standard_length}' • {material?.unit}
+                                    {boardFeet && <span className="ml-2">({boardFeet.toFixed(2)} BF/pc)</span>}
                                   </div>
                                 </td>
                                 <td className="p-3 text-center text-sm">
@@ -1402,16 +1428,26 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                   })}
                                 </td>
                                 <td className="p-3 text-right">
+                                  {entry.mbf_price ? (
+                                    <>
+                                      <div className="text-lg font-bold text-green-700">
+                                        ${entry.mbf_price.toFixed(2)}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">per MBF</div>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">-</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right">
                                   <div className="text-lg font-bold text-blue-700">
                                     ${entry.price_per_unit.toFixed(2)}
                                   </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    per {material?.unit}
-                                  </div>
+                                  <div className="text-xs text-muted-foreground">per piece</div>
                                 </td>
                                 <td className="p-3 text-center">
                                   {entry.truckload_quantity ? (
-                                    <Badge variant="outline">{entry.truckload_quantity} units</Badge>
+                                    <Badge variant="outline">{entry.truckload_quantity}</Badge>
                                   ) : (
                                     <span className="text-muted-foreground text-sm">-</span>
                                   )}

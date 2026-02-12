@@ -176,9 +176,12 @@ export function VendorPricingForm() {
         
         // Determine the price per unit to store
         let pricePerUnit: number;
+        let mbfPrice: number | null = null;
+        
         if (material?.unit === 'board foot' && data.mbfPrice) {
           // For lumber: convert MBF to price per piece
           pricePerUnit = parseFloat(data.pricePerPiece);
+          mbfPrice = parseFloat(data.mbfPrice); // Store original MBF price
         } else {
           // For rebar or direct entry: use the price as-is
           pricePerUnit = parseFloat(data.pricePerPiece || data.mbfPrice);
@@ -196,6 +199,7 @@ export function VendorPricingForm() {
           material_id: materialId,
           vendor_id: vendorLink.vendor_id,
           price_per_unit: pricePerUnit,
+          mbf_price: mbfPrice,
           truckload_quantity: truckloadQty,
           effective_date: effectiveDate,
           notes: data.notes || null,
