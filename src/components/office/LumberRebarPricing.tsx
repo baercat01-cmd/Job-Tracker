@@ -863,55 +863,58 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       <CardContent className="p-2">
                         <div className="space-y-2">
                           {/* Vendor Logo and Name */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-center gap-2">
                             {vendor.logo_url && (
                               <img 
                                 src={vendor.logo_url} 
                                 alt={vendor.name}
-                                className="h-8 w-auto object-contain flex-shrink-0"
+                                className="h-16 w-auto object-contain"
                               />
                             )}
-                            <h4 className="font-semibold text-xs truncate flex-1">{vendor.name}</h4>
                           </div>
+                          <h4 className="font-semibold text-sm text-center truncate">{vendor.name}</h4>
                           
                           {/* All Buttons in One Row */}
                           <div className="flex gap-1">
                             <Button
+                              type="button"
                               size="sm"
                               variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                console.log('Price button clicked for:', vendor.name);
+                              onClick={() => {
+                                console.log('💲 Price button clicked for:', vendor.name);
                                 setSelectedVendorTab(vendor.id);
                                 openVendorPricing(vendor);
                               }}
-                              className="flex-1 h-7 px-2 text-xs"
+                              className="flex-1 h-8 px-1"
+                              title="Enter Prices"
                             >
-                              <DollarSign className="w-3 h-3" />
+                              <DollarSign className="w-4 h-4" />
                             </Button>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                console.log('History button clicked for:', vendor.name);
+                              onClick={() => {
+                                console.log('📅 History button clicked for:', vendor.name);
                                 openVendorHistory(vendor);
                               }}
-                              className="flex-1 h-7 px-2 text-xs"
+                              className="flex-1 h-8 px-1"
+                              title="View History"
                             >
-                              <Calendar className="w-3 h-3" />
+                              <Calendar className="w-4 h-4" />
                             </Button>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                console.log('Share button clicked for:', vendor.name);
+                              onClick={() => {
+                                console.log('🔗 Share button clicked for:', vendor.name);
                                 generateShareLink(vendor);
                               }}
-                              className="flex-1 h-7 px-2 text-xs"
+                              className="flex-1 h-8 px-1"
+                              title="Share Link"
                             >
-                              <Share2 className="w-3 h-3" />
+                              <Share2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </div>
