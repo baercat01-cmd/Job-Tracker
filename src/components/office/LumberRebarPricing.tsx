@@ -869,22 +869,19 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       <Calendar className="w-4 h-4" />
                       History
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => generateShareLink(vendor)}
+                      className="flex items-center gap-1 text-green-600 hover:text-green-700"
+                      title="Generate shareable link"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </Button>
                   </div>
                 );
               })}
-              <Button
-                variant="outline"
-                className="flex items-center gap-2 border-dashed"
-                onClick={() => {
-                  if (vendors.length > 0) {
-                    setShareVendor(vendors[0]);
-                    setShowShareDialog(true);
-                  }
-                }}
-              >
-                <Share2 className="w-4 h-4" />
-                Share Link
-              </Button>
             </div>
           )}
         </CardContent>
