@@ -285,11 +285,18 @@ export function LumberRebarPricing() {
     }
 
     try {
+      console.log('Saving material:', {
+        name: materialName,
+        category: materialCategory,
+        unit: materialUnit,
+        standard_length: standardLength,
+      });
+
       const maxOrder = materials
         .filter(m => m.category === materialCategory)
         .reduce((max, m) => Math.max(max, m.order_index), 0);
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('lumber_rebar_materials')
         .insert([{
           name: materialName,
@@ -297,17 +304,22 @@ export function LumberRebarPricing() {
           unit: materialUnit,
           standard_length: parseFloat(standardLength),
           order_index: maxOrder + 1,
-        }]);
+        }])
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
 
+      console.log('Material saved successfully:', data);
       toast.success('Material added successfully');
       setShowAddMaterialDialog(false);
       resetMaterialForm();
-      await loadMaterials();
+      // Data will auto-reload via realtime subscription
     } catch (error: any) {
       console.error('Error saving material:', error);
-      toast.error('Failed to save material');
+      toast.error(`Failed to save material: ${error.message || 'Unknown error'}`);
     }
   }
 
