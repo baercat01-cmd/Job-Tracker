@@ -866,9 +866,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => sum + r.selling_price, 0);
   const nonTaxableAdditionalPrice = nonTaxableAdditionalCost * (1 + markup / 100);
   
-  // Labor (no markup, no tax)
-  const proposalLaborCost = laborPrice;
-  const proposalLaborPrice = laborPrice;
+  // Labor from sheet labor (no markup, no tax) - calculate total from all sheet labor
+  const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
+    const labor = sheetLabor[sheet.sheetId];
+    return sum + (labor ? labor.total_labor_cost : 0);
+  }, 0);
+  const proposalLaborCost = totalSheetLaborCost;
+  const proposalLaborPrice = totalSheetLaborCost;
   
   // Subcontractor estimates (with their individual markups, then proposal markup, taxable)
   const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
@@ -1111,15 +1115,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                       <h3 className="text-lg font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
                                       {/* Labor info if exists */}
                                       {sheetLabor[sheet.sheetId] && (
-                                        <div className="flex items-center gap-2 mt-1">
-                                          <Clock className="w-3 h-3 text-amber-600" />
-                                          <p className="text-xs text-amber-700 font-medium">
-                                            {sheetLabor[sheet.sheetId].estimated_hours} hrs @ ${sheetLabor[sheet.sheetId].hourly_rate}/hr
-                                          </p>
-                                          <Badge variant="outline" className="text-xs bg-amber-50 border-amber-300 text-amber-800">
-                                            ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
-                                          </Badge>
-                                        </div>
+                                        <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
                                       )}
                                     </div>
                                   </div>
@@ -1139,6 +1135,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         <p className="text-xs font-semibold text-green-700">+{markup.toFixed(1)}%</p>
                                       </div>
                                       <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      {/* Labor amount under price */}
+                                      {sheetLabor[sheet.sheetId] && (
+                                        <p className="text-sm text-amber-700 font-semibold mt-1">
+                                          ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
+                                        </p>
+                                      )}
                                     </div>
                                     <Button
                                       size="sm"
@@ -1256,11 +1258,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             {excludedCount} item{excludedCount > 1 ? 's' : ''} excluded
                                           </Badge>
                                         )}
-                                        {estMarkup > 0 && (
-                                          <Badge variant="outline" className="bg-green-50 border-green-300 text-green-800">
-                                            {estMarkup.toFixed(1)}% markup
-                                          </Badge>
-                                        )}
                                         {est.extraction_status === 'completed' && (
                                           <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-800">
                                             Extracted
@@ -1270,6 +1267,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
+                                    {/* Editable Markup */}
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                      <Label className="text-xs text-slate-600">Markup:</Label>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={estMarkup}
+                                        onChange={async (e) => {
+                                          const newMarkup = parseFloat(e.target.value) || 0;
+                                          try {
+                                            const { error } = await supabase
+                                              .from('subcontractor_estimates')
+                                              .update({ markup_percent: newMarkup })
+                                              .eq('id', est.id);
+                                            
+                                            if (error) throw error;
+                                            await loadSubcontractorEstimates();
+                                          } catch (error: any) {
+                                            console.error('Error updating markup:', error);
+                                            toast.error('Failed to update markup');
+                                          }
+                                        }}
+                                        className="w-20 h-8 text-sm"
+                                      />
+                                      <span className="text-xs font-semibold text-green-700">%</span>
+                                    </div>
                                     <div className="text-right">
                                       <p className="text-xs text-slate-600">Included items: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-green-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
