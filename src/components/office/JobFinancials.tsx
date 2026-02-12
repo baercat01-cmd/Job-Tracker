@@ -970,8 +970,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const sheet = item.data as typeof materialsBreakdown.sheetBreakdowns[0];
                       const sheetCost = sheet.totalPrice;
                       const sheetPrice = sheetCost * (1 + markup / 100);
-                      const isDragging = draggedRowId === sheet.sheetId;
-                      const isDragOver = dragOverRowId === sheet.sheetId;
 
                       return (
                         <div key={item.id}>
@@ -1076,8 +1074,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const estMarkup = est.markup_percent || 0;
                       const costWithMarkup = estCost * (1 + estMarkup / 100);
                       const finalPrice = costWithMarkup * (1 + markup / 100);
-                      const isDragging = draggedRowId === est.id;
-                      const isDragOver = dragOverRowId === est.id;
 
                       // Group line items by category
                       const itemsByCategory = lineItems.reduce((acc: Record<string, any[]>, item: any) => {
@@ -1222,8 +1218,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const row = item.data as CustomFinancialRow;
                       const rowCost = row.selling_price;
                       const rowPrice = rowCost * (1 + markup / 100);
-                      const isDragging = draggedRowId === row.id;
-                      const isDragOver = dragOverRowId === row.id;
 
                       return (
                         <div key={item.id}>
