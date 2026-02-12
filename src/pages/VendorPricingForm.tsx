@@ -41,6 +41,7 @@ interface VendorLink {
   vendor?: {
     name: string;
     contact_name: string | null;
+    logo_url: string | null;
   };
 }
 
@@ -88,7 +89,7 @@ export function VendorPricingForm() {
         .from('lumber_rebar_vendor_links')
         .select(`
           *,
-          vendor:lumber_rebar_vendors(name, contact_name)
+          vendor:lumber_rebar_vendors(name, contact_name, logo_url)
         `)
         .eq('token', token)
         .eq('is_active', true)
@@ -287,11 +288,13 @@ export function VendorPricingForm() {
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-4">
-                <img 
-                  src="/tri-state-logo.png" 
-                  alt="Tri-State Forest Products" 
-                  className="h-16 w-auto"
-                />
+                {vendorLink.vendor?.logo_url && (
+                  <img 
+                    src={vendorLink.vendor.logo_url} 
+                    alt={vendorLink.vendor.name} 
+                    className="h-16 w-auto"
+                  />
+                )}
                 <div>
                   <CardTitle className="text-2xl mb-2">
                     Vendor Pricing Submission

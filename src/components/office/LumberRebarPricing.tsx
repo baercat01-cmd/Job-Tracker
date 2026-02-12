@@ -77,6 +77,7 @@ interface Vendor {
   contact_name: string | null;
   phone: string | null;
   email: string | null;
+  logo_url: string | null;
   active: boolean;
   created_at: string;
 }
@@ -160,6 +161,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     contact_name: '',
     phone: '',
     email: '',
+    logo_url: '',
   });
 
   useEffect(() => {
@@ -485,6 +487,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         contact_name: vendor.contact_name || '',
         phone: vendor.phone || '',
         email: vendor.email || '',
+        logo_url: vendor.logo_url || '',
       });
     } else {
       setEditingVendor(null);
@@ -493,6 +496,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         contact_name: '',
         phone: '',
         email: '',
+        logo_url: '',
       });
     }
   }
@@ -509,6 +513,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         contact_name: vendorForm.contact_name.trim() || null,
         phone: vendorForm.phone.trim() || null,
         email: vendorForm.email.trim() || null,
+        logo_url: vendorForm.logo_url.trim() || null,
         active: true,
       };
 
@@ -530,7 +535,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       }
 
       setEditingVendor(null);
-      setVendorForm({ name: '', contact_name: '', phone: '', email: '' });
+      setVendorForm({ name: '', contact_name: '', phone: '', email: '', logo_url: '' });
       await loadVendors();
     } catch (error: any) {
       console.error('Error saving vendor:', error);
@@ -1619,6 +1624,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       />
                     </div>
                   </div>
+                  <div>
+                    <Label>Logo URL (Optional)</Label>
+                    <Input
+                      value={vendorForm.logo_url}
+                      onChange={(e) => setVendorForm(prev => ({ ...prev, logo_url: e.target.value }))}
+                      placeholder="/vendor-logo.png or https://..."
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Upload logo to /public folder first, then enter path like: /vendor-logo.png
+                    </p>
+                  </div>
                   <div className="flex gap-2">
                     <Button onClick={saveVendor} className="flex-1">
                       <Plus className="w-4 h-4 mr-2" />
@@ -1629,7 +1645,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         variant="outline"
                         onClick={() => {
                           setEditingVendor(null);
-                          setVendorForm({ name: '', contact_name: '', phone: '', email: '' });
+                          setVendorForm({ name: '', contact_name: '', phone: '', email: '', logo_url: '' });
                         }}
                       >
                         <X className="w-4 h-4 mr-2" />
