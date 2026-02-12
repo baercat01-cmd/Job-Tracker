@@ -156,7 +156,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }, 5000);
     
     return () => clearInterval(pollInterval);
-  }, [job.id, draggedRowId]);
+  }, [job.id]);
 
   async function loadData(silent = false) {
     // Only show loading spinner on initial load, not during polling
