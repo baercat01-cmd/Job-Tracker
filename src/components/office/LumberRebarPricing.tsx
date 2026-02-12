@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -104,42 +105,46 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
-  
+
   // Vendor tab state
   const [selectedVendorTab, setSelectedVendorTab] = useState<string>('');
-  
+
   // Expanded material for history
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
-  
+
   // Dialogs
   const [showVendorPricingDialog, setShowVendorPricingDialog] = useState(false);
   const [showPriceHistoryDialog, setShowPriceHistoryDialog] = useState(false);
   const [showMaterialDetailDialog, setShowMaterialDetailDialog] = useState(false);
-  
+
   // Selected items
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
-  
+
   // Form states
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // Bulk pricing for vendor
   const [bulkPrices, setBulkPrices] = useState<Record<string, { mbf: string; perUnit: string; truckload: string; notes: string }>>({});
-  
+
   // Share link dialog
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareVendor, setShareVendor] = useState<Vendor | null>(null);
   const [shareLink, setShareLink] = useState('');
   const [shareExpireDays, setShareExpireDays] = useState('30');
   const [generatingLink, setGeneratingLink] = useState(false);
-  
+
+  // Vendor submission history
+  const [showVendorHistoryDialog, setShowVendorHistoryDialog] = useState(false);
+  const [historyVendor, setHistoryVendor] = useState<Vendor | null>(null);
+
   // Analytics filters
   const [timeRange, setTimeRange] = useState<'30' | '90' | '180' | '365'>('90');
-  
+
   // Settings dialog
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'materials' | 'vendors'>('materials');
-  
+
   // Material form
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [materialForm, setMaterialForm] = useState({
@@ -147,7 +152,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     unit: 'board foot',
     standard_length: 16,
   });
-  
+
   // Vendor form
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [vendorForm, setVendorForm] = useState({
@@ -159,7 +164,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
   useEffect(() => {
     loadData();
-    
+
     const materialsChannel = supabase
       .channel('lumber_rebar_materials_changes')
       .on('postgres_changes',
@@ -167,7 +172,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         () => loadMaterials()
       )
       .subscribe();
-    
+
     const vendorsChannel = supabase
       .channel('lumber_rebar_vendors_changes')
       .on('postgres_changes',
@@ -175,7 +180,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         () => loadVendors()
       )
       .subscribe();
-    
+
     const pricesChannel = supabase
       .channel('lumber_rebar_prices_changes')
       .on('postgres_changes',
@@ -186,7 +191,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         }
       )
       .subscribe();
-    
+
     return () => {
       supabase.removeChannel(materialsChannel);
       supabase.removeChannel(vendorsChannel);
@@ -197,10 +202,10 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function calculateBoardFeet(materialName: string, length: number): number {
     const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
     if (!match) return 1;
-    
+
     const thickness = parseInt(match[1]);
     const width = parseInt(match[2]);
-    
+
     const boardFeet = (thickness * width * length) / 12;
     return boardFeet;
   }
@@ -268,6 +273,40 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function openPriceHistory(material: Material) {
     setSelectedMaterial(material);
     setShowPriceHistoryDialog(true);
+  }
+
+  function openVendorHistory(vendor: Vendor) {
+    setHistoryVendor(vendor);
+    setShowVendorHistoryDialog(true);
+  }
+
+  // Get vendor submission history grouped by submission date
+  function getVendorSubmissionHistory(vendorId: string) {
+    const vendorPrices = prices
+      .filter(p => p.vendor_id === vendorId && materials.find(m => m.id === p.material_id && m.category === category))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // Group by submission date (created_at date only, not time)
+    const grouped = vendorPrices.reduce((acc, price) => {
+      const submissionDate = new Date(price.created_at).toISOString().split('T')[0];
+      if (!acc[submissionDate]) {
+        acc[submissionDate] = [];
+      }
+      acc[submissionDate].push(price);
+      return acc;
+    }, {} as Record<string, PriceEntry[]>);
+
+    return Object.entries(grouped)
+      .map(([date, entries]) => ({
+        submissionDate: date,
+        entries: entries.sort((a, b) => {
+          const matA = materials.find(m => m.id === a.material_id);
+          const matB = materials.find(m => m.id === b.material_id);
+          return (matA?.name || '').localeCompare(matB?.name || '');
+        }),
+        totalItems: entries.length,
+      }))
+      .sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
   }
 
   async function saveBulkPrices() {
@@ -344,7 +383,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         const boardFeet = calculateBoardFeet(material.name, material.standard_length);
         const pricePerBF = parseFloat(value) / 1000;
         const pricePerPiece = pricePerBF * boardFeet;
-        
+
         setBulkPrices(prev => ({
           ...prev,
           [materialId]: {
@@ -524,7 +563,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     const materialPrices = prices
       .filter(p => p.material_id === materialId && p.vendor_id === vendorId)
       .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
-    
+
     return materialPrices.length > 0 ? materialPrices[0] : null;
   }
 
@@ -540,7 +579,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Get average price based on LATEST price from each vendor
   function getAveragePrice(materialId: string): number | null {
     const latestByVendor = new Map<string, PriceEntry>();
-    
+
     prices
       .filter(p => p.material_id === materialId)
       .forEach(price => {
@@ -549,17 +588,17 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           latestByVendor.set(price.vendor_id, price);
         }
       });
-    
+
     const latestPrices = Array.from(latestByVendor.values());
     if (latestPrices.length === 0) return null;
-    
+
     return latestPrices.reduce((sum, p) => sum + p.price_per_unit, 0) / latestPrices.length;
   }
 
   // Calculate price trend comparing current vs historical prices
   function getPriceTrend(materialId: string): 'up' | 'down' | 'stable' {
     const latestByVendor = new Map<string, PriceEntry>();
-    
+
     prices
       .filter(p => p.material_id === materialId)
       .forEach(price => {
@@ -578,10 +617,10 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
     const currentPrices = Array.from(latestByVendor.values());
     const currentAvg = currentPrices.reduce((sum, p) => sum + p.price_per_unit, 0) / currentPrices.length;
-    
+
     const historicalPrices = allPrices.slice(currentPrices.length);
     if (historicalPrices.length === 0) return 'stable';
-    
+
     const historicalAvg = historicalPrices.reduce((sum, p) => sum + p.price_per_unit, 0) / historicalPrices.length;
 
     if (currentAvg > historicalAvg * 1.05) return 'up';
@@ -597,7 +636,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Get best price from LATEST prices only
   function getBestPrice(materialId: string): { vendor: string; price: number } | null {
     const latestByVendor = new Map<string, PriceEntry>();
-    
+
     prices
       .filter(p => p.material_id === materialId)
       .forEach(price => {
@@ -614,11 +653,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function getPriceHistoryChartData(materialId: string) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - parseInt(timeRange));
-    
+
     const filteredPrices = prices
       .filter(p => p.material_id === materialId && new Date(p.effective_date) >= cutoffDate)
       .sort((a, b) => new Date(a.effective_date).getTime() - new Date(b.effective_date).getTime());
-    
+
     const vendorData: Record<string, any[]> = {};
 
     filteredPrices.forEach(entry => {
@@ -667,7 +706,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       }
 
       const token = crypto.randomUUID();
-      
+
       const expiresAt = shareExpireDays ? (() => {
         const days = parseInt(shareExpireDays);
         if (isNaN(days) || days <= 0) {
@@ -701,7 +740,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       const baseUrl = window.location.origin;
       const link = `${baseUrl}/vendor-pricing/${token}`;
       setShareLink(link);
-      
+
       toast.success('Shareable link created!');
     } catch (error: any) {
       console.error('Error generating share link:', error);
@@ -736,7 +775,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     const trend = getPriceTrend(material.id);
     const vendorCount = getVendorCount(material.id);
     const history = getMaterialPriceHistory(material.id).slice(0, 5);
-    
+
     return {
       material,
       bestPrice,
@@ -791,21 +830,32 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                 const pricesCount = materialsWithPrices.size;
 
                 return (
-                  <Button
-                    key={vendor.id}
-                    variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
-                    onClick={() => {
-                      setSelectedVendorTab(vendor.id);
-                      openVendorPricing(vendor);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    {vendor.name}
-                    <Badge variant="secondary" className="ml-1">
-                      {pricesCount}/{filteredMaterials.length}
-                    </Badge>
-                  </Button>
+                  <div key={vendor.id} className="flex items-center gap-2">
+                    <Button
+                      variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
+                      onClick={() => {
+                        setSelectedVendorTab(vendor.id);
+                        openVendorPricing(vendor);
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      {vendor.name}
+                      <Badge variant="secondary" className="ml-1">
+                        {pricesCount}/{filteredMaterials.length}
+                      </Badge>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openVendorHistory(vendor)}
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
+                      title="View submission history"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      History
+                    </Button>
+                  </div>
                 );
               })}
               <Button
@@ -1019,7 +1069,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                             })()}
                           </div>
                         )}
-                        
+
                         {/* Price Chart */}
                         {info.recentHistory.length > 1 && (
                           <div className="mt-4">
@@ -1096,7 +1146,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                     {filteredMaterials.map((material, idx) => {
                       const priceData = bulkPrices[material.id] || { mbf: '', perUnit: '', truckload: '', notes: '' };
                       const isEven = idx % 2 === 0;
-                      const boardFeet = material.unit === 'board foot' 
+                      const boardFeet = material.unit === 'board foot'
                         ? calculateBoardFeet(material.name, material.standard_length)
                         : null;
 
@@ -1259,6 +1309,131 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                 )}
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vendor Submission History Dialog */}
+      <Dialog open={showVendorHistoryDialog} onOpenChange={setShowVendorHistoryDialog}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Submission History: {historyVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto space-y-4">
+            {historyVendor && (() => {
+              const history = getVendorSubmissionHistory(historyVendor.id);
+
+              if (history.length === 0) {
+                return (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg font-semibold">No submissions yet</p>
+                    <p className="text-sm mt-2">
+                      No pricing forms have been submitted by {historyVendor.name}
+                    </p>
+                  </div>
+                );
+              }
+
+              return history.map((submission, idx) => (
+                <Card key={submission.submissionDate} className="border-2">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg">
+                          #{history.length - idx}
+                        </div>
+                        <div>
+                          <CardTitle className="text-lg">
+                            {new Date(submission.submissionDate).toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            })}
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {submission.totalItems} {submission.totalItems === 1 ? 'material' : 'materials'} updated
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="secondary" className="text-lg px-4 py-2">
+                        {submission.totalItems} items
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-slate-100">
+                          <tr className="border-b">
+                            <th className="text-left p-3 font-semibold">Material</th>
+                            <th className="text-center p-3 font-semibold w-32">Effective Date</th>
+                            <th className="text-right p-3 font-semibold w-32">Price/Unit</th>
+                            <th className="text-center p-3 font-semibold w-32">Truckload Qty</th>
+                            <th className="text-left p-3 font-semibold">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {submission.entries.map((entry, entryIdx) => {
+                            const material = materials.find(m => m.id === entry.material_id);
+                            return (
+                              <tr key={entry.id} className={entryIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                <td className="p-3">
+                                  <div className="font-medium">{material?.name || 'Unknown'}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {material?.standard_length}' • {material?.unit}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center text-sm">
+                                  {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="text-lg font-bold text-blue-700">
+                                    ${entry.price_per_unit.toFixed(2)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    per {material?.unit}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  {entry.truckload_quantity ? (
+                                    <Badge variant="outline">{entry.truckload_quantity} units</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">-</span>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  {entry.notes ? (
+                                    <div className="text-sm">{entry.notes}</div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">No notes</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              ));
+            })()}
+          </div>
+
+          <div className="flex justify-end pt-4 border-t">
+            <Button variant="outline" onClick={() => setShowVendorHistoryDialog(false)}>
+              Close
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
