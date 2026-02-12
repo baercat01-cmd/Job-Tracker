@@ -35,6 +35,8 @@ import {
   ShoppingCart,
   Clock,
   DollarSign,
+  Search,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -118,6 +120,16 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     hourly_rate: 60,
     notes: '',
   });
+
+  // Materials catalog search state
+  const [showMaterialSearchDialog, setShowMaterialSearchDialog] = useState(false);
+  const [catalogMaterials, setCatalogMaterials] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCategory, setSearchCategory] = useState<string>('all');
+  const [categories, setCategories] = useState<string[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [selectedSheet, setSelectedSheet] = useState<MaterialSheet | null>(null);
+  const [addingMaterials, setAddingMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadWorkbooks();
@@ -465,6 +477,119 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     }
   }
 
+  async function openMaterialSearch(sheet: MaterialSheet) {
+    setSelectedSheet(sheet);
+    setSearchQuery('');
+    setSearchCategory('all');
+    setShowMaterialSearchDialog(true);
+    await loadCatalogMaterials();
+  }
+
+  async function loadCatalogMaterials() {
+    try {
+      setLoadingCatalog(true);
+      
+      const { data, error } = await supabase
+        .from('materials_catalog')
+        .select('*')
+        .order('category')
+        .order('material_name');
+
+      if (error) throw error;
+
+      setCatalogMaterials(data || []);
+      
+      // Extract unique categories
+      const uniqueCategories = [...new Set(data?.map(m => m.category).filter(Boolean))] as string[];
+      setCategories(uniqueCategories.sort());
+    } catch (error: any) {
+      console.error('Error loading catalog:', error);
+      toast.error('Failed to load materials catalog');
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }
+
+  async function addMaterialToSheet(catalogItem: any) {
+    if (!selectedSheet || !viewingWorkbook || viewingWorkbook.status === 'locked') {
+      toast.error('Cannot add materials to a locked workbook');
+      return;
+    }
+
+    setAddingMaterials(prev => new Set(prev).add(catalogItem.sku));
+
+    try {
+      // Get the highest order_index for the sheet
+      const { data: existingItems } = await supabase
+        .from('material_items')
+        .select('order_index')
+        .eq('sheet_id', selectedSheet.id)
+        .order('order_index', { ascending: false })
+        .limit(1);
+
+      const nextOrderIndex = (existingItems?.[0]?.order_index ?? -1) + 1;
+
+      // Create new material item from catalog
+      const newItem = {
+        sheet_id: selectedSheet.id,
+        category: catalogItem.category || 'Uncategorized',
+        usage: null,
+        sku: catalogItem.sku,
+        material_name: catalogItem.material_name,
+        quantity: 1, // Default quantity
+        length: catalogItem.part_length || null,
+        color: null,
+        cost_per_unit: catalogItem.purchase_cost || null,
+        markup_percent: null,
+        price_per_unit: catalogItem.unit_price || null,
+        extended_cost: catalogItem.purchase_cost || null,
+        extended_price: catalogItem.unit_price || null,
+        taxable: true,
+        notes: null,
+        order_index: nextOrderIndex,
+      };
+
+      const { error } = await supabase
+        .from('material_items')
+        .insert(newItem);
+
+      if (error) throw error;
+
+      toast.success(`Added ${catalogItem.material_name} to ${selectedSheet.sheet_name}`);
+      
+      // Refresh items for current sheet
+      const { data: refreshedItems } = await supabase
+        .from('material_items')
+        .select('*')
+        .eq('sheet_id', selectedSheet.id)
+        .order('order_index');
+
+      if (refreshedItems) {
+        setItems(refreshedItems);
+      }
+    } catch (error: any) {
+      console.error('Error adding material:', error);
+      toast.error('Failed to add material to sheet');
+    } finally {
+      setAddingMaterials(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(catalogItem.sku);
+        return newSet;
+      });
+    }
+  }
+
+  const filteredCatalogMaterials = catalogMaterials.filter(material => {
+    const matchesSearch = searchQuery === '' || 
+      material.material_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      material.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (material.category && material.category.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    const matchesCategory = searchCategory === 'all' || material.category === searchCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
+
   const workingVersion = workbooks.find(w => w.status === 'working');
   const lockedVersions = workbooks.filter(w => w.status === 'locked');
 
@@ -705,32 +830,51 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {/* Sheet Tabs with Labor Indicators */}
-              <div className="flex gap-2">
-                {sheets.map((sheet) => {
-                  const hasLabor = sheetLabor[sheet.id];
+              {/* Sheet Tabs with Labor Indicators and Add Material Button */}
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                  {sheets.map((sheet) => {
+                    const hasLabor = sheetLabor[sheet.id];
+                    return (
+                      <div key={sheet.id} className="relative">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const { data, error } = await supabase
+                              .from('material_items')
+                              .select('*')
+                              .eq('sheet_id', sheet.id)
+                              .order('order_index');
+                            if (!error) setItems(data || []);
+                          }}
+                        >
+                          {sheet.sheet_name}
+                        </Button>
+                        {hasLabor && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Add Material Button */}
+                {viewingWorkbook.status === 'working' && items.length > 0 && sheets.length > 0 && (() => {
+                  const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
+                  if (!currentSheet) return null;
+                  
                   return (
-                    <div key={sheet.id} className="relative">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const { data, error } = await supabase
-                            .from('material_items')
-                            .select('*')
-                            .eq('sheet_id', sheet.id)
-                            .order('order_index');
-                          if (!error) setItems(data || []);
-                        }}
-                      >
-                        {sheet.sheet_name}
-                      </Button>
-                      {hasLabor && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-                      )}
-                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => openMaterialSearch(currentSheet)}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      Add from Catalog
+                    </Button>
                   );
-                })}
+                })()}
               </div>
 
               {items.length > 0 && (
@@ -930,6 +1074,143 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               </Button>
               <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Material Catalog Search Dialog */}
+      <Dialog open={showMaterialSearchDialog} onOpenChange={setShowMaterialSearchDialog}>
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="w-5 h-5" />
+              Add Materials from Catalog
+              {selectedSheet && (
+                <Badge variant="outline" className="ml-2">
+                  Adding to: {selectedSheet.sheet_name}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
+            {/* Search & Filter */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, SKU, or category..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+              
+              <select
+                value={searchCategory}
+                onChange={(e) => setSearchCategory(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="all">All Categories</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto border rounded-lg">
+              {loadingCatalog ? (
+                <div className="text-center py-12">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-sm text-muted-foreground">Loading materials catalog...</p>
+                </div>
+              ) : filteredCatalogMaterials.length === 0 ? (
+                <div className="text-center py-12">
+                  <Search className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <p className="text-lg font-semibold mb-2">No materials found</p>
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery || searchCategory !== 'all'
+                      ? 'Try adjusting your search filters'
+                      : 'The materials catalog is empty'}
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader className="sticky top-0 bg-slate-100 z-10">
+                    <TableRow>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Material Name</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Length</TableHead>
+                      <TableHead className="text-right">Purchase Cost</TableHead>
+                      <TableHead className="text-right">Unit Price</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCatalogMaterials.map((material) => (
+                      <TableRow key={material.sku} className="hover:bg-slate-50">
+                        <TableCell className="font-mono text-sm">{material.sku}</TableCell>
+                        <TableCell className="font-medium">{material.material_name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {material.category || 'Uncategorized'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{material.part_length || '-'}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {material.purchase_cost ? `$${material.purchase_cost.toFixed(2)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {material.unit_price ? `$${material.unit_price.toFixed(2)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            onClick={() => addMaterialToSheet(material)}
+                            disabled={addingMaterials.has(material.sku)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            {addingMaterials.has(material.sku) ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                Adding...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add
+                              </>
+                            )}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+
+            {/* Footer Info */}
+            <div className="flex items-center justify-between pt-4 border-t">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredCatalogMaterials.length} of {catalogMaterials.length} materials
+              </p>
+              <Button variant="outline" onClick={() => setShowMaterialSearchDialog(false)}>
+                Close
               </Button>
             </div>
           </div>
