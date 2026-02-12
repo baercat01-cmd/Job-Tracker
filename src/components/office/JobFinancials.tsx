@@ -110,6 +110,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // Subcontractor estimates
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
+  const [subcontractorLineItems, setSubcontractorLineItems] = useState<Record<string, any[]>>({});
 
   // Tab state - persist across re-renders using localStorage
   const [activeTab, setActiveTab] = useState(() => {
@@ -194,6 +195,27 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       // Only update if data actually changed
       if (JSON.stringify(newData) !== JSON.stringify(subcontractorEstimates)) {
         setSubcontractorEstimates(newData);
+      }
+
+      // Load line items for all estimates
+      if (newData.length > 0) {
+        const estimateIds = newData.map(e => e.id);
+        const { data: lineItemsData, error: lineItemsError } = await supabase
+          .from('subcontractor_estimate_line_items')
+          .select('*')
+          .in('estimate_id', estimateIds)
+          .order('order_index');
+
+        if (!lineItemsError && lineItemsData) {
+          const lineItemsMap: Record<string, any[]> = {};
+          lineItemsData.forEach(item => {
+            if (!lineItemsMap[item.estimate_id]) {
+              lineItemsMap[item.estimate_id] = [];
+            }
+            lineItemsMap[item.estimate_id].push(item);
+          });
+          setSubcontractorLineItems(lineItemsMap);
+        }
       }
     } catch (error: any) {
       console.error('Error loading subcontractor estimates:', error);
@@ -1169,14 +1191,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                       );
                     } else if (item.type === 'subcontractor') {
-                      // Subcontractor estimate row
+                      // Subcontractor estimate row with detailed breakdown
                       const est = item.data as any;
+                      const lineItems = subcontractorLineItems[est.id] || [];
                       const estCost = est.total_amount || 0;
                       const estMarkup = est.markup_percent || 0;
                       const costWithMarkup = estCost * (1 + estMarkup / 100);
                       const finalPrice = costWithMarkup * (1 + markup / 100);
                       const isDragging = draggedRowId === est.id;
                       const isDragOver = dragOverRowId === est.id;
+
+                      // Group line items by category
+                      const itemsByCategory = lineItems.reduce((acc: Record<string, any[]>, item: any) => {
+                        // Infer category from description (Materials, Labor, etc.)
+                        let category = 'Items';
+                        const desc = item.description.toLowerCase();
+                        if (desc.includes('material') || desc.includes('fixture') || desc.includes('parts')) {
+                          category = 'Materials';
+                        } else if (desc.includes('labor') || desc.includes('install')) {
+                          category = 'Labor';
+                        }
+                        
+                        if (!acc[category]) acc[category] = [];
+                        acc[category].push(item);
+                        return acc;
+                      }, {});
+
+                      // Count excluded items
+                      const excludedCount = lineItems.filter((item: any) => item.excluded).length;
+                      const includedTotal = lineItems
+                        .filter((item: any) => !item.excluded)
+                        .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
 
                       return (
                         <div
@@ -1192,41 +1237,104 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             isDragOver ? 'border-t-4 border-t-primary' : ''
                           }`}
                         >
-                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
-                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
-                              <div className="flex items-center gap-3 flex-1">
-                                <div className="cursor-grab active:cursor-grabbing">
-                                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                  </svg>
-                                </div>
-                                <Briefcase className="w-5 h-5 text-slate-700" />
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
-                                    <Badge variant="outline" className="bg-slate-100 text-slate-800">
-                                      Subcontractor
-                                    </Badge>
+                          <Collapsible defaultOpen={false}>
+                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                              <CollapsibleTrigger className="w-full">
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <div className="cursor-grab active:cursor-grabbing">
+                                      <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                      </svg>
+                                    </div>
+                                    <ChevronDown className="w-5 h-5 text-slate-700" />
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
+                                        {excludedCount > 0 && (
+                                          <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-800">
+                                            {excludedCount} item{excludedCount > 1 ? 's' : ''} excluded
+                                          </Badge>
+                                        )}
+                                        {estMarkup > 0 && (
+                                          <Badge variant="outline" className="bg-green-50 border-green-300 text-green-800">
+                                            {estMarkup.toFixed(1)}% markup
+                                          </Badge>
+                                        )}
+                                        {est.extraction_status === 'completed' && (
+                                          <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-800">
+                                            Extracted
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      {est.scope_of_work && (
+                                        <p className="text-sm text-slate-600 mt-1">{est.scope_of_work}</p>
+                                      )}
+                                    </div>
                                   </div>
-                                  {est.scope_of_work && (
-                                    <p className="text-sm text-slate-600 mt-1">{est.scope_of_work}</p>
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                      <p className="text-xs text-slate-600">Included items: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-2xl font-bold text-green-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CollapsibleTrigger>
+                              
+                              <CollapsibleContent>
+                                <div className="p-4 space-y-4">
+                                  {/* Line Items by Category */}
+                                  {Object.entries(itemsByCategory).map(([category, items]: [string, any]) => (
+                                    <div key={category} className="space-y-2">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Briefcase className="w-4 h-4 text-slate-700" />
+                                        <h4 className="font-semibold text-slate-900">{category}</h4>
+                                        <Badge variant="outline" className="bg-slate-100 text-slate-700">
+                                          {items.length} item{items.length > 1 ? 's' : ''}
+                                        </Badge>
+                                        {items.some((item: any) => !item.excluded) && (
+                                          <Badge variant="outline" className="bg-green-50 border-green-300 text-green-800">
+                                            {items.filter((item: any) => !item.excluded).length} included
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="space-y-1">
+                                        {items.map((lineItem: any) => (
+                                          <div
+                                            key={lineItem.id}
+                                            className={`flex items-start justify-between py-2 px-3 rounded ${
+                                              lineItem.excluded ? 'bg-slate-100 line-through text-slate-500' : 'bg-white'
+                                            }`}
+                                          >
+                                            <div className="flex items-start gap-2 flex-1">
+                                              <input
+                                                type="checkbox"
+                                                checked={!lineItem.excluded}
+                                                readOnly
+                                                className="mt-1 w-4 h-4 rounded border-slate-300"
+                                              />
+                                              <p className="text-sm">{lineItem.description}</p>
+                                            </div>
+                                            <p className={`text-sm font-semibold ${lineItem.excluded ? 'text-slate-500' : 'text-slate-900'}`}>
+                                              ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {/* Exclusions */}
+                                  {est.exclusions && (
+                                    <div className="border-t pt-4">
+                                      <h4 className="font-semibold text-slate-900 mb-2">Exclusions</h4>
+                                      <p className="text-sm text-slate-600">{est.exclusions}</p>
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <div className="text-right">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    {estMarkup > 0 && (
-                                      <p className="text-xs font-semibold text-green-700">+{estMarkup.toFixed(1)}%</p>
-                                    )}
-                                    <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
-                                  </div>
-                                  <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                </div>
-                              </div>
+                              </CollapsibleContent>
                             </div>
-                          </div>
+                          </Collapsible>
                         </div>
                       );
                     } else {
