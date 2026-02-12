@@ -91,33 +91,18 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [prices, setPrices] = useState<PriceEntry[]>([]);
   
   // Dialogs
-  const [showAddPriceDialog, setShowAddPriceDialog] = useState(false);
+  const [showVendorPricingDialog, setShowVendorPricingDialog] = useState(false);
   const [showPriceHistoryDialog, setShowPriceHistoryDialog] = useState(false);
-  const [showAddVendorDialog, setShowAddVendorDialog] = useState(false);
-  const [showAddMaterialDialog, setShowAddMaterialDialog] = useState(false);
   
   // Selected items
+  const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   
   // Form states
-  const [vendorId, setVendorId] = useState('');
-  const [materialId, setMaterialId] = useState('');
-  const [pricePerMBF, setPricePerMBF] = useState(''); // Price per Thousand Board Feet
-  const [pricePerUnit, setPricePerUnit] = useState('');
-  const [truckloadQty, setTruckloadQty] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
-  const [priceNotes, setPriceNotes] = useState('');
   
-  // Vendor form
-  const [vendorName, setVendorName] = useState('');
-  const [vendorContact, setVendorContact] = useState('');
-  const [vendorPhone, setVendorPhone] = useState('');
-  const [vendorEmail, setVendorEmail] = useState('');
-  
-  // Material form
-  const [materialName, setMaterialName] = useState('');
-  const [materialUnit, setMaterialUnit] = useState('board foot');
-  const [standardLength, setStandardLength] = useState('16');
+  // Bulk pricing for vendor
+  const [bulkPrices, setBulkPrices] = useState<Record<string, { mbf: string; perUnit: string; truckload: string; notes: string }>>({});
 
   useEffect(() => {
     loadData();
@@ -166,20 +151,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     // Board Feet = (Thickness × Width × Length) / 12
     return (thickness * width * length) / 12;
   }
-
-  // Auto-calculate price per piece when MBF price changes
-  useEffect(() => {
-    if (pricePerMBF && materialId) {
-      const material = materials.find(m => m.id === materialId);
-      if (material && material.unit === 'board foot') {
-        const boardFeet = calculateBoardFeet(material.name, material.standard_length);
-        // Convert MBF to BF: divide by 1000
-        const pricePerBF = parseFloat(pricePerMBF) / 1000;
-        const pricePerPiece = pricePerBF * boardFeet;
-        setPricePerUnit(pricePerPiece.toFixed(2));
-      }
-    }
-  }, [pricePerMBF, materialId, materials]);
 
   async function loadData() {
     setLoading(true);
@@ -233,15 +204,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setPrices(data || []);
   }
 
-  function openAddPriceDialog(material?: Material, vendor?: Vendor) {
-    if (material) {
-      setMaterialId(material.id);
-      setSelectedMaterial(material);
-    }
-    if (vendor) {
-      setVendorId(vendor.id);
-    }
-    setShowAddPriceDialog(true);
+  function openVendorPricing(vendor: Vendor) {
+    setSelectedVendor(vendor);
+    setBulkPrices({});
+    setEffectiveDate(new Date().toISOString().split('T')[0]);
+    setShowVendorPricingDialog(true);
   }
 
   function openPriceHistory(material: Material) {
@@ -249,120 +216,70 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setShowPriceHistoryDialog(true);
   }
 
-  async function savePrice() {
-    if (!materialId || !vendorId || !pricePerUnit) {
-      toast.error('Please fill in all required fields');
+  async function saveBulkPrices() {
+    if (!selectedVendor) return;
+
+    const pricesToSave = Object.entries(bulkPrices)
+      .filter(([_, price]) => price.perUnit && parseFloat(price.perUnit) > 0)
+      .map(([materialId, price]) => ({
+        material_id: materialId,
+        vendor_id: selectedVendor.id,
+        price_per_unit: parseFloat(price.perUnit),
+        truckload_quantity: price.truckload ? parseInt(price.truckload) : null,
+        effective_date: effectiveDate,
+        notes: price.notes || null,
+        created_by: profile?.id || null,
+      }));
+
+    if (pricesToSave.length === 0) {
+      toast.error('Please enter at least one price');
       return;
     }
 
     try {
       const { error } = await supabase
         .from('lumber_rebar_prices')
-        .insert([{
-          material_id: materialId,
-          vendor_id: vendorId,
-          price_per_unit: parseFloat(pricePerUnit),
-          truckload_quantity: truckloadQty ? parseInt(truckloadQty) : null,
-          effective_date: effectiveDate,
-          notes: priceNotes || null,
-          created_by: profile?.id || null,
-        }]);
+        .insert(pricesToSave);
 
       if (error) throw error;
 
-      toast.success('Price added successfully');
-      setShowAddPriceDialog(false);
-      resetPriceForm();
+      toast.success(`Added ${pricesToSave.length} prices for ${selectedVendor.name}`);
+      setShowVendorPricingDialog(false);
+      setBulkPrices({});
+      setSelectedVendor(null);
       await loadPrices();
     } catch (error: any) {
-      console.error('Error saving price:', error);
-      toast.error('Failed to save price');
+      console.error('Error saving bulk prices:', error);
+      toast.error('Failed to save prices');
     }
   }
 
-  async function saveVendor() {
-    if (!vendorName) {
-      toast.error('Vendor name is required');
-      return;
+  function updateBulkPrice(materialId: string, field: 'mbf' | 'perUnit' | 'truckload' | 'notes', value: string) {
+    setBulkPrices(prev => ({
+      ...prev,
+      [materialId]: {
+        ...prev[materialId],
+        [field]: value,
+      }
+    }));
+
+    // Auto-calculate price per unit when MBF changes
+    if (field === 'mbf' && value) {
+      const material = materials.find(m => m.id === materialId);
+      if (material && material.unit === 'board foot') {
+        const boardFeet = calculateBoardFeet(material.name, material.standard_length);
+        const pricePerBF = parseFloat(value) / 1000;
+        const pricePerPiece = pricePerBF * boardFeet;
+        
+        setBulkPrices(prev => ({
+          ...prev,
+          [materialId]: {
+            ...prev[materialId],
+            perUnit: pricePerPiece.toFixed(2),
+          }
+        }));
+      }
     }
-
-    try {
-      const { error } = await supabase
-        .from('lumber_rebar_vendors')
-        .insert([{
-          name: vendorName,
-          contact_name: vendorContact || null,
-          phone: vendorPhone || null,
-          email: vendorEmail || null,
-        }]);
-
-      if (error) throw error;
-
-      toast.success('Vendor added successfully');
-      setShowAddVendorDialog(false);
-      resetVendorForm();
-      await loadVendors();
-    } catch (error: any) {
-      console.error('Error saving vendor:', error);
-      toast.error('Failed to save vendor');
-    }
-  }
-
-  async function saveMaterial() {
-    if (!materialName) {
-      toast.error('Material name is required');
-      return;
-    }
-
-    try {
-      const maxOrder = materials
-        .filter(m => m.category === category)
-        .reduce((max, m) => Math.max(max, m.order_index), 0);
-
-      const { data, error } = await supabase
-        .from('lumber_rebar_materials')
-        .insert([{
-          name: materialName,
-          category: category,
-          unit: materialUnit,
-          standard_length: parseFloat(standardLength),
-          order_index: maxOrder + 1,
-        }])
-        .select();
-
-      if (error) throw error;
-
-      toast.success('Material added successfully');
-      setShowAddMaterialDialog(false);
-      resetMaterialForm();
-    } catch (error: any) {
-      console.error('Error saving material:', error);
-      toast.error(`Failed to save material: ${error.message || 'Unknown error'}`);
-    }
-  }
-
-  function resetPriceForm() {
-    setMaterialId('');
-    setVendorId('');
-    setPricePerMBF('');
-    setPricePerUnit('');
-    setTruckloadQty('');
-    setEffectiveDate(new Date().toISOString().split('T')[0]);
-    setPriceNotes('');
-    setSelectedMaterial(null);
-  }
-
-  function resetVendorForm() {
-    setVendorName('');
-    setVendorContact('');
-    setVendorPhone('');
-    setVendorEmail('');
-  }
-
-  function resetMaterialForm() {
-    setMaterialName('');
-    setMaterialUnit('board foot');
-    setStandardLength('16');
   }
 
   // Get latest price for a material from a specific vendor
@@ -411,38 +328,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     });
   }
 
-  // Get price trend (up/down/stable)
-  function getPriceTrend(materialId: string, vendorId: string): 'up' | 'down' | 'stable' | null {
-    const history = prices
-      .filter(p => p.material_id === materialId && p.vendor_id === vendorId)
-      .slice(0, 2);
-    
-    if (history.length < 2) return null;
-    
-    const latest = history[0].price_per_unit;
-    const previous = history[1].price_per_unit;
-    
-    if (latest > previous) return 'up';
-    if (latest < previous) return 'down';
-    return 'stable';
-  }
-
-  // Calculate board feet info for selected material
-  const selectedMaterialInfo = useMemo(() => {
-    if (!materialId) return null;
-    const material = materials.find(m => m.id === materialId);
-    if (!material || material.unit !== 'board foot') return null;
-    
-    const boardFeet = calculateBoardFeet(material.name, material.standard_length);
-    const pricePerBF = pricePerMBF ? parseFloat(pricePerMBF) / 1000 : 0;
-    
-    return {
-      material,
-      boardFeet,
-      pricePerBF,
-    };
-  }, [materialId, materials, pricePerMBF]);
-
   const filteredMaterials = materials.filter(m => m.category === category);
 
   if (loading) {
@@ -464,288 +349,340 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             {category === 'lumber' ? 'Lumber Pricing' : 'Rebar Pricing'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Track {category} prices across vendors with historical data
+            Click on a vendor to add prices for all materials
           </p>
         </div>
       </div>
 
-      {/* Vendor Summary */}
-      {vendors.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Active Vendors ({vendors.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {vendors.map(vendor => (
-                <Badge key={vendor.id} variant="outline" className="px-3 py-1">
-                  {vendor.name}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Materials List */}
-      {filteredMaterials.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Add materials to start tracking prices
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {filteredMaterials.map(material => {
-            const materialHistory = getMaterialPriceHistory(material.id);
-            const hasHistory = materialHistory.length > 0;
+      {/* Vendor Cards - Primary View */}
+      {vendors.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {vendors.map(vendor => {
+            const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
+            const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
+            const totalMaterials = filteredMaterials.length;
+            const pricesCount = materialsWithPrices.size;
+            const latestPrice = vendorPrices[0];
 
             return (
-              <Card key={material.id}>
+              <Card 
+                key={vendor.id}
+                className="cursor-pointer hover:shadow-lg transition-all border-2 hover:border-blue-400"
+                onClick={() => openVendorPricing(vendor)}
+              >
                 <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-lg">{material.name}</CardTitle>
-                      <p className="text-sm text-muted-foreground">
-                        Standard: {material.standard_length}' • Unit: {material.unit}
-                      </p>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Users className="w-5 h-5 text-blue-600" />
+                        {vendor.name}
+                      </CardTitle>
+                      {vendor.contact_name && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {vendor.contact_name}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openPriceHistory(material)}
-                        disabled={!hasHistory}
-                      >
-                        <LineChart className="w-4 h-4 mr-2" />
-                        History
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => openAddPriceDialog(material)}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Price
-                      </Button>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {pricesCount}/{totalMaterials}
+                      </div>
+                      <p className="text-xs text-muted-foreground">priced</p>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {vendors.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <p className="mb-2">No vendors added yet</p>
+                  <div className="space-y-2">
+                    {vendor.phone && (
+                      <p className="text-sm text-muted-foreground">📞 {vendor.phone}</p>
+                    )}
+                    {vendor.email && (
+                      <p className="text-sm text-muted-foreground">✉️ {vendor.email}</p>
+                    )}
+                    {latestPrice && (
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">
+                          Last updated: {new Date(latestPrice.effective_date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    )}
+                    <div className="pt-2">
+                      <Button className="w-full" size="sm">
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        Add Prices
+                      </Button>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {vendors.map(vendor => {
-                        const latestPrice = getLatestPrice(material.id, vendor.id);
-                        const trend = getPriceTrend(material.id, vendor.id);
-
-                        return (
-                          <button
-                            key={vendor.id}
-                            onClick={() => openAddPriceDialog(material, vendor)}
-                            className={`border rounded-lg p-4 text-left transition-all hover:shadow-md cursor-pointer ${
-                              latestPrice ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between mb-2">
-                              <h4 className="font-semibold text-sm">{vendor.name}</h4>
-                              {trend && (
-                                <div className="flex items-center">
-                                  {trend === 'up' && <TrendingUp className="w-4 h-4 text-red-600" />}
-                                  {trend === 'down' && <TrendingDown className="w-4 h-4 text-green-600" />}
-                                </div>
-                              )}
-                            </div>
-
-                            {latestPrice ? (
-                              <div>
-                                <div className="flex items-baseline gap-2 mb-1">
-                                  <span className="text-2xl font-bold text-blue-900">
-                                    ${latestPrice.price_per_unit.toFixed(2)}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">
-                                    per {material.unit}
-                                  </span>
-                                </div>
-                                {latestPrice.truckload_quantity && (
-                                  <p className="text-xs text-muted-foreground mb-1">
-                                    Truckload: {latestPrice.truckload_quantity} units
-                                  </p>
-                                )}
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <Calendar className="w-3 h-3" />
-                                  {new Date(latestPrice.effective_date).toLocaleDateString()}
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Plus className="w-4 h-4" />
-                                Click to add pricing
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  </div>
                 </CardContent>
               </Card>
             );
           })}
         </div>
+      ) : (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <h3 className="text-lg font-semibold mb-2">No vendors yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Add vendors in Settings to start tracking prices
+            </p>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Add Price Dialog */}
-      <Dialog open={showAddPriceDialog} onOpenChange={setShowAddPriceDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Price Entry</DialogTitle>
-          </DialogHeader>
+      {/* Materials Reference List (collapsed by default) */}
+      <details className="mt-6">
+        <summary className="cursor-pointer font-semibold text-sm text-slate-700 hover:text-slate-900 mb-4 flex items-center gap-2">
+          <Package className="w-4 h-4" />
+          View All Materials ({filteredMaterials.length})
+        </summary>
+        {filteredMaterials.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+              <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Add materials to start tracking prices
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
           <div className="space-y-4">
-            <div>
-              <Label>Material *</Label>
-              <Select value={materialId} onValueChange={setMaterialId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select material..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {materials.filter(m => m.category === category).map(material => (
-                    <SelectItem key={material.id} value={material.id}>
-                      {material.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {filteredMaterials.map(material => {
+              const materialHistory = getMaterialPriceHistory(material.id);
+              const hasHistory = materialHistory.length > 0;
 
-            <div>
-              <Label>Vendor *</Label>
-              <Select value={vendorId} onValueChange={setVendorId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select vendor..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {vendors.map(vendor => (
-                    <SelectItem key={vendor.id} value={vendor.id}>
-                      {vendor.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              return (
+                <Card key={material.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{material.name}</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          Standard: {material.standard_length}' • Unit: {material.unit}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openPriceHistory(material)}
+                          disabled={!hasHistory}
+                        >
+                          <LineChart className="w-4 h-4 mr-2" />
+                          History
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {vendors.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p className="mb-2">No vendors added yet</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {vendors.map(vendor => {
+                          const latestPrice = getLatestPrice(material.id, vendor.id);
 
-            {/* MBF to Price Conversion for Lumber */}
-            {selectedMaterialInfo && (
-              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Calculator className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-semibold text-blue-900">MBF Price Calculator</h4>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-blue-900">Price per MBF ($/1000 BF) *</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={pricePerMBF}
-                      onChange={(e) => setPricePerMBF(e.target.value)}
-                      placeholder="e.g., 715"
-                      className="bg-white"
-                    />
-                    <p className="text-xs text-blue-600 mt-1">
-                      MBF = Thousand Board Feet (lumber yard pricing)
-                    </p>
-                  </div>
-                  <div className="text-sm space-y-1 text-blue-800 bg-blue-100 p-3 rounded">
-                    <p>• Material: {selectedMaterialInfo.material.name}</p>
-                    <p>• Length: {selectedMaterialInfo.material.standard_length}'</p>
-                    <p className="font-semibold">• Board Feet per Piece: {selectedMaterialInfo.boardFeet.toFixed(2)} BF</p>
-                    {pricePerMBF && (
-                      <p className="font-semibold text-green-700">• Price per BF: ${selectedMaterialInfo.pricePerBF.toFixed(3)}</p>
+                          return (
+                            <div
+                              key={vendor.id}
+                              className={`border rounded-lg p-4 ${
+                                latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between mb-2">
+                                <h4 className="font-semibold text-sm">{vendor.name}</h4>
+                              </div>
+
+                              {latestPrice ? (
+                                <div>
+                                  <div className="flex items-baseline gap-2 mb-1">
+                                    <span className="text-2xl font-bold text-blue-900">
+                                      ${latestPrice.price_per_unit.toFixed(2)}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      per {material.unit}
+                                    </span>
+                                  </div>
+                                  {latestPrice.truckload_quantity && (
+                                    <p className="text-xs text-muted-foreground mb-1">
+                                      Truckload: {latestPrice.truckload_quantity} units
+                                    </p>
+                                  )}
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {new Date(latestPrice.effective_date).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Plus className="w-4 h-4" />
+                                  No pricing yet
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
-                  </div>
-                </div>
-              </div>
-            )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </details>
 
-            <div>
-              <Label>Price per {selectedMaterialInfo ? 'Piece' : 'Unit'} ($) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={pricePerUnit}
-                onChange={(e) => setPricePerUnit(e.target.value)}
-                placeholder={selectedMaterialInfo ? 'Auto-calculated' : '0.00'}
-                className={selectedMaterialInfo ? 'bg-green-50 font-bold text-green-900' : ''}
-                readOnly={!!selectedMaterialInfo && !!pricePerMBF}
-              />
-              {selectedMaterialInfo && pricePerMBF && (
-                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                  ✓ Calculated: ${pricePerMBF}/MBF ÷ 1000 × {selectedMaterialInfo.boardFeet.toFixed(2)} BF = ${pricePerUnit}
-                </p>
-              )}
-            </div>
+      {/* Vendor Bulk Pricing Dialog */}
+      {selectedVendor && (
+        <Dialog open={showVendorPricingDialog} onOpenChange={setShowVendorPricingDialog}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Add Prices for {selectedVendor.name}
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                Enter MBF pricing for each material - prices per piece will be calculated automatically
+              </p>
+            </DialogHeader>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Truckload Quantity</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={truckloadQty}
-                  onChange={(e) => setTruckloadQty(e.target.value)}
-                  placeholder="e.g., 9"
-                />
-              </div>
-              <div>
-                <Label>Effective Date *</Label>
+            <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
+              {/* Effective Date */}
+              <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-lg border">
+                <Label className="font-semibold">Effective Date:</Label>
                 <Input
                   type="date"
                   value={effectiveDate}
                   onChange={(e) => setEffectiveDate(e.target.value)}
+                  className="w-48"
                 />
+                <div className="ml-auto text-sm text-muted-foreground">
+                  {Object.values(bulkPrices).filter(p => p.perUnit && parseFloat(p.perUnit) > 0).length} of {filteredMaterials.length} materials priced
+                </div>
+              </div>
+
+              {/* Materials Grid */}
+              <div className="flex-1 overflow-y-auto border rounded-lg">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-slate-100 z-10">
+                    <tr className="border-b-2">
+                      <th className="text-left p-3 font-semibold">Material</th>
+                      <th className="text-left p-3 font-semibold">Length</th>
+                      <th className="text-left p-3 font-semibold">Board Feet</th>
+                      <th className="text-left p-3 font-semibold w-32">Price/MBF ($)</th>
+                      <th className="text-left p-3 font-semibold w-32">Price/Piece ($)</th>
+                      <th className="text-left p-3 font-semibold w-24">Truckload</th>
+                      <th className="text-left p-3 font-semibold">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredMaterials.map(material => {
+                      const boardFeet = material.unit === 'board foot' 
+                        ? calculateBoardFeet(material.name, material.standard_length)
+                        : null;
+                      const currentPrice = bulkPrices[material.id] || { mbf: '', perUnit: '', truckload: '', notes: '' };
+                      const latestExisting = getLatestPrice(material.id, selectedVendor.id);
+
+                      return (
+                        <tr key={material.id} className="hover:bg-slate-50">
+                          <td className="p-3">
+                            <div className="font-medium">{material.name}</div>
+                            {latestExisting && (
+                              <div className="text-xs text-muted-foreground">
+                                Current: ${latestExisting.price_per_unit.toFixed(2)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-sm font-semibold text-blue-700">
+                            {material.standard_length}'
+                          </td>
+                          <td className="p-3 text-sm font-semibold">
+                            {boardFeet ? `${boardFeet.toFixed(2)} BF` : '-'}
+                          </td>
+                          <td className="p-3">
+                            {boardFeet ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={currentPrice.mbf}
+                                onChange={(e) => updateBulkPrice(material.id, 'mbf', e.target.value)}
+                                placeholder="715"
+                                className="w-full"
+                              />
+                            ) : (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={currentPrice.perUnit}
+                                onChange={(e) => updateBulkPrice(material.id, 'perUnit', e.target.value)}
+                                placeholder="0.00"
+                                className="w-full"
+                              />
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={currentPrice.perUnit}
+                              onChange={(e) => updateBulkPrice(material.id, 'perUnit', e.target.value)}
+                              placeholder="0.00"
+                              className={`w-full ${boardFeet && currentPrice.mbf ? 'bg-green-50 font-bold' : ''}`}
+                              readOnly={!!(boardFeet && currentPrice.mbf)}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              value={currentPrice.truckload}
+                              onChange={(e) => updateBulkPrice(material.id, 'truckload', e.target.value)}
+                              placeholder="9"
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              value={currentPrice.notes}
+                              onChange={(e) => updateBulkPrice(material.id, 'notes', e.target.value)}
+                              placeholder="Optional..."
+                              className="w-full"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button onClick={saveBulkPrices} className="flex-1">
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Save All Prices
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowVendorPricingDialog(false);
+                    setBulkPrices({});
+                    setSelectedVendor(null);
+                  }}
+                >
+                  Cancel
+                </Button>
               </div>
             </div>
-
-            <div>
-              <Label>Notes</Label>
-              <Textarea
-                value={priceNotes}
-                onChange={(e) => setPriceNotes(e.target.value)}
-                placeholder="Optional notes about this price..."
-                rows={3}
-              />
-            </div>
-
-            <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={savePrice} className="flex-1">
-                <DollarSign className="w-4 h-4 mr-2" />
-                Save Price
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddPriceDialog(false);
-                  resetPriceForm();
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Price History Dialog */}
       {selectedMaterial && (
@@ -836,142 +773,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           </DialogContent>
         </Dialog>
       )}
-
-      {/* Add Vendor Dialog */}
-      <Dialog open={showAddVendorDialog} onOpenChange={setShowAddVendorDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Vendor</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Vendor Name *</Label>
-              <Input
-                value={vendorName}
-                onChange={(e) => setVendorName(e.target.value)}
-                placeholder="e.g., ABC Lumber Supply"
-              />
-            </div>
-
-            <div>
-              <Label>Contact Name</Label>
-              <Input
-                value={vendorContact}
-                onChange={(e) => setVendorContact(e.target.value)}
-                placeholder="Primary contact person"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Phone</Label>
-                <Input
-                  value={vendorPhone}
-                  onChange={(e) => setVendorPhone(e.target.value)}
-                  placeholder="(555) 123-4567"
-                />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={vendorEmail}
-                  onChange={(e) => setVendorEmail(e.target.value)}
-                  placeholder="contact@vendor.com"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={saveVendor} className="flex-1">
-                <Users className="w-4 h-4 mr-2" />
-                Add Vendor
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddVendorDialog(false);
-                  resetVendorForm();
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Material Dialog */}
-      <Dialog open={showAddMaterialDialog} onOpenChange={setShowAddMaterialDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add {category === 'lumber' ? 'Lumber' : 'Rebar'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Material Name *</Label>
-              <Input
-                value={materialName}
-                onChange={(e) => setMaterialName(e.target.value)}
-                placeholder={category === 'lumber' ? 'e.g., 2x4 SPF' : 'e.g., #4 Rebar'}
-              />
-            </div>
-
-            <div>
-              <Label>Category</Label>
-              <Input
-                value={category === 'lumber' ? 'Lumber' : 'Rebar'}
-                disabled
-                className="bg-slate-100"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Unit *</Label>
-                <Select value={materialUnit} onValueChange={setMaterialUnit}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="board foot">Board Foot</SelectItem>
-                    <SelectItem value="linear foot">Linear Foot</SelectItem>
-                    <SelectItem value="sheet">Sheet</SelectItem>
-                    <SelectItem value="piece">Piece</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Standard Length (ft)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={standardLength}
-                  onChange={(e) => setStandardLength(e.target.value)}
-                  placeholder="16"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={saveMaterial} className="flex-1">
-                <Package className="w-4 h-4 mr-2" />
-                Add Material
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddMaterialDialog(false);
-                  resetMaterialForm();
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
