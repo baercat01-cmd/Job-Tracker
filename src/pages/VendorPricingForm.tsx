@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -23,6 +24,7 @@ import {
   Send,
   AlertCircle,
   Loader2,
+  Truck,
 } from 'lucide-react';
 
 interface Material {
@@ -67,7 +69,7 @@ export function VendorPricingForm() {
   const [vendorLink, setVendorLink] = useState<VendorLink | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
-  const [prices, setPrices] = useState<Record<string, { mbfPrice: string; pricePerPiece: string; unitType: string; unitValue: string; notes: string }>>({});
+  const [prices, setPrices] = useState<Record<string, { mbfPrice: string; pricePerPiece: string; unitType: string; unitValue: string; notes: string; canShipTogether: boolean }>>({});
   const [generalNotes, setGeneralNotes] = useState('');
 
   useEffect(() => {
@@ -137,7 +139,7 @@ export function VendorPricingForm() {
     }
   }
 
-  function updatePrice(materialId: string, field: 'mbfPrice' | 'pricePerPiece' | 'unitType' | 'unitValue' | 'notes', value: string) {
+  function updatePrice(materialId: string, field: 'mbfPrice' | 'pricePerPiece' | 'unitType' | 'unitValue' | 'notes' | 'canShipTogether', value: string | boolean) {
     setPrices(prev => {
       const updated = {
         ...prev[materialId],
@@ -145,7 +147,7 @@ export function VendorPricingForm() {
       };
 
       // If MBF price is updated, calculate price per piece
-      if (field === 'mbfPrice' && value) {
+      if (field === 'mbfPrice' && typeof value === 'string' && value) {
         const material = materials.find(m => m.id === materialId);
         if (material && material.unit === 'board foot') {
           const boardFeet = calculateBoardFeet(material.name, material.standard_length);
@@ -165,52 +167,56 @@ export function VendorPricingForm() {
   async function submitPrices() {
     if (!vendorLink) return;
 
-    const pricesToSubmit = Object.entries(prices)
-      .filter(([_, data]) => {
-        // Check if either MBF price or direct price per piece is entered
-        return (data.mbfPrice && parseFloat(data.mbfPrice) > 0) || 
-               (data.pricePerPiece && parseFloat(data.pricePerPiece) > 0);
-      })
-      .map(([materialId, data]) => {
-        const material = materials.find(m => m.id === materialId);
-        
-        // Determine the price per unit to store
-        let pricePerUnit: number;
-        let mbfPrice: number | null = null;
-        
-        if (material?.unit === 'board foot' && data.mbfPrice) {
-          // For lumber: convert MBF to price per piece
-          pricePerUnit = parseFloat(data.pricePerPiece);
-          mbfPrice = parseFloat(data.mbfPrice); // Store original MBF price
-        } else {
-          // For rebar or direct entry: use the price as-is
-          pricePerUnit = parseFloat(data.pricePerPiece || data.mbfPrice);
-        }
+    const pricedMaterials = Object.entries(prices).filter(([_, data]) => {
+      // Check if either MBF price or direct price per piece is entered
+      return (data.mbfPrice && parseFloat(data.mbfPrice) > 0) || 
+             (data.pricePerPiece && parseFloat(data.pricePerPiece) > 0);
+    });
 
-        // Build truckload quantity from unit type and value
-        let truckloadQty = null;
-        if (data.unitType === 'per_piece') {
-          truckloadQty = null; // Per piece doesn't need truckload
-        } else if (data.unitType === 'unit' && data.unitValue) {
-          truckloadQty = parseInt(data.unitValue);
-        }
-        
-        return {
-          material_id: materialId,
-          vendor_id: vendorLink.vendor_id,
-          price_per_unit: pricePerUnit,
-          mbf_price: mbfPrice,
-          truckload_quantity: truckloadQty,
-          effective_date: effectiveDate,
-          notes: data.notes || null,
-          created_by: null, // Vendor submission
-        };
-      });
-
-    if (pricesToSubmit.length === 0) {
+    if (pricedMaterials.length === 0) {
       toast.error('Please enter at least one price');
       return;
     }
+
+    // Generate a unique shipment group ID for all materials marked as "can ship together"
+    const shipmentGroupId = crypto.randomUUID();
+
+    const pricesToSubmit = pricedMaterials.map(([materialId, data]) => {
+      const material = materials.find(m => m.id === materialId);
+      
+      // Determine the price per unit to store
+      let pricePerUnit: number;
+      let mbfPrice: number | null = null;
+      
+      if (material?.unit === 'board foot' && data.mbfPrice) {
+        // For lumber: convert MBF to price per piece
+        pricePerUnit = parseFloat(data.pricePerPiece);
+        mbfPrice = parseFloat(data.mbfPrice); // Store original MBF price
+      } else {
+        // For rebar or direct entry: use the price as-is
+        pricePerUnit = parseFloat(data.pricePerPiece || data.mbfPrice);
+      }
+
+      // Build truckload quantity from unit type and value
+      let truckloadQty = null;
+      if (data.unitType === 'per_piece') {
+        truckloadQty = null; // Per piece doesn't need truckload
+      } else if (data.unitType === 'unit' && data.unitValue) {
+        truckloadQty = parseInt(data.unitValue);
+      }
+      
+      return {
+        material_id: materialId,
+        vendor_id: vendorLink.vendor_id,
+        price_per_unit: pricePerUnit,
+        mbf_price: mbfPrice,
+        truckload_quantity: truckloadQty,
+        shipment_group_id: data.canShipTogether ? shipmentGroupId : null,
+        effective_date: effectiveDate,
+        notes: data.notes || null,
+        created_by: null, // Vendor submission
+      };
+    });
 
     setSubmitting(true);
 
@@ -221,7 +227,12 @@ export function VendorPricingForm() {
 
       if (error) throw error;
 
-      toast.success(`Successfully submitted ${pricesToSubmit.length} prices!`);
+      const shipTogetherCount = pricesToSubmit.filter(p => p.shipment_group_id).length;
+      if (shipTogetherCount > 0) {
+        toast.success(`Successfully submitted ${pricesToSubmit.length} prices! ${shipTogetherCount} materials marked for combined shipping.`);
+      } else {
+        toast.success(`Successfully submitted ${pricesToSubmit.length} prices!`);
+      }
       setSubmitted(true);
     } catch (error: any) {
       console.error('Error submitting prices:', error);
@@ -284,9 +295,11 @@ export function VendorPricingForm() {
     (p.pricePerPiece && parseFloat(p.pricePerPiece) > 0)
   ).length;
 
+  const shipTogetherCount = Object.values(prices).filter(p => p.canShipTogether).length;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 py-8 px-4">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <Card className="border-blue-200 bg-white shadow-lg">
           <CardHeader>
@@ -318,7 +331,7 @@ export function VendorPricingForm() {
         {/* Effective Date */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <Label className="font-semibold flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-blue-600" />
                 Effective Date:
@@ -329,9 +342,17 @@ export function VendorPricingForm() {
                 onChange={(e) => setEffectiveDate(e.target.value)}
                 className="w-48"
               />
-              <p className="text-sm text-muted-foreground ml-auto">
-                {pricedCount} of {materials.length} priced
-              </p>
+              <div className="ml-auto flex items-center gap-4">
+                <p className="text-sm text-muted-foreground">
+                  {pricedCount} of {materials.length} priced
+                </p>
+                {shipTogetherCount > 0 && (
+                  <Badge className="bg-green-100 text-green-800 border-green-300 flex items-center gap-1">
+                    <Truck className="w-3 h-3" />
+                    {shipTogetherCount} can ship together
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -344,7 +365,7 @@ export function VendorPricingForm() {
               Enter Your Prices
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Enter price per MBF (thousand board feet) - price per piece will be calculated automatically
+              Enter price per MBF (thousand board feet) - price per piece will be calculated automatically. Check "Can Ship Together" for materials that can be delivered in one shipment.
             </p>
           </CardHeader>
           <CardContent className="p-0">
@@ -352,6 +373,9 @@ export function VendorPricingForm() {
               <table className="w-full">
                 <thead className="bg-slate-100 sticky top-0 z-10">
                   <tr className="border-b-2">
+                    <th className="text-center p-3 font-semibold w-16">
+                      <Truck className="w-4 h-4 mx-auto" />
+                    </th>
                     <th className="text-left p-3 font-semibold">Material</th>
                     <th className="text-center p-3 font-semibold w-24">Length</th>
                     <th className="text-center p-3 font-semibold w-24">Board Feet</th>
@@ -363,14 +387,24 @@ export function VendorPricingForm() {
                 </thead>
                 <tbody className="divide-y">
                   {materials.map((material, idx) => {
-                    const priceData = prices[material.id] || { mbfPrice: '', pricePerPiece: '', unitType: 'unit', unitValue: '1', notes: '' };
+                    const priceData = prices[material.id] || { mbfPrice: '', pricePerPiece: '', unitType: 'unit', unitValue: '1', notes: '', canShipTogether: false };
                     const isEven = idx % 2 === 0;
                     const boardFeet = material.unit === 'board foot' 
                       ? calculateBoardFeet(material.name, material.standard_length)
                       : null;
+                    const hasPricing = (priceData.mbfPrice && parseFloat(priceData.mbfPrice) > 0) || 
+                                      (priceData.pricePerPiece && parseFloat(priceData.pricePerPiece) > 0);
 
                     return (
-                      <tr key={material.id} className={`hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50'}`}>
+                      <tr key={material.id} className={`hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50'} ${priceData.canShipTogether ? 'border-l-4 border-l-green-500' : ''}`}>
+                        <td className="p-3 text-center">
+                          <Checkbox
+                            checked={priceData.canShipTogether}
+                            onCheckedChange={(checked) => updatePrice(material.id, 'canShipTogether', checked as boolean)}
+                            disabled={!hasPricing}
+                            className={hasPricing ? '' : 'opacity-30'}
+                          />
+                        </td>
                         <td className="p-3">
                           <div className="font-medium">{material.name}</div>
                           <div className="text-xs text-muted-foreground">
@@ -452,6 +486,23 @@ export function VendorPricingForm() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Shipment Info */}
+        {shipTogetherCount > 0 && (
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <Truck className="w-5 h-5 text-green-700 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-green-900 mb-1">Combined Shipment Information</h3>
+                  <p className="text-sm text-green-800">
+                    You've marked {shipTogetherCount} material{shipTogetherCount !== 1 ? 's' : ''} that can be shipped together in one delivery. This helps the team plan efficient shipments.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Optional Notes */}
         <Card>

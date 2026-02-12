@@ -39,6 +39,7 @@ import {
   Trash2,
   Edit,
   X,
+  Truck,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -89,6 +90,7 @@ interface PriceEntry {
   price_per_unit: number;
   mbf_price: number | null;
   truckload_quantity: number | null;
+  shipment_group_id: string | null;
   effective_date: string;
   notes: string | null;
   created_by: string | null;
@@ -1413,79 +1415,195 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="border rounded-lg overflow-hidden">
-                      <table className="w-full">
-                        <thead className="bg-slate-100">
-                          <tr className="border-b">
-                            <th className="text-left p-3 font-semibold">Material</th>
-                            <th className="text-center p-3 font-semibold w-32">Effective Date</th>
-                            <th className="text-right p-3 font-semibold w-32">Price/MBF</th>
-                            <th className="text-right p-3 font-semibold w-32">Price/Piece</th>
-                            <th className="text-center p-3 font-semibold w-24">Units</th>
-                            <th className="text-left p-3 font-semibold">Notes</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                          {submission.entries.map((entry, entryIdx) => {
-                            const material = materials.find(m => m.id === entry.material_id);
-                            const boardFeet = material && material.unit === 'board foot'
-                              ? calculateBoardFeet(material.name, material.standard_length)
-                              : null;
-                            
-                            return (
-                              <tr key={entry.id} className={entryIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                                <td className="p-3">
-                                  <div className="font-medium">{material?.name || 'Unknown'}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {material?.standard_length}' • {material?.unit}
-                                    {boardFeet && <span className="ml-2">({boardFeet.toFixed(2)} BF/pc)</span>}
-                                  </div>
-                                </td>
-                                <td className="p-3 text-center text-sm">
-                                  {new Date(entry.effective_date).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
+                    {/* Check if this submission has shipment groups */}
+                    {(() => {
+                      const shipmentGroups = new Map<string, PriceEntry[]>();
+                      const ungrouped: PriceEntry[] = [];
+                      
+                      submission.entries.forEach(entry => {
+                        if (entry.shipment_group_id) {
+                          const group = shipmentGroups.get(entry.shipment_group_id) || [];
+                          group.push(entry);
+                          shipmentGroups.set(entry.shipment_group_id, group);
+                        } else {
+                          ungrouped.push(entry);
+                        }
+                      });
+
+                      const hasShipmentGroups = shipmentGroups.size > 0;
+
+                      return (
+                        <div className="space-y-4">
+                          {/* Shipment Groups */}
+                          {Array.from(shipmentGroups.entries()).map(([groupId, groupEntries], groupIdx) => (
+                            <div key={groupId} className="border-2 border-green-200 rounded-lg overflow-hidden bg-green-50/30">
+                              <div className="bg-green-100 px-3 py-2 border-b border-green-200">
+                                <div className="flex items-center gap-2 text-green-800 font-semibold">
+                                  <Truck className="w-4 h-4" />
+                                  <span>Combined Shipment Group {groupIdx + 1}</span>
+                                  <Badge variant="outline" className="bg-white text-xs">
+                                    {groupEntries.length} materials can ship together
+                                  </Badge>
+                                </div>
+                              </div>
+                              <table className="w-full">
+                                <thead className="bg-slate-100">
+                                  <tr className="border-b">
+                                    <th className="text-left p-3 font-semibold">Material</th>
+                                    <th className="text-center p-3 font-semibold w-32">Effective Date</th>
+                                    <th className="text-right p-3 font-semibold w-32">Price/MBF</th>
+                                    <th className="text-right p-3 font-semibold w-32">Price/Piece</th>
+                                    <th className="text-center p-3 font-semibold w-24">Units</th>
+                                    <th className="text-left p-3 font-semibold">Notes</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  {groupEntries.map((entry, entryIdx) => {
+                                    const material = materials.find(m => m.id === entry.material_id);
+                                    const boardFeet = material && material.unit === 'board foot'
+                                      ? calculateBoardFeet(material.name, material.standard_length)
+                                      : null;
+                                    
+                                    return (
+                                      <tr key={entry.id} className={entryIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                        <td className="p-3">
+                                          <div className="font-medium">{material?.name || 'Unknown'}</div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {material?.standard_length}' • {material?.unit}
+                                            {boardFeet && <span className="ml-2">({boardFeet.toFixed(2)} BF/pc)</span>}
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center text-sm">
+                                          {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                          })}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                          {entry.mbf_price ? (
+                                            <>
+                                              <div className="text-lg font-bold text-green-700">
+                                                ${entry.mbf_price.toFixed(2)}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">per MBF</div>
+                                            </>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                          )}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                          <div className="text-lg font-bold text-blue-700">
+                                            ${entry.price_per_unit.toFixed(2)}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">per piece</div>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          {entry.truckload_quantity ? (
+                                            <Badge variant="outline">{entry.truckload_quantity}</Badge>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                          )}
+                                        </td>
+                                        <td className="p-3">
+                                          {entry.notes ? (
+                                            <div className="text-sm">{entry.notes}</div>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">No notes</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
                                   })}
-                                </td>
-                                <td className="p-3 text-right">
-                                  {entry.mbf_price ? (
-                                    <>
-                                      <div className="text-lg font-bold text-green-700">
-                                        ${entry.mbf_price.toFixed(2)}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">per MBF</div>
-                                    </>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">-</span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-right">
-                                  <div className="text-lg font-bold text-blue-700">
-                                    ${entry.price_per_unit.toFixed(2)}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">per piece</div>
-                                </td>
-                                <td className="p-3 text-center">
-                                  {entry.truckload_quantity ? (
-                                    <Badge variant="outline">{entry.truckload_quantity}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">-</span>
-                                  )}
-                                </td>
-                                <td className="p-3">
-                                  {entry.notes ? (
-                                    <div className="text-sm">{entry.notes}</div>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">No notes</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                </tbody>
+                              </table>
+                            </div>
+                          ))}
+
+                          {/* Individual Materials (not in shipment groups) */}
+                          {ungrouped.length > 0 && (
+                            <div className="border rounded-lg overflow-hidden">
+                              {hasShipmentGroups && (
+                                <div className="bg-slate-100 px-3 py-2 border-b">
+                                  <span className="text-slate-700 font-semibold">Individual Materials (shipped separately)</span>
+                                </div>
+                              )}
+                              <table className="w-full">
+                                <thead className="bg-slate-100">
+                                  <tr className="border-b">
+                                    <th className="text-left p-3 font-semibold">Material</th>
+                                    <th className="text-center p-3 font-semibold w-32">Effective Date</th>
+                                    <th className="text-right p-3 font-semibold w-32">Price/MBF</th>
+                                    <th className="text-right p-3 font-semibold w-32">Price/Piece</th>
+                                    <th className="text-center p-3 font-semibold w-24">Units</th>
+                                    <th className="text-left p-3 font-semibold">Notes</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  {ungrouped.map((entry, entryIdx) => {
+                                    const material = materials.find(m => m.id === entry.material_id);
+                                    const boardFeet = material && material.unit === 'board foot'
+                                      ? calculateBoardFeet(material.name, material.standard_length)
+                                      : null;
+                                    
+                                    return (
+                                      <tr key={entry.id} className={entryIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                        <td className="p-3">
+                                          <div className="font-medium">{material?.name || 'Unknown'}</div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {material?.standard_length}' • {material?.unit}
+                                            {boardFeet && <span className="ml-2">({boardFeet.toFixed(2)} BF/pc)</span>}
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center text-sm">
+                                          {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                          })}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                          {entry.mbf_price ? (
+                                            <>
+                                              <div className="text-lg font-bold text-green-700">
+                                                ${entry.mbf_price.toFixed(2)}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">per MBF</div>
+                                            </>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                          )}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                          <div className="text-lg font-bold text-blue-700">
+                                            ${entry.price_per_unit.toFixed(2)}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">per piece</div>
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          {entry.truckload_quantity ? (
+                                            <Badge variant="outline">{entry.truckload_quantity}</Badge>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                          )}
+                                        </td>
+                                        <td className="p-3">
+                                          {entry.notes ? (
+                                            <div className="text-sm">{entry.notes}</div>
+                                          ) : (
+                                            <span className="text-muted-foreground text-sm">No notes</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
               ));
