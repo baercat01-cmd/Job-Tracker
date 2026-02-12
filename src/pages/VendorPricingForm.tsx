@@ -504,6 +504,7 @@ export function VendorPricingForm() {
                                 min="0"
                                 value={priceData.unitValue}
                                 onChange={(e) => updatePrice(material.id, 'unitValue', e.target.value)}
+                                onFocus={(e) => e.target.select()}
                                 placeholder="Qty"
                                 className="w-24"
                               />
