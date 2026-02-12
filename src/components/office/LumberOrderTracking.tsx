@@ -425,13 +425,12 @@ export function LumberOrderTracking({ category }: LumberOrderTrackingProps) {
                     <span className="font-bold">${order.total_cost?.toFixed(2) || '0.00'}</span>
                   </div>
                 </div>
-                <div className="mt-3 pt-3 border-t">
+                <div className="mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
                   <Select
                     value={order.status}
                     onValueChange={(value) => {
                       updateOrderStatus(order.id, value);
                     }}
-                    onClick={(e) => e.stopPropagation()}
                   >
                     <SelectTrigger className={`h-8 text-xs ${getStatusColor(order.status)}`}>
                       <SelectValue />

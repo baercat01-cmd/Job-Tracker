@@ -91,6 +91,7 @@ interface PriceEntry {
   mbf_price: number | null;
   truckload_quantity: number | null;
   shipment_group_id: string | null;
+  shipment_group_color: string | null;
   effective_date: string;
   notes: string | null;
   created_by: string | null;
