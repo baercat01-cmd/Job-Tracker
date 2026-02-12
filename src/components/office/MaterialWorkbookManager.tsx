@@ -131,6 +131,11 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [selectedSheet, setSelectedSheet] = useState<MaterialSheet | null>(null);
   const [addingMaterials, setAddingMaterials] = useState<Set<string>>(new Set());
 
+  // Sheet management state
+  const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
+  const [newSheetName, setNewSheetName] = useState('');
+  const [addingSheet, setAddingSheet] = useState(false);
+
   useEffect(() => {
     loadWorkbooks();
   }, [jobId]);
@@ -474,6 +479,83 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     } catch (error: any) {
       console.error('Error deleting labor:', error);
       toast.error('Failed to delete labor');
+    }
+  }
+
+  async function addNewSheet() {
+    if (!viewingWorkbook || viewingWorkbook.status === 'locked') {
+      toast.error('Cannot add sheets to a locked workbook');
+      return;
+    }
+
+    if (!newSheetName.trim()) {
+      toast.error('Please enter a sheet name');
+      return;
+    }
+
+    setAddingSheet(true);
+
+    try {
+      // Get next order index
+      const maxOrderIndex = Math.max(...sheets.map(s => s.order_index), -1);
+
+      // Create new sheet
+      const { data: newSheet, error } = await supabase
+        .from('material_sheets')
+        .insert({
+          workbook_id: viewingWorkbook.id,
+          sheet_name: newSheetName.trim(),
+          order_index: maxOrderIndex + 1,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast.success(`Sheet "${newSheetName}" added successfully`);
+      setShowAddSheetDialog(false);
+      setNewSheetName('');
+      
+      // Refresh workbook view
+      await viewWorkbook(viewingWorkbook);
+    } catch (error: any) {
+      console.error('Error adding sheet:', error);
+      toast.error('Failed to add sheet');
+    } finally {
+      setAddingSheet(false);
+    }
+  }
+
+  async function deleteSheet(sheet: MaterialSheet) {
+    if (!viewingWorkbook || viewingWorkbook.status === 'locked') {
+      toast.error('Cannot delete sheets from a locked workbook');
+      return;
+    }
+
+    if (sheets.length === 1) {
+      toast.error('Cannot delete the last sheet. Workbooks must have at least one sheet.');
+      return;
+    }
+
+    if (!confirm(`Delete sheet "${sheet.sheet_name}"? This will also delete all materials in this sheet.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('material_sheets')
+        .delete()
+        .eq('id', sheet.id);
+
+      if (error) throw error;
+
+      toast.success(`Sheet "${sheet.sheet_name}" deleted`);
+      
+      // Refresh workbook view
+      await viewWorkbook(viewingWorkbook);
+    } catch (error: any) {
+      console.error('Error deleting sheet:', error);
+      toast.error('Failed to delete sheet');
     }
   }
 
@@ -832,13 +914,14 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             <div className="space-y-4">
               {/* Sheet Tabs with Labor Indicators and Add Material Button */}
               <div className="flex items-center justify-between">
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {sheets.map((sheet) => {
                     const hasLabor = sheetLabor[sheet.id];
+                    const isCurrentSheet = items.length > 0 && items[0]?.sheet_id === sheet.id;
                     return (
-                      <div key={sheet.id} className="relative">
+                      <div key={sheet.id} className="relative group">
                         <Button
-                          variant="outline"
+                          variant={isCurrentSheet ? "default" : "outline"}
                           size="sm"
                           onClick={async () => {
                             const { data, error } = await supabase
@@ -848,15 +931,44 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                               .order('order_index');
                             if (!error) setItems(data || []);
                           }}
+                          className="pr-8"
                         >
                           {sheet.sheet_name}
                         </Button>
                         {hasLabor && (
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                         )}
+                        {/* Delete Sheet Button - only show for working versions */}
+                        {viewingWorkbook?.status === 'working' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteSheet(sheet);
+                            }}
+                            className="absolute right-0 top-0 h-full w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete sheet"
+                          >
+                            <X className="w-3 h-3 text-red-600" />
+                          </Button>
+                        )}
                       </div>
                     );
                   })}
+                  
+                  {/* Add Sheet Button - only show for working versions */}
+                  {viewingWorkbook?.status === 'working' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAddSheetDialog(true)}
+                      className="border-dashed"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Sheet
+                    </Button>
+                  )}
                 </div>
                 
                 {/* Add Material Button */}
@@ -1073,6 +1185,64 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                 {sheetLabor[editingSheetId || ''] ? 'Update' : 'Add'} Labor
               </Button>
               <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Sheet Dialog */}
+      <Dialog open={showAddSheetDialog} onOpenChange={setShowAddSheetDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add New Sheet
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="sheet-name">Sheet Name</Label>
+              <Input
+                id="sheet-name"
+                value={newSheetName}
+                onChange={(e) => setNewSheetName(e.target.value)}
+                placeholder="e.g., Porch, Garage, Interior..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !addingSheet) {
+                    addNewSheet();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={addNewSheet}
+                disabled={addingSheet || !newSheetName.trim()}
+                className="flex-1"
+              >
+                {addingSheet ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Sheet
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddSheetDialog(false);
+                  setNewSheetName('');
+                }}
+                disabled={addingSheet}
+              >
                 Cancel
               </Button>
             </div>
