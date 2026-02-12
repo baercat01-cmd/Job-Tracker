@@ -404,10 +404,28 @@ export function VendorPricingForm() {
           </CardContent>
         </Card>
 
-        {/* Footer */}
-        <div className="text-center text-sm text-muted-foreground">
-          <p>Questions? Contact the sender who shared this link with you.</p>
-        </div>
+        {/* Footer - Contact Information */}
+        <Card className="border-blue-200">
+          <CardContent className="pt-6">
+            <h3 className="font-semibold text-center mb-4 text-lg">Questions or Need Help?</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+              <div className="bg-slate-50 p-4 rounded-lg border text-center">
+                <p className="font-semibold text-lg mb-1">Cody Martin</p>
+                <a href="tel:5745362582" className="text-blue-600 hover:underline flex items-center justify-center gap-2">
+                  <span>📞</span>
+                  <span>(574) 536-2582</span>
+                </a>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-lg border text-center">
+                <p className="font-semibold text-lg mb-1">Zac Oakley</p>
+                <a href="tel:5743544029" className="text-blue-600 hover:underline flex items-center justify-center gap-2">
+                  <span>📞</span>
+                  <span>(574) 354-4029</span>
+                </a>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

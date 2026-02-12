@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -25,20 +24,25 @@ import {
   TrendingDown,
   Building2,
   Package,
-  LineChart,
+  LineChart as LineChartIcon,
   Calendar,
   Users,
-  Calculator,
   Share2,
   Copy,
   ExternalLink,
+  BarChart3,
+  Minus,
+  Loader2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  LineChart as RechartsLineChart,
+  LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -46,6 +50,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+
+const CHART_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
 interface Material {
   id: string;
@@ -93,9 +99,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
   
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'pricing' | 'analytics'>('pricing');
+  
   // Dialogs
   const [showVendorPricingDialog, setShowVendorPricingDialog] = useState(false);
   const [showPriceHistoryDialog, setShowPriceHistoryDialog] = useState(false);
+  const [showMaterialDetailDialog, setShowMaterialDetailDialog] = useState(false);
   
   // Selected items
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
@@ -113,11 +123,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [shareLink, setShareLink] = useState('');
   const [shareExpireDays, setShareExpireDays] = useState('30');
   const [generatingLink, setGeneratingLink] = useState(false);
+  
+  // Analytics filters
+  const [timeRange, setTimeRange] = useState<'30' | '90' | '180' | '365'>('90');
 
   useEffect(() => {
     loadData();
     
-    // Subscribe to table changes for auto-reload
     const materialsChannel = supabase
       .channel('lumber_rebar_materials_changes')
       .on('postgres_changes',
@@ -149,20 +161,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     };
   }, []);
 
-  // Calculate board feet for a piece of lumber using ACTUAL dimensions
   function calculateBoardFeet(materialName: string, length: number): number {
-    // Parse dimensions from material name (e.g., "2x4 SPF" -> 2, 4)
     const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
-    if (!match) return 1; // Default to 1 if we can't parse
+    if (!match) return 1;
     
-    // Use NOMINAL dimensions (2x4 means 2" x 4" for board foot calculations)
     const thickness = parseInt(match[1]);
     const width = parseInt(match[2]);
     
-    // Board Feet = (Thickness × Width × Length) / 12
-    // For 2x4 @ 16': (2 × 4 × 16) / 12 = 10.67 BF
     const boardFeet = (thickness * width * length) / 12;
-    console.log(`${materialName} @ ${length}': (${thickness} × ${width} × ${length}) / 12 = ${boardFeet.toFixed(2)} BF`);
     return boardFeet;
   }
 
@@ -277,19 +283,12 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       }
     }));
 
-    // Auto-calculate price per unit when MBF changes
     if (field === 'mbf' && value) {
       const material = materials.find(m => m.id === materialId);
       if (material && material.unit === 'board foot') {
         const boardFeet = calculateBoardFeet(material.name, material.standard_length);
-        const pricePerBF = parseFloat(value) / 1000; // Convert MBF to BF
+        const pricePerBF = parseFloat(value) / 1000;
         const pricePerPiece = pricePerBF * boardFeet;
-        
-        console.log(`Pricing calculation for ${material.name}:`);
-        console.log(`  MBF Price: $${value}`);
-        console.log(`  Price per BF: $${value} / 1000 = $${pricePerBF.toFixed(4)}`);
-        console.log(`  Board Feet: ${boardFeet.toFixed(2)} BF`);
-        console.log(`  Price per Piece: $${pricePerBF.toFixed(4)} × ${boardFeet.toFixed(2)} = $${pricePerPiece.toFixed(2)}`);
         
         setBulkPrices(prev => ({
           ...prev,
@@ -302,7 +301,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     }
   }
 
-  // Get latest price for a material from a specific vendor
   function getLatestPrice(materialId: string, vendorId: string): PriceEntry | null {
     const materialPrices = prices.filter(
       p => p.material_id === materialId && p.vendor_id === vendorId
@@ -310,16 +308,12 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return materialPrices.length > 0 ? materialPrices[0] : null;
   }
 
-  // Get price history for a material
   function getMaterialPriceHistory(materialId: string): PriceEntry[] {
     return prices.filter(p => p.material_id === materialId);
   }
 
-  // Prepare chart data for a material
   function getChartData(materialId: string) {
     const history = getMaterialPriceHistory(materialId);
-    
-    // Group by vendor and date
     const vendorData: Record<string, any[]> = {};
     
     history.forEach(entry => {
@@ -333,7 +327,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       });
     });
 
-    // Create unified timeline
     const allDates = [...new Set(history.map(h => h.effective_date))].sort();
     
     return allDates.map(date => {
@@ -350,6 +343,147 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
 
   const filteredMaterials = materials.filter(m => m.category === category);
 
+  function getAveragePrice(materialId: string): number | null {
+    const materialPrices = prices
+      .filter(p => p.material_id === materialId)
+      .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
+    
+    if (materialPrices.length === 0) return null;
+    const recentPrices = materialPrices.slice(0, 3);
+    return recentPrices.reduce((sum, p) => sum + p.price_per_unit, 0) / recentPrices.length;
+  }
+
+  function getPriceTrend(materialId: string): 'up' | 'down' | 'stable' {
+    const materialPrices = prices
+      .filter(p => p.material_id === materialId)
+      .slice(0, 10);
+
+    if (materialPrices.length < 2) return 'stable';
+
+    const recent = materialPrices.slice(0, 5);
+    const older = materialPrices.slice(5, 10);
+
+    const recentAvg = recent.reduce((sum, p) => sum + p.price_per_unit, 0) / recent.length;
+    const olderAvg = older.reduce((sum, p) => sum + p.price_per_unit, 0) / older.length || recentAvg;
+
+    if (recentAvg > olderAvg * 1.05) return 'up';
+    if (recentAvg < olderAvg * 0.95) return 'down';
+    return 'stable';
+  }
+
+  function getVendorCount(materialId: string): number {
+    const uniqueVendors = new Set(prices.filter(p => p.material_id === materialId).map(p => p.vendor_id));
+    return uniqueVendors.size;
+  }
+
+  function getBestPrice(materialId: string): { vendor: string; price: number } | null {
+    const materialPrices = prices
+      .filter(p => p.material_id === materialId)
+      .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
+
+    const latestByVendor = new Map<string, PriceEntry>();
+    materialPrices.forEach(price => {
+      if (!latestByVendor.has(price.vendor_id)) {
+        latestByVendor.set(price.vendor_id, price);
+      }
+    });
+
+    const best = Array.from(latestByVendor.values()).sort((a, b) => a.price_per_unit - b.price_per_unit)[0];
+    return best ? { vendor: best.vendor?.name || 'Unknown', price: best.price_per_unit } : null;
+  }
+
+  function getVendorComparisonData(materialId: string) {
+    const vendorPrices: Record<string, { name: string; latest: number; latestDate: string }> = {};
+
+    prices
+      .filter(p => p.material_id === materialId)
+      .forEach(price => {
+        if (!vendorPrices[price.vendor_id]) {
+          vendorPrices[price.vendor_id] = {
+            name: price.vendor?.name || 'Unknown',
+            latest: price.price_per_unit,
+            latestDate: price.effective_date,
+          };
+        }
+        
+        if (new Date(price.effective_date) > new Date(vendorPrices[price.vendor_id].latestDate)) {
+          vendorPrices[price.vendor_id].latest = price.price_per_unit;
+          vendorPrices[price.vendor_id].latestDate = price.effective_date;
+        }
+      });
+
+    return Object.values(vendorPrices)
+      .map(data => ({
+        vendor: data.name,
+        price: data.latest,
+        date: data.latestDate,
+      }))
+      .sort((a, b) => a.price - b.price);
+  }
+
+  function getPriceHistoryChartData(materialId: string) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - parseInt(timeRange));
+    
+    const filteredPrices = prices
+      .filter(p => p.material_id === materialId && new Date(p.effective_date) >= cutoffDate)
+      .sort((a, b) => new Date(a.effective_date).getTime() - new Date(b.effective_date).getTime());
+    
+    const vendorData: Record<string, any[]> = {};
+
+    filteredPrices.forEach(entry => {
+      const vendorName = entry.vendor?.name || 'Unknown';
+      if (!vendorData[vendorName]) {
+        vendorData[vendorName] = [];
+      }
+      vendorData[vendorName].push({
+        date: entry.effective_date,
+        price: entry.price_per_unit,
+      });
+    });
+
+    const allDates = [...new Set(filteredPrices.map(p => p.effective_date))].sort();
+
+    return allDates.map(date => {
+      const dataPoint: any = {
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        fullDate: date,
+      };
+
+      Object.keys(vendorData).forEach(vendorName => {
+        const entry = vendorData[vendorName].find(e => e.date === date);
+        if (entry) {
+          dataPoint[vendorName] = entry.price;
+        }
+      });
+
+      return dataPoint;
+    });
+  }
+
+  const analyticsData = useMemo(() => {
+    return filteredMaterials.map(material => {
+      const avgPrice = getAveragePrice(material.id);
+      const trend = getPriceTrend(material.id);
+      const vendorCount = getVendorCount(material.id);
+      const bestPrice = getBestPrice(material.id);
+
+      return {
+        material,
+        avgPrice,
+        trend,
+        vendorCount,
+        bestPrice,
+      };
+    });
+  }, [filteredMaterials, prices, timeRange]);
+
+  const trendCounts = useMemo(() => ({
+    up: analyticsData.filter(d => d.trend === 'up').length,
+    down: analyticsData.filter(d => d.trend === 'down').length,
+    stable: analyticsData.filter(d => d.trend === 'stable').length,
+  }), [analyticsData]);
+
   async function generateShareLink(vendor: Vendor) {
     setShareVendor(vendor);
     setShareLink('');
@@ -357,25 +491,16 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setShowShareDialog(true);
 
     try {
-      // Validate vendor
       if (!vendor || !vendor.id) {
         throw new Error('Invalid vendor selected');
       }
 
-      // Validate profile
       if (!profile?.id) {
         throw new Error('User profile not found. Please refresh and try again.');
       }
 
-      console.log('Generating share link for vendor:', vendor.name);
-      console.log('Category:', category);
-      console.log('Expires in days:', shareExpireDays);
-
-      // Generate unique token
       const token = crypto.randomUUID();
-      console.log('Generated token:', token);
       
-      // Calculate expiration
       const expiresAt = shareExpireDays ? (() => {
         const days = parseInt(shareExpireDays);
         if (isNaN(days) || days <= 0) {
@@ -386,9 +511,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         return date.toISOString();
       })() : null;
 
-      console.log('Expiration date:', expiresAt);
-
-      // Create vendor link
       const insertData = {
         vendor_id: vendor.id,
         category,
@@ -399,8 +521,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         is_active: true,
       };
 
-      console.log('Inserting vendor link:', insertData);
-
       const { data, error } = await supabase
         .from('lumber_rebar_vendor_links')
         .insert(insertData)
@@ -408,13 +528,9 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         .single();
 
       if (error) {
-        console.error('Database error:', error);
         throw new Error(`Database error: ${error.message}`);
       }
 
-      console.log('Link created successfully:', data);
-
-      // Generate shareable URL
       const baseUrl = window.location.origin;
       const link = `${baseUrl}/vendor-pricing/${token}`;
       setShareLink(link);
@@ -453,205 +569,359 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             {category === 'lumber' ? <Package className="w-7 h-7 text-blue-600" /> : <Building2 className="w-7 h-7 text-blue-600" />}
-            {category === 'lumber' ? 'Lumber Pricing' : 'Rebar Pricing'}
+            {category === 'lumber' ? 'Lumber Pricing & Analytics' : 'Rebar Pricing & Analytics'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Click on a vendor to add prices for all materials
+            {activeTab === 'pricing' ? 'Manage vendor pricing and share links' : 'Analyze price trends and vendor comparisons'}
           </p>
         </div>
+        {activeTab === 'analytics' && (
+          <Select value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30">Last 30 Days</SelectItem>
+              <SelectItem value="90">Last 90 Days</SelectItem>
+              <SelectItem value="180">Last 6 Months</SelectItem>
+              <SelectItem value="365">Last Year</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
-      {/* Vendor Cards - Primary View */}
-      {vendors.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vendors.map(vendor => {
-            const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
-            const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
-            const totalMaterials = filteredMaterials.length;
-            const pricesCount = materialsWithPrices.size;
-            const latestPrice = vendorPrices[0];
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="pricing" className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4" />
+            Pricing
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
 
-            return (
-              <Card 
-                key={vendor.id}
-                className="cursor-pointer hover:shadow-lg transition-all border-2 hover:border-blue-400"
-                onClick={() => openVendorPricing(vendor)}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Users className="w-5 h-5 text-blue-600" />
-                        {vendor.name}
-                      </CardTitle>
-                      {vendor.contact_name && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {vendor.contact_name}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {pricesCount}/{totalMaterials}
+        <TabsContent value="pricing" className="space-y-6 mt-6">
+          {/* Vendor Cards */}
+          {vendors.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {vendors.map(vendor => {
+                const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
+                const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
+                const totalMaterials = filteredMaterials.length;
+                const pricesCount = materialsWithPrices.size;
+                const latestPrice = vendorPrices[0];
+
+                return (
+                  <Card 
+                    key={vendor.id}
+                    className="cursor-pointer hover:shadow-lg transition-all border-2 hover:border-blue-400"
+                    onClick={() => openVendorPricing(vendor)}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Users className="w-5 h-5 text-blue-600" />
+                            {vendor.name}
+                          </CardTitle>
+                          {vendor.contact_name && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {vendor.contact_name}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {pricesCount}/{totalMaterials}
+                          </div>
+                          <p className="text-xs text-muted-foreground">priced</p>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">priced</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {vendor.phone && (
-                      <p className="text-sm text-muted-foreground">📞 {vendor.phone}</p>
-                    )}
-                    {vendor.email && (
-                      <p className="text-sm text-muted-foreground">✉️ {vendor.email}</p>
-                    )}
-                    {latestPrice && (
-                      <div className="pt-2 border-t">
-                        <p className="text-xs text-muted-foreground">
-                          Last updated: {new Date(latestPrice.effective_date).toLocaleDateString()}
-                        </p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {vendor.phone && (
+                          <p className="text-sm text-muted-foreground">📞 {vendor.phone}</p>
+                        )}
+                        {vendor.email && (
+                          <p className="text-sm text-muted-foreground">✉️ {vendor.email}</p>
+                        )}
+                        {latestPrice && (
+                          <div className="pt-2 border-t">
+                            <p className="text-xs text-muted-foreground">
+                              Last updated: {new Date(latestPrice.effective_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        )}
+                        <div className="pt-2 space-y-2">
+                          <Button className="w-full" size="sm">
+                            <DollarSign className="w-4 h-4 mr-2" />
+                            Add Prices
+                          </Button>
+                          <Button
+                            className="w-full bg-purple-600 hover:bg-purple-700"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              generateShareLink(vendor);
+                            }}
+                          >
+                            <Share2 className="w-4 h-4 mr-2" />
+                            Share Link
+                          </Button>
+                        </div>
                       </div>
-                    )}
-                    <div className="pt-2 space-y-2">
-                      <Button className="w-full" size="sm">
-                        <DollarSign className="w-4 h-4 mr-2" />
-                        Add Prices
-                      </Button>
-                      <Button
-                        className="w-full bg-purple-600 hover:bg-purple-700"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          generateShareLink(vendor);
-                        }}
-                      >
-                        <Share2 className="w-4 h-4 mr-2" />
-                        Share Link
-                      </Button>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="text-lg font-semibold mb-2">No vendors yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Add vendors in Settings to start tracking prices
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Materials Reference List */}
+          <details className="mt-6">
+            <summary className="cursor-pointer font-semibold text-sm text-slate-700 hover:text-slate-900 mb-4 flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              View All Materials ({filteredMaterials.length})
+            </summary>
+            {filteredMaterials.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Add materials to start tracking prices
+                  </p>
                 </CardContent>
               </Card>
-            );
-          })}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <h3 className="text-lg font-semibold mb-2">No vendors yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Add vendors in Settings to start tracking prices
-            </p>
-          </CardContent>
-        </Card>
-      )}
+            ) : (
+              <div className="space-y-4">
+                {filteredMaterials.map(material => {
+                  const materialHistory = getMaterialPriceHistory(material.id);
+                  const hasHistory = materialHistory.length > 0;
 
-      {/* Materials Reference List (collapsed by default) */}
-      <details className="mt-6">
-        <summary className="cursor-pointer font-semibold text-sm text-slate-700 hover:text-slate-900 mb-4 flex items-center gap-2">
-          <Package className="w-4 h-4" />
-          View All Materials ({filteredMaterials.length})
-        </summary>
-        {filteredMaterials.length === 0 ? (
+                  return (
+                    <Card key={material.id}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <CardTitle className="text-lg">{material.name}</CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              Standard: {material.standard_length}' • Unit: {material.unit}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openPriceHistory(material)}
+                              disabled={!hasHistory}
+                            >
+                              <LineChartIcon className="w-4 h-4 mr-2" />
+                              History
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {vendors.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <p className="mb-2">No vendors added yet</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {vendors.map(vendor => {
+                              const latestPrice = getLatestPrice(material.id, vendor.id);
+
+                              return (
+                                <div
+                                  key={vendor.id}
+                                  className={`border rounded-lg p-4 ${
+                                    latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between mb-2">
+                                    <h4 className="font-semibold text-sm">{vendor.name}</h4>
+                                  </div>
+
+                                  {latestPrice ? (
+                                    <div>
+                                      <div className="flex items-baseline gap-2 mb-1">
+                                        <span className="text-2xl font-bold text-blue-900">
+                                          ${latestPrice.price_per_unit.toFixed(2)}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          per {material.unit}
+                                        </span>
+                                      </div>
+                                      {latestPrice.truckload_quantity && (
+                                        <p className="text-xs text-muted-foreground mb-1">
+                                          Truckload: {latestPrice.truckload_quantity} units
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        {new Date(latestPrice.effective_date).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Plus className="w-4 h-4" />
+                                      No pricing yet
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </details>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-6 mt-6">
+          {/* Market Trends Summary */}
+          <div className="grid grid-cols-3 gap-4">
+            <Card className="bg-green-50 border-green-200">
+              <CardContent className="pt-6 pb-4 text-center">
+                <TrendingDown className="w-8 h-8 mx-auto mb-2 text-green-600" />
+                <p className="text-3xl font-bold text-green-900">{trendCounts.down}</p>
+                <p className="text-sm text-green-700 mt-1">Prices Falling</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-blue-50 border-blue-200">
+              <CardContent className="pt-6 pb-4 text-center">
+                <Minus className="w-8 h-8 mx-auto mb-2 text-blue-600" />
+                <p className="text-3xl font-bold text-blue-900">{trendCounts.stable}</p>
+                <p className="text-sm text-blue-700 mt-1">Stable Prices</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-red-50 border-red-200">
+              <CardContent className="pt-6 pb-4 text-center">
+                <TrendingUp className="w-8 h-8 mx-auto mb-2 text-red-600" />
+                <p className="text-3xl font-bold text-red-900">{trendCounts.up}</p>
+                <p className="text-sm text-red-700 mt-1">Prices Rising</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Materials Analytics Table */}
           <Card>
-            <CardContent className="py-12 text-center">
-              <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">No {category} materials yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Add materials to start tracking prices
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                Material Price Analysis
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Click any material for detailed vendor comparison and price history
               </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-100 border-b-2">
+                    <tr>
+                      <th className="text-left p-3 font-semibold">Material</th>
+                      <th className="text-center p-3 font-semibold">Length</th>
+                      <th className="text-right p-3 font-semibold">Avg Price</th>
+                      <th className="text-center p-3 font-semibold">Trend</th>
+                      <th className="text-right p-3 font-semibold">Best Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {analyticsData.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-muted-foreground">
+                          <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                          <p>No {category} materials found</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      analyticsData.map((data, idx) => (
+                        <tr
+                          key={data.material.id}
+                          className={`cursor-pointer hover:bg-blue-50 transition-colors ${
+                            idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+                          }`}
+                          onClick={() => {
+                            setSelectedMaterial(data.material);
+                            setShowMaterialDetailDialog(true);
+                          }}
+                        >
+                          <td className="p-3">
+                            <div className="font-medium">{data.material.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {data.material.unit}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-semibold text-blue-700">
+                            {data.material.standard_length}'
+                          </td>
+                          <td className="p-3 text-right font-mono font-semibold">
+                            {data.avgPrice ? `$${data.avgPrice.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="p-3 text-center">
+                            {data.trend === 'up' && (
+                              <Badge className="bg-red-100 text-red-800 border-red-300">
+                                <TrendingUp className="w-3 h-3 mr-1" />
+                                Rising
+                              </Badge>
+                            )}
+                            {data.trend === 'down' && (
+                              <Badge className="bg-green-100 text-green-800 border-green-300">
+                                <TrendingDown className="w-3 h-3 mr-1" />
+                                Falling
+                              </Badge>
+                            )}
+                            {data.trend === 'stable' && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                                <Minus className="w-3 h-3 mr-1" />
+                                Stable
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            {data.bestPrice ? (
+                              <div>
+                                <div className="font-mono font-bold text-green-700">
+                                  ${data.bestPrice.price.toFixed(2)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {data.bestPrice.vendor}
+                                </div>
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredMaterials.map(material => {
-              const materialHistory = getMaterialPriceHistory(material.id);
-              const hasHistory = materialHistory.length > 0;
-
-              return (
-                <Card key={material.id}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{material.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          Standard: {material.standard_length}' • Unit: {material.unit}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openPriceHistory(material)}
-                          disabled={!hasHistory}
-                        >
-                          <LineChart className="w-4 h-4 mr-2" />
-                          History
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {vendors.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <p className="mb-2">No vendors added yet</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {vendors.map(vendor => {
-                          const latestPrice = getLatestPrice(material.id, vendor.id);
-
-                          return (
-                            <div
-                              key={vendor.id}
-                              className={`border rounded-lg p-4 ${
-                                latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between mb-2">
-                                <h4 className="font-semibold text-sm">{vendor.name}</h4>
-                              </div>
-
-                              {latestPrice ? (
-                                <div>
-                                  <div className="flex items-baseline gap-2 mb-1">
-                                    <span className="text-2xl font-bold text-blue-900">
-                                      ${latestPrice.price_per_unit.toFixed(2)}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                      per {material.unit}
-                                    </span>
-                                  </div>
-                                  {latestPrice.truckload_quantity && (
-                                    <p className="text-xs text-muted-foreground mb-1">
-                                      Truckload: {latestPrice.truckload_quantity} units
-                                    </p>
-                                  )}
-                                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" />
-                                    {new Date(latestPrice.effective_date).toLocaleDateString()}
-                                  </p>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <Plus className="w-4 h-4" />
-                                  No pricing yet
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </details>
+        </TabsContent>
+      </Tabs>
 
       {/* Vendor Bulk Pricing Dialog */}
       {selectedVendor && (
@@ -818,7 +1088,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
           <div className="space-y-4">
             {generatingLink ? (
               <div className="text-center py-8">
-                <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <Loader2 className="w-8 h-8 mx-auto mb-4 text-purple-600 animate-spin" />
                 <p className="text-muted-foreground">Generating secure link...</p>
               </div>
             ) : (
@@ -900,11 +1170,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               {/* Chart */}
               <div className="bg-slate-50 p-4 rounded-lg border">
                 <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <LineChart className="w-4 h-4" />
+                  <LineChartIcon className="w-4 h-4" />
                   Price Trend
                 </h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <RechartsLineChart data={getChartData(selectedMaterial.id)}>
+                  <LineChart data={getChartData(selectedMaterial.id)}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="date"
@@ -923,13 +1193,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         key={vendor.id}
                         type="monotone"
                         dataKey={vendor.name}
-                        stroke={`hsl(${(idx * 360) / vendors.length}, 70%, 50%)`}
+                        stroke={CHART_COLORS[idx % CHART_COLORS.length]}
                         strokeWidth={2}
                         dot={{ r: 4 }}
                         connectNulls
                       />
                     ))}
-                  </RechartsLineChart>
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
 
@@ -974,6 +1244,126 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                   </table>
                 </div>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Material Detail Dialog (for Analytics) */}
+      {selectedMaterial && (
+        <Dialog open={showMaterialDetailDialog} onOpenChange={setShowMaterialDetailDialog}>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="w-5 h-5" />
+                {selectedMaterial.name} - Price Analysis
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                Last {timeRange} days • {selectedMaterial.standard_length}' • {selectedMaterial.unit}
+              </p>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              {/* Price Trend Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <LineChartIcon className="w-5 h-5" />
+                    Price Trend Over Time
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={getPriceHistoryChartData(selectedMaterial.id)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis tickFormatter={(value) => `$${value}`} />
+                      <Tooltip
+                        formatter={(value: any) => `$${value.toFixed(2)}`}
+                        labelFormatter={(label, payload) => {
+                          if (payload && payload[0]) {
+                            return new Date(payload[0].payload.fullDate).toLocaleDateString();
+                          }
+                          return label;
+                        }}
+                      />
+                      <Legend />
+                      {vendors.map((vendor, idx) => (
+                        <Line
+                          key={vendor.id}
+                          type="monotone"
+                          dataKey={vendor.name}
+                          stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                          strokeWidth={2}
+                          dot={{ r: 4 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* Vendor Comparison */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Vendor Price Comparison
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={getVendorComparisonData(selectedMaterial.id)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="vendor" />
+                      <YAxis tickFormatter={(value) => `$${value}`} />
+                      <Tooltip formatter={(value: any) => `$${value.toFixed(2)}`} />
+                      <Bar dataKey="price" name="Latest Price">
+                        {getVendorComparisonData(selectedMaterial.id).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* Vendor Details Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Current Vendor Pricing</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <table className="w-full">
+                    <thead className="bg-slate-100 border-b">
+                      <tr>
+                        <th className="text-left p-3 font-semibold">Vendor</th>
+                        <th className="text-right p-3 font-semibold">Latest Price</th>
+                        <th className="text-left p-3 font-semibold">Last Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {getVendorComparisonData(selectedMaterial.id).map((row, idx) => (
+                        <tr key={idx} className={idx === 0 ? 'bg-green-50' : 'hover:bg-slate-50'}>
+                          <td className="p-3 font-medium">
+                            {row.vendor}
+                            {idx === 0 && (
+                              <Badge className="ml-2 bg-green-600 text-white">Best Price</Badge>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-mono font-semibold">
+                            ${row.price.toFixed(2)}
+                          </td>
+                          <td className="p-3 text-muted-foreground">
+                            {new Date(row.date).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
             </div>
           </DialogContent>
         </Dialog>
