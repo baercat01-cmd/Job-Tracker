@@ -109,8 +109,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     notes: '',
   });
   
-  // Proposal markup state
-  const [proposalMarkup, setProposalMarkup] = useState('10');
+  // Individual row markups state
+  const [sheetMarkups, setSheetMarkups] = useState<Record<string, number>>({});
   
   // Labor stats
   const [totalClockInHours, setTotalClockInHours] = useState(0);
@@ -271,6 +271,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         });
         setMaterialSheets([]);
         setSheetLabor({});
+        setSheetMarkups({});
         return;
       }
 
@@ -300,6 +301,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           setSheetLabor(laborMap);
         }
       }
+
+      // Initialize sheet markups (default 10% for materials)
+      const markupsMap: Record<string, number> = {};
+      (sheetsData || []).forEach(sheet => {
+        markupsMap[sheet.id] = 10; // Default 10% markup for materials
+      });
+      setSheetMarkups(markupsMap);
 
       // Get all items for these sheets
       const { data: itemsData, error: itemsError } = await supabase
@@ -969,13 +977,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const totalProfit = totalPrice - totalCost;
   const profitMargin = totalPrice > 0 ? (totalProfit / totalPrice) * 100 : 0;
 
-  // Proposal calculations with markup and tax
-  const markup = parseFloat(proposalMarkup) || 0;
+  // Proposal calculations with individual markups and tax
   const TAX_RATE = 0.07; // 7% tax
   
-  // Materials: cost = original price, price = original price + markup (always taxable)
+  // Materials: calculate with individual sheet markups
   const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
-  const proposalMaterialsPrice = proposalMaterialsCost * (1 + markup / 100);
+  const proposalMaterialsPrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
+    const sheetCost = sheet.totalPrice;
+    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+    return sum + (sheetCost * (1 + sheetMarkup / 100));
+  }, 0);
   
   // Separate custom rows into taxable and non-taxable (using calculated totals)
   const taxableRows = customRows.filter(r => r.taxable);
@@ -985,21 +996,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const lineItems = customRowLineItems[r.id] || [];
     if (lineItems.length > 0) {
       const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
-      return sum + (itemsTotal * (1 + r.markup_percent / 100));
+      return sum + itemsTotal;
     }
-    return sum + r.selling_price;
+    return sum + r.total_cost;
   }, 0);
-  const taxableAdditionalPrice = taxableAdditionalCost * (1 + markup / 100);
+  const taxableAdditionalPrice = taxableRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
+  }, 0);
   
   const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
     if (lineItems.length > 0) {
       const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
-      return sum + (itemsTotal * (1 + r.markup_percent / 100));
+      return sum + itemsTotal;
     }
-    return sum + r.selling_price;
+    return sum + r.total_cost;
   }, 0);
-  const nonTaxableAdditionalPrice = nonTaxableAdditionalCost * (1 + markup / 100);
+  const nonTaxableAdditionalPrice = nonTaxableRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
+  }, 0);
   
   // Labor from sheet labor (no markup, no tax) - calculate total from all sheet labor
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
@@ -1015,13 +1038,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalLaborCost = totalSheetLaborCost + totalCustomRowLaborCost;
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost;
   
-  // Subcontractor estimates (with their individual markups, then proposal markup, taxable)
+  // Subcontractor estimates (with their individual markups, taxable)
   const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
+    return sum + (est.total_amount || 0);
+  }, 0);
+  const proposalSubcontractorPrice = subcontractorEstimates.reduce((sum, est) => {
     const baseAmount = est.total_amount || 0;
     const estMarkup = est.markup_percent || 0;
     return sum + (baseAmount * (1 + estMarkup / 100));
   }, 0);
-  const proposalSubcontractorPrice = subcontractorBaseCost * (1 + markup / 100);
   
   // Calculate subtotals
   const taxableSubtotal = proposalMaterialsPrice + taxableAdditionalPrice + proposalSubcontractorPrice;
@@ -1222,22 +1247,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     if (item.type === 'material') {
                       const sheet = item.data as typeof materialsBreakdown.sheetBreakdowns[0];
                       const sheetCost = sheet.totalPrice;
-                      const sheetPrice = sheetCost * (1 + markup / 100);
+                      const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+                      const sheetPrice = sheetCost * (1 + sheetMarkup / 100);
 
                       return (
                         <div key={item.id}>
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-4 border-b">
-                                  {/* Left: Chevron + Title + Labor */}
-                                  <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
-                                    <ChevronDown className="w-5 h-5 text-slate-700 mt-1" />
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
+                                  {/* Left: Chevron + Title - FIXED WIDTH */}
+                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
                                     <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
-                                      {/* Labor info if exists */}
                                       {sheetLabor[sheet.sheetId] && (
-                                        <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
+                                        <p className="text-sm text-amber-700 font-semibold">Labor</p>
                                       )}
                                     </div>
                                   </div>
@@ -1249,15 +1274,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Actions Menu */}
-                                  <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '420px' }}>
+                                    {/* Editable Markup */}
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={sheetMarkup}
+                                        onChange={(e) => {
+                                          const newMarkup = parseFloat(e.target.value) || 0;
+                                          setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                                        }}
+                                        className="w-16 h-8 text-sm text-center"
+                                      />
+                                      <span className="text-xs font-semibold text-green-700">%</span>
+                                    </div>
+                                    
                                     <div className="text-right flex-1">
                                       <div className="flex items-center justify-end gap-2 mb-1">
                                         <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                        <p className="text-xs font-semibold text-green-700">+{markup.toFixed(1)}%</p>
                                       </div>
                                       <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      {/* Labor amount under price */}
                                       {sheetLabor[sheet.sheetId] && (
                                         <p className="text-sm text-amber-700 font-semibold mt-1">
                                           ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
@@ -1325,8 +1364,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const lineItems = subcontractorLineItems[est.id] || [];
                       const estCost = est.total_amount || 0;
                       const estMarkup = est.markup_percent || 0;
-                      const costWithMarkup = estCost * (1 + estMarkup / 100);
-                      const finalPrice = costWithMarkup * (1 + markup / 100);
+                      const finalPrice = estCost * (1 + estMarkup / 100);
 
                       // Group line items by category
                       const itemsByCategory = lineItems.reduce((acc: Record<string, any[]>, item: any) => {
@@ -1355,17 +1393,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
-                                  <div className="flex items-center gap-3 flex-1">
-                                    <ChevronDown className="w-5 h-5 text-slate-700" />
-                                    <div className="flex-1">
-                                      <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
+                                  {/* Left: Chevron + Title - FIXED WIDTH */}
+                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="text-lg font-bold text-slate-900 truncate">{est.company_name || 'Subcontractor'}</h3>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-3">
+
+                                  {/* Middle: Description/Notes */}
+                                  <div className="flex-1 min-w-0 px-4">
+                                    <p className="text-sm text-slate-600 italic">
+                                      {est.scope_of_work || '(No description provided)'}
+                                    </p>
+                                  </div>
+
+                                  {/* Right: Markup + Pricing */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '420px' }}>
                                     {/* Editable Markup */}
-                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                      <Label className="text-xs text-slate-600">Markup:</Label>
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                       <Input
                                         type="number"
                                         min="0"
@@ -1386,13 +1433,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             toast.error('Failed to update markup');
                                           }
                                         }}
-                                        className="w-20 h-8 text-sm"
+                                        className="w-16 h-8 text-sm text-center"
                                       />
                                       <span className="text-xs font-semibold text-green-700">%</span>
                                     </div>
-                                    <div className="text-right">
-                                      <p className="text-xs text-slate-600">Included items: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      <p className="text-2xl font-bold text-green-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    
+                                    <div className="text-right flex-1">
+                                      <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                   </div>
                                 </div>
@@ -1461,10 +1509,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const hasLineItems = lineItems.length > 0;
                       
                       // Calculate total from line items or use row total
-                      const rowCost = hasLineItems 
-                        ? lineItems.reduce((sum, item) => sum + item.total_cost, 0) * (1 + row.markup_percent / 100)
-                        : row.selling_price;
-                      const rowPrice = rowCost * (1 + markup / 100);
+                      const baseCost = hasLineItems 
+                        ? lineItems.reduce((sum, item) => sum + item.total_cost, 0)
+                        : row.total_cost;
+                      const rowPrice = baseCost * (1 + row.markup_percent / 100);
                       const rowLabor = customRowLabor[row.id];
 
                       return (
@@ -1472,40 +1520,62 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
-                                  {/* Left: Chevron + Row Name */}
-                                  <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
-                                    <ChevronDown className="w-5 h-5 text-slate-700 mt-1" />
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
+                                  {/* Left: Chevron + Title - FIXED WIDTH */}
+                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
                                     <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate">{row.description}</h3>
                                       {hasLineItems && (
                                         <p className="text-xs text-slate-600">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
                                       )}
                                       {rowLabor && (
-                                        <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
+                                        <p className="text-sm text-amber-700 font-semibold">Labor</p>
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* Middle: Description/Notes - More Space */}
+                                  {/* Middle: Description/Notes */}
                                   <div className="flex-1 min-w-0 px-4">
                                     <p className="text-sm text-slate-600 italic">
                                       {row.notes && !rowLabor ? row.notes : '(No description provided)'}
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Actions Menu */}
-                                  <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '420px' }}>
+                                    {/* Editable Markup */}
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={row.markup_percent}
+                                        onChange={async (e) => {
+                                          const newMarkup = parseFloat(e.target.value) || 0;
+                                          try {
+                                            const { error } = await supabase
+                                              .from('custom_financial_rows')
+                                              .update({ markup_percent: newMarkup })
+                                              .eq('id', row.id);
+                                            
+                                            if (error) throw error;
+                                            await loadCustomRows();
+                                          } catch (error: any) {
+                                            console.error('Error updating markup:', error);
+                                            toast.error('Failed to update markup');
+                                          }
+                                        }}
+                                        className="w-16 h-8 text-sm text-center"
+                                      />
+                                      <span className="text-xs font-semibold text-green-700">%</span>
+                                    </div>
+                                    
                                     <div className="text-right flex-1">
                                       <div className="flex items-center justify-end gap-2 mb-1">
-                                        <p className="text-xs text-slate-600">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                        {row.markup_percent > 0 && (
-                                          <p className="text-xs font-semibold text-green-700">+{row.markup_percent.toFixed(1)}%</p>
-                                        )}
-                                        <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
+                                        <p className="text-xs text-slate-600">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       </div>
                                       <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      {/* Labor amount under price */}
                                       {rowLabor && (
                                         <p className="text-sm text-amber-700 font-semibold mt-1">
                                           ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
