@@ -858,59 +858,60 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             ) : (
               <div className="space-y-2">
                 {vendors.map(vendor => {
-                  const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
-                  const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
-                  const pricesCount = materialsWithPrices.size;
-
                   return (
                     <Card key={vendor.id} className="border hover:border-blue-300 transition-colors">
-                      <CardContent className="p-3">
+                      <CardContent className="p-2">
                         <div className="space-y-2">
-                          {vendor.logo_url && (
-                            <img 
-                              src={vendor.logo_url} 
-                              alt={vendor.name}
-                              className="h-10 w-auto object-contain mx-auto"
-                            />
-                          )}
-                          <div className="text-center">
-                            <h4 className="font-semibold text-sm truncate">{vendor.name}</h4>
-                            <Badge variant="secondary" className="text-xs mt-1">
-                              {pricesCount}/{filteredMaterials.length}
-                            </Badge>
+                          {/* Vendor Logo and Name */}
+                          <div className="flex items-center gap-2">
+                            {vendor.logo_url && (
+                              <img 
+                                src={vendor.logo_url} 
+                                alt={vendor.name}
+                                className="h-8 w-auto object-contain flex-shrink-0"
+                              />
+                            )}
+                            <h4 className="font-semibold text-xs truncate flex-1">{vendor.name}</h4>
                           </div>
                           
-                          <Button
-                            size="sm"
-                            variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
-                            onClick={() => {
-                              setSelectedVendorTab(vendor.id);
-                              openVendorPricing(vendor);
-                            }}
-                            className="w-full"
-                          >
-                            <DollarSign className="w-3 h-3 mr-1" />
-                            Price
-                          </Button>
-                          
-                          <div className="grid grid-cols-2 gap-1">
+                          {/* All Buttons in One Row */}
+                          <div className="flex gap-1">
                             <Button
-                              variant="ghost"
                               size="sm"
-                              onClick={() => openVendorHistory(vendor)}
-                              className="text-xs"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                console.log('Price button clicked for:', vendor.name);
+                                setSelectedVendorTab(vendor.id);
+                                openVendorPricing(vendor);
+                              }}
+                              className="flex-1 h-7 px-2 text-xs"
                             >
-                              <Calendar className="w-3 h-3 mr-1" />
-                              History
+                              <DollarSign className="w-3 h-3" />
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={() => generateShareLink(vendor)}
-                              className="text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                console.log('History button clicked for:', vendor.name);
+                                openVendorHistory(vendor);
+                              }}
+                              className="flex-1 h-7 px-2 text-xs"
                             >
-                              <Share2 className="w-3 h-3 mr-1" />
-                              Share
+                              <Calendar className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                console.log('Share button clicked for:', vendor.name);
+                                generateShareLink(vendor);
+                              }}
+                              className="flex-1 h-7 px-2 text-xs"
+                            >
+                              <Share2 className="w-3 h-3" />
                             </Button>
                           </div>
                         </div>
