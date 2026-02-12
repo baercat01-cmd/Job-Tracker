@@ -55,6 +55,7 @@ export function VendorPricingForm() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
   const [prices, setPrices] = useState<Record<string, { price: string; unitType: string; unitValue: string; notes: string }>>({});
+  const [generalNotes, setGeneralNotes] = useState('');
 
   useEffect(() => {
     loadVendorLink();
@@ -302,7 +303,7 @@ export function VendorPricingForm() {
                 </thead>
                 <tbody className="divide-y">
                   {materials.map((material, idx) => {
-                    const priceData = prices[material.id] || { price: '', unitType: 'per_piece', unitValue: '', notes: '' };
+                    const priceData = prices[material.id] || { price: '', unitType: 'unit', unitValue: '1', notes: '' };
                     const isEven = idx % 2 === 0;
 
                     return (
@@ -329,18 +330,6 @@ export function VendorPricingForm() {
                         </td>
                         <td className="p-3">
                           <div className="flex gap-2">
-                            <Select
-                              value={priceData.unitType || 'per_piece'}
-                              onValueChange={(value) => updatePrice(material.id, 'unitType', value)}
-                            >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="per_piece">Per Piece</SelectItem>
-                                <SelectItem value="unit">Unit</SelectItem>
-                              </SelectContent>
-                            </Select>
                             {priceData.unitType === 'unit' && (
                               <Input
                                 type="number"
@@ -351,6 +340,18 @@ export function VendorPricingForm() {
                                 className="w-24"
                               />
                             )}
+                            <Select
+                              value={priceData.unitType || 'unit'}
+                              onValueChange={(value) => updatePrice(material.id, 'unitType', value)}
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="per_piece">Per Piece</SelectItem>
+                                <SelectItem value="unit">Unit</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </td>
                         <td className="p-3">
@@ -367,6 +368,21 @@ export function VendorPricingForm() {
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Optional Notes */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Additional Notes (Optional)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              value={generalNotes}
+              onChange={(e) => setGeneralNotes(e.target.value)}
+              placeholder="Any additional comments, special instructions, or notes about your pricing..."
+              className="min-h-[100px]"
+            />
           </CardContent>
         </Card>
 
