@@ -7,13 +7,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
   CheckCircle,
   Package,
   DollarSign,
   Calendar,
-  Building2,
   Send,
   AlertCircle,
   Loader2,
@@ -48,7 +54,7 @@ export function VendorPricingForm() {
   const [vendorLink, setVendorLink] = useState<VendorLink | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
-  const [prices, setPrices] = useState<Record<string, { price: string; truckload: string; notes: string }>>({});
+  const [prices, setPrices] = useState<Record<string, { price: string; unitType: string; unitValue: string; notes: string }>>({});
 
   useEffect(() => {
     loadVendorLink();
@@ -117,7 +123,7 @@ export function VendorPricingForm() {
     }
   }
 
-  function updatePrice(materialId: string, field: 'price' | 'truckload' | 'notes', value: string) {
+  function updatePrice(materialId: string, field: 'price' | 'unitType' | 'unitValue' | 'notes', value: string) {
     setPrices(prev => ({
       ...prev,
       [materialId]: {
@@ -132,15 +138,25 @@ export function VendorPricingForm() {
 
     const pricesToSubmit = Object.entries(prices)
       .filter(([_, data]) => data.price && parseFloat(data.price) > 0)
-      .map(([materialId, data]) => ({
-        material_id: materialId,
-        vendor_id: vendorLink.vendor_id,
-        price_per_unit: parseFloat(data.price),
-        truckload_quantity: data.truckload ? parseInt(data.truckload) : null,
-        effective_date: effectiveDate,
-        notes: data.notes || null,
-        created_by: null, // Vendor submission
-      }));
+      .map(([materialId, data]) => {
+        // Build truckload quantity from unit type and value
+        let truckloadQty = null;
+        if (data.unitType === 'per_piece') {
+          truckloadQty = null; // Per piece doesn't need truckload
+        } else if (data.unitType === 'unit' && data.unitValue) {
+          truckloadQty = parseInt(data.unitValue);
+        }
+        
+        return {
+          material_id: materialId,
+          vendor_id: vendorLink.vendor_id,
+          price_per_unit: parseFloat(data.price),
+          truckload_quantity: truckloadQty,
+          effective_date: effectiveDate,
+          notes: data.notes || null,
+          created_by: null, // Vendor submission
+        };
+      });
 
     if (pricesToSubmit.length === 0) {
       toast.error('Please enter at least one price');
@@ -221,37 +237,26 @@ export function VendorPricingForm() {
         <Card className="border-blue-200 bg-white shadow-lg">
           <CardHeader>
             <div className="flex items-start justify-between">
-              <div>
-                <CardTitle className="text-2xl flex items-center gap-2 mb-2">
-                  <Building2 className="w-7 h-7 text-blue-600" />
-                  Vendor Pricing Submission
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {vendorLink.vendor?.name} - {vendorLink.category === 'lumber' ? 'Lumber' : 'Rebar'} Pricing
-                </p>
+              <div className="flex items-center gap-4">
+                <img 
+                  src="/tri-state-logo.png" 
+                  alt="Tri-State Forest Products" 
+                  className="h-16 w-auto"
+                />
+                <div>
+                  <CardTitle className="text-2xl mb-2">
+                    Vendor Pricing Submission
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {vendorLink.vendor?.name} - {vendorLink.category === 'lumber' ? 'Lumber' : 'Rebar'} Pricing
+                  </p>
+                </div>
               </div>
               <Badge className="bg-blue-100 text-blue-800 border-blue-300">
                 {materials.length} Materials
               </Badge>
             </div>
           </CardHeader>
-        </Card>
-
-        {/* Instructions */}
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="pt-6">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Package className="w-4 h-4 text-blue-600" />
-              Instructions
-            </h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>• Enter your current pricing for each material</li>
-              <li>• Include truckload quantities if applicable</li>
-              <li>• Add any notes about pricing or availability</li>
-              <li>• Leave blank any materials you don't carry</li>
-              <li>• Click "Submit Prices" when complete</li>
-            </ul>
-          </CardContent>
         </Card>
 
         {/* Effective Date */}
@@ -291,13 +296,13 @@ export function VendorPricingForm() {
                     <th className="text-left p-3 font-semibold">Material</th>
                     <th className="text-center p-3 font-semibold w-24">Length</th>
                     <th className="text-left p-3 font-semibold w-40">Price per {materials[0]?.unit || 'Unit'} ($)</th>
-                    <th className="text-left p-3 font-semibold w-32">Truckload Qty</th>
+                    <th className="text-left p-3 font-semibold w-48">Pricing Unit</th>
                     <th className="text-left p-3 font-semibold">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {materials.map((material, idx) => {
-                    const priceData = prices[material.id] || { price: '', truckload: '', notes: '' };
+                    const priceData = prices[material.id] || { price: '', unitType: 'per_piece', unitValue: '', notes: '' };
                     const isEven = idx % 2 === 0;
 
                     return (
@@ -323,14 +328,30 @@ export function VendorPricingForm() {
                           />
                         </td>
                         <td className="p-3">
-                          <Input
-                            type="number"
-                            min="0"
-                            value={priceData.truckload}
-                            onChange={(e) => updatePrice(material.id, 'truckload', e.target.value)}
-                            placeholder="Optional"
-                            className="w-full"
-                          />
+                          <div className="flex gap-2">
+                            <Select
+                              value={priceData.unitType || 'per_piece'}
+                              onValueChange={(value) => updatePrice(material.id, 'unitType', value)}
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="per_piece">Per Piece</SelectItem>
+                                <SelectItem value="unit">Unit</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {priceData.unitType === 'unit' && (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={priceData.unitValue}
+                                onChange={(e) => updatePrice(material.id, 'unitValue', e.target.value)}
+                                placeholder="Qty"
+                                className="w-24"
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="p-3">
                           <Input
