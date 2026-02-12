@@ -97,6 +97,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
   const [sheetLabor, setSheetLabor] = useState<Record<string, any>>({});
 
+  // Labor dialog state
+  const [showLaborDialog, setShowLaborDialog] = useState(false);
+  const [editingLaborSheetId, setEditingLaborSheetId] = useState<string | null>(null);
+  const [laborForm, setLaborForm] = useState({
+    description: 'Labor & Installation',
+    estimated_hours: 0,
+    hourly_rate: 60,
+    notes: '',
+  });
+
   // Subcontractor estimates
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
 
@@ -561,6 +571,86 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error saving sheet description:', error);
       toast.error('Failed to save description');
+    }
+  }
+
+  function openLaborDialog(sheetId: string) {
+    const existingLabor = sheetLabor[sheetId];
+    setEditingLaborSheetId(sheetId);
+    
+    if (existingLabor) {
+      setLaborForm({
+        description: existingLabor.description,
+        estimated_hours: existingLabor.estimated_hours,
+        hourly_rate: existingLabor.hourly_rate,
+        notes: existingLabor.notes || '',
+      });
+    } else {
+      setLaborForm({
+        description: 'Labor & Installation',
+        estimated_hours: 0,
+        hourly_rate: 60,
+        notes: '',
+      });
+    }
+    
+    setShowLaborDialog(true);
+  }
+
+  async function saveSheetLabor() {
+    if (!editingLaborSheetId) return;
+
+    const existingLabor = sheetLabor[editingLaborSheetId];
+    const laborData = {
+      sheet_id: editingLaborSheetId,
+      description: laborForm.description,
+      estimated_hours: laborForm.estimated_hours,
+      hourly_rate: laborForm.hourly_rate,
+      notes: laborForm.notes || null,
+    };
+
+    try {
+      if (existingLabor) {
+        const { error } = await supabase
+          .from('material_sheet_labor')
+          .update(laborData)
+          .eq('id', existingLabor.id);
+
+        if (error) throw error;
+        toast.success('Labor updated');
+      } else {
+        const { error } = await supabase
+          .from('material_sheet_labor')
+          .insert([laborData]);
+
+        if (error) throw error;
+        toast.success('Labor added');
+      }
+
+      setShowLaborDialog(false);
+      await loadMaterialsData();
+    } catch (error: any) {
+      console.error('Error saving labor:', error);
+      toast.error('Failed to save labor');
+    }
+  }
+
+  async function deleteSheetLabor(laborId: string) {
+    if (!confirm('Delete labor for this section?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('material_sheet_labor')
+        .delete()
+        .eq('id', laborId);
+
+      if (error) throw error;
+      toast.success('Labor deleted');
+      
+      await loadMaterialsData();
+    } catch (error: any) {
+      console.error('Error deleting labor:', error);
+      toast.error('Failed to delete labor');
     }
   }
 
@@ -1052,8 +1142,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Edit Button */}
-                                  <div className="flex items-center gap-3" style={{ minWidth: '280px' }}>
+                                  {/* Right: Pricing + Edit Buttons */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
                                     <div className="text-right flex-1">
                                       <div className="flex items-center justify-end gap-2 mb-1">
                                         <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
@@ -1066,8 +1156,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                       variant="ghost"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        openLaborDialog(sheet.sheetId);
+                                      }}
+                                      title={sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                                    >
+                                      <Clock className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
                                       }}
+                                      title="Edit Description"
                                     >
                                       <Edit className="w-4 h-4" />
                                     </Button>
@@ -1270,6 +1372,100 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 Save Description
               </Button>
               <Button variant="outline" onClick={() => setShowSheetDescDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Labor Dialog */}
+      <Dialog open={showLaborDialog} onOpenChange={setShowLaborDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              {sheetLabor[editingLaborSheetId || ''] ? 'Edit' : 'Add'} Labor
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={laborForm.description}
+                onChange={(e) => setLaborForm({ ...laborForm, description: e.target.value })}
+                placeholder="Labor & Installation"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Estimated Hours</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={laborForm.estimated_hours}
+                  onChange={(e) => setLaborForm({ ...laborForm, estimated_hours: parseFloat(e.target.value) || 0 })}
+                  placeholder="40"
+                />
+              </div>
+              <div>
+                <Label>Hourly Rate ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={laborForm.hourly_rate}
+                  onChange={(e) => setLaborForm({ ...laborForm, hourly_rate: parseFloat(e.target.value) || 60 })}
+                  placeholder="60.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={laborForm.notes}
+                onChange={(e) => setLaborForm({ ...laborForm, notes: e.target.value })}
+                placeholder="Additional notes about this labor..."
+                rows={3}
+              />
+            </div>
+
+            {/* Preview */}
+            {laborForm.estimated_hours > 0 && laborForm.hourly_rate > 0 && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Labor Cost</p>
+                    <p className="text-2xl font-bold text-amber-700">
+                      ${(laborForm.estimated_hours * laborForm.hourly_rate).toFixed(2)}
+                    </p>
+                  </div>
+                  <DollarSign className="w-8 h-8 text-amber-500" />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t">
+              {sheetLabor[editingLaborSheetId || ''] && (
+                <Button
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => {
+                    deleteSheetLabor(sheetLabor[editingLaborSheetId || ''].id);
+                    setShowLaborDialog(false);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              )}
+              <Button onClick={saveSheetLabor} className="flex-1">
+                {sheetLabor[editingLaborSheetId || ''] ? 'Update' : 'Add'} Labor
+              </Button>
+              <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
                 Cancel
               </Button>
             </div>
