@@ -1171,7 +1171,486 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         </div>
       </div>
 
-{/* ...remaining code stays the same until the submission history table sorting... */}
+      {/* Vendor Pricing Dialog */}
+      <Dialog open={showVendorPricingDialog} onOpenChange={setShowVendorPricingDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Enter Prices for {selectedVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Effective Date</Label>
+              <Input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+              />
+            </div>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="text-left p-3">Material</th>
+                    {category === 'lumber' && <th className="text-left p-3">MBF Price</th>}
+                    <th className="text-left p-3">Price/Piece</th>
+                    <th className="text-left p-3">Units</th>
+                    <th className="text-left p-3">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredMaterials.map(material => {
+                    const boardFeet = category === 'lumber' && material.unit === 'board foot'
+                      ? calculateBoardFeet(material.name, material.standard_length)
+                      : null;
+                    return (
+                      <tr key={material.id}>
+                        <td className="p-3">
+                          <div className="font-medium">{material.name}</div>
+                          {boardFeet && (
+                            <div className="text-xs text-muted-foreground">
+                              {boardFeet.toFixed(2)} BF/piece
+                            </div>
+                          )}
+                        </td>
+                        {category === 'lumber' && (
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={bulkPrices[material.id]?.mbf || ''}
+                              onChange={(e) => updateBulkPrice(material.id, 'mbf', e.target.value)}
+                            />
+                          </td>
+                        )}
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={bulkPrices[material.id]?.perUnit || ''}
+                            onChange={(e) => updateBulkPrice(material.id, 'perUnit', e.target.value)}
+                            readOnly={category === 'lumber' && !!(boardFeet && bulkPrices[material.id]?.mbf)}
+                            className={category === 'lumber' && boardFeet && bulkPrices[material.id]?.mbf ? 'bg-slate-50' : ''}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            placeholder="Units"
+                            value={bulkPrices[material.id]?.truckload || ''}
+                            onChange={(e) => updateBulkPrice(material.id, 'truckload', e.target.value)}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <Input
+                            placeholder="Notes"
+                            value={bulkPrices[material.id]?.notes || ''}
+                            onChange={(e) => updateBulkPrice(material.id, 'notes', e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowVendorPricingDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveBulkPrices}>
+                <DollarSign className="w-4 h-4 mr-2" />
+                Save Prices
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vendor History Dialog */}
+      <Dialog open={showVendorHistoryDialog} onOpenChange={setShowVendorHistoryDialog}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Submission History - {historyVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {historyVendor && getVendorSubmissionHistory(historyVendor.id).map((submission, idx) => {
+              // Group entries by shipment color
+              const colorGroups: Record<string, typeof submission.entries> = {};
+              const noColorEntries: typeof submission.entries = [];
+              
+              submission.entries.forEach(entry => {
+                if (entry.shipment_group_color) {
+                  if (!colorGroups[entry.shipment_group_color]) {
+                    colorGroups[entry.shipment_group_color] = [];
+                  }
+                  colorGroups[entry.shipment_group_color].push(entry);
+                } else {
+                  noColorEntries.push(entry);
+                }
+              });
+
+              const colorClasses: Record<string, string> = {
+                blue: 'bg-blue-100 border-blue-400',
+                green: 'bg-green-100 border-green-400',
+                orange: 'bg-orange-100 border-orange-400',
+                purple: 'bg-purple-100 border-purple-400',
+                red: 'bg-red-100 border-red-400',
+                yellow: 'bg-yellow-100 border-yellow-400',
+                pink: 'bg-pink-100 border-pink-400',
+                teal: 'bg-teal-100 border-teal-400',
+              };
+
+              return (
+                <div key={idx} className="border rounded-lg p-4 bg-slate-50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="font-semibold text-lg">
+                        {new Date(submission.submissionDate).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {submission.totalItems} materials submitted
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Shipment Color Groups */}
+                  {Object.entries(colorGroups).map(([color, entries], groupIdx) => {
+                    const colorClass = colorClasses[color] || 'bg-gray-100 border-gray-400';
+                    return (
+                      <div key={groupIdx} className={`mb-4 p-3 rounded-lg border-2 ${colorClass}`}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Truck className="w-4 h-4" />
+                          <span className="font-semibold">
+                            Combined Shipment Group {groupIdx + 1} ({color})
+                          </span>
+                          <Badge variant="secondary">{entries.length} materials</Badge>
+                        </div>
+                        <table className="w-full">
+                          <thead className="text-xs bg-white/50">
+                            <tr>
+                              <th className="text-left p-2">Material</th>
+                              {category === 'lumber' && <th className="text-left p-2">MBF Price</th>}
+                              <th className="text-left p-2">Price/Piece</th>
+                              <th className="text-left p-2">Units</th>
+                              <th className="text-left p-2">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {entries.map(entry => {
+                              const material = materials.find(m => m.id === entry.material_id);
+                              return (
+                                <tr key={entry.id} className="border-t">
+                                  <td className="p-2 font-medium">{material?.name}</td>
+                                  {category === 'lumber' && (
+                                    <td className="p-2">
+                                      {entry.mbf_price ? `$${entry.mbf_price.toFixed(2)}` : '-'}
+                                    </td>
+                                  )}
+                                  <td className="p-2 font-semibold text-green-700">
+                                    ${entry.price_per_unit.toFixed(2)}
+                                  </td>
+                                  <td className="p-2">
+                                    {entry.truckload_quantity || '-'}
+                                  </td>
+                                  <td className="p-2 text-xs text-muted-foreground">
+                                    {entry.notes || '-'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+
+                  {/* Individual Materials (No Color) */}
+                  {noColorEntries.length > 0 && (
+                    <div className="bg-white rounded-lg border">
+                      <table className="w-full">
+                        <thead className="text-xs bg-slate-100">
+                          <tr>
+                            <th className="text-left p-2">Material</th>
+                            {category === 'lumber' && <th className="text-left p-2">MBF Price</th>}
+                            <th className="text-left p-2">Price/Piece</th>
+                            <th className="text-left p-2">Units</th>
+                            <th className="text-left p-2">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-sm">
+                          {noColorEntries.map(entry => {
+                            const material = materials.find(m => m.id === entry.material_id);
+                            return (
+                              <tr key={entry.id} className="border-t">
+                                <td className="p-2 font-medium">{material?.name}</td>
+                                {category === 'lumber' && (
+                                  <td className="p-2">
+                                    {entry.mbf_price ? `$${entry.mbf_price.toFixed(2)}` : '-'}
+                                  </td>
+                                )}
+                                <td className="p-2 font-semibold text-green-700">
+                                  ${entry.price_per_unit.toFixed(2)}
+                                </td>
+                                <td className="p-2">
+                                  {entry.truckload_quantity || '-'}
+                                </td>
+                                <td className="p-2 text-xs text-muted-foreground">
+                                  {entry.notes || '-'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Link Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5" />
+              Share Pricing Link - {shareVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {generatingLink ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+                <p className="text-muted-foreground">Generating shareable link...</p>
+              </div>
+            ) : shareLink ? (
+              <>
+                <div>
+                  <Label>Shareable Link</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input value={shareLink} readOnly className="font-mono text-sm" />
+                    <Button onClick={copyToClipboard} size="icon">
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={() => window.open(shareLink, '_blank')}
+                      size="icon"
+                      variant="outline"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    ✅ Link created successfully! Share this link with {shareVendor?.name} to submit their pricing.
+                  </p>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Settings
+            </DialogTitle>
+          </DialogHeader>
+          <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'materials' | 'vendors')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="materials">Materials</TabsTrigger>
+              <TabsTrigger value="vendors">Vendors</TabsTrigger>
+            </TabsList>
+            <TabsContent value="materials" className="space-y-4">
+              <div>
+                <h3 className="font-semibold mb-2">Add/Edit Material</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Material Name</Label>
+                    <Input
+                      value={materialForm.name}
+                      onChange={(e) => setMaterialForm({ ...materialForm, name: e.target.value })}
+                      placeholder="2x4 SPF"
+                    />
+                  </div>
+                  <div>
+                    <Label>Unit</Label>
+                    <Select
+                      value={materialForm.unit}
+                      onValueChange={(v) => setMaterialForm({ ...materialForm, unit: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="board foot">Board Foot</SelectItem>
+                        <SelectItem value="linear foot">Linear Foot</SelectItem>
+                        <SelectItem value="piece">Piece</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Standard Length (ft)</Label>
+                    <Input
+                      type="number"
+                      value={materialForm.standard_length}
+                      onChange={(e) => setMaterialForm({ ...materialForm, standard_length: parseInt(e.target.value) || 16 })}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={saveMaterial} className="w-full">
+                      {editingMaterial ? 'Update' : 'Add'} Material
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">Existing Materials</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredMaterials.map(material => (
+                    <div key={material.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{material.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {material.unit} • {material.standard_length}ft
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openMaterialForm(material)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600"
+                          onClick={() => deleteMaterial(material)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="vendors" className="space-y-4">
+              <div>
+                <h3 className="font-semibold mb-2">Add/Edit Vendor</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Vendor Name</Label>
+                    <Input
+                      value={vendorForm.name}
+                      onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
+                      placeholder="Tri-State Lumber"
+                    />
+                  </div>
+                  <div>
+                    <Label>Contact Name</Label>
+                    <Input
+                      value={vendorForm.contact_name}
+                      onChange={(e) => setVendorForm({ ...vendorForm, contact_name: e.target.value })}
+                      placeholder="John Smith"
+                    />
+                  </div>
+                  <div>
+                    <Label>Phone</Label>
+                    <Input
+                      value={vendorForm.phone}
+                      onChange={(e) => setVendorForm({ ...vendorForm, phone: e.target.value })}
+                      placeholder="555-1234"
+                    />
+                  </div>
+                  <div>
+                    <Label>Email</Label>
+                    <Input
+                      value={vendorForm.email}
+                      onChange={(e) => setVendorForm({ ...vendorForm, email: e.target.value })}
+                      placeholder="contact@vendor.com"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label>Logo URL</Label>
+                    <Input
+                      value={vendorForm.logo_url}
+                      onChange={(e) => setVendorForm({ ...vendorForm, logo_url: e.target.value })}
+                      placeholder="https://example.com/logo.png"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Button onClick={saveVendor} className="w-full">
+                      {editingVendor ? 'Update' : 'Add'} Vendor
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">Existing Vendors</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {vendors.map(vendor => (
+                    <div key={vendor.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        {vendor.logo_url && (
+                          <img src={vendor.logo_url} alt={vendor.name} className="h-8 w-auto" />
+                        )}
+                        <div>
+                          <div className="font-medium">{vendor.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {vendor.contact_name || 'No contact'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openVendorForm(vendor)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600"
+                          onClick={() => deleteVendor(vendor)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
