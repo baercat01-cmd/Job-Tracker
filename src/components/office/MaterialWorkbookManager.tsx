@@ -912,9 +912,49 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Info Banner for Working Workbooks */}
+              {viewingWorkbook.status === 'working' && (
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-600 text-white p-2 rounded-full">
+                      <Edit className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-blue-900">Working Version - Full Edit Mode</h3>
+                      <p className="text-sm text-blue-700 mt-1">
+                        You can add/delete sheets, add materials from catalog, and edit all content in this workbook.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mt-3">
+                    <div className="bg-white rounded-lg p-3 border border-blue-200">
+                      <div className="flex items-center gap-2 text-blue-700 font-medium text-sm">
+                        <Plus className="w-4 h-4" />
+                        Add Sheet
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Click "Add Sheet" button below</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-blue-200">
+                      <div className="flex items-center gap-2 text-blue-700 font-medium text-sm">
+                        <X className="w-4 h-4" />
+                        Delete Sheet
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Hover over sheet tabs to delete</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-blue-200">
+                      <div className="flex items-center gap-2 text-blue-700 font-medium text-sm">
+                        <Search className="w-4 h-4" />
+                        Add Materials
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Use "Add from Catalog" button</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Sheet Tabs with Labor Indicators and Add Material Button */}
-              <div className="flex items-center justify-between">
-                <div className="flex gap-2 flex-wrap">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex gap-2 flex-wrap flex-1">
                   {sheets.map((sheet) => {
                     const hasLabor = sheetLabor[sheet.id];
                     const isCurrentSheet = items.length > 0 && items[0]?.sheet_id === sheet.id;
@@ -947,10 +987,10 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                               e.stopPropagation();
                               deleteSheet(sheet);
                             }}
-                            className="absolute right-0 top-0 h-full w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Delete sheet"
+                            className="absolute right-0 top-0 h-full w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white rounded-l-none"
+                            title="Delete this sheet"
                           >
-                            <X className="w-3 h-3 text-red-600" />
+                            <X className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
@@ -963,30 +1003,32 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                       variant="outline"
                       size="sm"
                       onClick={() => setShowAddSheetDialog(true)}
-                      className="border-dashed"
+                      className="border-2 border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold"
                     >
-                      <Plus className="w-4 h-4 mr-1" />
+                      <Plus className="w-5 h-5 mr-1" />
                       Add Sheet
                     </Button>
                   )}
                 </div>
                 
                 {/* Add Material Button */}
-                {viewingWorkbook.status === 'working' && items.length > 0 && sheets.length > 0 && (() => {
-                  const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
-                  if (!currentSheet) return null;
-                  
-                  return (
-                    <Button
-                      size="sm"
-                      onClick={() => openMaterialSearch(currentSheet)}
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      Add from Catalog
-                    </Button>
-                  );
-                })()}
+                <div className="flex gap-2">
+                  {viewingWorkbook.status === 'working' && items.length > 0 && sheets.length > 0 && (() => {
+                    const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
+                    if (!currentSheet) return null;
+                    
+                    return (
+                      <Button
+                        size="default"
+                        onClick={() => openMaterialSearch(currentSheet)}
+                        className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold shadow-lg"
+                      >
+                        <Search className="w-5 h-5 mr-2" />
+                        Add from Catalog
+                      </Button>
+                    );
+                  })()}
+                </div>
               </div>
 
               {items.length > 0 && (
