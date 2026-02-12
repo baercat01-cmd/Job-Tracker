@@ -95,6 +95,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetDescription, setSheetDescription] = useState('');
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
+  const [sheetLabor, setSheetLabor] = useState<Record<string, any>>({});
 
   // Subcontractor estimates
   const [subcontractorEstimates, setSubcontractorEstimates] = useState<any[]>([]);
@@ -208,6 +209,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
         });
         setMaterialSheets([]);
+        setSheetLabor({});
         return;
       }
 
@@ -221,6 +223,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (sheetsError) throw sheetsError;
 
       const sheetIds = (sheetsData || []).map(s => s.id);
+
+      // Get labor data for all sheets
+      const { data: laborData, error: laborError } = await supabase
+        .from('material_sheet_labor')
+        .select('*')
+        .in('sheet_id', sheetIds);
+
+      if (!laborError && laborData) {
+        const laborMap: Record<string, any> = {};
+        laborData.forEach(labor => {
+          laborMap[labor.sheet_id] = labor;
+        });
+        if (JSON.stringify(laborMap) !== JSON.stringify(sheetLabor)) {
+          setSheetLabor(laborMap);
+        }
+      }
 
       // Get all items for these sheets
       const { data: itemsData, error: itemsError } = await supabase
@@ -1001,24 +1019,43 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center justify-between border-b">
-                                  <div className="flex items-center gap-3 flex-1">
-                                    <div className="cursor-grab active:cursor-grabbing">
+                                <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center gap-4 border-b">
+                                  {/* Left: Drag Handle + Chevron + Title + Labor */}
+                                  <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
+                                    <div className="cursor-grab active:cursor-grabbing pt-1">
                                       <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                       </svg>
                                     </div>
-                                    <ChevronDown className="w-5 h-5 text-blue-700" />
-                                    <div className="flex-1">
-                                      <h3 className="text-lg font-bold text-blue-900">{sheet.sheetName}</h3>
-                                      <p className="text-sm text-slate-600 mt-1 italic min-h-[20px]">
-                                        {sheet.sheetDescription || '(No description provided)'}
-                                      </p>
+                                    <ChevronDown className="w-5 h-5 text-blue-700 mt-1" />
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="text-lg font-bold text-blue-900 truncate">{sheet.sheetName}</h3>
+                                      {/* Labor info if exists */}
+                                      {sheetLabor[sheet.sheetId] && (
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <Clock className="w-3 h-3 text-amber-600" />
+                                          <p className="text-xs text-amber-700 font-medium">
+                                            {sheetLabor[sheet.sheetId].estimated_hours} hrs @ ${sheetLabor[sheet.sheetId].hourly_rate}/hr
+                                          </p>
+                                          <Badge variant="outline" className="text-xs bg-amber-50 border-amber-300 text-amber-800">
+                                            ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
+                                          </Badge>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-3">
-                                    <div className="text-right">
-                                      <div className="flex items-center gap-2 mb-1">
+
+                                  {/* Middle: Description */}
+                                  <div className="flex-1 min-w-0 px-4">
+                                    <p className="text-sm text-slate-600 italic">
+                                      {sheet.sheetDescription || '(No description provided)'}
+                                    </p>
+                                  </div>
+
+                                  {/* Right: Pricing + Edit Button */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '280px' }}>
+                                    <div className="text-right flex-1">
+                                      <div className="flex items-center justify-end gap-2 mb-1">
                                         <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                         <p className="text-xs font-semibold text-green-700">+{markup.toFixed(1)}%</p>
                                       </div>
