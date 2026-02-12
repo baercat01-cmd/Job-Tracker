@@ -1203,7 +1203,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                 </div>
               </div>
 
-              {/* Materials Table - only show if items exist */}
+              {/* Materials Table or Empty State */}
               {items.length > 0 ? (
                 <div className="space-y-4">
                   {/* Materials Table */}
@@ -1319,6 +1319,14 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                       </Card>
                     );
                   })()}
+                </div>
+              ) : (
+                <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
+                  <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-slate-400" />
+                  <h3 className="text-lg font-semibold text-slate-700 mb-2">No Materials Yet</h3>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Click "Add Manual Material" or "Search Catalog" above to add items to this sheet
+                  </p>
                 </div>
               )}
             </div>
