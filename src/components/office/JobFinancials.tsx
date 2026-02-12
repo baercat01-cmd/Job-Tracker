@@ -1267,9 +1267,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                           </Badge>
                                         )}
                                       </div>
-                                      {est.scope_of_work && (
-                                        <p className="text-sm text-slate-600 mt-1">{est.scope_of_work}</p>
-                                      )}
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
