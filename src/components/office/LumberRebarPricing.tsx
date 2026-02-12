@@ -283,33 +283,40 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setShowVendorHistoryDialog(true);
   }
 
-  // Get vendor submission history grouped by submission date
+  // Get vendor submission history grouped by actual submission batches
   function getVendorSubmissionHistory(vendorId: string) {
     const vendorPrices = prices
       .filter(p => p.vendor_id === vendorId && materials.find(m => m.id === p.material_id && m.category === category))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    // Group by submission date (created_at date only, not time)
-    const grouped = vendorPrices.reduce((acc, price) => {
-      const submissionDate = new Date(price.created_at).toISOString().split('T')[0];
-      if (!acc[submissionDate]) {
-        acc[submissionDate] = [];
+    // Group by exact submission time (within 1 minute = same batch)
+    const batches: PriceEntry[][] = [];
+    
+    vendorPrices.forEach(price => {
+      const priceTime = new Date(price.created_at).getTime();
+      
+      // Find existing batch within 1 minute
+      const existingBatch = batches.find(batch => {
+        const batchTime = new Date(batch[0].created_at).getTime();
+        return Math.abs(priceTime - batchTime) < 60000; // 1 minute tolerance
+      });
+      
+      if (existingBatch) {
+        existingBatch.push(price);
+      } else {
+        batches.push([price]);
       }
-      acc[submissionDate].push(price);
-      return acc;
-    }, {} as Record<string, PriceEntry[]>);
+    });
 
-    return Object.entries(grouped)
-      .map(([date, entries]) => ({
-        submissionDate: date,
-        entries: entries.sort((a, b) => {
-          const matA = materials.find(m => m.id === a.material_id);
-          const matB = materials.find(m => m.id === b.material_id);
-          return (matA?.name || '').localeCompare(matB?.name || '');
-        }),
-        totalItems: entries.length,
-      }))
-      .sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
+    return batches.map(entries => ({
+      submissionDate: entries[0].created_at,
+      entries: entries.sort((a, b) => {
+        const matA = materials.find(m => m.id === a.material_id);
+        const matB = materials.find(m => m.id === b.material_id);
+        return (matA?.name || '').localeCompare(matB?.name || '');
+      }),
+      totalItems: entries.length,
+    }));
   }
 
   async function saveBulkPrices() {
@@ -823,7 +830,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         </Button>
       </div>
 
-      {/* Vendor Tabs for Adding Prices */}
+      {/* Vendor Cards for Adding Prices */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -837,49 +844,67 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               <p>No vendors added yet. Click Settings to add vendors.</p>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {vendors.map(vendor => {
                 const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
                 const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
                 const pricesCount = materialsWithPrices.size;
 
                 return (
-                  <div key={vendor.id} className="flex items-center gap-2">
-                    <Button
-                      variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
-                      onClick={() => {
-                        setSelectedVendorTab(vendor.id);
-                        openVendorPricing(vendor);
-                      }}
-                      className="flex items-center gap-2"
-                    >
-                      <DollarSign className="w-4 h-4" />
-                      {vendor.name}
-                      <Badge variant="secondary" className="ml-1">
-                        {pricesCount}/{filteredMaterials.length}
-                      </Badge>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openVendorHistory(vendor)}
-                      className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
-                      title="View submission history"
-                    >
-                      <Calendar className="w-4 h-4" />
-                      History
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => generateShareLink(vendor)}
-                      className="flex items-center gap-1 text-green-600 hover:text-green-700"
-                      title="Generate shareable link"
-                    >
-                      <Share2 className="w-4 h-4" />
-                      Share
-                    </Button>
-                  </div>
+                  <Card key={vendor.id} className="border-2 hover:border-blue-300 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3 mb-3">
+                        {vendor.logo_url && (
+                          <img 
+                            src={vendor.logo_url} 
+                            alt={vendor.name}
+                            className="h-12 w-auto object-contain"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg truncate">{vendor.name}</h3>
+                          <Badge variant="secondary" className="mt-1">
+                            {pricesCount}/{filteredMaterials.length} materials
+                          </Badge>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Button
+                          variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
+                          onClick={() => {
+                            setSelectedVendorTab(vendor.id);
+                            openVendorPricing(vendor);
+                          }}
+                          className="w-full flex items-center justify-center gap-2"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                          Add Pricing
+                        </Button>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openVendorHistory(vendor)}
+                            className="flex items-center justify-center gap-1 text-blue-600 hover:text-blue-700"
+                          >
+                            <Calendar className="w-4 h-4" />
+                            History
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => generateShareLink(vendor)}
+                            className="flex items-center justify-center gap-1 text-green-600 hover:text-green-700"
+                          >
+                            <Share2 className="w-4 h-4" />
+                            Share
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
@@ -1361,30 +1386,29 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                 );
               }
 
-              return history.map((submission, idx) => (
+              return history.map((submission) => (
                 <Card key={submission.submissionDate} className="border-2">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg">
-                          #{history.length - idx}
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg">
-                            {new Date(submission.submissionDate).toLocaleDateString('en-US', {
-                              weekday: 'long',
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                            })}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {submission.totalItems} {submission.totalItems === 1 ? 'material' : 'materials'} updated
-                          </p>
-                        </div>
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Calendar className="w-5 h-5 text-blue-600" />
+                          {new Date(submission.submissionDate).toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Submitted at {new Date(submission.submissionDate).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </p>
                       </div>
                       <Badge variant="secondary" className="text-lg px-4 py-2">
-                        {submission.totalItems} items
+                        {submission.totalItems} {submission.totalItems === 1 ? 'item' : 'items'}
                       </Badge>
                     </div>
                   </CardHeader>
