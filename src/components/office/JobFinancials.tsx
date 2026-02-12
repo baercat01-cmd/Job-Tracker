@@ -103,10 +103,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [sheetDescription, setSheetDescription] = useState('');
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
   const [sheetLabor, setSheetLabor] = useState<Record<string, any>>({});
+  const [customRowLabor, setCustomRowLabor] = useState<Record<string, any>>({});
 
   // Labor dialog state
   const [showLaborDialog, setShowLaborDialog] = useState(false);
   const [editingLaborSheetId, setEditingLaborSheetId] = useState<string | null>(null);
+  const [editingLaborRowId, setEditingLaborRowId] = useState<string | null>(null);
   const [laborForm, setLaborForm] = useState({
     description: 'Labor & Installation',
     estimated_hours: 0,
@@ -395,6 +397,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (JSON.stringify(newData) !== JSON.stringify(customRows)) {
       setCustomRows(newData);
     }
+
+    // Load labor data for custom rows (store in notes field as JSON)
+    const laborMap: Record<string, any> = {};
+    newData.forEach(row => {
+      if (row.notes) {
+        try {
+          const parsed = JSON.parse(row.notes);
+          if (parsed.labor) {
+            laborMap[row.id] = parsed.labor;
+          }
+        } catch {
+          // Not JSON, skip
+        }
+      }
+    });
+    setCustomRowLabor(laborMap);
   }
 
   async function loadLaborPricing() {
@@ -598,64 +616,116 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function openLaborDialog(sheetId: string) {
-    const existingLabor = sheetLabor[sheetId];
-    setEditingLaborSheetId(sheetId);
-    
-    if (existingLabor) {
-      setLaborForm({
-        description: existingLabor.description,
-        estimated_hours: existingLabor.estimated_hours,
-        hourly_rate: existingLabor.hourly_rate,
-        notes: existingLabor.notes || '',
-      });
-    } else {
-      setLaborForm({
-        description: 'Labor & Installation',
-        estimated_hours: 0,
-        hourly_rate: 60,
-        notes: '',
-      });
+  function openLaborDialog(sheetId?: string, rowId?: string) {
+    if (sheetId) {
+      const existingLabor = sheetLabor[sheetId];
+      setEditingLaborSheetId(sheetId);
+      setEditingLaborRowId(null);
+      
+      if (existingLabor) {
+        setLaborForm({
+          description: existingLabor.description,
+          estimated_hours: existingLabor.estimated_hours,
+          hourly_rate: existingLabor.hourly_rate,
+          notes: existingLabor.notes || '',
+        });
+      } else {
+        setLaborForm({
+          description: 'Labor & Installation',
+          estimated_hours: 0,
+          hourly_rate: 60,
+          notes: '',
+        });
+      }
+    } else if (rowId) {
+      const existingLabor = customRowLabor[rowId];
+      setEditingLaborRowId(rowId);
+      setEditingLaborSheetId(null);
+      
+      if (existingLabor) {
+        setLaborForm({
+          description: existingLabor.description,
+          estimated_hours: existingLabor.estimated_hours,
+          hourly_rate: existingLabor.hourly_rate,
+          notes: existingLabor.notes || '',
+        });
+      } else {
+        setLaborForm({
+          description: 'Labor & Installation',
+          estimated_hours: 0,
+          hourly_rate: 60,
+          notes: '',
+        });
+      }
     }
     
     setShowLaborDialog(true);
   }
 
   async function saveSheetLabor() {
-    if (!editingLaborSheetId) return;
+    if (editingLaborSheetId) {
+      // Save material sheet labor
+      const existingLabor = sheetLabor[editingLaborSheetId];
+      const laborData = {
+        sheet_id: editingLaborSheetId,
+        description: laborForm.description,
+        estimated_hours: laborForm.estimated_hours,
+        hourly_rate: laborForm.hourly_rate,
+        notes: laborForm.notes || null,
+      };
 
-    const existingLabor = sheetLabor[editingLaborSheetId];
-    const laborData = {
-      sheet_id: editingLaborSheetId,
-      description: laborForm.description,
-      estimated_hours: laborForm.estimated_hours,
-      hourly_rate: laborForm.hourly_rate,
-      notes: laborForm.notes || null,
-    };
+      try {
+        if (existingLabor) {
+          const { error } = await supabase
+            .from('material_sheet_labor')
+            .update(laborData)
+            .eq('id', existingLabor.id);
 
-    try {
-      if (existingLabor) {
+          if (error) throw error;
+          toast.success('Labor updated');
+        } else {
+          const { error } = await supabase
+            .from('material_sheet_labor')
+            .insert([laborData]);
+
+          if (error) throw error;
+          toast.success('Labor added');
+        }
+
+        setShowLaborDialog(false);
+        await loadMaterialsData();
+      } catch (error: any) {
+        console.error('Error saving labor:', error);
+        toast.error('Failed to save labor');
+      }
+    } else if (editingLaborRowId) {
+      // Save custom row labor (store in notes as JSON)
+      try {
+        const row = customRows.find(r => r.id === editingLaborRowId);
+        if (!row) return;
+
+        const laborData = {
+          description: laborForm.description,
+          estimated_hours: laborForm.estimated_hours,
+          hourly_rate: laborForm.hourly_rate,
+          notes: laborForm.notes || '',
+        };
+
+        const notesData = { labor: laborData };
+
         const { error } = await supabase
-          .from('material_sheet_labor')
-          .update(laborData)
-          .eq('id', existingLabor.id);
-
-        if (error) throw error;
-        toast.success('Labor updated');
-      } else {
-        const { error } = await supabase
-          .from('material_sheet_labor')
-          .insert([laborData]);
+          .from('custom_financial_rows')
+          .update({ notes: JSON.stringify(notesData) })
+          .eq('id', editingLaborRowId);
 
         if (error) throw error;
         toast.success('Labor added');
+        setShowLaborDialog(false);
+        await loadCustomRows();
+      } catch (error: any) {
+        console.error('Error saving labor:', error);
+        toast.error('Failed to save labor');
       }
-
-      setShowLaborDialog(false);
-      await loadMaterialsData();
-    } catch (error: any) {
-      console.error('Error saving labor:', error);
-      toast.error('Failed to save labor');
     }
   }
 
@@ -678,7 +748,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function deleteCustomRowLabor(rowId: string) {
+    if (!confirm('Delete labor for this row?')) return;
 
+    try {
+      const { error } = await supabase
+        .from('custom_financial_rows')
+        .update({ notes: null })
+        .eq('id', rowId);
+
+      if (error) throw error;
+      toast.success('Labor deleted');
+      await loadCustomRows();
+    } catch (error: any) {
+      console.error('Error deleting labor:', error);
+      toast.error('Failed to delete labor');
+    }
+  }
 
   async function deleteRow(id: string) {
     if (!confirm('Delete this financial row?')) return;
@@ -759,8 +845,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const labor = sheetLabor[sheet.sheetId];
     return sum + (labor ? labor.total_labor_cost : 0);
   }, 0);
-  const proposalLaborCost = totalSheetLaborCost;
-  const proposalLaborPrice = totalSheetLaborCost;
+  
+  // Labor from custom rows (no markup, no tax)
+  const totalCustomRowLaborCost = Object.values(customRowLabor).reduce((sum: number, labor: any) => {
+    return sum + (labor.estimated_hours * labor.hourly_rate);
+  }, 0);
+  
+  const proposalLaborCost = totalSheetLaborCost + totalCustomRowLaborCost;
+  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost;
   
   // Subcontractor estimates (with their individual markups, then proposal markup, taxable)
   const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
@@ -1106,19 +1198,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   <div className="flex items-center gap-3 flex-1">
                                     <ChevronDown className="w-5 h-5 text-slate-700" />
                                     <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
-                                        {excludedCount > 0 && (
-                                          <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-800">
-                                            {excludedCount} item{excludedCount > 1 ? 's' : ''} excluded
-                                          </Badge>
-                                        )}
-                                        {est.extraction_status === 'completed' && (
-                                          <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-800">
-                                            Extracted
-                                          </Badge>
-                                        )}
-                                      </div>
+                                      <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
@@ -1218,30 +1298,34 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const row = item.data as CustomFinancialRow;
                       const rowCost = row.selling_price;
                       const rowPrice = rowCost * (1 + markup / 100);
+                      const rowLabor = customRowLabor[row.id];
 
                       return (
                         <div key={item.id}>
                           <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
-                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
-                              <div className="flex items-center gap-3 flex-1">
-                                <Clock className="w-5 h-5 text-slate-700" />
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-bold text-slate-900">{row.description}</h3>
-                                    {!row.taxable && (
-                                      <Badge variant="outline" className="bg-slate-100 text-slate-800">
-                                        No Tax
-                                      </Badge>
-                                    )}
-                                    <Badge variant="outline" className="bg-slate-100 text-slate-800 capitalize">
-                                      {categoryLabels[row.category] || row.category}
-                                    </Badge>
-                                  </div>
+                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
+                              {/* Left: Row Name */}
+                              <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
+                                <Clock className="w-5 h-5 text-slate-700 mt-1" />
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-lg font-bold text-slate-900 truncate">{row.description}</h3>
+                                  {rowLabor && (
+                                    <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3">
-                                <div className="text-right">
-                                  <div className="flex items-center gap-2 mb-1">
+
+                              {/* Middle: Description/Notes - More Space */}
+                              <div className="flex-1 min-w-0 px-4">
+                                <p className="text-sm text-slate-600 italic">
+                                  {row.notes && !rowLabor ? row.notes : '(No description provided)'}
+                                </p>
+                              </div>
+
+                              {/* Right: Pricing + Actions Menu */}
+                              <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
+                                <div className="text-right flex-1">
+                                  <div className="flex items-center justify-end gap-2 mb-1">
                                     <p className="text-xs text-slate-600">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     {row.markup_percent > 0 && (
                                       <p className="text-xs font-semibold text-green-700">+{row.markup_percent.toFixed(1)}%</p>
@@ -1249,6 +1333,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
                                   </div>
                                   <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  {/* Labor amount under price */}
+                                  {rowLabor && (
+                                    <p className="text-sm text-amber-700 font-semibold mt-1">
+                                      ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+                                    </p>
+                                  )}
                                 </div>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1257,6 +1347,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openLaborDialog(undefined, row.id)}>
+                                      <Clock className="w-4 h-4 mr-2" />
+                                      {rowLabor ? 'Edit Labor' : 'Add Labor'}
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => openAddDialog(row)}>
                                       <Edit className="w-4 h-4 mr-2" />
                                       Edit
@@ -1379,7 +1473,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5" />
-              {sheetLabor[editingLaborSheetId || ''] ? 'Edit' : 'Add'} Labor
+              {(editingLaborSheetId && sheetLabor[editingLaborSheetId]) || (editingLaborRowId && customRowLabor[editingLaborRowId]) ? 'Edit' : 'Add'} Labor
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -1443,12 +1537,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             )}
 
             <div className="flex gap-3 pt-4 border-t">
-              {sheetLabor[editingLaborSheetId || ''] && (
+              {editingLaborSheetId && sheetLabor[editingLaborSheetId] && (
                 <Button
                   variant="outline"
                   className="text-destructive"
                   onClick={() => {
-                    deleteSheetLabor(sheetLabor[editingLaborSheetId || ''].id);
+                    deleteSheetLabor(sheetLabor[editingLaborSheetId].id);
+                    setShowLaborDialog(false);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              )}
+              {editingLaborRowId && customRowLabor[editingLaborRowId] && (
+                <Button
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => {
+                    deleteCustomRowLabor(editingLaborRowId);
                     setShowLaborDialog(false);
                   }}
                 >
@@ -1457,7 +1564,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </Button>
               )}
               <Button onClick={saveSheetLabor} className="flex-1">
-                {sheetLabor[editingLaborSheetId || ''] ? 'Update' : 'Add'} Labor
+                {(editingLaborSheetId && sheetLabor[editingLaborSheetId]) || (editingLaborRowId && customRowLabor[editingLaborRowId]) ? 'Update' : 'Add'} Labor
               </Button>
               <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
                 Cancel
