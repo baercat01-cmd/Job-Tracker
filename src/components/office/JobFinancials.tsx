@@ -11,6 +11,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -18,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -132,8 +138,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [markupPercent, setMarkupPercent] = useState('0');
   const [notes, setNotes] = useState('');
   const [taxable, setTaxable] = useState(true);
-  const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
-  const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
 
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
@@ -148,10 +152,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     
     // Set up polling for real-time updates (every 5 seconds)
     const pollInterval = setInterval(() => {
-      // Don't poll while dragging
-      if (!draggedRowId) {
         loadData(true); // Silent updates during polling
-      }
     }, 5000);
     
     return () => clearInterval(pollInterval);
@@ -677,120 +678,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function handleDragStart(e: React.DragEvent, itemId: string, itemType: 'material' | 'custom' | 'subcontractor') {
-    const dragData = JSON.stringify({ id: itemId, type: itemType });
-    setDraggedRowId(itemId);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/json', dragData);
-  }
 
-  function handleDragOver(e: React.DragEvent, itemId: string) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverRowId(itemId);
-  }
-
-  function handleDragLeave() {
-    setDragOverRowId(null);
-  }
-
-  async function handleDrop(e: React.DragEvent, targetId: string, targetType: 'material' | 'custom' | 'subcontractor') {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!draggedRowId || draggedRowId === targetId) {
-      setDraggedRowId(null);
-      setDragOverRowId(null);
-      return;
-    }
-
-    try {
-      const dragDataStr = e.dataTransfer.getData('application/json');
-      if (!dragDataStr) {
-        console.error('No drag data found');
-        return;
-      }
-      
-      const dragData = JSON.parse(dragDataStr);
-      const { id: draggedId, type: draggedType } = dragData;
-
-      // Create unified list of all items with their order_index
-      const allItems = [
-        ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
-          id: sheet.sheetId,
-          type: 'material' as const,
-          orderIndex: sheet.orderIndex,
-        })),
-        ...customRows.map(row => ({
-          id: row.id,
-          type: 'custom' as const,
-          orderIndex: row.order_index,
-        })),
-        ...subcontractorEstimates.map(est => ({
-          id: est.id,
-          type: 'subcontractor' as const,
-          orderIndex: est.order_index,
-        })),
-      ].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      // Find the dragged item and target item positions
-      const draggedIndex = allItems.findIndex(item => item.id === draggedId);
-      const targetIndex = allItems.findIndex(item => item.id === targetId);
-      
-      if (draggedIndex === -1 || targetIndex === -1) {
-        console.error('Could not find dragged or target item');
-        return;
-      }
-
-      // Calculate new order index to place dragged item before target
-      let newOrderIndex: number;
-      
-      if (targetIndex === 0) {
-        // Dropping at the very top
-        newOrderIndex = allItems[0].orderIndex / 2;
-      } else {
-        // Place between previous item and target
-        const prevItem = allItems[targetIndex - 1];
-        const targetItem = allItems[targetIndex];
-        newOrderIndex = (prevItem.orderIndex + targetItem.orderIndex) / 2;
-      }
-
-      // Update the appropriate table based on dragged item type
-      if (draggedType === 'material') {
-        const { error } = await supabase
-          .from('material_sheets')
-          .update({ order_index: newOrderIndex })
-          .eq('id', draggedId);
-
-        if (error) throw error;
-      } else if (draggedType === 'custom') {
-        const { error } = await supabase
-          .from('custom_financial_rows')
-          .update({ order_index: newOrderIndex })
-          .eq('id', draggedId);
-
-        if (error) throw error;
-      } else if (draggedType === 'subcontractor') {
-        const { error } = await supabase
-          .from('subcontractor_estimates')
-          .update({ order_index: newOrderIndex })
-          .eq('id', draggedId);
-
-        if (error) throw error;
-      }
-
-      toast.success('Row moved');
-      
-      // Reload data to reflect changes
-      await Promise.all([loadMaterialsData(), loadCustomRows(), loadSubcontractorEstimates()]);
-    } catch (error: any) {
-      console.error('Error reordering row:', error);
-      toast.error(`Failed to reorder row: ${error.message}`);
-    } finally {
-      setDraggedRowId(null);
-      setDragOverRowId(null);
-    }
-  }
 
   async function deleteRow(id: string) {
     if (!confirm('Delete this financial row?')) return;
@@ -1086,30 +974,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const isDragOver = dragOverRowId === sheet.sheetId;
 
                       return (
-                        <div
-                          key={item.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, sheet.sheetId, 'material')}
-                          onDragOver={(e) => handleDragOver(e, sheet.sheetId)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, sheet.sheetId, 'material')}
-                          className={`transition-all ${
-                            isDragging ? 'opacity-50 scale-95' : ''
-                          } ${
-                            isDragOver ? 'border-t-4 border-t-primary' : ''
-                          }`}
-                        >
+                        <div key={item.id}>
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
                                 <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-4 border-b">
-                                  {/* Left: Drag Handle + Chevron + Title + Labor */}
+                                  {/* Left: Chevron + Title + Labor */}
                                   <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
-                                    <div className="cursor-grab active:cursor-grabbing pt-1">
-                                      <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                      </svg>
-                                    </div>
                                     <ChevronDown className="w-5 h-5 text-slate-700 mt-1" />
                                     <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
@@ -1127,7 +998,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Edit Buttons */}
+                                  {/* Right: Pricing + Actions Menu */}
                                   <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
                                     <div className="text-right flex-1">
                                       <div className="flex items-center justify-end gap-2 mb-1">
@@ -1142,28 +1013,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         </p>
                                       )}
                                     </div>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openLaborDialog(sheet.sheetId);
-                                      }}
-                                      title={sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
-                                    >
-                                      <Clock className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
-                                      }}
-                                      title="Edit Description"
-                                    >
-                                      <Edit className="w-4 h-4" />
-                                    </Button>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                        <Button size="sm" variant="ghost">
+                                          <MoreVertical className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openLaborDialog(sheet.sheetId);
+                                          }}
+                                        >
+                                          <Clock className="w-4 h-4 mr-2" />
+                                          {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
+                                          }}
+                                        >
+                                          <Edit className="w-4 h-4 mr-2" />
+                                          Edit Description
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
                                   </div>
                                 </div>
                               </CollapsibleTrigger>
@@ -1226,29 +1102,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
 
                       return (
-                        <div
-                          key={item.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, est.id, 'subcontractor')}
-                          onDragOver={(e) => handleDragOver(e, est.id)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, est.id, 'subcontractor')}
-                          className={`transition-all ${
-                            isDragging ? 'opacity-50 scale-95' : ''
-                          } ${
-                            isDragOver ? 'border-t-4 border-t-primary' : ''
-                          }`}
-                        >
+                        <div key={item.id}>
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
                                 <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
                                   <div className="flex items-center gap-3 flex-1">
-                                    <div className="cursor-grab active:cursor-grabbing">
-                                      <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                      </svg>
-                                    </div>
                                     <ChevronDown className="w-5 h-5 text-slate-700" />
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
@@ -1367,27 +1226,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       const isDragOver = dragOverRowId === row.id;
 
                       return (
-                        <div
-                          key={item.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, row.id, 'custom')}
-                          onDragOver={(e) => handleDragOver(e, row.id)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, row.id, 'custom')}
-                          className={`transition-all ${
-                            isDragging ? 'opacity-50 scale-95' : ''
-                          } ${
-                            isDragOver ? 'border-t-4 border-t-primary' : ''
-                          }`}
-                        >
-                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                        <div key={item.id}>
+                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
                             <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
                               <div className="flex items-center gap-3 flex-1">
-                                <div className="cursor-grab active:cursor-grabbing">
-                                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                  </svg>
-                                </div>
                                 <Clock className="w-5 h-5 text-slate-700" />
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
@@ -1414,21 +1256,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   </div>
                                   <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openAddDialog(row)}
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => deleteRow(row.id)}
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button size="sm" variant="ghost">
+                                      <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openAddDialog(row)}>
+                                      <Edit className="w-4 h-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => deleteRow(row.id)}
+                                      className="text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </div>
                           </div>
