@@ -139,17 +139,21 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     };
   }, []);
 
-  // Calculate board feet for a piece of lumber
+  // Calculate board feet for a piece of lumber using ACTUAL dimensions
   function calculateBoardFeet(materialName: string, length: number): number {
     // Parse dimensions from material name (e.g., "2x4 SPF" -> 2, 4)
     const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
     if (!match) return 1; // Default to 1 if we can't parse
     
+    // Use NOMINAL dimensions (2x4 means 2" x 4" for board foot calculations)
     const thickness = parseInt(match[1]);
     const width = parseInt(match[2]);
     
     // Board Feet = (Thickness × Width × Length) / 12
-    return (thickness * width * length) / 12;
+    // For 2x4 @ 16': (2 × 4 × 16) / 12 = 10.67 BF
+    const boardFeet = (thickness * width * length) / 12;
+    console.log(`${materialName} @ ${length}': (${thickness} × ${width} × ${length}) / 12 = ${boardFeet.toFixed(2)} BF`);
+    return boardFeet;
   }
 
   async function loadData() {
@@ -268,8 +272,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       const material = materials.find(m => m.id === materialId);
       if (material && material.unit === 'board foot') {
         const boardFeet = calculateBoardFeet(material.name, material.standard_length);
-        const pricePerBF = parseFloat(value) / 1000;
+        const pricePerBF = parseFloat(value) / 1000; // Convert MBF to BF
         const pricePerPiece = pricePerBF * boardFeet;
+        
+        console.log(`Pricing calculation for ${material.name}:`);
+        console.log(`  MBF Price: $${value}`);
+        console.log(`  Price per BF: $${value} / 1000 = $${pricePerBF.toFixed(4)}`);
+        console.log(`  Board Feet: ${boardFeet.toFixed(2)} BF`);
+        console.log(`  Price per Piece: $${pricePerBF.toFixed(4)} × ${boardFeet.toFixed(2)} = $${pricePerPiece.toFixed(2)}`);
         
         setBulkPrices(prev => ({
           ...prev,
