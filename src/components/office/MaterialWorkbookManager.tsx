@@ -704,6 +704,14 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     loadCatalogMaterials();
   }
 
+  function toggleDatabaseSearchInDialog() {
+    setShowDatabaseSearchInDialog(!showDatabaseSearchInDialog);
+    // When opening the search, auto-set category filter from the form if available
+    if (!showDatabaseSearchInDialog && manualMaterialForm.category.trim()) {
+      setDialogSearchCategory(manualMaterialForm.category.trim());
+    }
+  }
+
   function selectMaterialFromDatabase(catalogItem: any) {
     // Auto-calculate price_per_unit based on cost and markup
     const cost = catalogItem.purchase_cost || 0;
@@ -1482,7 +1490,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowDatabaseSearchInDialog(!showDatabaseSearchInDialog)}
+                onClick={toggleDatabaseSearchInDialog}
                 className="border-blue-500 text-blue-700 hover:bg-blue-50"
               >
                 <Search className="w-4 h-4 mr-2" />
@@ -1500,39 +1508,39 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                   <h3 className="font-semibold text-blue-900">Search Materials Database</h3>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3">
                   <div className="relative">
                     <Input
-                      placeholder="Search by name, SKU, or category..."
+                      placeholder="Search by material name..."
                       value={dialogSearchQuery}
                       onChange={(e) => setDialogSearchQuery(e.target.value)}
                       className="pl-9"
+                      autoFocus
                     />
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   </div>
                   
-                  <select
-                    value={dialogSearchCategory}
-                    onChange={(e) => setDialogSearchCategory(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="all">All Categories</option>
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  {manualMaterialForm.category.trim() && (
+                    <div className="bg-white border-2 border-blue-300 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-blue-900 mb-1">Filtering by category:</p>
+                      <Badge className="bg-blue-600 text-white">{manualMaterialForm.category}</Badge>
+                      <p className="text-xs text-muted-foreground mt-2">Results will only show materials from this category. Clear the category field above to search all categories.</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Search Results */}
                 <div className="max-h-64 overflow-y-auto border rounded-lg bg-white">
                   {(() => {
                     const filtered = catalogMaterials.filter(material => {
+                      // Search by material name only
                       const matchesSearch = dialogSearchQuery === '' || 
-                        material.material_name.toLowerCase().includes(dialogSearchQuery.toLowerCase()) ||
-                        material.sku.toLowerCase().includes(dialogSearchQuery.toLowerCase()) ||
-                        (material.category && material.category.toLowerCase().includes(dialogSearchQuery.toLowerCase()));
+                        material.material_name.toLowerCase().includes(dialogSearchQuery.toLowerCase());
                       
-                      const matchesCategory = dialogSearchCategory === 'all' || material.category === dialogSearchCategory;
+                      // Filter by the category from the form if it's filled in
+                      const formCategory = manualMaterialForm.category.trim();
+                      const matchesCategory = formCategory === '' || 
+                        (material.category && material.category.toLowerCase() === formCategory.toLowerCase());
                       
                       return matchesSearch && matchesCategory;
                     });
