@@ -1336,8 +1336,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                               <CollapsibleContent>
                                 <div className="p-4 space-y-2">
                                   {sheet.categories.map((category: any, catIndex: number) => {
+                                    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
                                     const catCost = category.totalPrice;
-                                    const catPrice = catCost * (1 + markup / 100);
+                                    const catPrice = catCost * (1 + sheetMarkup / 100);
 
                                     return (
                                       <div key={catIndex} className="flex items-start justify-between py-2 border-b border-slate-200">
