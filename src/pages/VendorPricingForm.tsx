@@ -48,16 +48,11 @@ interface VendorLink {
   };
 }
 
-// Color options for shipment groups
+// Color options for shipment groups (3 colors only)
 const SHIPMENT_COLORS = [
   { value: 'blue', label: 'Blue', class: 'bg-blue-100 border-blue-400 text-blue-900' },
   { value: 'green', label: 'Green', class: 'bg-green-100 border-green-400 text-green-900' },
   { value: 'orange', label: 'Orange', class: 'bg-orange-100 border-orange-400 text-orange-900' },
-  { value: 'purple', label: 'Purple', class: 'bg-purple-100 border-purple-400 text-purple-900' },
-  { value: 'red', label: 'Red', class: 'bg-red-100 border-red-400 text-red-900' },
-  { value: 'yellow', label: 'Yellow', class: 'bg-yellow-100 border-yellow-400 text-yellow-900' },
-  { value: 'pink', label: 'Pink', class: 'bg-pink-100 border-pink-400 text-pink-900' },
-  { value: 'teal', label: 'Teal', class: 'bg-teal-100 border-teal-400 text-teal-900' },
 ];
 
 // Helper function to calculate board feet from material name and length (LUMBER ONLY)
@@ -406,8 +401,8 @@ export function VendorPricingForm() {
                   <tr className="border-b-2">
                     <th className="text-center p-3 font-semibold w-32">
                       <div className="flex items-center justify-center gap-1">
-                        <Palette className="w-4 h-4" />
-                        <span className="text-xs">Ship Color</span>
+                        <Truck className="w-4 h-4" />
+                        <span className="text-xs">Ship Together</span>
                       </div>
                     </th>
                     <th className="text-left p-3 font-semibold">Material</th>
