@@ -136,6 +136,23 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [newSheetName, setNewSheetName] = useState('');
   const [addingSheet, setAddingSheet] = useState(false);
 
+  // Manual material entry state
+  const [showManualMaterialDialog, setShowManualMaterialDialog] = useState(false);
+  const [manualMaterialForm, setManualMaterialForm] = useState({
+    category: '',
+    usage: '',
+    sku: '',
+    material_name: '',
+    quantity: 1,
+    length: '',
+    color: '',
+    cost_per_unit: 0,
+    markup_percent: 0,
+    price_per_unit: 0,
+    notes: '',
+  });
+  const [savingManualMaterial, setSavingManualMaterial] = useState(false);
+
   useEffect(() => {
     loadWorkbooks();
   }, [jobId]);
@@ -661,6 +678,104 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     }
   }
 
+  function openManualMaterialDialog(sheet: MaterialSheet) {
+    setSelectedSheet(sheet);
+    setManualMaterialForm({
+      category: '',
+      usage: '',
+      sku: '',
+      material_name: '',
+      quantity: 1,
+      length: '',
+      color: '',
+      cost_per_unit: 0,
+      markup_percent: 0,
+      price_per_unit: 0,
+      notes: '',
+    });
+    setShowManualMaterialDialog(true);
+  }
+
+  async function saveManualMaterial() {
+    if (!selectedSheet || !viewingWorkbook || viewingWorkbook.status === 'locked') {
+      toast.error('Cannot add materials to a locked workbook');
+      return;
+    }
+
+    if (!manualMaterialForm.material_name.trim()) {
+      toast.error('Material name is required');
+      return;
+    }
+
+    if (!manualMaterialForm.category.trim()) {
+      toast.error('Category is required');
+      return;
+    }
+
+    setSavingManualMaterial(true);
+
+    try {
+      // Get the highest order_index for the sheet
+      const { data: existingItems } = await supabase
+        .from('material_items')
+        .select('order_index')
+        .eq('sheet_id', selectedSheet.id)
+        .order('order_index', { ascending: false })
+        .limit(1);
+
+      const nextOrderIndex = (existingItems?.[0]?.order_index ?? -1) + 1;
+
+      // Calculate extended costs and prices
+      const extendedCost = manualMaterialForm.cost_per_unit * manualMaterialForm.quantity;
+      const extendedPrice = manualMaterialForm.price_per_unit * manualMaterialForm.quantity;
+
+      // Create new material item
+      const newItem = {
+        sheet_id: selectedSheet.id,
+        category: manualMaterialForm.category.trim(),
+        usage: manualMaterialForm.usage.trim() || null,
+        sku: manualMaterialForm.sku.trim() || null,
+        material_name: manualMaterialForm.material_name.trim(),
+        quantity: manualMaterialForm.quantity,
+        length: manualMaterialForm.length.trim() || null,
+        color: manualMaterialForm.color.trim() || null,
+        cost_per_unit: manualMaterialForm.cost_per_unit || null,
+        markup_percent: manualMaterialForm.markup_percent || null,
+        price_per_unit: manualMaterialForm.price_per_unit || null,
+        extended_cost: extendedCost || null,
+        extended_price: extendedPrice || null,
+        taxable: true,
+        notes: manualMaterialForm.notes.trim() || null,
+        order_index: nextOrderIndex,
+      };
+
+      const { error } = await supabase
+        .from('material_items')
+        .insert(newItem);
+
+      if (error) throw error;
+
+      toast.success(`Added ${manualMaterialForm.material_name} to ${selectedSheet.sheet_name}`);
+      setShowManualMaterialDialog(false);
+      
+      // Refresh items for current sheet
+      const { data: refreshedItems } = await supabase
+        .from('material_items')
+        .select('*')
+        .eq('sheet_id', selectedSheet.id)
+        .order('order_index');
+
+      if (refreshedItems) {
+        setItems(refreshedItems);
+      }
+    } catch (error: any) {
+      console.error('Error adding manual material:', error);
+      toast.error('Failed to add material');
+    } finally {
+      setSavingManualMaterial(false);
+    }
+  }
+
   const filteredCatalogMaterials = catalogMaterials.filter(material => {
     const matchesSearch = searchQuery === '' || 
       material.material_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1011,21 +1126,31 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                   )}
                 </div>
                 
-                {/* Add Material Button */}
+                {/* Add Material Buttons */}
                 <div className="flex gap-2">
                   {viewingWorkbook.status === 'working' && items.length > 0 && sheets.length > 0 && (() => {
                     const currentSheet = sheets.find(s => items[0]?.sheet_id === s.id);
                     if (!currentSheet) return null;
                     
                     return (
-                      <Button
-                        size="default"
-                        onClick={() => openMaterialSearch(currentSheet)}
-                        className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold shadow-lg"
-                      >
-                        <Search className="w-5 h-5 mr-2" />
-                        Add from Catalog
-                      </Button>
+                      <>
+                        <Button
+                          size="default"
+                          onClick={() => openManualMaterialDialog(currentSheet)}
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold shadow-lg"
+                        >
+                          <Plus className="w-5 h-5 mr-2" />
+                          Add Manual Material
+                        </Button>
+                        <Button
+                          size="default"
+                          onClick={() => openMaterialSearch(currentSheet)}
+                          className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold shadow-lg"
+                        >
+                          <Search className="w-5 h-5 mr-2" />
+                          Search Catalog
+                        </Button>
+                      </>
                     );
                   })()}
                 </div>
@@ -1284,6 +1409,193 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                   setNewSheetName('');
                 }}
                 disabled={addingSheet}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Material Entry Dialog */}
+      <Dialog open={showManualMaterialDialog} onOpenChange={setShowManualMaterialDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add Material Manually
+              {selectedSheet && (
+                <Badge variant="outline" className="ml-2">
+                  Adding to: {selectedSheet.sheet_name}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="category">Category *</Label>
+                <Input
+                  id="category"
+                  value={manualMaterialForm.category}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, category: e.target.value })}
+                  placeholder="e.g., Framing, Roofing, Siding"
+                />
+              </div>
+              <div>
+                <Label htmlFor="usage">Usage</Label>
+                <Input
+                  id="usage"
+                  value={manualMaterialForm.usage}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, usage: e.target.value })}
+                  placeholder="e.g., Main Building, Porch"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="material_name">Material Name *</Label>
+                <Input
+                  id="material_name"
+                  value={manualMaterialForm.material_name}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, material_name: e.target.value })}
+                  placeholder="e.g., 2x4x16 SPF Lumber"
+                />
+              </div>
+              <div>
+                <Label htmlFor="sku">SKU</Label>
+                <Input
+                  id="sku"
+                  value={manualMaterialForm.sku}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, sku: e.target.value })}
+                  placeholder="e.g., LUM-2X4-16"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="quantity">Quantity *</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualMaterialForm.quantity}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, quantity: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="length">Length</Label>
+                <Input
+                  id="length"
+                  value={manualMaterialForm.length}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, length: e.target.value })}
+                  placeholder="e.g., 16', 8', 12'"
+                />
+              </div>
+              <div>
+                <Label htmlFor="color">Color</Label>
+                <Input
+                  id="color"
+                  value={manualMaterialForm.color}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, color: e.target.value })}
+                  placeholder="e.g., Red, White"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="cost_per_unit">Cost per Unit ($)</Label>
+                <Input
+                  id="cost_per_unit"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualMaterialForm.cost_per_unit}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, cost_per_unit: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label htmlFor="markup_percent">Markup (%)</Label>
+                <Input
+                  id="markup_percent"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={manualMaterialForm.markup_percent}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, markup_percent: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <Label htmlFor="price_per_unit">Price per Unit ($)</Label>
+                <Input
+                  id="price_per_unit"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualMaterialForm.price_per_unit}
+                  onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, price_per_unit: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            {/* Preview Calculations */}
+            {manualMaterialForm.quantity > 0 && (manualMaterialForm.cost_per_unit > 0 || manualMaterialForm.price_per_unit > 0) && (
+              <div className="bg-slate-50 border border-slate-300 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-semibold text-slate-700">Calculated Totals</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Extended Cost</p>
+                    <p className="font-bold text-lg">${(manualMaterialForm.cost_per_unit * manualMaterialForm.quantity).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Extended Price</p>
+                    <p className="font-bold text-lg text-green-700">${(manualMaterialForm.price_per_unit * manualMaterialForm.quantity).toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={manualMaterialForm.notes}
+                onChange={(e) => setManualMaterialForm({ ...manualMaterialForm, notes: e.target.value })}
+                placeholder="Additional notes or details..."
+                rows={3}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={saveManualMaterial}
+                disabled={savingManualMaterial || !manualMaterialForm.material_name.trim() || !manualMaterialForm.category.trim()}
+                className="flex-1"
+              >
+                {savingManualMaterial ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Material
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowManualMaterialDialog(false)}
+                disabled={savingManualMaterial}
               >
                 Cancel
               </Button>
