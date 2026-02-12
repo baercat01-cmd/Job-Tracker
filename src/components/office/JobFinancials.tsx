@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -75,6 +75,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [customRows, setCustomRows] = useState<CustomFinancialRow[]>([]);
   const [laborPricing, setLaborPricing] = useState<LaborPricing | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showSubUploadDialog, setShowSubUploadDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
   
   // Proposal markup state
@@ -186,7 +187,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .from('subcontractor_estimates')
         .select('*')
         .eq('job_id', job.id)
-        .order('created_at', { ascending: false });
+        .order('order_index');
 
       if (error) throw error;
       const newData = data || [];
@@ -654,12 +655,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function handleDragStart(e: React.DragEvent, itemId: string, itemType: 'material' | 'custom') {
+  function handleDragStart(e: React.DragEvent, itemId: string, itemType: 'material' | 'custom' | 'subcontractor') {
     const dragData = JSON.stringify({ id: itemId, type: itemType });
     setDraggedRowId(itemId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('application/json', dragData);
-    console.log('Drag started:', itemId, itemType);
   }
 
   function handleDragOver(e: React.DragEvent, itemId: string) {
@@ -672,7 +672,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setDragOverRowId(null);
   }
 
-  async function handleDrop(e: React.DragEvent, targetId: string, targetType: 'material' | 'custom') {
+  async function handleDrop(e: React.DragEvent, targetId: string, targetType: 'material' | 'custom' | 'subcontractor') {
     e.preventDefault();
     e.stopPropagation();
     
@@ -692,8 +692,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       const dragData = JSON.parse(dragDataStr);
       const { id: draggedId, type: draggedType } = dragData;
 
-      console.log('Dropping:', { draggedId, draggedType, targetId, targetType });
-
       // Create unified list of all items with their order_index
       const allItems = [
         ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
@@ -706,9 +704,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           type: 'custom' as const,
           orderIndex: row.order_index,
         })),
+        ...subcontractorEstimates.map(est => ({
+          id: est.id,
+          type: 'subcontractor' as const,
+          orderIndex: est.order_index,
+        })),
       ].sort((a, b) => a.orderIndex - b.orderIndex);
-
-      console.log('All items:', allItems);
 
       // Find the dragged item and target item positions
       const draggedIndex = allItems.findIndex(item => item.id === draggedId);
@@ -718,8 +719,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         console.error('Could not find dragged or target item');
         return;
       }
-
-      console.log('Indices:', { draggedIndex, targetIndex });
 
       // Calculate new order index to place dragged item before target
       let newOrderIndex: number;
@@ -734,8 +733,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         newOrderIndex = (prevItem.orderIndex + targetItem.orderIndex) / 2;
       }
 
-      console.log('New order index:', newOrderIndex);
-
       // Update the appropriate table based on dragged item type
       if (draggedType === 'material') {
         const { error } = await supabase
@@ -744,20 +741,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           .eq('id', draggedId);
 
         if (error) throw error;
-      } else {
+      } else if (draggedType === 'custom') {
         const { error } = await supabase
           .from('custom_financial_rows')
           .update({ order_index: newOrderIndex })
           .eq('id', draggedId);
 
         if (error) throw error;
+      } else if (draggedType === 'subcontractor') {
+        const { error } = await supabase
+          .from('subcontractor_estimates')
+          .update({ order_index: newOrderIndex })
+          .eq('id', draggedId);
+
+        if (error) throw error;
       }
 
-      console.log('Row reordered successfully');
       toast.success('Row moved');
       
       // Reload data to reflect changes
-      await Promise.all([loadMaterialsData(), loadCustomRows()]);
+      await Promise.all([loadMaterialsData(), loadCustomRows(), loadSubcontractorEstimates()]);
     } catch (error: any) {
       console.error('Error reordering row:', error);
       toast.error(`Failed to reorder row: ${error.message}`);
@@ -782,52 +785,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error deleting row:', error);
       toast.error('Failed to delete row');
-    }
-  }
-
-  // File upload handlers
-  async function handleFileUpload(category: string, files: FileList, isMaterial: boolean = false) {
-    if (!files || files.length === 0) return;
-
-    setUploadingFiles(prev => ({ ...prev, [category]: true }));
-
-    try {
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const fileName = `${job.id}/${category}/${Date.now()}-${file.name}`;
-        
-        const { data, error } = await supabase.storage
-          .from('job-files')
-          .upload(fileName, file);
-
-        if (error) throw error;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('job-files')
-          .getPublicUrl(fileName);
-
-        return publicUrl;
-      });
-
-      const urls = await Promise.all(uploadPromises);
-      
-      if (isMaterial) {
-        setMaterialFiles(prev => ({
-          ...prev,
-          [category]: [...(prev[category] || []), ...urls],
-        }));
-      } else {
-        setCategoryFiles(prev => ({
-          ...prev,
-          [category]: [...(prev[category] || []), ...urls],
-        }));
-      }
-
-      toast.success(`${files.length} file(s) uploaded`);
-    } catch (error: any) {
-      console.error('Error uploading files:', error);
-      toast.error('Failed to upload files');
-    } finally {
-      setUploadingFiles(prev => ({ ...prev, [category]: false }));
     }
   }
 
@@ -1055,17 +1012,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
             </div>
 
-            {/* Add Row Control */}
+            {/* Add Row Controls */}
             <div className="flex gap-2 mb-4">
               <Button onClick={() => openAddDialog()} variant="outline" size="sm">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Row
               </Button>
+              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Subcontractor Estimate
+              </Button>
             </div>
 
             {/* Proposal Layout: Content on left, Project Total on right */}
             <div className="flex gap-6 items-start">
-              {/* All Rows Column - Mixed materials and custom rows */}
+              {/* All Rows Column - Mixed materials, custom rows, and subcontractor estimates */}
               <div className="flex-1 space-y-3">
                 {/* Create unified list of all items sorted by order_index */}
                 {(() => {
@@ -1081,6 +1042,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       id: row.id,
                       orderIndex: row.order_index,
                       data: row,
+                    })),
+                    ...subcontractorEstimates.map(est => ({
+                      type: 'subcontractor' as const,
+                      id: est.id,
+                      orderIndex: est.order_index,
+                      data: est,
                     })),
                   ].sort((a, b) => a.orderIndex - b.orderIndex);
 
@@ -1109,7 +1076,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-blue-50 hover:bg-blue-100 transition-colors p-3 flex items-center gap-4 border-b">
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-4 border-b">
                                   {/* Left: Drag Handle + Chevron + Title + Labor */}
                                   <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
                                     <div className="cursor-grab active:cursor-grabbing pt-1">
@@ -1117,9 +1084,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                       </svg>
                                     </div>
-                                    <ChevronDown className="w-5 h-5 text-blue-700 mt-1" />
+                                    <ChevronDown className="w-5 h-5 text-slate-700 mt-1" />
                                     <div className="flex-1 min-w-0">
-                                      <h3 className="text-lg font-bold text-blue-900 truncate">{sheet.sheetName}</h3>
+                                      <h3 className="text-lg font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
                                       {/* Labor info if exists */}
                                       {sheetLabor[sheet.sheetId] && (
                                         <div className="flex items-center gap-2 mt-1">
@@ -1149,7 +1116,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                         <p className="text-xs font-semibold text-green-700">+{markup.toFixed(1)}%</p>
                                       </div>
-                                      <p className="text-2xl font-bold text-blue-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                     <Button
                                       size="sm"
@@ -1201,15 +1168,72 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           </Collapsible>
                         </div>
                       );
+                    } else if (item.type === 'subcontractor') {
+                      // Subcontractor estimate row
+                      const est = item.data as any;
+                      const estCost = est.total_amount || 0;
+                      const estMarkup = est.markup_percent || 0;
+                      const costWithMarkup = estCost * (1 + estMarkup / 100);
+                      const finalPrice = costWithMarkup * (1 + markup / 100);
+                      const isDragging = draggedRowId === est.id;
+                      const isDragOver = dragOverRowId === est.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, est.id, 'subcontractor')}
+                          onDragOver={(e) => handleDragOver(e, est.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, est.id, 'subcontractor')}
+                          className={`transition-all ${
+                            isDragging ? 'opacity-50 scale-95' : ''
+                          } ${
+                            isDragOver ? 'border-t-4 border-t-primary' : ''
+                          }`}
+                        >
+                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
+                              <div className="flex items-center gap-3 flex-1">
+                                <div className="cursor-grab active:cursor-grabbing">
+                                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                  </svg>
+                                </div>
+                                <Briefcase className="w-5 h-5 text-slate-700" />
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="text-lg font-bold text-slate-900">{est.company_name || 'Subcontractor'}</h3>
+                                    <Badge variant="outline" className="bg-slate-100 text-slate-800">
+                                      Subcontractor
+                                    </Badge>
+                                  </div>
+                                  {est.scope_of_work && (
+                                    <p className="text-sm text-slate-600 mt-1">{est.scope_of_work}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="text-right">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    {estMarkup > 0 && (
+                                      <p className="text-xs font-semibold text-green-700">+{estMarkup.toFixed(1)}%</p>
+                                    )}
+                                    <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
+                                  </div>
+                                  <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
                     } else {
                       // Custom row (labor, materials, equipment, etc.)
                       const row = item.data as CustomFinancialRow;
                       const rowCost = row.selling_price;
                       const rowPrice = rowCost * (1 + markup / 100);
-
-                      const bgColor = row.category === 'labor' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-orange-50 hover:bg-orange-100';
-                      const textColor = row.category === 'labor' ? 'text-amber-900' : 'text-orange-900';
-                      const iconColor = row.category === 'labor' ? 'text-amber-700' : 'text-orange-700';
                       const isDragging = draggedRowId === row.id;
                       const isDragOver = dragOverRowId === row.id;
 
@@ -1228,22 +1252,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           }`}
                         >
                           <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
-                            <div className={`${bgColor} transition-colors p-3 flex items-center justify-between border-b`}>
+                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between border-b">
                               <div className="flex items-center gap-3 flex-1">
                                 <div className="cursor-grab active:cursor-grabbing">
                                   <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                   </svg>
                                 </div>
-                                <Clock className={`w-5 h-5 ${iconColor}`} />
+                                <Clock className="w-5 h-5 text-slate-700" />
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
-                                    <h3 className={`text-lg font-bold ${textColor}`}>{row.description}</h3>
+                                    <h3 className="text-lg font-bold text-slate-900">{row.description}</h3>
                                     {!row.taxable && (
                                       <Badge variant="outline" className="bg-slate-100 text-slate-800">
                                         No Tax
                                       </Badge>
                                     )}
+                                    <Badge variant="outline" className="bg-slate-100 text-slate-800 capitalize">
+                                      {categoryLabels[row.category] || row.category}
+                                    </Badge>
                                   </div>
                                 </div>
                               </div>
@@ -1256,7 +1283,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     )}
                                     <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
                                   </div>
-                                  <p className={`text-2xl font-bold ${textColor}`}>${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                 </div>
                                 <Button
                                   size="sm"
@@ -1281,19 +1308,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     }
                   });
                 })()}
-
-                {/* Subcontractor Estimates */}
-                <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white">
-                  <div className="bg-purple-50 p-3 border-b">
-                    <div className="flex items-center gap-3">
-                      <Briefcase className="w-5 h-5 text-purple-700" />
-                      <h3 className="text-lg font-bold text-purple-900">Subcontractors</h3>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <SubcontractorEstimatesManagement jobId={job.id} />
-                  </div>
-                </div>
               </div>
 
               {/* Project Total Box - Sticky on Right Side */}
@@ -1346,6 +1360,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Subcontractor Upload Dialog */}
+      <Dialog open={showSubUploadDialog} onOpenChange={setShowSubUploadDialog}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Upload Subcontractor Estimate</DialogTitle>
+          </DialogHeader>
+          <SubcontractorEstimatesManagement jobId={job.id} />
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Material Sheet Description Dialog */}
       <Dialog open={showSheetDescDialog} onOpenChange={setShowSheetDescDialog}>
