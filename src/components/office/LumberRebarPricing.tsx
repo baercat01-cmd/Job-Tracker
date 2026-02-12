@@ -430,16 +430,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             Track {category} prices across vendors with historical data
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowAddMaterialDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add {category === 'lumber' ? 'Lumber' : 'Rebar'}
-          </Button>
-          <Button variant="outline" onClick={() => setShowAddVendorDialog(true)}>
-            <Users className="w-4 h-4 mr-2" />
-            Add Vendor
-          </Button>
-        </div>
       </div>
 
       {/* Vendor Summary */}

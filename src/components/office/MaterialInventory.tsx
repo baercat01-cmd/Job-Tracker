@@ -6,6 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { LumberRebarPricing } from './LumberRebarPricing';
 import { LumberAnalytics } from './LumberAnalytics';
 import {
@@ -31,9 +39,15 @@ import {
   DollarSign,
   Tag,
   FileText,
-  Download
+  Download,
+  Settings,
+  Plus,
+  Pencil,
+  Trash2,
+  Users
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 
 interface MaterialCatalogItem {
   sku: string;
@@ -46,7 +60,29 @@ interface MaterialCatalogItem {
   displayName?: string;
 }
 
+interface LumberRebarMaterial {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  standard_length: number;
+  active: boolean;
+  order_index: number;
+  created_at: string;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  active: boolean;
+  created_at: string;
+}
+
 export function MaterialInventory() {
+  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'catalog' | 'lumber' | 'rebar' | 'analytics'>('catalog');
   const [materials, setMaterials] = useState<MaterialCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,9 +93,31 @@ export function MaterialInventory() {
   const [importing, setImporting] = useState(false);
   const [importMode, setImportMode] = useState<'add' | 'replace'>('replace');
   const [exporting, setExporting] = useState(false);
+  
+  // Settings dialog states
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'materials' | 'vendors'>('materials');
+  const [lumberRebarMaterials, setLumberRebarMaterials] = useState<LumberRebarMaterial[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [editingMaterial, setEditingMaterial] = useState<LumberRebarMaterial | null>(null);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  
+  // Material form states
+  const [materialName, setMaterialName] = useState('');
+  const [materialCategory, setMaterialCategory] = useState<'lumber' | 'rebar'>('lumber');
+  const [materialUnit, setMaterialUnit] = useState('board foot');
+  const [standardLength, setStandardLength] = useState('16');
+  
+  // Vendor form states
+  const [vendorName, setVendorName] = useState('');
+  const [vendorContact, setVendorContact] = useState('');
+  const [vendorPhone, setVendorPhone] = useState('');
+  const [vendorEmail, setVendorEmail] = useState('');
 
   useEffect(() => {
     loadMaterials();
+    loadLumberRebarMaterials();
+    loadVendors();
   }, []);
 
   async function loadMaterials() {
@@ -77,6 +135,198 @@ export function MaterialInventory() {
       toast.error('Failed to load materials');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadLumberRebarMaterials() {
+    try {
+      const { data, error } = await supabase
+        .from('lumber_rebar_materials')
+        .select('*')
+        .eq('active', true)
+        .order('category', { ascending: true })
+        .order('order_index', { ascending: true });
+
+      if (error) throw error;
+      setLumberRebarMaterials(data || []);
+    } catch (error: any) {
+      console.error('Error loading lumber/rebar materials:', error);
+    }
+  }
+
+  async function loadVendors() {
+    try {
+      const { data, error } = await supabase
+        .from('lumber_rebar_vendors')
+        .select('*')
+        .eq('active', true)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setVendors(data || []);
+    } catch (error: any) {
+      console.error('Error loading vendors:', error);
+    }
+  }
+
+  function openMaterialForm(material?: LumberRebarMaterial) {
+    if (material) {
+      setEditingMaterial(material);
+      setMaterialName(material.name);
+      setMaterialCategory(material.category as 'lumber' | 'rebar');
+      setMaterialUnit(material.unit);
+      setStandardLength(material.standard_length.toString());
+    } else {
+      setEditingMaterial(null);
+      setMaterialName('');
+      setMaterialCategory('lumber');
+      setMaterialUnit('board foot');
+      setStandardLength('16');
+    }
+  }
+
+  function openVendorForm(vendor?: Vendor) {
+    if (vendor) {
+      setEditingVendor(vendor);
+      setVendorName(vendor.name);
+      setVendorContact(vendor.contact_name || '');
+      setVendorPhone(vendor.phone || '');
+      setVendorEmail(vendor.email || '');
+    } else {
+      setEditingVendor(null);
+      setVendorName('');
+      setVendorContact('');
+      setVendorPhone('');
+      setVendorEmail('');
+    }
+  }
+
+  async function saveMaterial() {
+    if (!materialName) {
+      toast.error('Material name is required');
+      return;
+    }
+
+    try {
+      if (editingMaterial) {
+        // Update existing material
+        const { error } = await supabase
+          .from('lumber_rebar_materials')
+          .update({
+            name: materialName,
+            category: materialCategory,
+            unit: materialUnit,
+            standard_length: parseFloat(standardLength),
+          })
+          .eq('id', editingMaterial.id);
+
+        if (error) throw error;
+        toast.success('Material updated successfully');
+      } else {
+        // Create new material
+        const maxOrder = lumberRebarMaterials
+          .filter(m => m.category === materialCategory)
+          .reduce((max, m) => Math.max(max, m.order_index), 0);
+
+        const { error } = await supabase
+          .from('lumber_rebar_materials')
+          .insert([{
+            name: materialName,
+            category: materialCategory,
+            unit: materialUnit,
+            standard_length: parseFloat(standardLength),
+            order_index: maxOrder + 1,
+          }]);
+
+        if (error) throw error;
+        toast.success('Material added successfully');
+      }
+
+      await loadLumberRebarMaterials();
+      openMaterialForm();
+    } catch (error: any) {
+      console.error('Error saving material:', error);
+      toast.error('Failed to save material');
+    }
+  }
+
+  async function deleteMaterial(materialId: string) {
+    if (!confirm('Are you sure you want to delete this material?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_materials')
+        .update({ active: false })
+        .eq('id', materialId);
+
+      if (error) throw error;
+      toast.success('Material deleted successfully');
+      await loadLumberRebarMaterials();
+    } catch (error: any) {
+      console.error('Error deleting material:', error);
+      toast.error('Failed to delete material');
+    }
+  }
+
+  async function saveVendor() {
+    if (!vendorName) {
+      toast.error('Vendor name is required');
+      return;
+    }
+
+    try {
+      if (editingVendor) {
+        // Update existing vendor
+        const { error } = await supabase
+          .from('lumber_rebar_vendors')
+          .update({
+            name: vendorName,
+            contact_name: vendorContact || null,
+            phone: vendorPhone || null,
+            email: vendorEmail || null,
+          })
+          .eq('id', editingVendor.id);
+
+        if (error) throw error;
+        toast.success('Vendor updated successfully');
+      } else {
+        // Create new vendor
+        const { error } = await supabase
+          .from('lumber_rebar_vendors')
+          .insert([{
+            name: vendorName,
+            contact_name: vendorContact || null,
+            phone: vendorPhone || null,
+            email: vendorEmail || null,
+          }]);
+
+        if (error) throw error;
+        toast.success('Vendor added successfully');
+      }
+
+      await loadVendors();
+      openVendorForm();
+    } catch (error: any) {
+      console.error('Error saving vendor:', error);
+      toast.error('Failed to save vendor');
+    }
+  }
+
+  async function deleteVendor(vendorId: string) {
+    if (!confirm('Are you sure you want to delete this vendor?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_vendors')
+        .update({ active: false })
+        .eq('id', vendorId);
+
+      if (error) throw error;
+      toast.success('Vendor deleted successfully');
+      await loadVendors();
+    } catch (error: any) {
+      console.error('Error deleting vendor:', error);
+      toast.error('Failed to delete vendor');
     }
   }
 
@@ -563,7 +813,7 @@ export function MaterialInventory() {
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
           <TabsList className="bg-transparent gap-3 h-auto p-0">
             <TabsTrigger 
               value="catalog" 
@@ -590,6 +840,17 @@ export function MaterialInventory() {
               Analytics
             </TabsTrigger>
           </TabsList>
+          
+          {/* Settings Button - Only show on lumber, rebar, and analytics tabs */}
+          {(activeTab === 'lumber' || activeTab === 'rebar' || activeTab === 'analytics') && (
+            <Button
+              onClick={() => setShowSettingsDialog(true)}
+              className="bg-slate-700 hover:bg-slate-800 text-white"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+          )}
         </div>
 
         <TabsContent value="lumber" className="space-y-4">
@@ -910,6 +1171,259 @@ export function MaterialInventory() {
       </Dialog>
         </TabsContent>
       </Tabs>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Lumber & Rebar Settings
+            </DialogTitle>
+          </DialogHeader>
+
+          <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as any)}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="materials">Materials</TabsTrigger>
+              <TabsTrigger value="vendors">Vendors</TabsTrigger>
+            </TabsList>
+
+            {/* Materials Tab */}
+            <TabsContent value="materials" className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Manage lumber and rebar materials
+                </p>
+                <Button onClick={() => openMaterialForm()} size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Material
+                </Button>
+              </div>
+
+              {/* Material Form */}
+              {(editingMaterial !== null || materialName) && (
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Material Name *</Label>
+                          <Input
+                            value={materialName}
+                            onChange={(e) => setMaterialName(e.target.value)}
+                            placeholder="e.g., 2x4 SPF"
+                          />
+                        </div>
+                        <div>
+                          <Label>Category *</Label>
+                          <Select value={materialCategory} onValueChange={(v) => setMaterialCategory(v as any)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="lumber">Lumber</SelectItem>
+                              <SelectItem value="rebar">Rebar</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Unit *</Label>
+                          <Select value={materialUnit} onValueChange={setMaterialUnit}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="board foot">Board Foot</SelectItem>
+                              <SelectItem value="linear foot">Linear Foot</SelectItem>
+                              <SelectItem value="sheet">Sheet</SelectItem>
+                              <SelectItem value="piece">Piece</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Standard Length (ft)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={standardLength}
+                            onChange={(e) => setStandardLength(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button onClick={saveMaterial}>
+                          {editingMaterial ? 'Update Material' : 'Add Material'}
+                        </Button>
+                        <Button variant="outline" onClick={() => openMaterialForm()}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Materials List */}
+              <div className="space-y-3">
+                {['lumber', 'rebar'].map(cat => {
+                  const categoryMaterials = lumberRebarMaterials.filter(m => m.category === cat);
+                  if (categoryMaterials.length === 0) return null;
+
+                  return (
+                    <div key={cat}>
+                      <h3 className="font-semibold text-sm text-slate-700 mb-2 uppercase">
+                        {cat}
+                      </h3>
+                      <div className="space-y-2">
+                        {categoryMaterials.map(material => (
+                          <div
+                            key={material.id}
+                            className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-slate-50"
+                          >
+                            <div>
+                              <p className="font-medium">{material.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {material.standard_length}' • {material.unit}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openMaterialForm(material)}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => deleteMaterial(material.id)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </TabsContent>
+
+            {/* Vendors Tab */}
+            <TabsContent value="vendors" className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Manage vendor contacts and information
+                </p>
+                <Button onClick={() => openVendorForm()} size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Vendor
+                </Button>
+              </div>
+
+              {/* Vendor Form */}
+              {(editingVendor !== null || vendorName) && (
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Vendor Name *</Label>
+                        <Input
+                          value={vendorName}
+                          onChange={(e) => setVendorName(e.target.value)}
+                          placeholder="e.g., ABC Lumber Supply"
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Contact Name</Label>
+                        <Input
+                          value={vendorContact}
+                          onChange={(e) => setVendorContact(e.target.value)}
+                          placeholder="Primary contact person"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Phone</Label>
+                          <Input
+                            value={vendorPhone}
+                            onChange={(e) => setVendorPhone(e.target.value)}
+                            placeholder="(555) 123-4567"
+                          />
+                        </div>
+                        <div>
+                          <Label>Email</Label>
+                          <Input
+                            type="email"
+                            value={vendorEmail}
+                            onChange={(e) => setVendorEmail(e.target.value)}
+                            placeholder="contact@vendor.com"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button onClick={saveVendor}>
+                          {editingVendor ? 'Update Vendor' : 'Add Vendor'}
+                        </Button>
+                        <Button variant="outline" onClick={() => openVendorForm()}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Vendors List */}
+              <div className="space-y-2">
+                {vendors.map(vendor => (
+                  <div
+                    key={vendor.id}
+                    className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-slate-50"
+                  >
+                    <div>
+                      <p className="font-medium">{vendor.name}</p>
+                      <div className="text-sm text-muted-foreground space-y-0.5">
+                        {vendor.contact_name && <p>Contact: {vendor.contact_name}</p>}
+                        {vendor.phone && <p>Phone: {vendor.phone}</p>}
+                        {vendor.email && <p>Email: {vendor.email}</p>}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openVendorForm(vendor)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => deleteVendor(vendor.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
