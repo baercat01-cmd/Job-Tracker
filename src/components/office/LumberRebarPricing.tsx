@@ -1075,6 +1075,212 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         </CardContent>
       </Card>
 
+      {/* Vendor Pricing Dialog - THIS WAS MISSING! */}
+      <Dialog open={showVendorPricingDialog} onOpenChange={setShowVendorPricingDialog}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Add Prices for {selectedVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 flex-1 overflow-auto">
+            <div className="flex items-center gap-4 px-1">
+              <Label className="font-semibold">Effective Date:</Label>
+              <Input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                className="w-48"
+              />
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <div className="max-h-[500px] overflow-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-100 sticky top-0 z-10">
+                    <tr className="border-b-2">
+                      <th className="text-left p-3 font-semibold">Material</th>
+                      <th className="text-center p-3 font-semibold w-24">Length</th>
+                      <th className="text-center p-3 font-semibold w-24">Board Feet</th>
+                      <th className="text-left p-3 font-semibold w-32">Price/MBF ($)</th>
+                      <th className="text-left p-3 font-semibold w-32">Price/Piece ($)</th>
+                      <th className="text-left p-3 font-semibold w-32">Truckload Qty</th>
+                      <th className="text-left p-3 font-semibold">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredMaterials.map((material, idx) => {
+                      const priceData = bulkPrices[material.id] || { mbf: '', perUnit: '', truckload: '', notes: '' };
+                      const isEven = idx % 2 === 0;
+                      const boardFeet = material.unit === 'board foot' 
+                        ? calculateBoardFeet(material.name, material.standard_length)
+                        : null;
+
+                      return (
+                        <tr key={material.id} className={`hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50'}`}>
+                          <td className="p-3">
+                            <div className="font-medium">{material.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Unit: {material.unit}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-semibold text-blue-700">
+                            {material.standard_length}'
+                          </td>
+                          <td className="p-3 text-center font-semibold text-slate-700">
+                            {boardFeet ? `${boardFeet.toFixed(2)} BF` : '-'}
+                          </td>
+                          <td className="p-3">
+                            {boardFeet ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={priceData.mbf}
+                                onChange={(e) => updateBulkPrice(material.id, 'mbf', e.target.value)}
+                                placeholder="715"
+                                className="w-full"
+                              />
+                            ) : (
+                              <div className="text-sm text-muted-foreground text-center">-</div>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={priceData.perUnit}
+                              onChange={(e) => updateBulkPrice(material.id, 'perUnit', e.target.value)}
+                              placeholder="0.00"
+                              className={`w-full ${boardFeet && priceData.mbf ? 'bg-green-50 font-semibold' : ''}`}
+                              readOnly={!!(boardFeet && priceData.mbf)}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              value={priceData.truckload}
+                              onChange={(e) => updateBulkPrice(material.id, 'truckload', e.target.value)}
+                              placeholder="Optional"
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              value={priceData.notes}
+                              onChange={(e) => updateBulkPrice(material.id, 'notes', e.target.value)}
+                              placeholder="Optional notes..."
+                              className="w-full"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setShowVendorPricingDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveBulkPrices}>
+              <DollarSign className="w-4 h-4 mr-2" />
+              Save Prices
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Link Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5" />
+              Generate Shareable Pricing Link
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>Select Vendor</Label>
+              <Select
+                value={shareVendor?.id}
+                onValueChange={(vendorId) => {
+                  const vendor = vendors.find(v => v.id === vendorId);
+                  if (vendor) setShareVendor(vendor);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a vendor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendors.map(vendor => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Link Expiration (days)</Label>
+              <Input
+                type="number"
+                min="1"
+                value={shareExpireDays}
+                onChange={(e) => setShareExpireDays(e.target.value)}
+                placeholder="30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave empty for no expiration
+              </p>
+            </div>
+
+            {shareLink ? (
+              <div className="space-y-2">
+                <Label>Shareable Link</Label>
+                <div className="flex gap-2">
+                  <Input value={shareLink} readOnly className="font-mono text-sm" />
+                  <Button onClick={copyToClipboard} variant="outline" size="icon">
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-green-600">
+                  ✓ Link generated successfully! Share this with your vendor.
+                </p>
+              </div>
+            ) : (
+              <Button
+                onClick={() => shareVendor && generateShareLink(shareVendor)}
+                disabled={!shareVendor || generatingLink}
+                className="w-full"
+              >
+                {generatingLink ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Generate Link
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
