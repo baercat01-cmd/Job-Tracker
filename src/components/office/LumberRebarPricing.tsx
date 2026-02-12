@@ -121,6 +121,37 @@ export function LumberRebarPricing() {
 
   useEffect(() => {
     loadData();
+    
+    // Subscribe to table changes for auto-reload
+    const materialsChannel = supabase
+      .channel('lumber_rebar_materials_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'lumber_rebar_materials' },
+        () => loadMaterials()
+      )
+      .subscribe();
+    
+    const vendorsChannel = supabase
+      .channel('lumber_rebar_vendors_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'lumber_rebar_vendors' },
+        () => loadVendors()
+      )
+      .subscribe();
+    
+    const pricesChannel = supabase
+      .channel('lumber_rebar_prices_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'lumber_rebar_prices' },
+        () => loadPrices()
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(materialsChannel);
+      supabase.removeChannel(vendorsChannel);
+      supabase.removeChannel(pricesChannel);
+    };
   }, []);
 
   async function loadData() {
