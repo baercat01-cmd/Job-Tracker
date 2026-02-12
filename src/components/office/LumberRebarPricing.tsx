@@ -357,29 +357,62 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setShowShareDialog(true);
 
     try {
+      // Validate vendor
+      if (!vendor || !vendor.id) {
+        throw new Error('Invalid vendor selected');
+      }
+
+      // Validate profile
+      if (!profile?.id) {
+        throw new Error('User profile not found. Please refresh and try again.');
+      }
+
+      console.log('Generating share link for vendor:', vendor.name);
+      console.log('Category:', category);
+      console.log('Expires in days:', shareExpireDays);
+
       // Generate unique token
       const token = crypto.randomUUID();
+      console.log('Generated token:', token);
       
       // Calculate expiration
       const expiresAt = shareExpireDays ? (() => {
+        const days = parseInt(shareExpireDays);
+        if (isNaN(days) || days <= 0) {
+          return null;
+        }
         const date = new Date();
-        date.setDate(date.getDate() + parseInt(shareExpireDays));
+        date.setDate(date.getDate() + days);
         return date.toISOString();
       })() : null;
 
-      // Create vendor link
-      const { error } = await supabase
-        .from('lumber_rebar_vendor_links')
-        .insert({
-          vendor_id: vendor.id,
-          category,
-          token,
-          expires_at: expiresAt,
-          created_by: profile?.id || null,
-          notes: `Generated for ${vendor.name}`,
-        });
+      console.log('Expiration date:', expiresAt);
 
-      if (error) throw error;
+      // Create vendor link
+      const insertData = {
+        vendor_id: vendor.id,
+        category,
+        token,
+        expires_at: expiresAt,
+        created_by: profile.id,
+        notes: `Generated for ${vendor.name}`,
+        is_active: true,
+      };
+
+      console.log('Inserting vendor link:', insertData);
+
+      const { data, error } = await supabase
+        .from('lumber_rebar_vendor_links')
+        .insert(insertData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Database error:', error);
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      console.log('Link created successfully:', data);
 
       // Generate shareable URL
       const baseUrl = window.location.origin;
@@ -389,7 +422,8 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       toast.success('Shareable link created!');
     } catch (error: any) {
       console.error('Error generating share link:', error);
-      toast.error('Failed to generate link');
+      const errorMessage = error?.message || 'Unknown error occurred';
+      toast.error(`Failed to generate link: ${errorMessage}`);
       setShowShareDialog(false);
     } finally {
       setGeneratingLink(false);
