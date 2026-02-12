@@ -308,6 +308,27 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     }
   }
 
+  async function deletePriceEntry(priceId: string, materialName: string, vendorName: string) {
+    if (!confirm(`Delete price entry for ${materialName} from ${vendorName}?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('lumber_rebar_prices')
+        .delete()
+        .eq('id', priceId);
+
+      if (error) throw error;
+
+      toast.success('Price entry deleted');
+      await loadPrices();
+    } catch (error: any) {
+      console.error('Error deleting price:', error);
+      toast.error('Failed to delete price entry');
+    }
+  }
+
   function updateBulkPrice(materialId: string, field: 'mbf' | 'perUnit' | 'truckload' | 'notes', value: string) {
     setBulkPrices(prev => ({
       ...prev,
@@ -916,49 +937,86 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                       </div>
                     </div>
 
-                    {/* Expanded: Price History */}
+                    {/* Expanded: Price History by Vendor */}
                     {isExpanded && (
                       <div className="border-t bg-slate-50 p-4">
                         <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
                           <Calendar className="w-4 h-4" />
-                          Recent Price History
+                          Price History by Vendor
                         </h4>
                         {info.recentHistory.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-4">
                             No price history available
                           </p>
                         ) : (
-                          <div className="space-y-2">
-                            {info.recentHistory.map(entry => (
-                              <div
-                                key={entry.id}
-                                className="flex items-center justify-between p-3 bg-white rounded-lg border"
-                              >
-                                <div className="flex items-center gap-4">
-                                  <div>
-                                    <div className="font-semibold">{entry.vendor?.name || 'Unknown'}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {new Date(entry.effective_date).toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric',
-                                      })}
-                                    </div>
-                                  </div>
-                                  {entry.truckload_quantity && (
-                                    <Badge variant="outline">
-                                      {entry.truckload_quantity} unit truckload
+                          <div className="space-y-4">
+                            {/* Group by vendor */}
+                            {(() => {
+                              const vendorGroups = info.recentHistory.reduce((acc, entry) => {
+                                const vendorName = entry.vendor?.name || 'Unknown';
+                                if (!acc[vendorName]) acc[vendorName] = [];
+                                acc[vendorName].push(entry);
+                                return acc;
+                              }, {} as Record<string, PriceEntry[]>);
+
+                              return Object.entries(vendorGroups).map(([vendorName, entries]) => (
+                                <div key={vendorName} className="space-y-2">
+                                  <div className="font-semibold text-base flex items-center gap-2 text-blue-700">
+                                    <Users className="w-4 h-4" />
+                                    {vendorName}
+                                    <Badge variant="secondary" className="text-xs">
+                                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
                                     </Badge>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-xl font-bold text-blue-700">
-                                    ${entry.price_per_unit.toFixed(2)}
                                   </div>
-                                  <div className="text-xs text-muted-foreground">per {info.material.unit}</div>
+                                  <div className="space-y-2 pl-6">
+                                    {entries.map(entry => (
+                                      <div
+                                        key={entry.id}
+                                        className="flex items-center justify-between p-3 bg-white rounded-lg border hover:border-blue-300 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-4">
+                                          <div>
+                                            <div className="text-sm font-medium">
+                                              {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric',
+                                              })}
+                                            </div>
+                                            {entry.notes && (
+                                              <div className="text-xs text-muted-foreground mt-1">
+                                                {entry.notes}
+                                              </div>
+                                            )}
+                                          </div>
+                                          {entry.truckload_quantity && (
+                                            <Badge variant="outline" className="text-xs">
+                                              {entry.truckload_quantity} unit truckload
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <div className="text-right">
+                                            <div className="text-xl font-bold text-blue-700">
+                                              ${entry.price_per_unit.toFixed(2)}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">per {info.material.unit}</div>
+                                          </div>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => deletePriceEntry(entry.id, info.material.name, vendorName)}
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ));
+                            })()}
                           </div>
                         )}
                         
