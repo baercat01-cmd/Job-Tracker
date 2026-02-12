@@ -102,7 +102,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Form states
   const [vendorId, setVendorId] = useState('');
   const [materialId, setMaterialId] = useState('');
-  const [pricePerBoardFoot, setPricePerBoardFoot] = useState('');
+  const [pricePerMBF, setPricePerMBF] = useState(''); // Price per Thousand Board Feet
   const [pricePerUnit, setPricePerUnit] = useState('');
   const [truckloadQty, setTruckloadQty] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
@@ -167,17 +167,19 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return (thickness * width * length) / 12;
   }
 
-  // Auto-calculate price per piece when board foot price changes
+  // Auto-calculate price per piece when MBF price changes
   useEffect(() => {
-    if (pricePerBoardFoot && materialId) {
+    if (pricePerMBF && materialId) {
       const material = materials.find(m => m.id === materialId);
       if (material && material.unit === 'board foot') {
         const boardFeet = calculateBoardFeet(material.name, material.standard_length);
-        const pricePerPiece = parseFloat(pricePerBoardFoot) * boardFeet;
+        // Convert MBF to BF: divide by 1000
+        const pricePerBF = parseFloat(pricePerMBF) / 1000;
+        const pricePerPiece = pricePerBF * boardFeet;
         setPricePerUnit(pricePerPiece.toFixed(2));
       }
     }
-  }, [pricePerBoardFoot, materialId, materials]);
+  }, [pricePerMBF, materialId, materials]);
 
   async function loadData() {
     setLoading(true);
@@ -342,7 +344,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function resetPriceForm() {
     setMaterialId('');
     setVendorId('');
-    setPricePerBoardFoot('');
+    setPricePerMBF('');
     setPricePerUnit('');
     setTruckloadQty('');
     setEffectiveDate(new Date().toISOString().split('T')[0]);
@@ -432,11 +434,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     if (!material || material.unit !== 'board foot') return null;
     
     const boardFeet = calculateBoardFeet(material.name, material.standard_length);
+    const pricePerBF = pricePerMBF ? parseFloat(pricePerMBF) / 1000 : 0;
+    
     return {
       material,
       boardFeet,
+      pricePerBF,
     };
-  }, [materialId, materials]);
+  }, [materialId, materials, pricePerMBF]);
 
   const filteredMaterials = materials.filter(m => m.category === category);
 
@@ -638,30 +643,36 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               </Select>
             </div>
 
-            {/* Board Foot Conversion for Lumber */}
+            {/* MBF to Price Conversion for Lumber */}
             {selectedMaterialInfo && (
               <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Calculator className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-semibold text-blue-900">Board Foot Calculator</h4>
+                  <h4 className="font-semibold text-blue-900">MBF Price Calculator</h4>
                 </div>
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-blue-900">Price per Board Foot ($) *</Label>
+                    <Label className="text-blue-900">Price per MBF ($/1000 BF) *</Label>
                     <Input
                       type="number"
                       min="0"
-                      step="0.01"
-                      value={pricePerBoardFoot}
-                      onChange={(e) => setPricePerBoardFoot(e.target.value)}
-                      placeholder="From lumber yard"
+                      step="1"
+                      value={pricePerMBF}
+                      onChange={(e) => setPricePerMBF(e.target.value)}
+                      placeholder="e.g., 715"
                       className="bg-white"
                     />
+                    <p className="text-xs text-blue-600 mt-1">
+                      MBF = Thousand Board Feet (lumber yard pricing)
+                    </p>
                   </div>
-                  <div className="text-sm space-y-1 text-blue-800">
+                  <div className="text-sm space-y-1 text-blue-800 bg-blue-100 p-3 rounded">
                     <p>• Material: {selectedMaterialInfo.material.name}</p>
                     <p>• Length: {selectedMaterialInfo.material.standard_length}'</p>
-                    <p className="font-semibold">• Board Feet per Piece: {selectedMaterialInfo.boardFeet.toFixed(2)}</p>
+                    <p className="font-semibold">• Board Feet per Piece: {selectedMaterialInfo.boardFeet.toFixed(2)} BF</p>
+                    {pricePerMBF && (
+                      <p className="font-semibold text-green-700">• Price per BF: ${selectedMaterialInfo.pricePerBF.toFixed(3)}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -677,11 +688,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                 onChange={(e) => setPricePerUnit(e.target.value)}
                 placeholder={selectedMaterialInfo ? 'Auto-calculated' : '0.00'}
                 className={selectedMaterialInfo ? 'bg-green-50 font-bold text-green-900' : ''}
-                readOnly={!!selectedMaterialInfo && !!pricePerBoardFoot}
+                readOnly={!!selectedMaterialInfo && !!pricePerMBF}
               />
-              {selectedMaterialInfo && pricePerBoardFoot && (
+              {selectedMaterialInfo && pricePerMBF && (
                 <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                  ✓ Calculated: ${pricePerBoardFoot} × {selectedMaterialInfo.boardFeet.toFixed(2)} BF
+                  ✓ Calculated: ${pricePerMBF}/MBF ÷ 1000 × {selectedMaterialInfo.boardFeet.toFixed(2)} BF = ${pricePerUnit}
                 </p>
               )}
             </div>
