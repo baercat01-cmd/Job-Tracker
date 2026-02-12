@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
   LineChart,
   Calendar,
   Users,
+  Calculator,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -101,6 +102,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   // Form states
   const [vendorId, setVendorId] = useState('');
   const [materialId, setMaterialId] = useState('');
+  const [pricePerBoardFoot, setPricePerBoardFoot] = useState('');
   const [pricePerUnit, setPricePerUnit] = useState('');
   const [truckloadQty, setTruckloadQty] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
@@ -151,6 +153,31 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
       supabase.removeChannel(pricesChannel);
     };
   }, []);
+
+  // Calculate board feet for a piece of lumber
+  function calculateBoardFeet(materialName: string, length: number): number {
+    // Parse dimensions from material name (e.g., "2x4 SPF" -> 2, 4)
+    const match = materialName.match(/(\d+)\s*x\s*(\d+)/i);
+    if (!match) return 1; // Default to 1 if we can't parse
+    
+    const thickness = parseInt(match[1]);
+    const width = parseInt(match[2]);
+    
+    // Board Feet = (Thickness × Width × Length) / 12
+    return (thickness * width * length) / 12;
+  }
+
+  // Auto-calculate price per piece when board foot price changes
+  useEffect(() => {
+    if (pricePerBoardFoot && materialId) {
+      const material = materials.find(m => m.id === materialId);
+      if (material && material.unit === 'board foot') {
+        const boardFeet = calculateBoardFeet(material.name, material.standard_length);
+        const pricePerPiece = parseFloat(pricePerBoardFoot) * boardFeet;
+        setPricePerUnit(pricePerPiece.toFixed(2));
+      }
+    }
+  }, [pricePerBoardFoot, materialId, materials]);
 
   async function loadData() {
     setLoading(true);
@@ -204,10 +231,13 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     setPrices(data || []);
   }
 
-  function openAddPriceDialog(material?: Material) {
+  function openAddPriceDialog(material?: Material, vendor?: Vendor) {
     if (material) {
       setMaterialId(material.id);
       setSelectedMaterial(material);
+    }
+    if (vendor) {
+      setVendorId(vendor.id);
     }
     setShowAddPriceDialog(true);
   }
@@ -283,13 +313,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     }
 
     try {
-      console.log('Saving material:', {
-        name: materialName,
-        category: category,
-        unit: materialUnit,
-        standard_length: standardLength,
-      });
-
       const maxOrder = materials
         .filter(m => m.category === category)
         .reduce((max, m) => Math.max(max, m.order_index), 0);
@@ -305,16 +328,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         }])
         .select();
 
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Material saved successfully:', data);
       toast.success('Material added successfully');
       setShowAddMaterialDialog(false);
       resetMaterialForm();
-      // Data will auto-reload via realtime subscription
     } catch (error: any) {
       console.error('Error saving material:', error);
       toast.error(`Failed to save material: ${error.message || 'Unknown error'}`);
@@ -324,6 +342,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   function resetPriceForm() {
     setMaterialId('');
     setVendorId('');
+    setPricePerBoardFoot('');
     setPricePerUnit('');
     setTruckloadQty('');
     setEffectiveDate(new Date().toISOString().split('T')[0]);
@@ -406,6 +425,19 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     return 'stable';
   }
 
+  // Calculate board feet info for selected material
+  const selectedMaterialInfo = useMemo(() => {
+    if (!materialId) return null;
+    const material = materials.find(m => m.id === materialId);
+    if (!material || material.unit !== 'board foot') return null;
+    
+    const boardFeet = calculateBoardFeet(material.name, material.standard_length);
+    return {
+      material,
+      boardFeet,
+    };
+  }, [materialId, materials]);
+
   const filteredMaterials = materials.filter(m => m.category === category);
 
   if (loading) {
@@ -462,10 +494,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
             <p className="text-sm text-muted-foreground mb-4">
               Add materials to start tracking prices
             </p>
-            <Button onClick={() => setShowAddMaterialDialog(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Material
-            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -508,13 +536,6 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                   {vendors.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <p className="mb-2">No vendors added yet</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowAddVendorDialog(true)}
-                      >
-                        Add Vendor
-                      </Button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -523,10 +544,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                         const trend = getPriceTrend(material.id, vendor.id);
 
                         return (
-                          <div
+                          <button
                             key={vendor.id}
-                            className={`border rounded-lg p-4 ${
-                              latestPrice ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'
+                            onClick={() => openAddPriceDialog(material, vendor)}
+                            className={`border rounded-lg p-4 text-left transition-all hover:shadow-md cursor-pointer ${
+                              latestPrice ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
                             <div className="flex items-start justify-between mb-2">
@@ -560,9 +582,12 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                                 </p>
                               </div>
                             ) : (
-                              <p className="text-sm text-muted-foreground">No pricing data</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Plus className="w-4 h-4" />
+                                Click to add pricing
+                              </div>
                             )}
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -613,18 +638,55 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Price per Unit ($) *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={pricePerUnit}
-                  onChange={(e) => setPricePerUnit(e.target.value)}
-                  placeholder="0.00"
-                />
+            {/* Board Foot Conversion for Lumber */}
+            {selectedMaterialInfo && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calculator className="w-5 h-5 text-blue-600" />
+                  <h4 className="font-semibold text-blue-900">Board Foot Calculator</h4>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-blue-900">Price per Board Foot ($) *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricePerBoardFoot}
+                      onChange={(e) => setPricePerBoardFoot(e.target.value)}
+                      placeholder="From lumber yard"
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="text-sm space-y-1 text-blue-800">
+                    <p>• Material: {selectedMaterialInfo.material.name}</p>
+                    <p>• Length: {selectedMaterialInfo.material.standard_length}'</p>
+                    <p className="font-semibold">• Board Feet per Piece: {selectedMaterialInfo.boardFeet.toFixed(2)}</p>
+                  </div>
+                </div>
               </div>
+            )}
+
+            <div>
+              <Label>Price per {selectedMaterialInfo ? 'Piece' : 'Unit'} ($) *</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={pricePerUnit}
+                onChange={(e) => setPricePerUnit(e.target.value)}
+                placeholder={selectedMaterialInfo ? 'Auto-calculated' : '0.00'}
+                className={selectedMaterialInfo ? 'bg-green-50 font-bold text-green-900' : ''}
+                readOnly={!!selectedMaterialInfo && !!pricePerBoardFoot}
+              />
+              {selectedMaterialInfo && pricePerBoardFoot && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  ✓ Calculated: ${pricePerBoardFoot} × {selectedMaterialInfo.boardFeet.toFixed(2)} BF
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Truckload Quantity</Label>
                 <Input
@@ -635,15 +697,14 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
                   placeholder="e.g., 9"
                 />
               </div>
-            </div>
-
-            <div>
-              <Label>Effective Date *</Label>
-              <Input
-                type="date"
-                value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-              />
+              <div>
+                <Label>Effective Date *</Label>
+                <Input
+                  type="date"
+                  value={effectiveDate}
+                  onChange={(e) => setEffectiveDate(e.target.value)}
+                />
+              </div>
             </div>
 
             <div>
