@@ -152,6 +152,9 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     notes: '',
   });
   const [savingManualMaterial, setSavingManualMaterial] = useState(false);
+  const [showDatabaseSearchInDialog, setShowDatabaseSearchInDialog] = useState(false);
+  const [dialogSearchQuery, setDialogSearchQuery] = useState('');
+  const [dialogSearchCategory, setDialogSearchCategory] = useState<string>('all');
 
   useEffect(() => {
     loadWorkbooks();
@@ -689,11 +692,40 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       length: '',
       color: '',
       cost_per_unit: 0,
-      markup_percent: 0,
+      markup_percent: 35,
       price_per_unit: 0,
       notes: '',
     });
     setShowManualMaterialDialog(true);
+    setShowDatabaseSearchInDialog(false);
+    setDialogSearchQuery('');
+    setDialogSearchCategory('all');
+    // Load catalog for inline search
+    loadCatalogMaterials();
+  }
+
+  function selectMaterialFromDatabase(catalogItem: any) {
+    // Auto-calculate price_per_unit based on cost and markup
+    const cost = catalogItem.purchase_cost || 0;
+    const markup = manualMaterialForm.markup_percent || 35;
+    const price = cost * (1 + markup / 100);
+
+    setManualMaterialForm({
+      category: catalogItem.category || '',
+      usage: manualMaterialForm.usage, // Keep existing usage
+      sku: catalogItem.sku || '',
+      material_name: catalogItem.material_name,
+      quantity: manualMaterialForm.quantity, // Keep existing quantity
+      length: catalogItem.part_length || '',
+      color: manualMaterialForm.color, // Keep existing color
+      cost_per_unit: cost,
+      markup_percent: markup,
+      price_per_unit: catalogItem.unit_price || price,
+      notes: manualMaterialForm.notes, // Keep existing notes
+    });
+    setShowDatabaseSearchInDialog(false);
+    setDialogSearchQuery('');
+    toast.success(`Material "${catalogItem.material_name}" loaded from database`);
   }
 
   async function saveManualMaterial() {
@@ -1421,18 +1453,132 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       <Dialog open={showManualMaterialDialog} onOpenChange={setShowManualMaterialDialog}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              Add Material Manually
-              {selectedSheet && (
-                <Badge variant="outline" className="ml-2">
-                  Adding to: {selectedSheet.sheet_name}
-                </Badge>
-              )}
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                Add Material Manually
+                {selectedSheet && (
+                  <Badge variant="outline" className="ml-2">
+                    Adding to: {selectedSheet.sheet_name}
+                  </Badge>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDatabaseSearchInDialog(!showDatabaseSearchInDialog)}
+                className="border-blue-500 text-blue-700 hover:bg-blue-50"
+              >
+                <Search className="w-4 h-4 mr-2" />
+                {showDatabaseSearchInDialog ? 'Hide' : 'Search'} Database
+              </Button>
             </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
+            {/* Database Search Section - Collapsible */}
+            {showDatabaseSearchInDialog && (
+              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Search className="w-5 h-5 text-blue-700" />
+                  <h3 className="font-semibold text-blue-900">Search Materials Database</h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="relative">
+                    <Input
+                      placeholder="Search by name, SKU, or category..."
+                      value={dialogSearchQuery}
+                      onChange={(e) => setDialogSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  </div>
+                  
+                  <select
+                    value={dialogSearchCategory}
+                    onChange={(e) => setDialogSearchCategory(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="all">All Categories</option>
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search Results */}
+                <div className="max-h-64 overflow-y-auto border rounded-lg bg-white">
+                  {(() => {
+                    const filtered = catalogMaterials.filter(material => {
+                      const matchesSearch = dialogSearchQuery === '' || 
+                        material.material_name.toLowerCase().includes(dialogSearchQuery.toLowerCase()) ||
+                        material.sku.toLowerCase().includes(dialogSearchQuery.toLowerCase()) ||
+                        (material.category && material.category.toLowerCase().includes(dialogSearchQuery.toLowerCase()));
+                      
+                      const matchesCategory = dialogSearchCategory === 'all' || material.category === dialogSearchCategory;
+                      
+                      return matchesSearch && matchesCategory;
+                    });
+
+                    if (loadingCatalog) {
+                      return (
+                        <div className="text-center py-8">
+                          <div className="w-6 h-6 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                          <p className="text-xs text-muted-foreground">Loading...</p>
+                        </div>
+                      );
+                    }
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center py-8">
+                          <p className="text-sm text-muted-foreground">No materials found</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="divide-y">
+                        {filtered.slice(0, 10).map((material) => (
+                          <button
+                            key={material.sku}
+                            onClick={() => selectMaterialFromDatabase(material)}
+                            className="w-full text-left p-3 hover:bg-blue-50 transition-colors flex items-center justify-between group"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm truncate">{material.material_name}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs text-muted-foreground font-mono">{material.sku}</span>
+                                {material.category && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {material.category}
+                                  </Badge>
+                                )}
+                                {material.part_length && (
+                                  <span className="text-xs text-muted-foreground">{material.part_length}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right ml-4">
+                              {material.purchase_cost && (
+                                <p className="text-sm font-semibold">${material.purchase_cost.toFixed(2)}</p>
+                              )}
+                              <span className="text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to use</span>
+                            </div>
+                          </button>
+                        ))}
+                        {filtered.length > 10 && (
+                          <div className="p-2 text-center bg-slate-50">
+                            <p className="text-xs text-muted-foreground">Showing 10 of {filtered.length} results - refine search to see more</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="category">Category *</Label>
