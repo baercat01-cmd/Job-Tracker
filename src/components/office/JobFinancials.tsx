@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -46,6 +46,19 @@ interface CustomFinancialRow {
   notes: string | null;
   order_index: number;
   taxable: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CustomRowLineItem {
+  id: string;
+  row_id: string;
+  description: string;
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+  notes: string | null;
+  order_index: number;
   created_at: string;
   updated_at: string;
 }
@@ -79,10 +92,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [customRows, setCustomRows] = useState<CustomFinancialRow[]>([]);
+  const [customRowLineItems, setCustomRowLineItems] = useState<Record<string, CustomRowLineItem[]>>({});
   const [laborPricing, setLaborPricing] = useState<LaborPricing | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showSubUploadDialog, setShowSubUploadDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
+  
+  // Line item dialog state
+  const [showLineItemDialog, setShowLineItemDialog] = useState(false);
+  const [editingLineItem, setEditingLineItem] = useState<CustomRowLineItem | null>(null);
+  const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
+  const [lineItemForm, setLineItemForm] = useState({
+    description: '',
+    quantity: '1',
+    unit_cost: '0',
+    notes: '',
+  });
   
   // Proposal markup state
   const [proposalMarkup, setProposalMarkup] = useState('10');
@@ -413,6 +438,27 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
     });
     setCustomRowLabor(laborMap);
+
+    // Load line items for custom rows
+    if (newData.length > 0) {
+      const rowIds = newData.map(r => r.id);
+      const { data: lineItemsData, error: lineItemsError } = await supabase
+        .from('custom_financial_row_items')
+        .select('*')
+        .in('row_id', rowIds)
+        .order('order_index');
+
+      if (!lineItemsError && lineItemsData) {
+        const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
+        lineItemsData.forEach(item => {
+          if (!lineItemsMap[item.row_id]) {
+            lineItemsMap[item.row_id] = [];
+          }
+          lineItemsMap[item.row_id].push(item);
+        });
+        setCustomRowLineItems(lineItemsMap);
+      }
+    }
   }
 
   async function loadLaborPricing() {
@@ -784,6 +830,112 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  // Line item functions
+  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem) {
+    setLineItemParentRowId(rowId);
+    
+    if (lineItem) {
+      setEditingLineItem(lineItem);
+      setLineItemForm({
+        description: lineItem.description,
+        quantity: lineItem.quantity.toString(),
+        unit_cost: lineItem.unit_cost.toString(),
+        notes: lineItem.notes || '',
+      });
+    } else {
+      setEditingLineItem(null);
+      setLineItemForm({
+        description: '',
+        quantity: '1',
+        unit_cost: '0',
+        notes: '',
+      });
+    }
+    
+    setShowLineItemDialog(true);
+  }
+
+  async function saveLineItem() {
+    if (!lineItemParentRowId || !lineItemForm.description) {
+      toast.error('Please fill in description');
+      return;
+    }
+
+    const qty = parseFloat(lineItemForm.quantity) || 1;
+    const cost = parseFloat(lineItemForm.unit_cost) || 0;
+    const totalCost = qty * cost;
+
+    const itemData = {
+      row_id: lineItemParentRowId,
+      description: lineItemForm.description,
+      quantity: qty,
+      unit_cost: cost,
+      total_cost: totalCost,
+      notes: lineItemForm.notes || null,
+      order_index: editingLineItem 
+        ? editingLineItem.order_index 
+        : (customRowLineItems[lineItemParentRowId]?.length || 0),
+    };
+
+    try {
+      if (editingLineItem) {
+        const { error } = await supabase
+          .from('custom_financial_row_items')
+          .update(itemData)
+          .eq('id', editingLineItem.id);
+
+        if (error) throw error;
+        toast.success('Line item updated');
+      } else {
+        const { error } = await supabase
+          .from('custom_financial_row_items')
+          .insert([itemData]);
+
+        if (error) throw error;
+        toast.success('Line item added');
+      }
+
+      setShowLineItemDialog(false);
+      setEditingLineItem(null);
+      setLineItemParentRowId(null);
+      await loadCustomRows();
+    } catch (error: any) {
+      console.error('Error saving line item:', error);
+      toast.error('Failed to save line item');
+    }
+  }
+
+  async function deleteLineItem(id: string) {
+    if (!confirm('Delete this line item?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('custom_financial_row_items')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      toast.success('Line item deleted');
+      await loadCustomRows();
+    } catch (error: any) {
+      console.error('Error deleting line item:', error);
+      toast.error('Failed to delete line item');
+    }
+  }
+
+  // Calculate custom row total from line items (if any) or from quantity * unit_cost
+  function getCustomRowTotal(row: CustomFinancialRow): number {
+    const lineItems = customRowLineItems[row.id] || [];
+    if (lineItems.length > 0) {
+      // If has line items, sum their totals
+      const itemsTotal = lineItems.reduce((sum, item) => sum + item.total_cost, 0);
+      return itemsTotal * (1 + row.markup_percent / 100);
+    } else {
+      // Otherwise use the row's own selling price
+      return row.selling_price;
+    }
+  }
+
   // Filter labor rows and calculate total labor hours
   const laborRows = customRows.filter(r => r.category === 'labor');
   const totalLaborHours = laborRows.reduce((sum, r) => sum + r.quantity, 0);
@@ -791,23 +943,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Sort all rows by order_index for proper display order
   const sortedCustomRows = [...customRows].sort((a, b) => a.order_index - b.order_index);
   
-  // Calculate totals
-  const groupedRows = customRows.reduce((acc, row) => {
-    if (!acc[row.category]) {
-      acc[row.category] = [];
+  // Calculate totals (using line items where applicable)
+  const grandTotalCost = customRows.reduce((sum, row) => {
+    const lineItems = customRowLineItems[row.id] || [];
+    if (lineItems.length > 0) {
+      return sum + lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
     }
-    acc[row.category].push(row);
-    return acc;
-  }, {} as Record<string, CustomFinancialRow[]>);
+    return sum + row.total_cost;
+  }, 0);
 
-  const categoryTotals = Object.entries(groupedRows).map(([cat, rows]) => ({
-    category: cat,
-    totalCost: rows.reduce((sum, r) => sum + r.total_cost, 0),
-    totalPrice: rows.reduce((sum, r) => sum + r.selling_price, 0),
-  }));
-
-  const grandTotalCost = categoryTotals.reduce((sum, ct) => sum + ct.totalCost, 0);
-  const grandTotalPrice = categoryTotals.reduce((sum, ct) => sum + ct.totalPrice, 0);
+  const grandTotalPrice = customRows.reduce((sum, row) => {
+    return sum + getCustomRowTotal(row);
+  }, 0);
 
   // Labor calculations (no markup) - use TOTAL LABOR HOURS from labor rows for pricing
   const laborRate = parseFloat(hourlyRate) || 60;
@@ -830,14 +977,28 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
   const proposalMaterialsPrice = proposalMaterialsCost * (1 + markup / 100);
   
-  // Separate custom rows into taxable and non-taxable
+  // Separate custom rows into taxable and non-taxable (using calculated totals)
   const taxableRows = customRows.filter(r => r.taxable);
   const nonTaxableRows = customRows.filter(r => !r.taxable);
   
-  const taxableAdditionalCost = taxableRows.reduce((sum, r) => sum + r.selling_price, 0);
+  const taxableAdditionalCost = taxableRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    if (lineItems.length > 0) {
+      const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+      return sum + (itemsTotal * (1 + r.markup_percent / 100));
+    }
+    return sum + r.selling_price;
+  }, 0);
   const taxableAdditionalPrice = taxableAdditionalCost * (1 + markup / 100);
   
-  const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => sum + r.selling_price, 0);
+  const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    if (lineItems.length > 0) {
+      const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+      return sum + (itemsTotal * (1 + r.markup_percent / 100));
+    }
+    return sum + r.selling_price;
+  }, 0);
   const nonTaxableAdditionalPrice = nonTaxableAdditionalCost * (1 + markup / 100);
   
   // Labor from sheet labor (no markup, no tax) - calculate total from all sheet labor
@@ -1294,79 +1455,164 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
                       );
                     } else {
-                      // Custom row (labor, materials, equipment, etc.)
+                      // Custom row (labor, materials, equipment, etc.) - NOW WITH LINE ITEMS
                       const row = item.data as CustomFinancialRow;
-                      const rowCost = row.selling_price;
+                      const lineItems = customRowLineItems[row.id] || [];
+                      const hasLineItems = lineItems.length > 0;
+                      
+                      // Calculate total from line items or use row total
+                      const rowCost = hasLineItems 
+                        ? lineItems.reduce((sum, item) => sum + item.total_cost, 0) * (1 + row.markup_percent / 100)
+                        : row.selling_price;
                       const rowPrice = rowCost * (1 + markup / 100);
                       const rowLabor = customRowLabor[row.id];
 
                       return (
                         <div key={item.id}>
-                          <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
-                            <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
-                              {/* Left: Row Name */}
-                              <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
-                                <Clock className="w-5 h-5 text-slate-700 mt-1" />
-                                <div className="flex-1 min-w-0">
-                                  <h3 className="text-lg font-bold text-slate-900 truncate">{row.description}</h3>
-                                  {rowLabor && (
-                                    <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Middle: Description/Notes - More Space */}
-                              <div className="flex-1 min-w-0 px-4">
-                                <p className="text-sm text-slate-600 italic">
-                                  {row.notes && !rowLabor ? row.notes : '(No description provided)'}
-                                </p>
-                              </div>
-
-                              {/* Right: Pricing + Actions Menu */}
-                              <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
-                                <div className="text-right flex-1">
-                                  <div className="flex items-center justify-end gap-2 mb-1">
-                                    <p className="text-xs text-slate-600">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    {row.markup_percent > 0 && (
-                                      <p className="text-xs font-semibold text-green-700">+{row.markup_percent.toFixed(1)}%</p>
-                                    )}
-                                    <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
+                          <Collapsible defaultOpen={false}>
+                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
+                              <CollapsibleTrigger className="w-full">
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
+                                  {/* Left: Chevron + Row Name */}
+                                  <div className="flex items-start gap-3" style={{ minWidth: '250px', maxWidth: '250px' }}>
+                                    <ChevronDown className="w-5 h-5 text-slate-700 mt-1" />
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="text-lg font-bold text-slate-900 truncate">{row.description}</h3>
+                                      {hasLineItems && (
+                                        <p className="text-xs text-slate-600">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
+                                      )}
+                                      {rowLabor && (
+                                        <p className="text-sm text-amber-700 font-semibold mt-1">Labor</p>
+                                      )}
+                                    </div>
                                   </div>
-                                  <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                  {/* Labor amount under price */}
-                                  {rowLabor && (
-                                    <p className="text-sm text-amber-700 font-semibold mt-1">
-                                      ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+
+                                  {/* Middle: Description/Notes - More Space */}
+                                  <div className="flex-1 min-w-0 px-4">
+                                    <p className="text-sm text-slate-600 italic">
+                                      {row.notes && !rowLabor ? row.notes : '(No description provided)'}
                                     </p>
+                                  </div>
+
+                                  {/* Right: Pricing + Actions Menu */}
+                                  <div className="flex items-center gap-3" style={{ minWidth: '340px' }}>
+                                    <div className="text-right flex-1">
+                                      <div className="flex items-center justify-end gap-2 mb-1">
+                                        <p className="text-xs text-slate-600">Base: ${rowCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        {row.markup_percent > 0 && (
+                                          <p className="text-xs font-semibold text-green-700">+{row.markup_percent.toFixed(1)}%</p>
+                                        )}
+                                        <p className="text-xs font-semibold text-blue-700">+{markup.toFixed(1)}%</p>
+                                      </div>
+                                      <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      {/* Labor amount under price */}
+                                      {rowLabor && (
+                                        <p className="text-sm text-amber-700 font-semibold mt-1">
+                                          ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                        <Button size="sm" variant="ghost">
+                                          <MoreVertical className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openLineItemDialog(row.id);
+                                          }}
+                                        >
+                                          <List className="w-4 h-4 mr-2" />
+                                          Add Line Item
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openLaborDialog(undefined, row.id);
+                                          }}
+                                        >
+                                          <Clock className="w-4 h-4 mr-2" />
+                                          {rowLabor ? 'Edit Labor' : 'Add Labor'}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openAddDialog(row);
+                                          }}
+                                        >
+                                          <Edit className="w-4 h-4 mr-2" />
+                                          Edit Row
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            deleteRow(row.id);
+                                          }}
+                                          className="text-destructive focus:text-destructive"
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete Row
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                </div>
+                              </CollapsibleTrigger>
+                              
+                              {/* Line Items Content */}
+                              <CollapsibleContent>
+                                <div className="p-4">
+                                  {hasLineItems ? (
+                                    <div className="space-y-2">
+                                      {lineItems.map((lineItem) => (
+                                        <div key={lineItem.id} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded">
+                                          <div className="flex-1">
+                                            <p className="font-medium text-slate-900">{lineItem.description}</p>
+                                            <p className="text-xs text-slate-600">
+                                              {lineItem.quantity} × ${lineItem.unit_cost.toFixed(2)} = ${lineItem.total_cost.toFixed(2)}
+                                            </p>
+                                            {lineItem.notes && (
+                                              <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-bold text-slate-900">${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openLineItemDialog(row.id, lineItem);
+                                              }}
+                                            >
+                                              <Edit className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                deleteLineItem(lineItem.id);
+                                              }}
+                                            >
+                                              <Trash2 className="w-4 h-4 text-destructive" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-4 text-sm text-muted-foreground">
+                                      No line items. Click "Add Line Item" to add detailed breakdown.
+                                    </div>
                                   )}
                                 </div>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button size="sm" variant="ghost">
-                                      <MoreVertical className="w-4 h-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => openLaborDialog(undefined, row.id)}>
-                                      <Clock className="w-4 h-4 mr-2" />
-                                      {rowLabor ? 'Edit Labor' : 'Add Labor'}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => openAddDialog(row)}>
-                                      <Edit className="w-4 h-4 mr-2" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => deleteRow(row.id)}
-                                      className="text-destructive focus:text-destructive"
-                                    >
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+                              </CollapsibleContent>
                             </div>
-                          </div>
+                          </Collapsible>
                         </div>
                       );
                     }
@@ -1574,7 +1820,81 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Add/Edit Dialog */}
+      {/* Line Item Dialog */}
+      <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingLineItem ? 'Edit' : 'Add'} Line Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description *</Label>
+              <Input
+                value={lineItemForm.description}
+                onChange={(e) => setLineItemForm({ ...lineItemForm, description: e.target.value })}
+                placeholder="e.g., Excavator rental, Skid steer..."
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={lineItemForm.quantity}
+                  onChange={(e) => setLineItemForm({ ...lineItemForm, quantity: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Unit Cost ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={lineItemForm.unit_cost}
+                  onChange={(e) => setLineItemForm({ ...lineItemForm, unit_cost: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={lineItemForm.notes}
+                onChange={(e) => setLineItemForm({ ...lineItemForm, notes: e.target.value })}
+                placeholder="Additional notes about this item..."
+                rows={3}
+              />
+            </div>
+
+            {/* Preview */}
+            {lineItemForm.unit_cost && (
+              <div className="bg-slate-50 p-4 rounded-lg border">
+                <div className="flex justify-between text-sm">
+                  <span>Total Cost:</span>
+                  <span className="font-bold text-blue-600">
+                    ${((parseFloat(lineItemForm.quantity) || 1) * (parseFloat(lineItemForm.unit_cost) || 0)).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={saveLineItem} className="flex-1">
+                {editingLineItem ? 'Update' : 'Add'} Line Item
+              </Button>
+              <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Row Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -1602,7 +1922,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder={category === 'labor' ? 'e.g., Labor & Installation' : 'e.g., Electrician, Concrete pour...'}
+                placeholder={category === 'labor' ? 'e.g., Labor & Installation' : 'e.g., Equipment, Materials...'}
               />
             </div>
 
