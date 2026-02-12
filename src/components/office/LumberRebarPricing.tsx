@@ -100,8 +100,11 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [prices, setPrices] = useState<PriceEntry[]>([]);
   
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'pricing' | 'analytics'>('pricing');
+  // Vendor tab state
+  const [selectedVendorTab, setSelectedVendorTab] = useState<string>('');
+  
+  // Expanded material for history
+  const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
   
   // Dialogs
   const [showVendorPricingDialog, setShowVendorPricingDialog] = useState(false);
@@ -590,6 +593,26 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
     );
   }
 
+  // Get best price info for display
+  const materialPriceInfo = useMemo(() => {
+    return filteredMaterials.map(material => {
+      const bestPrice = getBestPrice(material.id);
+      const avgPrice = getAveragePrice(material.id);
+      const trend = getPriceTrend(material.id);
+      const vendorCount = getVendorCount(material.id);
+      const history = getMaterialPriceHistory(material.id).slice(0, 5);
+      
+      return {
+        material,
+        bestPrice,
+        avgPrice,
+        trend,
+        vendorCount,
+        recentHistory: history,
+      };
+    });
+  }, [filteredMaterials, prices]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -597,41 +620,258 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             {category === 'lumber' ? <Package className="w-7 h-7 text-blue-600" /> : <Building2 className="w-7 h-7 text-blue-600" />}
-            {category === 'lumber' ? 'Lumber Pricing & Analytics' : 'Rebar Pricing & Analytics'}
+            {category === 'lumber' ? 'Lumber Pricing' : 'Rebar Pricing'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {activeTab === 'pricing' ? 'Manage vendor pricing and share links' : 'Analyze price trends and vendor comparisons'}
+            {filteredMaterials.length} materials • {vendors.length} vendors
           </p>
         </div>
-        {activeTab === 'analytics' && (
-          <Select value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">Last 30 Days</SelectItem>
-              <SelectItem value="90">Last 90 Days</SelectItem>
-              <SelectItem value="180">Last 6 Months</SelectItem>
-              <SelectItem value="365">Last Year</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
-          <TabsTrigger value="pricing" className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4" />
-            Pricing
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4" />
-            Analytics
-          </TabsTrigger>
-        </TabsList>
+      {/* Vendor Tabs for Adding Prices */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Add Pricing by Vendor
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {vendors.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <p>No vendors added yet. Add vendors in Settings.</p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {vendors.map(vendor => {
+                const vendorPrices = prices.filter(p => p.vendor_id === vendor.id && materials.find(m => m.id === p.material_id && m.category === category));
+                const materialsWithPrices = new Set(vendorPrices.map(p => p.material_id));
+                const pricesCount = materialsWithPrices.size;
 
-        <TabsContent value="pricing" className="space-y-6 mt-6">
+                return (
+                  <Button
+                    key={vendor.id}
+                    variant={selectedVendorTab === vendor.id ? 'default' : 'outline'}
+                    onClick={() => {
+                      setSelectedVendorTab(vendor.id);
+                      openVendorPricing(vendor);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    {vendor.name}
+                    <Badge variant="secondary" className="ml-1">
+                      {pricesCount}/{filteredMaterials.length}
+                    </Badge>
+                  </Button>
+                );
+              })}
+              <Button
+                variant="outline"
+                className="flex items-center gap-2 border-dashed"
+                onClick={() => {
+                  if (vendors.length > 0) {
+                    setShareVendor(vendors[0]);
+                    setShowShareDialog(true);
+                  }
+                }}
+              >
+                <Share2 className="w-4 h-4" />
+                Share Link
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Materials List with Best Prices */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Package className="w-5 h-5" />
+            Materials & Pricing
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {materialPriceInfo.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <p>No {category} materials found</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {materialPriceInfo.map((info, idx) => {
+                const isExpanded = expandedMaterial === info.material.id;
+                const boardFeet = info.material.unit === 'board foot'
+                  ? calculateBoardFeet(info.material.name, info.material.standard_length)
+                  : null;
+
+                return (
+                  <div key={info.material.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                    {/* Material Row */}
+                    <div
+                      className="p-4 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onClick={() => setExpandedMaterial(isExpanded ? null : info.material.id)}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Material Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-semibold text-lg">{info.material.name}</h3>
+                            {info.trend === 'up' && (
+                              <Badge className="bg-red-100 text-red-800 border-red-300">
+                                <TrendingUp className="w-3 h-3 mr-1" />
+                                Rising
+                              </Badge>
+                            )}
+                            {info.trend === 'down' && (
+                              <Badge className="bg-green-100 text-green-800 border-green-300">
+                                <TrendingDown className="w-3 h-3 mr-1" />
+                                Falling
+                              </Badge>
+                            )}
+                            {info.trend === 'stable' && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                                <Minus className="w-3 h-3 mr-1" />
+                                Stable
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                            <span>{info.material.standard_length}' length</span>
+                            {boardFeet && <span>{boardFeet.toFixed(2)} BF/piece</span>}
+                            <span>{info.vendorCount} vendor{info.vendorCount !== 1 ? 's' : ''}</span>
+                          </div>
+                        </div>
+
+                        {/* Best Price */}
+                        <div className="text-right">
+                          {info.bestPrice ? (
+                            <>
+                              <div className="text-3xl font-bold text-green-700">
+                                ${info.bestPrice.price.toFixed(2)}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {info.bestPrice.vendor}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-muted-foreground">No pricing</div>
+                          )}
+                        </div>
+
+                        {/* Average Price */}
+                        {info.avgPrice && (
+                          <div className="text-right border-l pl-4">
+                            <div className="text-lg font-semibold text-slate-700">
+                              ${info.avgPrice.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Average
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expand Button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="ml-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedMaterial(isExpanded ? null : info.material.id);
+                          }}
+                        >
+                          <LineChartIcon className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Expanded: Price History */}
+                    {isExpanded && (
+                      <div className="border-t bg-slate-50 p-4">
+                        <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          Recent Price History
+                        </h4>
+                        {info.recentHistory.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No price history available
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {info.recentHistory.map(entry => (
+                              <div
+                                key={entry.id}
+                                className="flex items-center justify-between p-3 bg-white rounded-lg border"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div>
+                                    <div className="font-semibold">{entry.vendor?.name || 'Unknown'}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {new Date(entry.effective_date).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })}
+                                    </div>
+                                  </div>
+                                  {entry.truckload_quantity && (
+                                    <Badge variant="outline">
+                                      {entry.truckload_quantity} unit truckload
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xl font-bold text-blue-700">
+                                    ${entry.price_per_unit.toFixed(2)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">per {info.material.unit}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Price Chart */}
+                        {info.recentHistory.length > 1 && (
+                          <div className="mt-4">
+                            <ResponsiveContainer width="100%" height={200}>
+                              <LineChart data={getPriceHistoryChartData(info.material.id).slice(-10)}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                                <YAxis tick={{ fontSize: 12 }} />
+                                <Tooltip />
+                                <Legend />
+                                {(() => {
+                                  const uniqueVendors = [...new Set(info.recentHistory.map(h => h.vendor?.name || 'Unknown'))];
+                                  return uniqueVendors.map((vendorName, i) => (
+                                    <Line
+                                      key={vendorName}
+                                      type="monotone"
+                                      dataKey={vendorName}
+                                      stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                                      strokeWidth={2}
+                                      dot={{ r: 4 }}
+                                    />
+                                  ));
+                                })()}
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Legacy: Hidden content for backward compatibility */}
+      <div className="hidden">
           {/* Vendor Cards */}
           {vendors.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -823,9 +1063,10 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               </div>
             )}
           </details>
-        </TabsContent>
+      </div>
 
-        <TabsContent value="analytics" className="space-y-6 mt-6">
+      {/* Legacy analytics - hidden */}
+      <div className="hidden">
           {/* Market Trends Summary */}
           <div className="grid grid-cols-3 gap-4">
             <Card className="bg-green-50 border-green-200">
@@ -948,8 +1189,7 @@ export function LumberRebarPricing({ category }: LumberRebarPricingProps) {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+      </div>
 
       {/* REST OF THE DIALOGS ARE IDENTICAL - TRUNCATED FOR BREVITY */}
       {/* Vendor Bulk Pricing Dialog, Share Link Dialog, Price History Dialog, Material Detail Dialog all remain the same */}
