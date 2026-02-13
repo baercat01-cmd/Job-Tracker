@@ -1274,9 +1274,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Markup + Actions - COMPACT */}
-                                  <div className="flex items-center gap-2" style={{ minWidth: '380px' }}>
-                                    <div className="text-right">
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
+                                    {/* Editable Markup - Plain Number */}
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={sheetMarkup}
+                                        onChange={(e) => {
+                                          const newMarkup = parseFloat(e.target.value) || 0;
+                                          setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                                        }}
+                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
+                                      />
+                                      <span className="text-xs text-slate-500">%</span>
+                                    </div>
+                                    
+                                    {/* Pricing - Far Right */}
+                                    <div className="text-right flex-1">
                                       <div className="flex items-center justify-end gap-2 mb-1">
                                         <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       </div>
@@ -1286,22 +1303,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                           ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
                                         </p>
                                       )}
-                                    </div>
-                                    
-                                    {/* Editable Markup - CLOSE TO NUMBERS */}
-                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                      <Input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={sheetMarkup}
-                                        onChange={(e) => {
-                                          const newMarkup = parseFloat(e.target.value) || 0;
-                                          setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
-                                        }}
-                                        className="w-16 h-8 text-sm text-center"
-                                      />
-                                      <span className="text-xs font-semibold text-green-700">%</span>
                                     </div>
                                     
                                     <DropdownMenu>
@@ -1409,16 +1410,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     {/* No description in collapsed view */}
                                   </div>
 
-                                  {/* Right: Pricing + Markup - COMPACT */}
-                                  <div className="flex items-center gap-2" style={{ minWidth: '380px' }}>
-                                    <div className="text-right">
-                                      <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    </div>
-                                    
-                                    {/* Editable Markup - CLOSE TO NUMBERS */}
+                                  {/* Right: Markup + Pricing */}
+                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
+                                    {/* Editable Markup - Plain Number */}
                                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                      <Input
+                                      <input
                                         type="number"
                                         min="0"
                                         step="0.1"
@@ -1438,9 +1434,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             toast.error('Failed to update markup');
                                           }
                                         }}
-                                        className="w-16 h-8 text-sm text-center"
+                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
                                       />
-                                      <span className="text-xs font-semibold text-green-700">%</span>
+                                      <span className="text-xs text-slate-500">%</span>
+                                    </div>
+                                    
+                                    {/* Pricing - Far Right */}
+                                    <div className="text-right flex-1">
+                                      <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                   </div>
                                 </div>
@@ -1542,23 +1544,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </p>
                                   </div>
 
-                                  {/* Right: Pricing + Markup + Actions - COMPACT */}
-                                  <div className="flex items-center gap-2" style={{ minWidth: '380px' }}>
-                                    <div className="text-right">
-                                      <div className="flex items-center justify-end gap-2 mb-1">
-                                        <p className="text-xs text-slate-600">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      </div>
-                                      <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      {rowLabor && (
-                                        <p className="text-sm text-amber-700 font-semibold mt-1">
-                                          ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
-                                        </p>
-                                      )}
-                                    </div>
-                                    
-                                    {/* Editable Markup - CLOSE TO NUMBERS */}
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
+                                    {/* Editable Markup - Plain Number */}
                                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                      <Input
+                                      <input
                                         type="number"
                                         min="0"
                                         step="0.1"
@@ -1578,9 +1568,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             toast.error('Failed to update markup');
                                           }
                                         }}
-                                        className="w-16 h-8 text-sm text-center"
+                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
                                       />
-                                      <span className="text-xs font-semibold text-green-700">%</span>
+                                      <span className="text-xs text-slate-500">%</span>
+                                    </div>
+                                    
+                                    {/* Pricing - Far Right */}
+                                    <div className="text-right flex-1">
+                                      <div className="flex items-center justify-end gap-2 mb-1">
+                                        <p className="text-xs text-slate-600">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      </div>
+                                      <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      {rowLabor && (
+                                        <p className="text-sm text-amber-700 font-semibold mt-1">
+                                          ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+                                        </p>
+                                      )}
                                     </div>
                                     
                                     <DropdownMenu>
