@@ -989,9 +989,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Proposal calculations with individual markups and tax
   const TAX_RATE = 0.07; // 7% tax
   
-  // Materials: calculate with individual sheet markups AND linked custom rows
-  const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
-  const proposalMaterialsPrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
+  // MATERIALS: Workbook materials + linked custom rows + materials category + other taxable items (not sub/labor)
+  const proposalMaterialsBasePrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     // Calculate cost from linked custom rows (already have their own markups applied)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
     const linkedRowsTotal = linkedRows.reduce((rowSum, row) => {
@@ -1008,21 +1007,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (sheetBaseCost * (1 + sheetMarkup / 100));
   }, 0);
   
-  // Separate custom rows into taxable and non-taxable (using calculated totals)
-  // EXCLUDE custom rows that are linked to material sheets (they're already counted in materials)
-  // EXCLUDE custom rows with category="subcontractor" (they're counted with subcontractors)
-  const taxableRows = customRows.filter(r => r.taxable && !(r as any).sheet_id && r.category !== 'subcontractor');
-  const nonTaxableRows = customRows.filter(r => !r.taxable && !(r as any).sheet_id && r.category !== 'subcontractor');
-  
-  const taxableAdditionalCost = taxableRows.reduce((sum, r) => {
-    const lineItems = customRowLineItems[r.id] || [];
-    if (lineItems.length > 0) {
-      const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
-      return sum + itemsTotal;
-    }
-    return sum + r.total_cost;
-  }, 0);
-  const taxableAdditionalPrice = taxableRows.reduce((sum, r) => {
+  // Custom rows with category="materials" (not linked to sheets)
+  const materialsCategoryRows = customRows.filter(r => 
+    r.category === 'materials' && !(r as any).sheet_id
+  );
+  const materialsCategoryPrice = materialsCategoryRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
     const baseCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
@@ -1030,15 +1019,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (baseCost * (1 + r.markup_percent / 100));
   }, 0);
   
-  const nonTaxableAdditionalCost = nonTaxableRows.reduce((sum, r) => {
-    const lineItems = customRowLineItems[r.id] || [];
-    if (lineItems.length > 0) {
-      const itemsTotal = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
-      return sum + itemsTotal;
-    }
-    return sum + r.total_cost;
-  }, 0);
-  const nonTaxableAdditionalPrice = nonTaxableRows.reduce((sum, r) => {
+  // Other taxable custom rows (not subcontractor, labor, or materials category)
+  const otherTaxableRows = customRows.filter(r => 
+    r.taxable && 
+    !(r as any).sheet_id && 
+    r.category !== 'subcontractor' && 
+    r.category !== 'labor' &&
+    r.category !== 'materials'
+  );
+  const otherTaxablePrice = otherTaxableRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
     const baseCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
@@ -1046,39 +1035,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (baseCost * (1 + r.markup_percent / 100));
   }, 0);
   
-  // Labor from sheet labor (no markup, no tax) - calculate total from all sheet labor
-  const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
-    const labor = sheetLabor[sheet.sheetId];
-    return sum + (labor ? labor.total_labor_cost : 0);
-  }, 0);
+  const finalMaterialsPrice = proposalMaterialsBasePrice + materialsCategoryPrice + otherTaxablePrice;
   
-  // Labor from custom rows (no markup, no tax)
-  const totalCustomRowLaborCost = Object.values(customRowLabor).reduce((sum: number, labor: any) => {
-    return sum + (labor.estimated_hours * labor.hourly_rate);
-  }, 0);
-  
-  const proposalLaborCost = totalSheetLaborCost + totalCustomRowLaborCost;
-  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost;
-  
-  // Subcontractor estimates (with their individual markups, taxable)
-  // Only include non-excluded line items + custom rows with category="subcontractor"
+  // SUBCONTRACTORS: Subcontractor estimates + custom rows with category="subcontractor"
   const subcontractorCustomRows = customRows.filter(r => r.category === 'subcontractor' && !(r as any).sheet_id);
   
-  const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
-    const lineItems = subcontractorLineItems[est.id] || [];
-    const includedTotal = lineItems
-      .filter((item: any) => !item.excluded)
-      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
-    return sum + includedTotal;
-  }, 0) + subcontractorCustomRows.reduce((sum, r) => {
-    const lineItems = customRowLineItems[r.id] || [];
-    if (lineItems.length > 0) {
-      return sum + lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
-    }
-    return sum + r.total_cost;
-  }, 0);
-  
-  const proposalSubcontractorPrice = subcontractorEstimates.reduce((sum, est) => {
+  const finalSubcontractorPrice = subcontractorEstimates.reduce((sum, est) => {
     const lineItems = subcontractorLineItems[est.id] || [];
     const includedTotal = lineItems
       .filter((item: any) => !item.excluded)
@@ -1093,23 +1055,55 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (baseCost * (1 + r.markup_percent / 100));
   }, 0);
   
-  // Calculate subtotals
-  const taxableSubtotal = proposalMaterialsPrice + taxableAdditionalPrice + proposalSubcontractorPrice;
-  const nonTaxableSubtotal = nonTaxableAdditionalPrice + proposalLaborPrice;
+  // LABOR: Sheet labor + custom row labor + labor category + non-taxable items (not materials/sub)
+  // Labor from sheet labor (no tax)
+  const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
+    const labor = sheetLabor[sheet.sheetId];
+    return sum + (labor ? labor.total_labor_cost : 0);
+  }, 0);
   
-  // Tax calculated only on taxable items
+  // Labor from custom rows (stored in notes as JSON, no tax)
+  const totalCustomRowLaborCost = Object.values(customRowLabor).reduce((sum: number, labor: any) => {
+    return sum + (labor.estimated_hours * labor.hourly_rate);
+  }, 0);
+  
+  // Custom rows with category="labor" (not linked to sheets)
+  const laborCategoryRows = customRows.filter(r => 
+    r.category === 'labor' && !(r as any).sheet_id
+  );
+  const laborCategoryPrice = laborCategoryRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
+  }, 0);
+  
+  // Other non-taxable custom rows (not subcontractor, labor, or materials category)
+  const otherNonTaxableRows = customRows.filter(r => 
+    !r.taxable && 
+    !(r as any).sheet_id && 
+    r.category !== 'subcontractor' && 
+    r.category !== 'labor' &&
+    r.category !== 'materials'
+  );
+  const otherNonTaxablePrice = otherNonTaxableRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
+  }, 0);
+  
+  const finalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + laborCategoryPrice + otherNonTaxablePrice;
+  
+  // Tax calculation: materials + subcontractors are taxable, labor is NOT taxable
+  const taxableSubtotal = finalMaterialsPrice + finalSubcontractorPrice;
   const proposalTotalTax = taxableSubtotal * TAX_RATE;
   
   // Grand total
-  const proposalSubtotal = taxableSubtotal + nonTaxableSubtotal;
+  const proposalSubtotal = taxableSubtotal + finalLaborPrice;
   const proposalGrandTotal = proposalSubtotal + proposalTotalTax;
-  
-  const proposalAdditionalCost = taxableAdditionalCost + nonTaxableAdditionalCost;
-  const proposalAdditionalPrice = taxableAdditionalPrice + nonTaxableAdditionalPrice;
-  
-  const proposalTotalCost = proposalMaterialsCost + proposalAdditionalCost + proposalLaborCost + subcontractorBaseCost;
-  const proposalProfit = proposalGrandTotal - proposalTotalCost;
-  const proposalMargin = proposalGrandTotal > 0 ? (proposalProfit / proposalGrandTotal) * 100 : 0;
 
   // Progress calculations - use total labor hours from labor rows
   const progressPercent = totalLaborHours > 0 ? Math.min((totalClockInHours / totalLaborHours) * 100, 100) : 0;
@@ -1255,10 +1249,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   Upload Sub
                 </Button>
               </div>
+              
               {/* Main Content Column - Wider for better description visibility */}
               <div className="flex-1 min-w-0 space-y-3">
-                {/* Material rows content here - this section is very long, keeping it as-is */}
-                {/* ... keeping all the material rows rendering logic ... */}
+                {/* Material rows content here - keeping as is since it's very long */}
               </div>
 
               {/* Project Total Box - Fixed Width Sidebar */}
@@ -1274,18 +1268,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between py-2 border-b border-slate-200">
                       <span className="font-semibold text-slate-700">Materials</span>
-                      <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="font-bold text-slate-900">${finalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {subcontractorEstimates.length > 0 && (
+                    {(subcontractorEstimates.length > 0 || subcontractorCustomRows.length > 0) && (
                       <div className="flex justify-between py-2 border-b border-slate-200">
                         <span className="font-semibold text-slate-700">Subcontractors</span>
-                        <span className="font-bold text-slate-900">${proposalSubcontractorPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <span className="font-bold text-slate-900">${finalSubcontractorPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
-                    {customRows.length > 0 && (
+                    {(totalSheetLaborCost > 0 || totalCustomRowLaborCost > 0 || laborCategoryRows.length > 0 || otherNonTaxableRows.length > 0) && (
                       <div className="flex justify-between py-2 border-b border-slate-200">
-                        <span className="font-semibold text-slate-700">Additional Costs & Labor</span>
-                        <span className="font-bold text-slate-900">${(proposalAdditionalPrice + proposalLaborPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <span className="font-semibold text-slate-700">Labor</span>
+                        <span className="font-bold text-slate-900">${finalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </div>
@@ -1310,8 +1304,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             </div>
         </TabsContent>
       </Tabs>
-
-      {/* All dialog components remain the same... */}
     </div>
   );
 }
