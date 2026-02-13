@@ -1159,7 +1159,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </div>
         
         {/* Add spacer to prevent content from hiding under fixed header */}
-        <div className="h-16" />
+        {/* Total height: 64px (main tabs) + 48px (customer portal) + 48px (orders) = 160px */}
+        <div className="h-40" />
 
         {/* Overview Tab - Wrapped in max-width container */}
         <TabsContent value="overview" className="w-full">
