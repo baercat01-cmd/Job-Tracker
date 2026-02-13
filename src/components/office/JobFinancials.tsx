@@ -1450,11 +1450,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-[440px]">
+                        <div className="mt-1 ml-6 mr-[360px]">
                           <Textarea
                             value={sheet.sheetDescription}
-                            placeholder="Click to add notes..."
-                            className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                            placeholder="Click to add description..."
+                            className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
                             rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
                             onChange={(e) => {
                               // Auto-save on blur
@@ -1640,11 +1640,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                         {/* Notes below title */}
                         {row.notes && (
-                          <div className="mt-1 ml-6 mr-[440px]">
+                          <div className="mt-1 ml-6 mr-[360px]">
                             <Textarea
                               value={row.notes}
                               placeholder="Click to add notes..."
-                              className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
                               rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
                               onChange={(e) => {
                                 // Auto-save on blur
@@ -1809,11 +1809,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-[440px]">
+                        <div className="mt-1 ml-6 mr-[360px]">
                           <Textarea
                             value={est.scope_of_work || ''}
-                            placeholder="Click to add notes..."
-                            className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                            placeholder="Click to add description..."
+                            className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
                             rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
                             onChange={(e) => {
                               // Auto-save on blur
