@@ -1138,13 +1138,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               <span className="hidden sm:inline">Subs</span>
             </TabsTrigger>
           </TabsList>
-          <TabsList className="grid w-full grid-cols-1 h-16 rounded-none bg-gradient-to-r from-red-900 via-red-800 to-red-900 mt-0 border-t-4 border-yellow-400 shadow-xl">
+          <TabsList className="grid w-full grid-cols-1 h-14 rounded-none bg-gradient-to-r from-blue-900 via-blue-800 to-blue-900 mt-0 border-t-2 border-blue-500">
             <TabsTrigger 
               value="customer-portal" 
-              className="font-bold text-xl text-white hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all uppercase tracking-wider"
+              className="font-bold text-base sm:text-lg text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Users className="w-7 h-7 sm:mr-3" />
-              <span className="font-black text-xl">🔴 CUSTOMER PORTAL 🔴</span>
+              <Users className="w-6 h-6 sm:mr-2" />
+              <span className="font-bold">📋 Customer Portal</span>
             </TabsTrigger>
           </TabsList>
           <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 mt-0">
@@ -1159,8 +1159,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </div>
         
         {/* Add spacer to prevent content from hiding under fixed header */}
-        {/* Total height: 64px (main tabs) + 64px (customer portal) + 48px (orders) = 176px */}
-        <div className="h-[176px]" />
+        {/* Total height: 64px (main tabs) + 56px (customer portal) + 48px (orders) = 168px */}
+        <div className="h-[168px]" />
 
         {/* Overview Tab - Wrapped in max-width container */}
         <TabsContent value="overview" className="w-full">
