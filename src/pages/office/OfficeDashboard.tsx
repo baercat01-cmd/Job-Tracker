@@ -39,6 +39,7 @@ import { EmailSettings } from '@/components/office/EmailSettings';
 import { PortalManagement } from '@/components/office/PortalManagement';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
+import { Database } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -634,6 +635,10 @@ export function OfficeDashboard() {
                   <Users className="w-4 h-4 mr-2" />
                   Portals
                 </TabsTrigger>
+                <TabsTrigger value="zoho-integration" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Database className="w-4 h-4 mr-2" />
+                  Zoho Integration
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="export" className="mt-6">
@@ -728,6 +733,23 @@ export function OfficeDashboard() {
 
               <TabsContent value="portal-management" className="mt-6">
                 <PortalManagement />
+              </TabsContent>
+
+              <TabsContent value="zoho-integration" className="mt-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Zoho Books Integration</h3>
+                    <p className="text-sm text-slate-600">Connect to Zoho Books to sync vendors and materials from COUNTYWIDE organization</p>
+                  </div>
+                  <Button
+                    variant="default"
+                    onClick={() => navigate('/office/zoho-settings')}
+                    className="rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold"
+                  >
+                    <Database className="w-4 h-4 mr-2" />
+                    Configure Zoho Integration
+                  </Button>
+                </div>
               </TabsContent>
             </Tabs>
           </div>

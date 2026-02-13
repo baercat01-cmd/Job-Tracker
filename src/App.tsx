@@ -10,6 +10,7 @@ import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
+import ZohoSettingsPage from '@/pages/office/ZohoSettingsPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { VendorPricingForm } from '@/pages/VendorPricingForm';
 import CustomerPortal from '@/pages/customer/CustomerPortal';
@@ -133,6 +134,7 @@ function AppContent() {
         <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
         <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
         <Route path="/office/estimator" element={<BuildingEstimatorPage />} />
+        <Route path="/office/zoho-settings" element={<ZohoSettingsPage />} />
         <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
       </Routes>
     );
