@@ -13,7 +13,8 @@ import type { Job } from '@/types';
 
 interface CustomerPortalLink {
   id: string;
-  job_id: string;
+  job_id: string | null; // Legacy field - nullable for new customer-based links
+  customer_identifier: string; // Email or unique identifier
   access_token: string;
   customer_name: string;
   customer_email: string | null;
@@ -40,6 +41,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
+  const [existingCustomerLinks, setExistingCustomerLinks] = useState<string[]>([]); // Track existing customer identifiers
 
   useEffect(() => {
     loadPortalLinks();
@@ -47,14 +49,23 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   async function loadPortalLinks() {
     try {
+      // Load all customer portal links (not filtered by job)
       const { data, error } = await supabase
         .from('customer_portal_access')
         .select('*')
-        .eq('job_id', job.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPortalLinks(data || []);
+      
+      // Extract unique customer identifiers
+      const customerIds = (data || []).map(link => link.customer_identifier).filter(Boolean);
+      setExistingCustomerLinks(customerIds);
+      
+      // For display purposes, show all links that match this job's customer
+      const jobCustomerLinks = (data || []).filter(link => 
+        link.customer_name === job.client_name || link.job_id === job.id
+      );
+      setPortalLinks(jobCustomerLinks);
     } catch (error: any) {
       console.error('Error loading portal links:', error);
       toast.error('Failed to load portal links');
@@ -78,6 +89,17 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       return;
     }
 
+    if (!customerEmail) {
+      toast.error('Please enter customer email (used as unique identifier)');
+      return;
+    }
+
+    // Check if a link already exists for this customer
+    if (existingCustomerLinks.includes(customerEmail)) {
+      toast.error('A portal link already exists for this customer email. Each customer can only have one active link.');
+      return;
+    }
+
     try {
       const token = generateAccessToken();
       
@@ -92,10 +114,11 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data, error } = await supabase
         .from('customer_portal_access')
         .insert([{
-          job_id: job.id,
+          job_id: null, // No longer tied to a single job
+          customer_identifier: customerEmail, // Use email as unique identifier
           access_token: token,
           customer_name: customerName,
-          customer_email: customerEmail || null,
+          customer_email: customerEmail,
           customer_phone: customerPhone || null,
           is_active: true,
           expires_at: expiresAt,
@@ -106,7 +129,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
       if (error) throw error;
 
-      toast.success('Portal link created successfully');
+      toast.success('Customer portal link created successfully');
       setShowCreateDialog(false);
       resetForm();
       await loadPortalLinks();
@@ -188,7 +211,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         <div>
           <h3 className="text-lg font-semibold">Customer Portal Access</h3>
           <p className="text-sm text-muted-foreground">
-            Create shareable links for customers to view project details, payments, and photos
+            Create shareable links for customers to view ALL their projects. One link per customer email.
           </p>
         </div>
         <Button onClick={() => setShowCreateDialog(true)}>
@@ -318,13 +341,16 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             </div>
 
             <div>
-              <Label>Customer Email (Optional)</Label>
+              <Label>Customer Email *</Label>
               <Input
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
                 placeholder="customer@example.com"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Used as unique identifier - one link per email
+              </p>
             </div>
 
             <div>
@@ -353,7 +379,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-900">
-                <strong>Note:</strong> The customer will be able to view the proposal, payment history, schedule, documents, and photos for this project.
+                <strong>Important:</strong> This link will give the customer access to ALL their projects (past, present, and future). They can view proposals, payments, schedules, documents, and photos for all jobs associated with their name.
               </p>
             </div>
 
