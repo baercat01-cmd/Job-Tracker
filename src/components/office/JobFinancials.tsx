@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -129,6 +129,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [materialSheets, setMaterialSheets] = useState<any[]>([]);
   const [sheetLabor, setSheetLabor] = useState<Record<string, any>>({});
   const [customRowLabor, setCustomRowLabor] = useState<Record<string, any>>({});
+
+  // Row name editing state (for inline editing)
+  const [editingRowName, setEditingRowName] = useState<string | null>(null);
+  const [editingRowNameType, setEditingRowNameType] = useState<'sheet' | 'custom' | 'subcontractor' | null>(null);
+  const [tempRowName, setTempRowName] = useState('');
 
   // Labor dialog state
   const [showLaborDialog, setShowLaborDialog] = useState(false);
@@ -679,6 +684,60 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  // Row name editing functions
+  function startEditingRowName(id: string, type: 'sheet' | 'custom' | 'subcontractor', currentName: string) {
+    setEditingRowName(id);
+    setEditingRowNameType(type);
+    setTempRowName(currentName);
+  }
+
+  function cancelEditingRowName() {
+    setEditingRowName(null);
+    setEditingRowNameType(null);
+    setTempRowName('');
+  }
+
+  async function saveRowName() {
+    if (!editingRowName || !editingRowNameType || !tempRowName.trim()) {
+      toast.error('Please enter a name');
+      return;
+    }
+
+    try {
+      if (editingRowNameType === 'sheet') {
+        const { error } = await supabase
+          .from('material_sheets')
+          .update({ sheet_name: tempRowName.trim() })
+          .eq('id', editingRowName);
+
+        if (error) throw error;
+        await loadMaterialsData();
+      } else if (editingRowNameType === 'custom') {
+        const { error } = await supabase
+          .from('custom_financial_rows')
+          .update({ description: tempRowName.trim() })
+          .eq('id', editingRowName);
+
+        if (error) throw error;
+        await loadCustomRows();
+      } else if (editingRowNameType === 'subcontractor') {
+        const { error } = await supabase
+          .from('subcontractor_estimates')
+          .update({ company_name: tempRowName.trim() })
+          .eq('id', editingRowName);
+
+        if (error) throw error;
+        await loadSubcontractorEstimates();
+      }
+
+      toast.success('Name updated');
+      cancelEditingRowName();
+    } catch (error: any) {
+      console.error('Error updating name:', error);
+      toast.error('Failed to update name');
+    }
+  }
+
   function openLaborDialog(sheetId?: string, rowId?: string) {
     if (sheetId) {
       const existingLabor = sheetLabor[sheetId];
@@ -1098,6 +1157,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     other: 'Miscellaneous project costs and expenses',
   };
 
+  // Create unified list of all proposal items sorted by order_index
+  const allItems = [
+    ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
+      type: 'material' as const,
+      id: sheet.sheetId,
+      orderIndex: sheet.orderIndex,
+      data: sheet,
+    })),
+    // Only include custom rows that are NOT linked to sheets
+    ...customRows.filter(row => !(row as any).sheet_id).map(row => ({
+      type: 'custom' as const,
+      id: row.id,
+      orderIndex: row.order_index,
+      data: row,
+    })),
+    ...subcontractorEstimates.map(est => ({
+      type: 'subcontractor' as const,
+      id: est.id,
+      orderIndex: est.order_index,
+      data: est,
+    })),
+  ].sort((a, b) => a.orderIndex - b.orderIndex);
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -1223,12 +1305,444 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         {/* Proposal Tab */}
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
-
             {/* Proposal Layout: Main content area with sidebar */}
             <div className="flex gap-4 items-start">
-              {/* Main Content Column - Wider for better description visibility */}
-              <div className="flex-1 min-w-0 space-y-3">
-                {/* [PROPOSAL CONTENT - SAME AS BEFORE - NOT CHANGED] */}
+              {/* Main Content Column */}
+              <div className="flex-1 min-w-0 space-y-1">
+                {/* Render all items in order */}
+                {allItems.map((item) => {
+                  if (item.type === 'material') {
+                    const sheet = item.data;
+                    const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
+                    const linkedRowsTotal = linkedRows.reduce((rowSum, row) => {
+                      const lineItems = customRowLineItems[row.id] || [];
+                      const baseCost = lineItems.length > 0 
+                        ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                        : row.total_cost;
+                      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+                    }, 0);
+                    const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
+                    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+                    const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
+
+                    return (
+                      <Collapsible key={`sheet-${item.id}`} className="border rounded bg-white p-2">
+                        <div className="flex items-start gap-2">
+                          {/* Left: Chevron + Title */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                                <ChevronDown className="w-4 h-4 text-slate-600" />
+                              </Button>
+                            </CollapsibleTrigger>
+                            
+                            <div className="flex-1 min-w-0">
+                              {/* Row name with inline edit */}
+                              {editingRowName === sheet.sheetId && editingRowNameType === 'sheet' ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={tempRowName}
+                                    onChange={(e) => setTempRowName(e.target.value)}
+                                    className="h-7 text-sm font-bold"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveRowName();
+                                      if (e.key === 'Escape') cancelEditingRowName();
+                                    }}
+                                  />
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                                    <Check className="w-3 h-3 text-green-600" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                                    <X className="w-3 h-3 text-red-600" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-sm font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                                    onClick={() => startEditingRowName(sheet.sheetId, 'sheet', sheet.sheetName)}
+                                  >
+                                    <Edit className="w-3 h-3 text-slate-500" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right: Pricing */}
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="text-right">
+                              <div className="flex items-center gap-2 text-xs text-slate-600">
+                                <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span>+</span>
+                                <Input
+                                  type="number"
+                                  value={sheetMarkups[sheet.sheetId] || 10}
+                                  onChange={(e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                                  }}
+                                  className="w-14 h-5 text-xs px-1 text-center"
+                                  step="1"
+                                  min="0"
+                                />
+                                <span>%</span>
+                              </div>
+                              <p className="text-base font-bold text-slate-900">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
+                                  <Edit className="w-3 h-3 mr-2" />
+                                  Edit Description
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                                  <DollarSign className="w-3 h-3 mr-2" />
+                                  {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
+                                  <Plus className="w-3 h-3 mr-2" />
+                                  Add Material Row
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+
+                        {/* Description below title */}
+                        <div className="mt-1 ml-6">
+                          <Textarea
+                            value={sheet.sheetDescription}
+                            placeholder="Click to add notes..."
+                            className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                            rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
+                            onChange={(e) => {
+                              // Auto-save on blur
+                              const textarea = e.target;
+                              textarea.onblur = async () => {
+                                try {
+                                  await supabase
+                                    .from('material_sheets')
+                                    .update({ description: e.target.value || null })
+                                    .eq('id', sheet.sheetId);
+                                  await loadMaterialsData();
+                                } catch (error) {
+                                  console.error('Error saving description:', error);
+                                }
+                              };
+                            }}
+                            style={{ 
+                              maxHeight: '120px',
+                              overflowY: (sheet.sheetDescription || '').length > 500 ? 'auto' : 'hidden'
+                            }}
+                          />
+                        </div>
+
+                        <CollapsibleContent>
+                          <div className="mt-2 ml-6 space-y-1">
+                            {/* Linked custom rows */}
+                            {linkedRows.length > 0 && (
+                              <div className="space-y-1 mb-2">
+                                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Additional Materials</p>
+                                {linkedRows.map((row) => {
+                                  const lineItems = customRowLineItems[row.id] || [];
+                                  const baseCost = lineItems.length > 0 
+                                    ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                                    : row.total_cost;
+                                  const finalPrice = baseCost * (1 + row.markup_percent / 100);
+
+                                  return (
+                                    <div key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-xs font-semibold text-slate-900">{row.description}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                          <p className="text-xs text-slate-600">+{row.markup_percent}%</p>
+                                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openAddDialog(row)}>
+                                            <Edit className="w-3 h-3" />
+                                          </Button>
+                                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteRow(row.id)}>
+                                            <Trash2 className="w-3 h-3 text-red-600" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Sheet labor */}
+                            {sheetLabor[sheet.sheetId] && (
+                              <div className="bg-amber-50 border border-amber-200 rounded p-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <p className="text-xs font-semibold text-slate-900">{sheetLabor[sheet.sheetId].description}</p>
+                                    <p className="text-xs text-slate-600">
+                                      {sheetLabor[sheet.sheetId].estimated_hours}h × ${sheetLabor[sheet.sheetId].hourly_rate}/hr
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-bold text-slate-900">
+                                      ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </p>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
+                                      <Edit className="w-3 h-3" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
+                                      <Trash2 className="w-3 h-3 text-red-600" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  } else if (item.type === 'custom') {
+                    const row = item.data;
+                    const lineItems = customRowLineItems[row.id] || [];
+                    const baseCost = lineItems.length > 0 
+                      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                      : row.total_cost;
+                    const finalPrice = baseCost * (1 + row.markup_percent / 100);
+
+                    return (
+                      <div key={`custom-${item.id}`} className="border rounded bg-white p-2">
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            {/* Row name with inline edit */}
+                            {editingRowName === row.id && editingRowNameType === 'custom' ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={tempRowName}
+                                  onChange={(e) => setTempRowName(e.target.value)}
+                                  className="h-7 text-sm font-bold"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveRowName();
+                                    if (e.key === 'Escape') cancelEditingRowName();
+                                  }}
+                                />
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                                  <Check className="w-3 h-3 text-green-600" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                                  <X className="w-3 h-3 text-red-600" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                                  onClick={() => startEditingRowName(row.id, 'custom', row.description)}
+                                >
+                                  <Edit className="w-3 h-3 text-slate-500" />
+                                </Button>
+                                {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
+                              </div>
+                            )}
+
+                            {/* Notes below title */}
+                            {row.notes && (
+                              <div className="mt-1">
+                                <Textarea
+                                  value={row.notes}
+                                  placeholder="Click to add notes..."
+                                  className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                                  rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
+                                  onChange={(e) => {
+                                    // Auto-save on blur
+                                    const textarea = e.target;
+                                    textarea.onblur = async () => {
+                                      try {
+                                        await supabase
+                                          .from('custom_financial_rows')
+                                          .update({ notes: e.target.value || null })
+                                          .eq('id', row.id);
+                                        await loadCustomRows();
+                                      } catch (error) {
+                                        console.error('Error saving notes:', error);
+                                      }
+                                    };
+                                  }}
+                                  style={{ 
+                                    maxHeight: '120px',
+                                    overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="text-right">
+                              <div className="flex items-center gap-2 text-xs text-slate-600">
+                                <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span>+{row.markup_percent}%</span>
+                              </div>
+                              <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openAddDialog(row)}>
+                                  <Edit className="w-3 h-3 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => deleteRow(row.id)}>
+                                  <Trash2 className="w-3 h-3 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } else if (item.type === 'subcontractor') {
+                    const est = item.data;
+                    const lineItems = subcontractorLineItems[est.id] || [];
+                    const includedTotal = lineItems
+                      .filter((item: any) => !item.excluded)
+                      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
+                    const estMarkup = est.markup_percent || 0;
+                    const finalPrice = includedTotal * (1 + estMarkup / 100);
+
+                    return (
+                      <Collapsible key={`sub-${item.id}`} className="border rounded bg-white p-2">
+                        <div className="flex items-start gap-2">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                                <ChevronDown className="w-4 h-4 text-slate-600" />
+                              </Button>
+                            </CollapsibleTrigger>
+                            
+                            <div className="flex-1 min-w-0">
+                              {/* Row name with inline edit */}
+                              {editingRowName === est.id && editingRowNameType === 'subcontractor' ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={tempRowName}
+                                    onChange={(e) => setTempRowName(e.target.value)}
+                                    className="h-7 text-sm font-bold"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveRowName();
+                                      if (e.key === 'Escape') cancelEditingRowName();
+                                    }}
+                                  />
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                                    <Check className="w-3 h-3 text-green-600" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                                    <X className="w-3 h-3 text-red-600" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-sm font-bold text-slate-900 truncate">{est.company_name}</h3>
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                                    onClick={() => startEditingRowName(est.id, 'subcontractor', est.company_name)}
+                                  >
+                                    <Edit className="w-3 h-3 text-slate-500" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="text-right">
+                              <div className="flex items-center gap-2 text-xs text-slate-600">
+                                <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span>+{estMarkup}%</span>
+                              </div>
+                              <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+
+                            {est.pdf_url && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0"
+                                onClick={() => window.open(est.pdf_url, '_blank')}
+                              >
+                                <Eye className="w-4 h-4 text-blue-600" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Description below title */}
+                        <div className="mt-1 ml-6">
+                          <Textarea
+                            value={est.scope_of_work || ''}
+                            placeholder="Click to add notes..."
+                            className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                            rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
+                            onChange={(e) => {
+                              // Auto-save on blur
+                              const textarea = e.target;
+                              textarea.onblur = async () => {
+                                try {
+                                  await supabase
+                                    .from('subcontractor_estimates')
+                                    .update({ scope_of_work: e.target.value || null })
+                                    .eq('id', est.id);
+                                  await loadSubcontractorEstimates();
+                                } catch (error) {
+                                  console.error('Error saving scope of work:', error);
+                                }
+                              };
+                            }}
+                            style={{ 
+                              maxHeight: '120px',
+                              overflowY: (est.scope_of_work || '').length > 500 ? 'auto' : 'hidden'
+                            }}
+                          />
+                        </div>
+
+                        <CollapsibleContent>
+                          <div className="mt-2 ml-6 space-y-1">
+                            {lineItems.map((lineItem: any) => (
+                              <div key={lineItem.id} className={`p-2 rounded ${lineItem.excluded ? 'bg-red-50 line-through text-slate-400' : 'bg-slate-50'}`}>
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs">{lineItem.description}</p>
+                                  <p className="text-xs font-semibold">${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  }
+                  return null;
+                })}
               </div>
 
               {/* Project Total Box - Fixed Width Sidebar */}
@@ -1282,7 +1796,195 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </TabsContent>
       </Tabs>
 
-      {/* [ALL DIALOGS - SAME AS BEFORE - NOT CHANGED] */}
+      {/* Sheet Description Dialog */}
+      <Dialog open={showSheetDescDialog} onOpenChange={setShowSheetDescDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Description</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={sheetDescription}
+              onChange={(e) => setSheetDescription(e.target.value)}
+              placeholder="Enter description..."
+              rows={4}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowSheetDescDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveSheetDescription}>
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Labor Dialog */}
+      <Dialog open={showLaborDialog} onOpenChange={setShowLaborDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingLaborSheetId || editingLaborRowId ? 'Edit Labor' : 'Add Labor'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={laborForm.description}
+                onChange={(e) => setLaborForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="e.g., Labor & Installation"
+              />
+            </div>
+            <div>
+              <Label>Estimated Hours</Label>
+              <Input
+                type="number"
+                value={laborForm.estimated_hours}
+                onChange={(e) => setLaborForm(prev => ({ ...prev, estimated_hours: parseFloat(e.target.value) || 0 }))}
+                step="0.5"
+                min="0"
+              />
+            </div>
+            <div>
+              <Label>Hourly Rate ($)</Label>
+              <Input
+                type="number"
+                value={laborForm.hourly_rate}
+                onChange={(e) => setLaborForm(prev => ({ ...prev, hourly_rate: parseFloat(e.target.value) || 60 }))}
+                step="1"
+                min="0"
+              />
+            </div>
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={laborForm.notes}
+                onChange={(e) => setLaborForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLaborDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveSheetLabor}>
+                Save Labor
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Row Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingRow ? 'Edit Row' : 'Add Custom Row'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {!linkedSheetId && (
+              <div>
+                <Label>Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="materials">Materials</SelectItem>
+                    <SelectItem value="labor">Labor</SelectItem>
+                    <SelectItem value="subcontractor">Subcontractor</SelectItem>
+                    <SelectItem value="equipment">Equipment</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g., Additional concrete work"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  step="0.01"
+                />
+              </div>
+              <div>
+                <Label>Unit Cost ($)</Label>
+                <Input
+                  type="number"
+                  value={unitCost}
+                  onChange={(e) => setUnitCost(e.target.value)}
+                  step="0.01"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Markup %</Label>
+              <Input
+                type="number"
+                value={markupPercent}
+                onChange={(e) => setMarkupPercent(e.target.value)}
+                step="1"
+                min="0"
+              />
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="taxable"
+                checked={taxable}
+                onChange={(e) => setTaxable(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="taxable">Taxable</Label>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveCustomRow}>
+                {editingRow ? 'Update' : 'Add'} Row
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subcontractor Upload Dialog */}
+      {showSubUploadDialog && (
+        <SubcontractorEstimatesManagement
+          jobId={job.id}
+          quoteId={null}
+          onClose={() => {
+            setShowSubUploadDialog(false);
+            loadSubcontractorEstimates();
+          }}
+        />
+      )}
     </div>
   );
 }
