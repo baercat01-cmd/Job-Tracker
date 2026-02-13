@@ -287,7 +287,7 @@ export default function CustomerPortal() {
               <p className="text-blue-100 mt-1">Welcome back, {customerInfo.customer_name}</p>
             </div>
             <div className="flex items-center gap-3">
-              <PWAInstallButton variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/30" />
+              <PWAInstallButton className="bg-white/10 hover:bg-white/20 text-white border-white/30" />
               <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
                 Customer Portal
               </Badge>

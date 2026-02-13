@@ -595,7 +595,7 @@ export function ContactsManagement() {
                       <th className="px-3 py-2 text-left font-semibold">Category</th>
                       <th className="px-3 py-2 text-left font-semibold">Company</th>
                       <th className="px-3 py-2 text-center font-semibold">
-                        <Info className="w-4 h-4 mx-auto" title="Has detailed information" />
+                        <Info className="w-4 h-4 mx-auto" />
                       </th>
                     </tr>
                   </thead>

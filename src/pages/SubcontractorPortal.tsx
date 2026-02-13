@@ -496,7 +496,7 @@ export default function SubcontractorPortal() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <PWAInstallButton variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/30" />
+              <PWAInstallButton className="bg-white/10 hover:bg-white/20 text-white border-white/30" />
               <Button variant="outline" onClick={handleLogout} className="bg-white/10 hover:bg-white/20 text-white border-white/30">
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
