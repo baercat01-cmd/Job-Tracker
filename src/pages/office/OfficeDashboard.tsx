@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign } from 'lucide-react';
+import { LogOut, Briefcase, Clock, Camera, Settings, Users, Download, Eye, Archive, Calendar, ListTodo, FileText, Truck, Package, Box, Plus, Calculator, DollarSign, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { JobsView } from '@/components/office/JobsView';
 import { TimeEntriesView } from '@/components/office/TimeEntriesView';
@@ -28,6 +28,7 @@ import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement
 import { MaterialInventory } from '@/components/office/MaterialInventory';
 import { ContactsManagement } from '@/components/office/ContactsManagement';
 import { TrimPricingCalculator } from '@/components/office/TrimPricingCalculator';
+import { EmailCenterView } from '@/components/office/EmailCenterView';
 
 import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
 import { FinancialDashboard } from '@/components/office/FinancialDashboard';
@@ -305,6 +306,19 @@ export function OfficeDashboard() {
               <DollarSign className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Financials</span>
             </Button>
+            <Button
+              variant={activeTab === 'email' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('email')}
+              className={`rounded-none h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0 ${
+                activeTab === 'email'
+                  ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-bold hover:from-yellow-600 hover:to-yellow-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Mail className="w-4 h-4 mr-1.5" />
+              <span className="hidden sm:inline">Email</span>
+            </Button>
 
           </div>
 
@@ -511,6 +525,16 @@ export function OfficeDashboard() {
               <p className="text-yellow-400">Track overhead, job budgets, and profitability</p>
             </div>
             <FinancialDashboard />
+          </div>
+        )}
+
+        {activeTab === 'email' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-slate-900 via-black to-slate-900 text-white rounded-lg p-4 shadow-lg border-2 border-yellow-500">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Email Communications Center</h2>
+              <p className="text-yellow-400">Manage all job communications in one place</p>
+            </div>
+            <EmailCenterView />
           </div>
         )}
 
