@@ -1549,76 +1549,62 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     const finalPrice = baseCost * (1 + row.markup_percent / 100);
 
                     return (
-                      <div key={`custom-${item.id}`} className="border rounded bg-white p-2">
+                      <Collapsible key={`custom-${item.id}`} className="border rounded bg-white p-2">
                         <div className="flex items-start gap-2">
-                          <div className="flex-1 min-w-0">
-                            {/* Row name with inline edit */}
-                            {editingRowName === row.id && editingRowNameType === 'custom' ? (
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  value={tempRowName}
-                                  onChange={(e) => setTempRowName(e.target.value)}
-                                  className="h-7 text-sm font-bold"
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveRowName();
-                                    if (e.key === 'Escape') cancelEditingRowName();
-                                  }}
-                                />
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
-                                  <Check className="w-3 h-3 text-green-600" />
+                          {/* Left: Chevron + Title */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {lineItems.length > 0 && (
+                              <CollapsibleTrigger asChild>
+                                <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                                  <ChevronDown className="w-4 h-4 text-slate-600" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
-                                  <X className="w-3 h-3 text-red-600" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
-                                <Button 
-                                  size="sm" 
-                                  variant="ghost" 
-                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                                  onClick={() => startEditingRowName(row.id, 'custom', row.description)}
-                                >
-                                  <Edit className="w-3 h-3 text-slate-500" />
-                                </Button>
-                                {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
-                              </div>
+                              </CollapsibleTrigger>
                             )}
-
-                            {/* Notes below title */}
-                            {row.notes && (
-                              <div className="mt-1 mr-96">
-                                <Textarea
-                                  value={row.notes}
-                                  placeholder="Click to add notes..."
-                                  className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
-                                  rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
-                                  onChange={(e) => {
-                                    // Auto-save on blur
-                                    const textarea = e.target;
-                                    textarea.onblur = async () => {
-                                      try {
-                                        await supabase
-                                          .from('custom_financial_rows')
-                                          .update({ notes: e.target.value || null })
-                                          .eq('id', row.id);
-                                        await loadCustomRows();
-                                      } catch (error) {
-                                        console.error('Error saving notes:', error);
-                                      }
-                                    };
-                                  }}
-                                  style={{ 
-                                    maxHeight: '120px',
-                                    overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
-                                  }}
-                                />
-                              </div>
-                            )}
+                            
+                            <div className="flex-1 min-w-0">
+                              {/* Row name with inline edit */}
+                              {editingRowName === row.id && editingRowNameType === 'custom' ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={tempRowName}
+                                    onChange={(e) => setTempRowName(e.target.value)}
+                                    className="h-7 text-sm font-bold"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveRowName();
+                                      if (e.key === 'Escape') cancelEditingRowName();
+                                    }}
+                                  />
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                                    <Check className="w-3 h-3 text-green-600" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                                    <X className="w-3 h-3 text-red-600" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                                    onClick={() => startEditingRowName(row.id, 'custom', row.description)}
+                                  >
+                                    <Edit className="w-3 h-3 text-slate-500" />
+                                  </Button>
+                                  {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
+                                  {lineItems.length > 0 && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {lineItems.length} item{lineItems.length !== 1 ? 's' : ''}
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
 
+                          {/* Right: Pricing */}
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <div className="text-right">
                               <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -1637,17 +1623,100 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => openAddDialog(row)}>
                                   <Edit className="w-3 h-3 mr-2" />
-                                  Edit
+                                  Edit Row
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openLineItemDialog(row.id)}>
+                                  <Plus className="w-3 h-3 mr-2" />
+                                  Add Line Item
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => deleteRow(row.id)}>
                                   <Trash2 className="w-3 h-3 mr-2" />
-                                  Delete
+                                  Delete Row
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
                         </div>
-                      </div>
+
+                        {/* Notes below title */}
+                        {row.notes && (
+                          <div className="mt-1 ml-6 mr-96">
+                            <Textarea
+                              value={row.notes}
+                              placeholder="Click to add notes..."
+                              className="text-xs text-slate-600 resize-none border-0 p-1 min-h-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
+                              onChange={(e) => {
+                                // Auto-save on blur
+                                const textarea = e.target;
+                                textarea.onblur = async () => {
+                                  try {
+                                    await supabase
+                                      .from('custom_financial_rows')
+                                      .update({ notes: e.target.value || null })
+                                      .eq('id', row.id);
+                                    await loadCustomRows();
+                                  } catch (error) {
+                                    console.error('Error saving notes:', error);
+                                  }
+                                };
+                              }}
+                              style={{ 
+                                maxHeight: '120px',
+                                overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Line Items */}
+                        {lineItems.length > 0 && (
+                          <CollapsibleContent>
+                            <div className="mt-2 ml-6 space-y-1">
+                              <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                                <List className="w-3 h-3" />
+                                Line Items
+                              </p>
+                              {lineItems.map((lineItem: CustomRowLineItem) => (
+                                <div key={lineItem.id} className="bg-slate-50 border border-slate-200 rounded p-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1">
+                                      <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                                      <p className="text-xs text-slate-600">
+                                        {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </p>
+                                      {lineItem.notes && (
+                                        <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xs font-bold text-slate-900">
+                                        ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </p>
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="h-5 w-5 p-0" 
+                                        onClick={() => openLineItemDialog(row.id, lineItem)}
+                                      >
+                                        <Edit className="w-3 h-3" />
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="h-5 w-5 p-0" 
+                                        onClick={() => deleteLineItem(lineItem.id)}
+                                      >
+                                        <Trash2 className="w-3 h-3 text-red-600" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        )}
+                      </Collapsible>
                     );
                   } else if (item.type === 'subcontractor') {
                     const est = item.data;
