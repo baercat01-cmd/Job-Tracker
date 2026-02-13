@@ -5,11 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface CustomerPortalLink {
   id: string;
@@ -42,6 +43,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [customerPhone, setCustomerPhone] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
   const [existingCustomerLinks, setExistingCustomerLinks] = useState<string[]>([]); // Track existing customer identifiers
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewJobs, setPreviewJobs] = useState<any[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     loadPortalLinks();
@@ -149,6 +153,79 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     setCustomerEmail('');
     setCustomerPhone('');
     setExpiresInDays('');
+    setShowPreview(false);
+  }
+
+  async function loadPreviewData() {
+    if (!customerName) {
+      toast.error('Please enter customer name to preview');
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      // Find all jobs for this customer
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('client_name', customerName)
+        .order('created_at', { ascending: false });
+
+      if (jobsError) throw jobsError;
+
+      // For each job, load additional data
+      const jobsWithData = await Promise.all((jobsData || []).map(async (job) => {
+        // Load quote/proposal data
+        const { data: quoteData } = await supabase
+          .from('quotes')
+          .select('*')
+          .eq('job_id', job.id)
+          .maybeSingle();
+
+        // Load payments
+        const { data: paymentsData } = await supabase
+          .from('customer_payments')
+          .select('*')
+          .eq('job_id', job.id)
+          .order('payment_date', { ascending: false });
+
+        // Load documents
+        const { data: documentsData } = await supabase
+          .from('job_documents')
+          .select('id')
+          .eq('job_id', job.id);
+
+        // Load photos
+        const { data: photosData } = await supabase
+          .from('photos')
+          .select('id')
+          .eq('job_id', job.id);
+
+        // Calculate payment totals
+        const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
+        const estimatedPrice = quoteData?.estimated_price || 0;
+        const remainingBalance = estimatedPrice - totalPaid;
+
+        return {
+          ...job,
+          quote: quoteData,
+          payments: paymentsData || [],
+          documentsCount: documentsData?.length || 0,
+          photosCount: photosData?.length || 0,
+          totalPaid,
+          estimatedPrice,
+          remainingBalance,
+        };
+      }));
+
+      setPreviewJobs(jobsWithData);
+      setShowPreview(true);
+    } catch (error: any) {
+      console.error('Error loading preview data:', error);
+      toast.error('Failed to load preview data');
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   async function toggleLinkStatus(linkId: string, currentStatus: boolean) {
@@ -214,10 +291,16 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             Create shareable links for customers to view ALL their projects. One link per customer email.
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Portal Link
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadPreviewData} disabled={!customerName}>
+            <Eye className="w-4 h-4 mr-2" />
+            Preview Portal
+          </Button>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Portal Link
+          </Button>
+        </div>
       </div>
 
       {portalLinks.length > 0 ? (
@@ -323,6 +406,197 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           </CardContent>
         </Card>
       )}
+
+      {/* Preview Portal Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Customer Portal Preview - {customerName}
+            </DialogTitle>
+          </DialogHeader>
+
+          {previewLoading ? (
+            <div className="text-center py-12">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading preview...</p>
+            </div>
+          ) : previewJobs.length === 0 ? (
+            <div className="text-center py-12">
+              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground mb-2">No jobs found for {customerName}</p>
+              <p className="text-sm text-muted-foreground">The customer portal will be empty until jobs are assigned to this customer.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-900">
+                  <strong>This is what {customerName} will see:</strong> {previewJobs.length} project{previewJobs.length !== 1 ? 's' : ''} found
+                </p>
+              </div>
+
+              {previewJobs.map((previewJob) => (
+                <Card key={previewJob.id} className="border-2">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-slate-50">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-xl">{previewJob.name || 'Untitled Project'}</CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">{previewJob.address}</p>
+                        <div className="flex gap-2 mt-2">
+                          <Badge variant={previewJob.status === 'active' ? 'default' : 'outline'}>
+                            {previewJob.status || 'active'}
+                          </Badge>
+                          {previewJob.quote && (
+                            <Badge variant="secondary">
+                              Quote #{previewJob.quote.quote_number}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      {previewJob.estimatedPrice > 0 && (
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Project Value</p>
+                          <p className="text-2xl font-bold text-green-700">
+                            ${previewJob.estimatedPrice.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <Tabs defaultValue="overview" className="w-full">
+                      <TabsList className="grid w-full grid-cols-5">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="payments">Payments</TabsTrigger>
+                        <TabsTrigger value="schedule">Schedule</TabsTrigger>
+                        <TabsTrigger value="documents">Documents</TabsTrigger>
+                        <TabsTrigger value="photos">Photos</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="overview" className="space-y-4">
+                        <div className="grid grid-cols-4 gap-4">
+                          <Card>
+                            <CardContent className="pt-4">
+                              <DollarSign className="w-8 h-8 text-green-600 mb-2" />
+                              <p className="text-xs text-muted-foreground">Total Paid</p>
+                              <p className="text-xl font-bold">${previewJob.totalPaid.toLocaleString()}</p>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="pt-4">
+                              <DollarSign className="w-8 h-8 text-orange-600 mb-2" />
+                              <p className="text-xs text-muted-foreground">Balance Due</p>
+                              <p className="text-xl font-bold">${previewJob.remainingBalance.toLocaleString()}</p>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="pt-4">
+                              <FileText className="w-8 h-8 text-blue-600 mb-2" />
+                              <p className="text-xs text-muted-foreground">Documents</p>
+                              <p className="text-xl font-bold">{previewJob.documentsCount}</p>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="pt-4">
+                              <Image className="w-8 h-8 text-purple-600 mb-2" />
+                              <p className="text-xs text-muted-foreground">Photos</p>
+                              <p className="text-xl font-bold">{previewJob.photosCount}</p>
+                            </CardContent>
+                          </Card>
+                        </div>
+                        {previewJob.description && (
+                          <div>
+                            <h4 className="font-semibold mb-2">Project Description</h4>
+                            <p className="text-sm text-muted-foreground">{previewJob.description}</p>
+                          </div>
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="payments">
+                        {previewJob.payments.length > 0 ? (
+                          <div className="space-y-2">
+                            {previewJob.payments.map((payment: any) => (
+                              <div key={payment.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                <div>
+                                  <p className="font-medium">${parseFloat(payment.amount).toLocaleString()}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {new Date(payment.payment_date).toLocaleDateString()}
+                                  </p>
+                                  {payment.payment_method && (
+                                    <p className="text-xs text-muted-foreground">{payment.payment_method}</p>
+                                  )}
+                                </div>
+                                {payment.payment_notes && (
+                                  <p className="text-sm text-muted-foreground max-w-md">{payment.payment_notes}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-center text-muted-foreground py-8">No payments recorded yet</p>
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="schedule">
+                        <div className="space-y-2">
+                          {previewJob.projected_start_date && (
+                            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                              <Calendar className="w-5 h-5 text-blue-600" />
+                              <div>
+                                <p className="text-sm font-medium">Projected Start</p>
+                                <p className="text-sm">{new Date(previewJob.projected_start_date).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          )}
+                          {previewJob.projected_end_date && (
+                            <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                              <Calendar className="w-5 h-5 text-green-600" />
+                              <div>
+                                <p className="text-sm font-medium">Projected Completion</p>
+                                <p className="text-sm">{new Date(previewJob.projected_end_date).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          )}
+                          {!previewJob.projected_start_date && !previewJob.projected_end_date && (
+                            <p className="text-center text-muted-foreground py-8">Schedule dates not set yet</p>
+                          )}
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="documents">
+                        <p className="text-sm text-muted-foreground text-center py-8">
+                          {previewJob.documentsCount > 0 
+                            ? `${previewJob.documentsCount} document${previewJob.documentsCount !== 1 ? 's' : ''} available for download`
+                            : 'No documents uploaded yet'}
+                        </p>
+                      </TabsContent>
+
+                      <TabsContent value="photos">
+                        <p className="text-sm text-muted-foreground text-center py-8">
+                          {previewJob.photosCount > 0 
+                            ? `${previewJob.photosCount} photo${previewJob.photosCount !== 1 ? 's' : ''} available to view`
+                            : 'No photos uploaded yet'}
+                        </p>
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+              ))}
+
+              <div className="flex gap-3 pt-4 border-t">
+                <Button onClick={() => setShowCreateDialog(true)} className="flex-1">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Portal Link Now
+                </Button>
+                <Button variant="outline" onClick={() => setShowPreview(false)}>
+                  Close Preview
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Create Portal Link Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
