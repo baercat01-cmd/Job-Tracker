@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Mail, 
   Send, 
@@ -16,13 +17,24 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Users,
+  Package,
+  Briefcase,
+  ExternalLink
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface JobCommunicationsProps {
   job: Job;
@@ -43,7 +55,9 @@ interface Email {
   direction: 'inbound' | 'outbound';
   is_read: boolean;
   attachments: any[];
-  references: string[];
+  entity_category: 'customer' | 'vendor' | 'subcontractor' | null;
+  contact_id: string | null;
+  contacts?: any;
 }
 
 interface EmailThread {
@@ -52,6 +66,7 @@ interface EmailThread {
   emails: Email[];
   lastEmailDate: string;
   unreadCount: number;
+  entityCategory: string | null;
 }
 
 export function JobCommunications({ job }: JobCommunicationsProps) {
@@ -63,6 +78,8 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
   const [showComposer, setShowComposer] = useState(false);
   const [replyToEmail, setReplyToEmail] = useState<Email | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'customer' | 'vendor' | 'subcontractor'>('all');
 
   // Composer state
   const [composeSubject, setComposeSubject] = useState('');
@@ -70,22 +87,27 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
   const [composeCc, setComposeCc] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState('');
 
   useEffect(() => {
     loadEmails();
+    loadContacts();
   }, [job.id]);
 
   useEffect(() => {
     if (emails.length > 0) {
       organizeIntoThreads();
     }
-  }, [emails]);
+  }, [emails, activeFilter]);
 
   async function loadEmails() {
     try {
       const { data, error } = await supabase
         .from('job_emails')
-        .select('*')
+        .select(`
+          *,
+          contacts(id, name, email, category)
+        `)
         .eq('job_id', job.id)
         .order('email_date', { ascending: false });
 
@@ -99,12 +121,31 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
     }
   }
 
+  async function loadContacts() {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('is_active', true)
+        .order('category, name');
+
+      if (error) throw error;
+      setContacts(data || []);
+    } catch (error: any) {
+      console.error('Error loading contacts:', error);
+    }
+  }
+
   function organizeIntoThreads() {
     const threadMap = new Map<string, Email[]>();
 
+    // Filter emails based on active filter
+    const filteredEmails = activeFilter === 'all' 
+      ? emails 
+      : emails.filter(e => e.entity_category === activeFilter);
+
     // Group emails by thread
-    emails.forEach((email) => {
-      // Use in_reply_to or message_id as thread identifier
+    filteredEmails.forEach((email) => {
       const threadId = email.in_reply_to || email.message_id;
       
       if (!threadMap.has(threadId)) {
@@ -115,7 +156,6 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
 
     // Convert to thread objects
     const threadList: EmailThread[] = Array.from(threadMap.entries()).map(([threadId, threadEmails]) => {
-      // Sort emails in thread by date
       threadEmails.sort((a, b) => new Date(a.email_date).getTime() - new Date(b.email_date).getTime());
       
       const unreadCount = threadEmails.filter(e => !e.is_read && e.direction === 'inbound').length;
@@ -127,12 +167,30 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
         emails: threadEmails,
         lastEmailDate: lastEmail.email_date,
         unreadCount,
+        entityCategory: lastEmail.entity_category,
       };
     });
 
-    // Sort threads by last email date
     threadList.sort((a, b) => new Date(b.lastEmailDate).getTime() - new Date(a.lastEmailDate).getTime());
     setThreads(threadList);
+  }
+
+  function getEntityColor(category: string | null) {
+    switch (category) {
+      case 'customer': return 'bg-green-100 text-green-800 border-green-300';
+      case 'vendor': return 'bg-orange-100 text-orange-800 border-orange-300';
+      case 'subcontractor': return 'bg-blue-100 text-blue-800 border-blue-300';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  }
+
+  function getEntityIcon(category: string | null) {
+    switch (category) {
+      case 'customer': return <Users className="w-3 h-3" />;
+      case 'vendor': return <Package className="w-3 h-3" />;
+      case 'subcontractor': return <Briefcase className="w-3 h-3" />;
+      default: return <Mail className="w-3 h-3" />;
+    }
   }
 
   function toggleThread(threadId: string) {
@@ -142,7 +200,6 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
         next.delete(threadId);
       } else {
         next.add(threadId);
-        // Mark all emails in thread as read
         markThreadAsRead(threadId);
       }
       return next;
@@ -194,17 +251,31 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
     setReplyToEmail(email);
     setComposeSubject(`Re: ${email.subject.replace(/^Re: /, '')}`);
     setComposeTo(email.from_email);
+    setSelectedContactId(email.contact_id || '');
     setComposeBody(`\n\n--- On ${new Date(email.email_date).toLocaleString()}, ${email.from_name || email.from_email} wrote:\n${email.body_text || ''}`);
     setShowComposer(true);
   }
 
   function handleNewEmail() {
     setReplyToEmail(null);
-    setComposeSubject(`Job ${job.job_number || job.name}: `);
-    setComposeTo(job.client_name || '');
+    setComposeSubject(`#${job.job_number || ''} ${job.name}: `);
+    setComposeTo('');
     setComposeCc('');
     setComposeBody('');
+    setSelectedContactId('');
     setShowComposer(true);
+  }
+
+  function handleContactSelect(contactId: string) {
+    const contact = contacts.find(c => c.id === contactId);
+    if (contact) {
+      setComposeTo(contact.email);
+      setSelectedContactId(contactId);
+    }
+  }
+
+  function openInThunderbird(email: string) {
+    window.location.href = `mailto:${email}`;
   }
 
   async function handleSendEmail() {
@@ -217,13 +288,13 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
     try {
       const emailData = {
         jobId: job.id,
+        contactId: selectedContactId || null,
         subject: composeSubject,
         to: composeTo.split(',').map(e => ({ email: e.trim() })),
         cc: composeCc ? composeCc.split(',').map(e => ({ email: e.trim() })) : [],
         bodyText: composeBody,
         bodyHtml: `<p>${composeBody.replace(/\n/g, '<br>')}</p>`,
         inReplyTo: replyToEmail?.message_id,
-        references: replyToEmail?.references || [],
       };
 
       const { data, error } = await supabase.functions.invoke('sync-emails', {
@@ -232,7 +303,7 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
 
       if (error) throw error;
 
-      toast.success('Email sent successfully');
+      toast.success('Email sent successfully and synced to Thunderbird');
       setShowComposer(false);
       await loadEmails();
     } catch (error: any) {
@@ -255,17 +326,20 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
   }
 
   const unreadCount = emails.filter(e => !e.is_read && e.direction === 'inbound').length;
+  const customerCount = emails.filter(e => e.entity_category === 'customer').length;
+  const vendorCount = emails.filter(e => e.entity_category === 'vendor').length;
+  const subcontractorCount = emails.filter(e => e.entity_category === 'subcontractor').length;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Header with Entity Filters */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <CardTitle className="flex items-center gap-2">
                 <Mail className="w-6 h-6" />
-                Email Communications
+                Multi-Entity Email Communications
               </CardTitle>
               {unreadCount > 0 && (
                 <Badge variant="destructive">{unreadCount} unread</Badge>
@@ -285,126 +359,168 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
         </CardHeader>
       </Card>
 
-      {/* Email Threads */}
-      {threads.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-12">
-            <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground mb-4">No email communications for this job yet</p>
-            <Button onClick={handleNewEmail}>
-              <Send className="w-4 h-4 mr-2" />
-              Send First Email
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {threads.map((thread) => {
-            const isExpanded = expandedThreads.has(thread.threadId);
-            const lastEmail = thread.emails[thread.emails.length - 1];
+      {/* Entity Filter Tabs */}
+      <Tabs value={activeFilter} onValueChange={(value: any) => setActiveFilter(value)}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="all">
+            All ({emails.length})
+          </TabsTrigger>
+          <TabsTrigger value="customer">
+            <span className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-green-700" />
+              Customers ({customerCount})
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="vendor">
+            <span className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-orange-700" />
+              Vendors ({vendorCount})
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="subcontractor">
+            <span className="flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-blue-700" />
+              Subs ({subcontractorCount})
+            </span>
+          </TabsTrigger>
+        </TabsList>
 
-            return (
-              <Card key={thread.threadId} className={thread.unreadCount > 0 ? 'border-2 border-blue-300 bg-blue-50' : ''}>
-                <Collapsible open={isExpanded} onOpenChange={() => toggleThread(thread.threadId)}>
-                  <CollapsibleTrigger className="w-full">
-                    <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-3 flex-1 text-left">
-                          {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 mt-1 flex-shrink-0" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5 mt-1 flex-shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <h3 className={`font-semibold ${thread.unreadCount > 0 ? 'text-blue-900' : ''}`}>
-                              {thread.subject}
-                            </h3>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {lastEmail.direction === 'inbound' ? lastEmail.from_name || lastEmail.from_email : 'You'}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {new Date(lastEmail.email_date).toLocaleString()}
-                              </span>
-                              {lastEmail.direction === 'inbound' && (
-                                <Badge variant="outline" className="bg-blue-100 text-blue-700">
-                                  <Inbox className="w-3 h-3 mr-1" />
-                                  Received
-                                </Badge>
+        <TabsContent value={activeFilter} className="mt-4">
+          {/* Email Threads */}
+          {threads.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-12">
+                <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">
+                  {activeFilter === 'all' 
+                    ? 'No email communications for this job yet'
+                    : `No ${activeFilter} communications yet`}
+                </p>
+                <Button onClick={handleNewEmail}>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send First Email
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {threads.map((thread) => {
+                const isExpanded = expandedThreads.has(thread.threadId);
+                const lastEmail = thread.emails[thread.emails.length - 1];
+
+                return (
+                  <Card 
+                    key={thread.threadId} 
+                    className={`${thread.unreadCount > 0 ? 'border-2 border-blue-300' : ''} ${thread.entityCategory ? getEntityColor(thread.entityCategory) : ''}`}
+                  >
+                    <Collapsible open={isExpanded} onOpenChange={() => toggleThread(thread.threadId)}>
+                      <CollapsibleTrigger className="w-full">
+                        <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-3 flex-1 text-left">
+                              {isExpanded ? (
+                                <ChevronDown className="w-5 h-5 mt-1 flex-shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-5 h-5 mt-1 flex-shrink-0" />
                               )}
-                              {lastEmail.direction === 'outbound' && (
-                                <Badge variant="outline" className="bg-green-100 text-green-700">
-                                  <Send className="w-3 h-3 mr-1" />
-                                  Sent
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 ml-4">
-                          {thread.unreadCount > 0 && (
-                            <Badge variant="destructive">{thread.unreadCount} new</Badge>
-                          )}
-                          <Badge variant="outline">{thread.emails.length} {thread.emails.length === 1 ? 'email' : 'emails'}</Badge>
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent className="pt-0">
-                      <div className="space-y-4 border-l-2 border-slate-200 pl-4 ml-2">
-                        {thread.emails.map((email, idx) => (
-                          <div key={email.id} className="space-y-2">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <p className="font-medium">
-                                    {email.direction === 'inbound' 
-                                      ? (email.from_name || email.from_email)
-                                      : 'You'}
-                                  </p>
-                                  <Badge variant="outline" className="text-xs">
-                                    {email.direction === 'inbound' ? <Inbox className="w-3 h-3" /> : <Send className="w-3 h-3" />}
-                                  </Badge>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold">
+                                  {thread.subject}
+                                </h3>
+                                <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <User className="w-3 h-3" />
+                                    {lastEmail.direction === 'inbound' ? lastEmail.from_name || lastEmail.from_email : 'You'}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {new Date(lastEmail.email_date).toLocaleString()}
+                                  </span>
+                                  {lastEmail.entity_category && (
+                                    <Badge variant="outline" className={getEntityColor(lastEmail.entity_category)}>
+                                      {getEntityIcon(lastEmail.entity_category)}
+                                      <span className="ml-1 capitalize">{lastEmail.entity_category}</span>
+                                    </Badge>
+                                  )}
                                 </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {new Date(email.email_date).toLocaleString()}
-                                </p>
                               </div>
-                              {email.direction === 'inbound' && (
-                                <Button size="sm" variant="outline" onClick={() => handleReply(email)}>
-                                  <Reply className="w-3 h-3 mr-1" />
-                                  Reply
-                                </Button>
+                            </div>
+                            <div className="flex items-center gap-2 ml-4">
+                              {thread.unreadCount > 0 && (
+                                <Badge variant="destructive">{thread.unreadCount} new</Badge>
                               )}
+                              <Badge variant="outline">{thread.emails.length}</Badge>
                             </div>
-                            <div className="bg-muted/50 rounded-lg p-3">
-                              <p className="whitespace-pre-wrap text-sm">{email.body_text}</p>
-                            </div>
-                            {email.attachments && email.attachments.length > 0 && (
-                              <div className="flex items-center gap-2">
-                                <Paperclip className="w-4 h-4 text-muted-foreground" />
-                                <p className="text-sm text-muted-foreground">
-                                  {email.attachments.length} attachment{email.attachments.length !== 1 ? 's' : ''}
-                                </p>
-                              </div>
-                            )}
-                            {idx < thread.emails.length - 1 && (
-                              <div className="border-t pt-4" />
-                            )}
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                        </CardHeader>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <CardContent className="pt-0">
+                          <div className="space-y-4 border-l-2 border-slate-200 pl-4 ml-2">
+                            {thread.emails.map((email, idx) => (
+                              <div key={email.id} className="space-y-2">
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium">
+                                        {email.direction === 'inbound' 
+                                          ? (email.from_name || email.from_email)
+                                          : 'You'}
+                                      </p>
+                                      {email.entity_category && (
+                                        <Badge variant="outline" className={`text-xs ${getEntityColor(email.entity_category)}`}>
+                                          {getEntityIcon(email.entity_category)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">
+                                      {new Date(email.email_date).toLocaleString()}
+                                    </p>
+                                  </div>
+                                  {email.direction === 'inbound' && (
+                                    <div className="flex gap-2">
+                                      <Button size="sm" variant="outline" onClick={() => handleReply(email)}>
+                                        <Reply className="w-3 h-3 mr-1" />
+                                        Reply via App
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => openInThunderbird(email.from_email)}
+                                      >
+                                        <ExternalLink className="w-3 h-3 mr-1" />
+                                        Thunderbird
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="bg-muted/50 rounded-lg p-3">
+                                  <p className="whitespace-pre-wrap text-sm">{email.body_text}</p>
+                                </div>
+                                {email.attachments && email.attachments.length > 0 && (
+                                  <div className="flex items-center gap-2">
+                                    <Paperclip className="w-4 h-4 text-muted-foreground" />
+                                    <p className="text-sm text-muted-foreground">
+                                      {email.attachments.length} attachment{email.attachments.length !== 1 ? 's' : ''}
+                                    </p>
+                                  </div>
+                                )}
+                                {idx < thread.emails.length - 1 && (
+                                  <div className="border-t pt-4" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Email Composer Dialog */}
       <Dialog open={showComposer} onOpenChange={setShowComposer}>
@@ -416,6 +532,28 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>Select Contact (Optional)</Label>
+              <Select value={selectedContactId} onValueChange={handleContactSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose from contacts or enter manually..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Manual Entry</SelectItem>
+                  {contacts.map((contact) => (
+                    <SelectItem key={contact.id} value={contact.id}>
+                      <div className="flex items-center gap-2">
+                        {contact.category === 'customer' && <Users className="w-3 h-3 text-green-700" />}
+                        {contact.category === 'vendor' && <Package className="w-3 h-3 text-orange-700" />}
+                        {contact.category === 'subcontractor' && <Briefcase className="w-3 h-3 text-blue-700" />}
+                        <span>{contact.name} ({contact.email})</span>
+                        <Badge variant="outline" className="text-xs capitalize">{contact.category}</Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label>To *</Label>
               <Input
@@ -433,11 +571,11 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
               />
             </div>
             <div>
-              <Label>Subject *</Label>
+              <Label>Subject * (Include #{job.job_number} for auto-categorization)</Label>
               <Input
                 value={composeSubject}
                 onChange={(e) => setComposeSubject(e.target.value)}
-                placeholder="Email subject"
+                placeholder={`#${job.job_number || ''} ${job.name}`}
               />
             </div>
             <div>

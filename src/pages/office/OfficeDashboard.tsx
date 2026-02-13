@@ -26,6 +26,7 @@ import { ShopTasksManagement } from '@/components/office/ShopTasksManagement';
 import { QuotesView } from '@/components/office/QuotesView';
 import { QuoteConfigManagement } from '@/components/office/QuoteConfigManagement';
 import { MaterialInventory } from '@/components/office/MaterialInventory';
+import { ContactsManagement } from '@/components/office/ContactsManagement';
 import { TrimPricingCalculator } from '@/components/office/TrimPricingCalculator';
 
 import { AllJobsTaskManagement } from '@/components/office/AllJobsTaskManagement';
@@ -576,6 +577,10 @@ export function OfficeDashboard() {
                   <Settings className="w-4 h-4 mr-2" />
                   Materials
                 </TabsTrigger>
+                <TabsTrigger value="contacts" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Contacts
+                </TabsTrigger>
                 <TabsTrigger value="email-settings" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Settings className="w-4 h-4 mr-2" />
                   Email Settings
@@ -666,6 +671,10 @@ export function OfficeDashboard() {
 
               <TabsContent value="materials" className="mt-6">
                 <MaterialInventory />
+              </TabsContent>
+
+              <TabsContent value="contacts" className="mt-6">
+                <ContactsManagement />
               </TabsContent>
 
               <TabsContent value="email-settings" className="mt-6">

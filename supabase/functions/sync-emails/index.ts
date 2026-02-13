@@ -1,11 +1,10 @@
-// Edge Function for IMAP email fetching and auto-categorization
+// Edge Function for Multi-Entity Email Communication Engine with Smart Categorization
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { corsHeaders } from '../_shared/cors.ts';
 
 interface EmailMessage {
   messageId: string;
   inReplyTo?: string;
-  references?: string[];
   subject: string;
   from: { email: string; name?: string };
   to: Array<{ email: string; name?: string }>;
@@ -43,14 +42,12 @@ Deno.serve(async (req) => {
     const { action, emailData } = await req.json();
 
     if (action === 'fetch') {
-      // Fetch emails from IMAP
       const result = await fetchEmailsFromIMAP(supabaseClient, user.id);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (action === 'send') {
-      // Send email via SMTP and save to IMAP Sent folder
       const result = await sendEmailViaSMTP(supabaseClient, user.id, emailData);
       return new Response(
         JSON.stringify(result),
@@ -77,7 +74,6 @@ async function fetchEmailsFromIMAP(supabaseClient: any, userId: string) {
   let emailsCategorized = 0;
 
   try {
-    // Get email settings
     const { data: settings, error: settingsError } = await supabaseClient
       .from('email_settings')
       .select('*')
@@ -92,55 +88,66 @@ async function fetchEmailsFromIMAP(supabaseClient: any, userId: string) {
       throw new Error('Email sync is disabled');
     }
 
-    // Note: In production, you would use a proper IMAP library here
-    // For now, this is a placeholder for the IMAP fetching logic
     console.log('Fetching emails from IMAP:', settings.imap_host);
     
-    // TODO: Implement actual IMAP fetching using a library like 'imap' or 'node-imap'
-    // This would connect to the IMAP server, fetch new emails since last_sync_at,
-    // and parse them into EmailMessage objects
+    // TODO: Implement actual IMAP fetching
+    const mockEmails: EmailMessage[] = [];
 
-    const mockEmails: EmailMessage[] = []; // Placeholder for fetched emails
-
-    // Get all jobs and their customer emails for auto-categorization
+    // Get all jobs for job number matching (#JobNumber pattern)
     const { data: jobs } = await supabaseClient
       .from('jobs')
-      .select('id, job_number, client_name, client_email');
+      .select('id, job_number');
 
-    // Process each email
+    // Get all contacts for multi-entity categorization
+    const { data: contacts } = await supabaseClient
+      .from('contacts')
+      .select('id, email, category, job_id');
+
+    // Process each email with Smart Categorization
     for (const email of mockEmails) {
       emailsProcessed++;
 
-      // Auto-categorize email to job
       let matchedJobId = null;
+      let matchedContactId = null;
+      let entityCategory = null;
 
-      // Method 1: Check if subject contains job number
-      for (const job of jobs || []) {
-        if (job.job_number && email.subject.includes(job.job_number)) {
+      // METHOD 1: Smart Job Detection - Parse subject for #JobNumber (e.g., #1024)
+      const jobNumberMatch = email.subject.match(/#(\d+)/);
+      if (jobNumberMatch) {
+        const jobNumber = jobNumberMatch[1];
+        const job = (jobs || []).find(j => j.job_number === jobNumber);
+        if (job) {
           matchedJobId = job.id;
-          break;
+          console.log(`📋 Job matched via #${jobNumber}: ${job.id}`);
         }
       }
 
-      // Method 2: Check if sender email matches customer
-      if (!matchedJobId) {
-        for (const job of jobs || []) {
-          if (job.client_email && email.from.email.toLowerCase() === job.client_email.toLowerCase()) {
-            matchedJobId = job.id;
-            break;
-          }
+      // METHOD 2: Entity Categorization - Match sender email to contacts
+      const fromEmail = email.from.email.toLowerCase();
+      const contact = (contacts || []).find(c => c.email.toLowerCase() === fromEmail);
+      
+      if (contact) {
+        matchedContactId = contact.id;
+        entityCategory = contact.category;
+        
+        // If no job found yet, use contact's linked job
+        if (!matchedJobId && contact.job_id) {
+          matchedJobId = contact.job_id;
         }
+        
+        console.log(`👤 Contact matched - Category: ${entityCategory}, Email: ${fromEmail}`);
       }
 
-      if (matchedJobId) {
+      // Only insert if we have at least a job or contact match
+      if (matchedJobId || matchedContactId) {
         emailsCategorized++;
 
-        // Insert email into job_emails
         await supabaseClient.from('job_emails').insert({
           job_id: matchedJobId,
+          contact_id: matchedContactId,
+          entity_category: entityCategory,
           message_id: email.messageId,
           in_reply_to: email.inReplyTo,
-          references: email.references,
           subject: email.subject,
           from_email: email.from.email,
           from_name: email.from.name,
@@ -152,16 +159,18 @@ async function fetchEmailsFromIMAP(supabaseClient: any, userId: string) {
           direction: 'inbound',
           raw_headers: email.headers,
         });
+
+        console.log(`✅ Email categorized - Job: ${matchedJobId || 'None'}, Entity: ${entityCategory || 'None'}`);
+      } else {
+        console.log(`⏭️ Email skipped - no job or contact match: ${email.subject}`);
       }
     }
 
-    // Update last sync time
     await supabaseClient
       .from('email_settings')
       .update({ last_sync_at: new Date().toISOString() })
       .eq('user_id', userId);
 
-    // Log sync operation
     await supabaseClient.from('email_sync_log').insert({
       user_id: userId,
       sync_type: 'imap_fetch',
@@ -179,7 +188,6 @@ async function fetchEmailsFromIMAP(supabaseClient: any, userId: string) {
       message: `Fetched ${emailsProcessed} emails, categorized ${emailsCategorized} to jobs`,
     };
   } catch (error: any) {
-    // Log error
     await supabaseClient.from('email_sync_log').insert({
       user_id: userId,
       sync_type: 'imap_fetch',
@@ -199,7 +207,6 @@ async function sendEmailViaSMTP(supabaseClient: any, userId: string, emailData: 
   const syncStartTime = new Date().toISOString();
 
   try {
-    // Get email settings
     const { data: settings, error: settingsError } = await supabaseClient
       .from('email_settings')
       .select('*')
@@ -210,22 +217,36 @@ async function sendEmailViaSMTP(supabaseClient: any, userId: string, emailData: 
       throw new Error('Email settings not found');
     }
 
-    // TODO: Implement actual SMTP sending using a library
-    // This would:
-    // 1. Send the email via SMTP
-    // 2. Save a copy to the IMAP "Sent" folder for Thunderbird sync
-    // 3. Store the email in job_emails table
-
+    // TODO: Implement actual SMTP sending + IMAP Sent folder sync
     console.log('Sending email via SMTP:', settings.smtp_host);
 
     const messageId = `<${crypto.randomUUID()}@${settings.smtp_from_email.split('@')[1]}>`;
 
-    // Insert into job_emails
+    // Determine entity category if contact is specified
+    let entityCategory = null;
+    let contactId = emailData.contactId || null;
+    
+    if (!contactId && emailData.to && emailData.to.length > 0) {
+      const toEmail = emailData.to[0].email.toLowerCase();
+      const { data: contact } = await supabaseClient
+        .from('contacts')
+        .select('id, category')
+        .eq('email', toEmail)
+        .maybeSingle();
+      
+      if (contact) {
+        contactId = contact.id;
+        entityCategory = contact.category;
+      }
+    }
+
+    // Insert into job_emails with entity categorization
     await supabaseClient.from('job_emails').insert({
       job_id: emailData.jobId,
+      contact_id: contactId,
+      entity_category: entityCategory,
       message_id: messageId,
       in_reply_to: emailData.inReplyTo,
-      references: emailData.references || [],
       subject: emailData.subject,
       from_email: settings.smtp_from_email,
       from_name: settings.smtp_from_name,
@@ -236,10 +257,9 @@ async function sendEmailViaSMTP(supabaseClient: any, userId: string, emailData: 
       body_html: emailData.bodyHtml,
       email_date: new Date().toISOString(),
       direction: 'outbound',
-      synced_to_sent: true, // Marked as synced after uploading to IMAP Sent
+      synced_to_sent: true,
     });
 
-    // Log sync operation
     await supabaseClient.from('email_sync_log').insert({
       user_id: userId,
       sync_type: 'smtp_send',
@@ -255,7 +275,6 @@ async function sendEmailViaSMTP(supabaseClient: any, userId: string, emailData: 
       message: 'Email sent successfully and synced to Sent folder',
     };
   } catch (error: any) {
-    // Log error
     await supabaseClient.from('email_sync_log').insert({
       user_id: userId,
       sync_type: 'smtp_send',
