@@ -1295,27 +1295,94 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       return (
                         <div key={item.id}>
                           <Collapsible defaultOpen={false}>
-                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                            <div className="border border-slate-300 rounded overflow-hidden bg-white cursor-move mb-1">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
-                                  {/* Left: Chevron + Title - Compact */}
-                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
-                                    <div className="flex-1 min-w-0">
-                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{sheet.sheetName}</h3>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-2 border-b">
+                                  {/* Top Row: Chevron + Title + Pricing */}
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    {/* Left: Chevron + Title */}
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <ChevronDown className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                                      <h3 className="text-sm font-bold text-slate-900 leading-tight">{sheet.sheetName}</h3>
                                       {sheetLabor[sheet.sheetId] && (
-                                        <p className="text-xs text-amber-700 font-semibold text-left mt-0.5">Labor</p>
+                                        <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-700 text-xs">Labor</Badge>
                                       )}
+                                    </div>
+
+                                    {/* Right: Pricing with inline markup */}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                          <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                          <span>+</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            value={sheetMarkup}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              const newMarkup = parseFloat(e.target.value) || 0;
+                                              setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-12 text-right bg-white border border-slate-300 rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                          <span>%</span>
+                                        </div>
+                                        <p className="text-lg font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        {sheetLabor[sheet.sheetId] && (
+                                          <p className="text-xs text-amber-700 font-semibold">
+                                            ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
+                                          </p>
+                                        )}
+                                      </div>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openAddDialog(undefined, sheet.sheetId);
+                                            }}
+                                          >
+                                            <Plus className="w-4 h-4 mr-2" />
+                                            Add Material Row
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openLaborDialog(sheet.sheetId);
+                                            }}
+                                          >
+                                            <Clock className="w-4 h-4 mr-2" />
+                                            {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
+                                            }}
+                                          >
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            Edit Description
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   </div>
 
-                                  {/* Middle: Editable Description - Maximum Space */}
-                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                  {/* Bottom Row: Editable Description */}
+                                  <div className="pl-6" onClick={(e) => e.stopPropagation()}>
                                     <Textarea
                                       value={sheet.sheetDescription || ''}
                                       onChange={async (e) => {
                                         const newDesc = e.target.value;
-                                        // Optimistically update UI
                                         setMaterialSheets(prev => prev.map(s => 
                                           s.id === sheet.sheetId ? { ...s, description: newDesc } : s
                                         ));
@@ -1336,76 +1403,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         }
                                       }}
                                       placeholder="Click to add description..."
-                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
-                                      rows={2}
+                                      className="text-xs border-0 bg-transparent resize-none p-1 min-h-[40px] focus:bg-white focus:border focus:border-slate-300 rounded w-full"
+                                      rows={1}
                                     />
-                                  </div>
-
-                                  {/* Right: Markup + Pricing + Actions */}
-                                  <div className="flex items-start gap-2 flex-shrink-0">
-                                    {/* Editable Markup % - Plain Number */}
-                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={sheetMarkup}
-                                        onChange={(e) => {
-                                          const newMarkup = parseFloat(e.target.value) || 0;
-                                          setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
-                                        }}
-                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
-                                      />
-                                      <span className="text-xs text-slate-500">%</span>
-                                    </div>
-                                    
-                                    {/* Pricing - Far Right */}
-                                    <div className="text-right w-44">
-                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      {sheetLabor[sheet.sheetId] && (
-                                        <p className="text-sm text-amber-700 font-semibold mt-1">
-                                          ${sheetLabor[sheet.sheetId].total_labor_cost.toFixed(2)}
-                                        </p>
-                                      )}
-                                    </div>
-                                    
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                        <Button size="sm" variant="ghost" className="flex-shrink-0">
-                                          <MoreVertical className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openAddDialog(undefined, sheet.sheetId);
-                                          }}
-                                        >
-                                          <Plus className="w-4 h-4 mr-2" />
-                                          Add Material Row
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openLaborDialog(sheet.sheetId);
-                                          }}
-                                        >
-                                          <Clock className="w-4 h-4 mr-2" />
-                                          {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openSheetDescDialog(sheet.sheetId, sheet.sheetDescription);
-                                          }}
-                                        >
-                                          <Edit className="w-4 h-4 mr-2" />
-                                          Edit Description
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
                                   </div>
                                 </div>
                               </CollapsibleTrigger>
@@ -1526,24 +1526,73 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       return (
                         <div key={item.id}>
                           <Collapsible defaultOpen={false}>
-                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
+                            <div className="border border-slate-300 rounded overflow-hidden bg-white cursor-move mb-1">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
-                                  {/* Left: Chevron + Title - Compact */}
-                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
-                                    <div className="flex-1 min-w-0">
-                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{est.company_name || 'Subcontractor'}</h3>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-2 border-b">
+                                  {/* Top Row: Chevron + Title + Pricing */}
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    {/* Left: Chevron + Title */}
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <ChevronDown className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                                      <h3 className="text-sm font-bold text-slate-900 leading-tight">{est.company_name || 'Subcontractor'}</h3>
+                                    </div>
+
+                                    {/* Right: Pricing with inline markup */}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                          <span>Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                          <span>+</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            value={estMarkup}
+                                            onChange={async (e) => {
+                                              e.stopPropagation();
+                                              const newMarkup = parseFloat(e.target.value) || 0;
+                                              try {
+                                                const { error } = await supabase
+                                                  .from('subcontractor_estimates')
+                                                  .update({ markup_percent: newMarkup })
+                                                  .eq('id', est.id);
+                                                
+                                                if (error) throw error;
+                                                await loadSubcontractorEstimates();
+                                              } catch (error: any) {
+                                                console.error('Error updating markup:', error);
+                                                toast.error('Failed to update markup');
+                                              }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-12 text-right bg-white border border-slate-300 rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                          <span>%</span>
+                                        </div>
+                                        <p className="text-lg font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      </div>
+                                      
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          window.open(est.pdf_url, '_blank');
+                                        }}
+                                        className="h-7 w-7 p-0"
+                                        title="View PDF"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
                                     </div>
                                   </div>
 
-                                  {/* Middle: Editable Description - Maximum Space */}
-                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                  {/* Bottom Row: Editable Description */}
+                                  <div className="pl-6" onClick={(e) => e.stopPropagation()}>
                                     <Textarea
                                       value={est.scope_of_work || ''}
                                       onChange={async (e) => {
                                         const newDesc = e.target.value;
-                                        // Optimistically update UI
                                         setSubcontractorEstimates(prev => prev.map(se => 
                                           se.id === est.id ? { ...se, scope_of_work: newDesc } : se
                                         ));
@@ -1564,59 +1613,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         }
                                       }}
                                       placeholder="Click to add scope of work..."
-                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
-                                      rows={2}
+                                      className="text-xs border-0 bg-transparent resize-none p-1 min-h-[40px] focus:bg-white focus:border focus:border-slate-300 rounded w-full"
+                                      rows={1}
                                     />
-                                  </div>
-
-                                  {/* Right: Markup + Pricing + View PDF */}
-                                  <div className="flex items-start gap-2 flex-shrink-0">
-                                    {/* Editable Markup % - Plain Number */}
-                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={estMarkup}
-                                        onChange={async (e) => {
-                                          const newMarkup = parseFloat(e.target.value) || 0;
-                                          try {
-                                            const { error } = await supabase
-                                              .from('subcontractor_estimates')
-                                              .update({ markup_percent: newMarkup })
-                                              .eq('id', est.id);
-                                            
-                                            if (error) throw error;
-                                            await loadSubcontractorEstimates();
-                                          } catch (error: any) {
-                                            console.error('Error updating markup:', error);
-                                            toast.error('Failed to update markup');
-                                          }
-                                        }}
-                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
-                                      />
-                                      <span className="text-xs text-slate-500">%</span>
-                                    </div>
-                                    
-                                    {/* Pricing - Far Right */}
-                                    <div className="text-right w-44">
-                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    </div>
-                                    
-                                    {/* View PDF Button */}
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        window.open(est.pdf_url, '_blank');
-                                      }}
-                                      className="flex-shrink-0"
-                                      title="View PDF"
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </Button>
                                   </div>
                                 </div>
                               </CollapsibleTrigger>
@@ -1693,25 +1692,114 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       return (
                         <div key={item.id}>
                           <Collapsible defaultOpen={false}>
-                            <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
+                            <div className="border border-slate-300 rounded overflow-hidden bg-white mb-1">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
-                                  {/* Left: Chevron + Title - Compact */}
-                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
-                                    <div className="flex-1 min-w-0">
-                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{row.description}</h3>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-2 border-b">
+                                  {/* Top Row: Chevron + Title + Pricing */}
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    {/* Left: Chevron + Title */}
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <ChevronDown className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                                      <h3 className="text-sm font-bold text-slate-900 leading-tight">{row.description}</h3>
                                       {hasLineItems && (
-                                        <p className="text-xs text-slate-600 text-left mt-0.5">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
+                                        <Badge variant="outline" className="bg-slate-100 text-slate-700 text-xs">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</Badge>
                                       )}
                                       {rowLabor && (
-                                        <p className="text-xs text-amber-700 font-semibold text-left mt-0.5">Labor</p>
+                                        <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-700 text-xs">Labor</Badge>
                                       )}
+                                    </div>
+
+                                    {/* Right: Pricing with inline markup */}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                          <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                          <span>+</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            value={row.markup_percent}
+                                            onChange={async (e) => {
+                                              e.stopPropagation();
+                                              const newMarkup = parseFloat(e.target.value) || 0;
+                                              try {
+                                                const { error } = await supabase
+                                                  .from('custom_financial_rows')
+                                                  .update({ markup_percent: newMarkup })
+                                                  .eq('id', row.id);
+                                                
+                                                if (error) throw error;
+                                                await loadCustomRows();
+                                              } catch (error: any) {
+                                                console.error('Error updating markup:', error);
+                                                toast.error('Failed to update markup');
+                                              }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-12 text-right bg-white border border-slate-300 rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                          <span>%</span>
+                                        </div>
+                                        <p className="text-lg font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        {rowLabor && (
+                                          <p className="text-xs text-amber-700 font-semibold">
+                                            ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+                                          </p>
+                                        )}
+                                      </div>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openLineItemDialog(row.id);
+                                            }}
+                                          >
+                                            <List className="w-4 h-4 mr-2" />
+                                            Add Line Item
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openLaborDialog(undefined, row.id);
+                                            }}
+                                          >
+                                            <Clock className="w-4 h-4 mr-2" />
+                                            {rowLabor ? 'Edit Labor' : 'Add Labor'}
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openAddDialog(row);
+                                            }}
+                                          >
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            Edit Row
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              deleteRow(row.id);
+                                            }}
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete Row
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   </div>
 
-                                  {/* Middle: Editable Notes/Description - Maximum Space */}
-                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                  {/* Bottom Row: Editable Notes */}
+                                  <div className="pl-6" onClick={(e) => e.stopPropagation()}>
                                     <Textarea
                                       value={(() => {
                                         if (rowLabor) return '';
@@ -1724,7 +1812,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                       })()}
                                       onChange={async (e) => {
                                         const newNotes = e.target.value;
-                                        // Optimistically update UI
                                         setCustomRows(prev => prev.map(r => 
                                           r.id === row.id ? { ...r, notes: newNotes } : r
                                         ));
@@ -1745,98 +1832,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         }
                                       }}
                                       placeholder="Click to add notes..."
-                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
-                                      rows={2}
+                                      className="text-xs border-0 bg-transparent resize-none p-1 min-h-[40px] focus:bg-white focus:border focus:border-slate-300 rounded w-full"
+                                      rows={1}
                                       disabled={!!rowLabor}
                                     />
-                                  </div>
-
-                                  {/* Right: Markup + Pricing + Actions */}
-                                  <div className="flex items-start gap-2 flex-shrink-0">
-                                    {/* Editable Markup % - Plain Number */}
-                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={row.markup_percent}
-                                        onChange={async (e) => {
-                                          const newMarkup = parseFloat(e.target.value) || 0;
-                                          try {
-                                            const { error } = await supabase
-                                              .from('custom_financial_rows')
-                                              .update({ markup_percent: newMarkup })
-                                              .eq('id', row.id);
-                                            
-                                            if (error) throw error;
-                                            await loadCustomRows();
-                                          } catch (error: any) {
-                                            console.error('Error updating markup:', error);
-                                            toast.error('Failed to update markup');
-                                          }
-                                        }}
-                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
-                                      />
-                                      <span className="text-xs text-slate-500">%</span>
-                                    </div>
-                                    
-                                    {/* Pricing - Far Right */}
-                                    <div className="text-right w-44">
-                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      {rowLabor && (
-                                        <p className="text-sm text-amber-700 font-semibold mt-1">
-                                          ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
-                                        </p>
-                                      )}
-                                    </div>
-                                    
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                        <Button size="sm" variant="ghost" className="flex-shrink-0">
-                                          <MoreVertical className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openLineItemDialog(row.id);
-                                          }}
-                                        >
-                                          <List className="w-4 h-4 mr-2" />
-                                          Add Line Item
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openLaborDialog(undefined, row.id);
-                                          }}
-                                        >
-                                          <Clock className="w-4 h-4 mr-2" />
-                                          {rowLabor ? 'Edit Labor' : 'Add Labor'}
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openAddDialog(row);
-                                          }}
-                                        >
-                                          <Edit className="w-4 h-4 mr-2" />
-                                          Edit Row
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            deleteRow(row.id);
-                                          }}
-                                          className="text-destructive focus:text-destructive"
-                                        >
-                                          <Trash2 className="w-4 h-4 mr-2" />
-                                          Delete Row
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
                                   </div>
                                 </div>
                               </CollapsibleTrigger>
