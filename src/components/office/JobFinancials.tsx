@@ -999,6 +999,36 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function toggleSubcontractorLineItem(lineItemId: string, currentExcluded: boolean) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update({ excluded: !currentExcluded })
+        .eq('id', lineItemId);
+
+      if (error) throw error;
+      await loadSubcontractorEstimates();
+    } catch (error: any) {
+      console.error('Error toggling line item:', error);
+      toast.error('Failed to update line item');
+    }
+  }
+
+  async function updateSubcontractorMarkup(estimateId: string, newMarkup: number) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimates')
+        .update({ markup_percent: newMarkup })
+        .eq('id', estimateId);
+
+      if (error) throw error;
+      await loadSubcontractorEstimates();
+    } catch (error: any) {
+      console.error('Error updating markup:', error);
+      toast.error('Failed to update markup');
+    }
+  }
+
   // Calculate custom row total from line items (if any) or from quantity * unit_cost
   function getCustomRowTotal(row: CustomFinancialRow): number {
     const lineItems = customRowLineItems[row.id] || [];
@@ -1420,7 +1450,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6">
+                        <div className="mt-1 ml-6 mr-96">
                           <Textarea
                             value={sheet.sheetDescription}
                             placeholder="Click to add notes..."
@@ -1559,7 +1589,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                             {/* Notes below title */}
                             {row.notes && (
-                              <div className="mt-1">
+                              <div className="mt-1 mr-96">
                                 <Textarea
                                   value={row.notes}
                                   placeholder="Click to add notes..."
@@ -1679,7 +1709,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                             <div className="text-right">
                               <div className="flex items-center gap-2 text-xs text-slate-600">
                                 <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                <span>+{estMarkup}%</span>
+                                <span>+</span>
+                                <Input
+                                  type="number"
+                                  value={estMarkup}
+                                  onChange={(e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    updateSubcontractorMarkup(est.id, newMarkup);
+                                  }}
+                                  className="w-14 h-5 text-xs px-1 text-center"
+                                  step="1"
+                                  min="0"
+                                />
+                                <span>%</span>
                               </div>
                               <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             </div>
@@ -1698,7 +1740,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6">
+                        <div className="mt-1 ml-6 mr-96">
                           <Textarea
                             value={est.scope_of_work || ''}
                             placeholder="Click to add notes..."
@@ -1728,14 +1770,40 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                         <CollapsibleContent>
                           <div className="mt-2 ml-6 space-y-1">
-                            {lineItems.map((lineItem: any) => (
-                              <div key={lineItem.id} className={`p-2 rounded ${lineItem.excluded ? 'bg-red-50 line-through text-slate-400' : 'bg-slate-50'}`}>
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs">{lineItem.description}</p>
-                                  <p className="text-xs font-semibold">${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                </div>
+                            {lineItems.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                                  <List className="w-3 h-3" />
+                                  Line Items
+                                  <span className="text-slate-500">({lineItems.filter((item: any) => !item.excluded).length} of {lineItems.length} included)</span>
+                                </p>
+                                {lineItems.map((lineItem: any) => (
+                                  <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={!lineItem.excluded}
+                                        onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
+                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                        {lineItem.description}
+                                      </p>
+                                      <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                        ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
+
+                            {est.exclusions && (
+                              <div className="mt-3 pt-3 border-t border-slate-200">
+                                <p className="text-xs font-semibold text-red-700 mb-1">Exclusions</p>
+                                <p className="text-xs text-slate-600">{est.exclusions}</p>
+                              </div>
+                            )}
                           </div>
                         </CollapsibleContent>
                       </Collapsible>
