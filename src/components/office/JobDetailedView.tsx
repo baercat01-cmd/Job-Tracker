@@ -1072,7 +1072,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </Button>
             )}
           </div>
-          <TabsList className="grid w-full grid-cols-8 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+          <TabsList className="grid w-full grid-cols-9 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
@@ -1137,14 +1137,12 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               <Briefcase className="w-5 h-5 sm:mr-2" />
               <span className="hidden sm:inline">Subs</span>
             </TabsTrigger>
-          </TabsList>
-          <TabsList className="grid w-full grid-cols-1 h-14 rounded-none bg-gradient-to-r from-blue-900 via-blue-800 to-blue-900 mt-0 border-t-2 border-blue-500">
             <TabsTrigger 
               value="customer-portal" 
-              className="font-bold text-base sm:text-lg text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
-              <Users className="w-6 h-6 sm:mr-2" />
-              <span className="font-bold">📋 Customer Portal</span>
+              <Users className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Portal</span>
             </TabsTrigger>
           </TabsList>
           <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 mt-0">
@@ -1159,8 +1157,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </div>
         
         {/* Add spacer to prevent content from hiding under fixed header */}
-        {/* Total height: 64px (main tabs) + 56px (customer portal) + 48px (orders) = 168px */}
-        <div className="h-[168px]" />
+        {/* Total height: 64px (main tabs) + 48px (orders) = 112px */}
+        <div className="h-28" />
 
         {/* Overview Tab - Wrapped in max-width container */}
         <TabsContent value="overview" className="w-full">
