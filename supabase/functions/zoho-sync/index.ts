@@ -226,86 +226,98 @@ serve(async (req) => {
 
         // Create Sales Order (if requested)
         if (!orderType || orderType === 'both' || orderType === 'sales_order') {
-        const salesOrderData = {
-          customer_name: jobName,
-          reference_number: `Job: ${jobName}`,
-          notes: notes || `Materials for ${jobName}`,
-          line_items: materialItems.map((item: any) => ({
-            item_id: item.sku || undefined,
-            name: item.material_name,
-            description: item.usage || item.category || '',
-            quantity: item.quantity,
-            rate: item.price_per_unit || item.cost_per_unit || 0,
-          })),
-        };
+          console.log('📋 Creating Sales Order...');
+          
+          // First, find or create customer
+          const customerId = await findOrCreateCustomer(accessToken, settings.countywide_org_id, jobName);
+          console.log('✅ Customer ID:', customerId);
+          
+          const salesOrderData = {
+            customer_id: customerId,
+            reference_number: `Job: ${jobName}`,
+            notes: notes || `Materials for ${jobName}`,
+            line_items: materialItems.map((item: any) => ({
+              item_id: item.sku || undefined,
+              name: item.material_name,
+              description: item.usage || item.category || '',
+              quantity: item.quantity,
+              rate: item.price_per_unit || item.cost_per_unit || 0,
+            })),
+          };
 
-        const salesOrderResponse = await fetch(
-          `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Zoho-oauthtoken ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(salesOrderData),
+          const salesOrderResponse = await fetch(
+            `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(salesOrderData),
+            }
+          );
+
+          if (!salesOrderResponse.ok) {
+            const errorText = await salesOrderResponse.text();
+            throw new Error(`Failed to create Sales Order: ${errorText}`);
           }
-        );
 
-        if (!salesOrderResponse.ok) {
-          const errorText = await salesOrderResponse.text();
-          throw new Error(`Failed to create Sales Order: ${errorText}`);
-        }
+          const salesOrderResult = await salesOrderResponse.json();
+          console.log('✅ Sales Order created:', salesOrderResult.salesorder?.salesorder_id);
 
-        const salesOrderResult = await salesOrderResponse.json();
-        console.log('✅ Sales Order created:', salesOrderResult.salesorder?.salesorder_id);
-
-        result.salesOrder = {
-          id: salesOrderResult.salesorder?.salesorder_id,
-          number: salesOrderResult.salesorder?.salesorder_number,
-          url: `https://books.zoho.com/app#/salesorders/${salesOrderResult.salesorder?.salesorder_id}`,
-        };
+          result.salesOrder = {
+            id: salesOrderResult.salesorder?.salesorder_id,
+            number: salesOrderResult.salesorder?.salesorder_number,
+            url: `https://books.zoho.com/app#/salesorders/${salesOrderResult.salesorder?.salesorder_id}`,
+          };
         }
 
         // Create Purchase Order (if requested)
         if (!orderType || orderType === 'both' || orderType === 'purchase_order') {
-        const purchaseOrderData = {
-          vendor_name: 'Default Vendor', // Can be customized
-          reference_number: `Job: ${jobName}`,
-          notes: notes || `Materials for ${jobName}`,
-          line_items: materialItems.map((item: any) => ({
-            item_id: item.sku || undefined,
-            name: item.material_name,
-            description: item.usage || item.category || '',
-            quantity: item.quantity,
-            rate: item.cost_per_unit || item.price_per_unit || 0,
-          })),
-        };
+          console.log('📋 Creating Purchase Order...');
+          
+          // First, find or create vendor
+          const vendorId = await findOrCreateVendor(accessToken, settings.countywide_org_id, 'Material Supplier');
+          console.log('✅ Vendor ID:', vendorId);
+          
+          const purchaseOrderData = {
+            vendor_id: vendorId,
+            reference_number: `Job: ${jobName}`,
+            notes: notes || `Materials for ${jobName}`,
+            line_items: materialItems.map((item: any) => ({
+              item_id: item.sku || undefined,
+              name: item.material_name,
+              description: item.usage || item.category || '',
+              quantity: item.quantity,
+              rate: item.cost_per_unit || item.price_per_unit || 0,
+            })),
+          };
 
-        const purchaseOrderResponse = await fetch(
-          `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Zoho-oauthtoken ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(purchaseOrderData),
+          const purchaseOrderResponse = await fetch(
+            `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(purchaseOrderData),
+            }
+          );
+
+          if (!purchaseOrderResponse.ok) {
+            const errorText = await purchaseOrderResponse.text();
+            throw new Error(`Failed to create Purchase Order: ${errorText}`);
           }
-        );
 
-        if (!purchaseOrderResponse.ok) {
-          const errorText = await purchaseOrderResponse.text();
-          throw new Error(`Failed to create Purchase Order: ${errorText}`);
-        }
+          const purchaseOrderResult = await purchaseOrderResponse.json();
+          console.log('✅ Purchase Order created:', purchaseOrderResult.purchaseorder?.purchaseorder_id);
 
-        const purchaseOrderResult = await purchaseOrderResponse.json();
-        console.log('✅ Purchase Order created:', purchaseOrderResult.purchaseorder?.purchaseorder_id);
-
-        result.purchaseOrder = {
-          id: purchaseOrderResult.purchaseorder?.purchaseorder_id,
-          number: purchaseOrderResult.purchaseorder?.purchaseorder_number,
-          url: `https://books.zoho.com/app#/purchaseorders/${purchaseOrderResult.purchaseorder?.purchaseorder_id}`,
-        };
+          result.purchaseOrder = {
+            id: purchaseOrderResult.purchaseorder?.purchaseorder_id,
+            number: purchaseOrderResult.purchaseorder?.purchaseorder_number,
+            url: `https://books.zoho.com/app#/purchaseorders/${purchaseOrderResult.purchaseorder?.purchaseorder_id}`,
+          };
         }
 
         // Build message based on what was created
@@ -464,4 +476,102 @@ async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]
 
   const data = await response.json();
   return data.items || [];
+}
+
+async function findOrCreateCustomer(accessToken: string, orgId: string, customerName: string): Promise<string> {
+  console.log('🔍 Finding or creating customer:', customerName);
+  
+  // Search for existing customer
+  const searchUrl = `https://www.zohoapis.com/books/v3/contacts?organization_id=${orgId}&contact_name=${encodeURIComponent(customerName)}`;
+  
+  const searchResponse = await fetch(searchUrl, {
+    headers: {
+      'Authorization': `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (searchResponse.ok) {
+    const searchData = await searchResponse.json();
+    if (searchData.contacts && searchData.contacts.length > 0) {
+      console.log('✅ Found existing customer:', searchData.contacts[0].contact_id);
+      return searchData.contacts[0].contact_id;
+    }
+  }
+
+  // Customer doesn't exist, create new one
+  console.log('📝 Creating new customer:', customerName);
+  
+  const createResponse = await fetch(
+    `https://www.zohoapis.com/books/v3/contacts?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contact_name: customerName,
+        contact_type: 'customer',
+        company_name: customerName,
+      }),
+    }
+  );
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    throw new Error(`Failed to create customer: ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  console.log('✅ Created new customer:', createData.contact?.contact_id);
+  return createData.contact.contact_id;
+}
+
+async function findOrCreateVendor(accessToken: string, orgId: string, vendorName: string): Promise<string> {
+  console.log('🔍 Finding or creating vendor:', vendorName);
+  
+  // Search for existing vendor
+  const searchUrl = `https://www.zohoapis.com/books/v3/contacts?organization_id=${orgId}&contact_name=${encodeURIComponent(vendorName)}&contact_type=vendor`;
+  
+  const searchResponse = await fetch(searchUrl, {
+    headers: {
+      'Authorization': `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (searchResponse.ok) {
+    const searchData = await searchResponse.json();
+    if (searchData.contacts && searchData.contacts.length > 0) {
+      console.log('✅ Found existing vendor:', searchData.contacts[0].contact_id);
+      return searchData.contacts[0].contact_id;
+    }
+  }
+
+  // Vendor doesn't exist, create new one
+  console.log('📝 Creating new vendor:', vendorName);
+  
+  const createResponse = await fetch(
+    `https://www.zohoapis.com/books/v3/contacts?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contact_name: vendorName,
+        contact_type: 'vendor',
+        company_name: vendorName,
+      }),
+    }
+  );
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    throw new Error(`Failed to create vendor: ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  console.log('✅ Created new vendor:', createData.contact?.contact_id);
+  return createData.contact.contact_id;
 }
