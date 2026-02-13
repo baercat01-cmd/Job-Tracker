@@ -1151,9 +1151,260 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         {/* Total height: 64px (main tabs) */}
         <div className="h-16" />
 
-        {/* All TabsContent sections - truncated for brevity but properly structured in the file */}
+        {/* Overview Tab */}
         <TabsContent value="overview" className="w-full">
-          {/* Overview content - see full file */}
+          <div className="max-w-7xl mx-auto space-y-6 pt-4 px-4">
+            {/* Job Header */}
+            <Card className="border-2">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-slate-50 border-b-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-3xl font-bold mb-2 flex items-center gap-3">
+                      <Building2 className="w-8 h-8 text-blue-600" />
+                      {job.name}
+                    </CardTitle>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        {job.address}
+                      </p>
+                      {job.description && (
+                        <p className="text-muted-foreground">{job.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className="text-sm">
+                      {job.status}
+                    </Badge>
+                    {onEdit && (
+                      <Button variant="outline" size="sm" onClick={onEdit}>
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit Job
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Hours</p>
+                      <p className="text-3xl font-bold">{totalManHours.toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">man-hours logged</p>
+                    </div>
+                    <Clock className="w-10 h-10 text-blue-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Crew Members</p>
+                      <p className="text-3xl font-bold">{crewMembers.length}</p>
+                      <p className="text-xs text-muted-foreground mt-1">active workers</p>
+                    </div>
+                    <Users className="w-10 h-10 text-green-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Photos</p>
+                      <p className="text-3xl font-bold">{photoCount}</p>
+                      <p className="text-xs text-muted-foreground mt-1">uploaded</p>
+                    </div>
+                    <Camera className="w-10 h-10 text-purple-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Daily Logs</p>
+                      <p className="text-3xl font-bold">{dailyLogs.length}</p>
+                      <p className="text-xs text-muted-foreground mt-1">submitted</p>
+                    </div>
+                    <FileText className="w-10 h-10 text-orange-600" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Progress Card */}
+            {estimatedHours > 0 && (
+              <Card className="border-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5" />
+                    Project Progress
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Estimated Hours</p>
+                      <p className="text-2xl font-bold">{estimatedHours.toFixed(1)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Actual Hours</p>
+                      <p className="text-2xl font-bold">{totalClockInHours.toFixed(1)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Remaining</p>
+                      <p className={`text-2xl font-bold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+                        {isOverBudget ? '+' : ''}{remainingHours.toFixed(1)}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">Progress</span>
+                      <span className="text-sm font-medium">{progressPercent.toFixed(1)}%</span>
+                    </div>
+                    <Progress value={progressPercent} className="h-3" />
+                  </div>
+                  {isOverBudget && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-red-900">Over Budget</p>
+                        <p className="text-sm text-red-700">
+                          This job has exceeded the estimated hours by {Math.abs(remainingHours).toFixed(1)} hours
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Timeline Card */}
+            {(firstWorkDate || lastWorkDate) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5" />
+                    Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">First Activity</p>
+                      <p className="font-semibold">{firstWorkDate ? formatDate(firstWorkDate) : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Latest Activity</p>
+                      <p className="font-semibold">{lastWorkDate ? formatDate(lastWorkDate) : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Days Active</p>
+                      <p className="font-semibold">{calculateDaysActive()}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Recent Activity */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="w-5 h-5" />
+                  Recent Activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {recentActivity.length > 0 ? (
+                  <div className="space-y-3">
+                    {recentActivity.map((activity, idx) => (
+                      <div key={idx} className="flex items-start gap-3 pb-3 border-b last:border-0">
+                        <div className="mt-1">
+                          {activity.icon === 'clock' && <Clock className="w-4 h-4 text-blue-600" />}
+                          {activity.icon === 'camera' && <Camera className="w-4 h-4 text-purple-600" />}
+                          {activity.icon === 'file' && <FileText className="w-4 h-4 text-orange-600" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm">{activity.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatTimeAgo(activity.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">No recent activity</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Crew Members List */}
+            {crewMembers.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Crew Members ({crewMembers.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {crewMembers.map((member, idx) => (
+                      <Badge key={idx} variant="secondary" className="text-sm px-3 py-1">
+                        {member}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Issues Alert */}
+            {issueCount > 0 && (
+              <Card className="border-2 border-yellow-200 bg-yellow-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-6 h-6 text-yellow-600 mt-1" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-yellow-900">Active Issues</h3>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        There are {issueCount} reported issues in daily logs that may need attention.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Notes */}
+            {job.notes && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileCheck className="w-5 h-5" />
+                    Job Notes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="whitespace-pre-wrap">{job.notes}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="financials" className="w-full">
