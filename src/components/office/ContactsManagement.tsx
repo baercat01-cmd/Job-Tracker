@@ -15,7 +15,12 @@ import {
   Building2,
   Mail,
   Phone,
-  Briefcase
+  Briefcase,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -58,6 +63,10 @@ export function ContactsManagement() {
   const [companyName, setCompanyName] = useState('');
   const [jobId, setJobId] = useState('');
   const [notes, setNotes] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importStats, setImportStats] = useState({ success: 0, failed: 0, skipped: 0 });
 
   useEffect(() => {
     loadData();
@@ -182,6 +191,159 @@ export function ContactsManagement() {
     setNotes('');
   }
 
+  async function handleFileImport(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file type
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast.error('Please upload an Excel file (.xlsx or .xls)');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      
+      if (workbook.SheetNames.length === 0) {
+        throw new Error('No sheets found in the Excel file');
+      }
+
+      // Get first sheet
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' }) as any[];
+
+      if (jsonData.length === 0) {
+        throw new Error('No data found in the Excel file');
+      }
+
+      // Map Zoho fields to our schema
+      const mappedContacts = jsonData.map((row: any) => {
+        // Zoho CRM typical fields (adjust based on your export)
+        return {
+          name: row['Contact Name'] || row['Full Name'] || row['First Name'] + ' ' + row['Last Name'] || '',
+          email: row['Email'] || row['Email Address'] || '',
+          phone: row['Phone'] || row['Mobile'] || row['Phone Number'] || '',
+          category: determineCategory(row),
+          company_name: row['Company'] || row['Account Name'] || row['Organization'] || '',
+          notes: row['Description'] || row['Notes'] || '',
+        };
+      }).filter(c => c.name && c.email); // Only include contacts with name and email
+
+      setImportPreview(mappedContacts);
+      setShowImportDialog(true);
+      
+      toast.success(`Found ${mappedContacts.length} valid contacts to import`);
+    } catch (error: any) {
+      console.error('Error importing file:', error);
+      toast.error('Failed to parse Excel file: ' + error.message);
+    } finally {
+      setImporting(false);
+      // Reset file input
+      event.target.value = '';
+    }
+  }
+
+  function determineCategory(row: any): 'customer' | 'vendor' | 'subcontractor' {
+    const type = (row['Contact Type'] || row['Type'] || row['Category'] || '').toLowerCase();
+    
+    if (type.includes('vendor') || type.includes('supplier')) return 'vendor';
+    if (type.includes('sub') || type.includes('contractor')) return 'subcontractor';
+    return 'customer'; // Default to customer
+  }
+
+  async function executeImport() {
+    setImporting(true);
+    const stats = { success: 0, failed: 0, skipped: 0 };
+
+    try {
+      for (const contact of importPreview) {
+        try {
+          // Check if contact already exists by email
+          const { data: existing } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('email', contact.email)
+            .maybeSingle();
+
+          if (existing) {
+            stats.skipped++;
+            continue;
+          }
+
+          // Insert new contact
+          const { error } = await supabase
+            .from('contacts')
+            .insert([{
+              ...contact,
+              created_by: profile?.id,
+              is_active: true,
+            }]);
+
+          if (error) {
+            console.error('Error inserting contact:', contact.email, error);
+            stats.failed++;
+          } else {
+            stats.success++;
+          }
+        } catch (error) {
+          console.error('Error processing contact:', contact.email, error);
+          stats.failed++;
+        }
+      }
+
+      setImportStats(stats);
+      toast.success(
+        `Import complete! ${stats.success} created, ${stats.skipped} skipped, ${stats.failed} failed`
+      );
+      
+      await loadContacts();
+      setShowImportDialog(false);
+      setImportPreview([]);
+    } catch (error: any) {
+      console.error('Error during import:', error);
+      toast.error('Import failed: ' + error.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function downloadTemplate() {
+    const template = [
+      {
+        'Contact Name': 'John Doe',
+        'Email': 'john@example.com',
+        'Phone': '(555) 123-4567',
+        'Contact Type': 'Customer',
+        'Company': 'ABC Construction',
+        'Description': 'Primary contact for ABC Construction projects',
+      },
+      {
+        'Contact Name': 'Jane Smith',
+        'Email': 'jane@vendor.com',
+        'Phone': '(555) 987-6543',
+        'Contact Type': 'Vendor',
+        'Company': 'Supply Co',
+        'Description': 'Material supplier - lumber and steel',
+      },
+    ];
+
+    const csv = [
+      Object.keys(template[0]).join(','),
+      ...template.map(row => Object.values(row).map(v => `"${v}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'contacts_import_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const customerContacts = contacts.filter(c => c.category === 'customer');
   const vendorContacts = contacts.filter(c => c.category === 'vendor');
   const subcontractorContacts = contacts.filter(c => c.category === 'subcontractor');
@@ -215,10 +377,31 @@ export function ContactsManagement() {
             Manage customers, vendors, and subcontractors for email categorization
           </p>
         </div>
-        <Button onClick={() => setShowDialog(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Contact
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="w-4 h-4 mr-2" />
+            Template
+          </Button>
+          <label htmlFor="contact-import">
+            <Button variant="outline" disabled={importing} asChild>
+              <span>
+                <Upload className="w-4 h-4 mr-2" />
+                {importing ? 'Importing...' : 'Import Excel'}
+              </span>
+            </Button>
+          </label>
+          <input
+            id="contact-import"
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleFileImport}
+          />
+          <Button onClick={() => setShowDialog(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Contact
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="all">
@@ -259,6 +442,101 @@ export function ContactsManagement() {
           <ContactList contacts={subcontractorContacts} onEdit={openEditDialog} onDelete={deleteContact} getCategoryColor={getCategoryColor} />
         </TabsContent>
       </Tabs>
+
+      {/* Import Preview Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-6 h-6 text-blue-600" />
+              Import Preview - {importPreview.length} Contacts
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">📊 Import Summary:</h4>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>• Total contacts to import: <strong>{importPreview.length}</strong></li>
+                <li>• Customers: <strong>{importPreview.filter(c => c.category === 'customer').length}</strong></li>
+                <li>• Vendors: <strong>{importPreview.filter(c => c.category === 'vendor').length}</strong></li>
+                <li>• Subcontractors: <strong>{importPreview.filter(c => c.category === 'subcontractor').length}</strong></li>
+              </ul>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800">
+                ⚠️ Existing contacts (matched by email) will be skipped to prevent duplicates.
+              </p>
+            </div>
+
+            {/* Preview Table */}
+            <div className="border rounded-lg overflow-hidden">
+              <div className="max-h-96 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Name</th>
+                      <th className="px-3 py-2 text-left font-semibold">Email</th>
+                      <th className="px-3 py-2 text-left font-semibold">Phone</th>
+                      <th className="px-3 py-2 text-left font-semibold">Category</th>
+                      <th className="px-3 py-2 text-left font-semibold">Company</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.slice(0, 50).map((contact, idx) => (
+                      <tr key={idx} className="border-t hover:bg-slate-50">
+                        <td className="px-3 py-2">{contact.name}</td>
+                        <td className="px-3 py-2 text-xs">{contact.email}</td>
+                        <td className="px-3 py-2 text-xs">{contact.phone || '-'}</td>
+                        <td className="px-3 py-2">
+                          <Badge className="text-xs">{contact.category}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-xs">{contact.company_name || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {importPreview.length > 50 && (
+                <div className="bg-slate-50 border-t px-3 py-2 text-sm text-slate-600">
+                  Showing first 50 of {importPreview.length} contacts
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button 
+                onClick={executeImport} 
+                disabled={importing}
+                className="flex-1"
+              >
+                {importing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Import {importPreview.length} Contacts
+                  </>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowImportDialog(false);
+                  setImportPreview([]);
+                }}
+                disabled={importing}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Contact Dialog */}
       <Dialog open={showDialog} onOpenChange={(open) => {
