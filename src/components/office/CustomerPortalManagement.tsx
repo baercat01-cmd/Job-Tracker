@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CustomerPortalPreview } from './CustomerPortalPreview';
 
 interface CustomerPortalLink {
   id: string;
@@ -797,130 +798,76 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         </DialogContent>
       </Dialog>
 
-      {/* Preview Dialog - Shows exactly what customer sees */}
+      {/* Interactive Preview Dialog - Full Customer Portal Experience */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5" />
-              Customer Portal Preview - {customerName}
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              This is EXACTLY what the customer will see with current visibility settings
-            </p>
-          </DialogHeader>
-
+        <DialogContent className="max-w-[98vw] max-h-[95vh] overflow-hidden p-0">
           {previewLoading ? (
-            <div className="text-center py-12">
+            <div className="text-center py-12 px-6">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-muted-foreground">Loading preview...</p>
+              <p className="text-muted-foreground">Loading interactive preview...</p>
             </div>
           ) : previewJobs.length === 0 ? (
-            <div className="text-center py-12">
-              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-2">No jobs found for {customerName}</p>
-              <p className="text-sm text-muted-foreground">The customer portal will be empty until jobs are assigned.</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Custom Message */}
-              {previewSettings?.custom_message && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                  <p className="text-blue-900">{previewSettings.custom_message}</p>
-                </div>
-              )}
-
-              {/* Job Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {previewJobs.map((previewJob) => (
-                  <Card key={previewJob.id} className="border-2">
-                    <CardHeader className="bg-gradient-to-r from-blue-50 to-slate-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-xl flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-blue-600" />
-                            {previewJob.name}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground mt-1">{previewJob.address}</p>
-                          <Badge variant={previewJob.status === 'active' ? 'default' : 'secondary'} className="mt-2">
-                            {previewJob.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-6 space-y-4">
-                      {/* Financial Summary - Only if enabled */}
-                      {previewSettings?.show_financial_summary && (
-                        <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg">
-                          <div className="text-center">
-                            <p className="text-xs text-muted-foreground">Total</p>
-                            <p className="font-bold text-sm">${previewJob.estimatedPrice.toLocaleString()}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-muted-foreground">Paid</p>
-                            <p className="font-bold text-sm text-green-600">${previewJob.totalPaid.toLocaleString()}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-muted-foreground">Balance</p>
-                            <p className="font-bold text-sm text-amber-600">${previewJob.remainingBalance.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Available Sections */}
-                      <div className="flex flex-wrap gap-2">
-                        {previewSettings?.show_proposal && (
-                          <Badge variant="secondary">
-                            <FileText className="w-3 h-3 mr-1" />
-                            Proposal Available
-                          </Badge>
-                        )}
-                        {previewSettings?.show_payments && previewJob.payments.length > 0 && (
-                          <Badge variant="secondary">
-                            <DollarSign className="w-3 h-3 mr-1" />
-                            {previewJob.payments.length} Payments
-                          </Badge>
-                        )}
-                        {previewSettings?.show_schedule && previewJob.scheduleEvents.length > 0 && (
-                          <Badge variant="secondary">
-                            <Calendar className="w-3 h-3 mr-1" />
-                            {previewJob.scheduleEvents.length} Events
-                          </Badge>
-                        )}
-                        {previewSettings?.show_documents && previewJob.documents.length > 0 && (
-                          <Badge variant="secondary">
-                            <FileText className="w-3 h-3 mr-1" />
-                            {previewJob.documents.length} Documents
-                          </Badge>
-                        )}
-                        {previewSettings?.show_photos && previewJob.photos.length > 0 && (
-                          <Badge variant="secondary">
-                            <Image className="w-3 h-3 mr-1" />
-                            {previewJob.photos.length} Photos
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Hidden Sections Notice */}
-                      {(!previewSettings?.show_proposal || !previewSettings?.show_payments || 
-                        !previewSettings?.show_schedule || !previewSettings?.show_documents || 
-                        !previewSettings?.show_photos) && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                          <p className="text-xs text-yellow-900">
-                            <strong>Note:</strong> Some sections are hidden from customer view based on your visibility settings
-                          </p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+            <div className="p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Eye className="w-5 h-5" />
+                  Customer Portal Preview
+                </DialogTitle>
+              </DialogHeader>
+              <div className="text-center py-12">
+                <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-2">No jobs found for {customerName}</p>
+                <p className="text-sm text-muted-foreground">The customer portal will be empty until jobs are assigned.</p>
               </div>
-
               <div className="flex gap-3 pt-4 border-t">
                 <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
                   Close Preview
                 </Button>
                 <Button onClick={createPortalLink} className="flex-1">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Portal Link Anyway
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-[95vh] flex flex-col">
+              {/* Preview Header */}
+              <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white px-6 py-4 border-b-4 border-purple-900 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Eye className="w-6 h-6" />
+                    <div>
+                      <h2 className="text-xl font-bold">Interactive Preview Mode</h2>
+                      <p className="text-purple-100 text-sm">This is EXACTLY how customers will interact with their portal</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-white/10 text-white border-white/30">
+                      Preview Only
+                    </Badge>
+                    <Button onClick={() => setShowPreview(false)} variant="ghost" className="text-white hover:bg-white/10">
+                      ✕ Close
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Embedded Interactive Portal */}
+              <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
+                <CustomerPortalPreview 
+                  customerName={customerName}
+                  jobs={previewJobs}
+                  visibilitySettings={previewSettings}
+                  customMessage={previewSettings?.custom_message}
+                />
+              </div>
+
+              {/* Preview Footer Actions */}
+              <div className="bg-white border-t-2 px-6 py-4 flex gap-3 flex-shrink-0">
+                <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
+                  Close Preview
+                </Button>
+                <Button onClick={createPortalLink} className="flex-1 bg-green-600 hover:bg-green-700">
                   <Plus className="w-4 h-4 mr-2" />
                   Create Portal Link with These Settings
                 </Button>
