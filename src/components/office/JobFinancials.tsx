@@ -1224,29 +1224,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         {/* Proposal Tab */}
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
-            {/* Header */}
-            <div className="mb-6 bg-white border-2 border-slate-300 rounded-lg p-4 flex items-center gap-3">
-              <Calculator className="w-6 h-6 text-slate-700" />
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Project Proposal</h2>
-                <p className="text-sm text-slate-600">{job.name}</p>
-              </div>
-            </div>
-
-            {/* Add Row Controls */}
-            <div className="flex gap-2 mb-4">
-              <Button onClick={() => openAddDialog()} variant="outline" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Row
-              </Button>
-              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm">
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Subcontractor Estimate
-              </Button>
-            </div>
-
-            {/* Proposal Layout: Main content area with sidebar */}
+            {/* Proposal Layout: Left buttons + Main content + Right sidebar */}
             <div className="flex gap-4 items-start">
+              {/* Left Action Buttons */}
+              <div className="flex flex-col gap-2 sticky top-4">
+                <Button onClick={() => openAddDialog()} variant="outline" size="sm" className="whitespace-nowrap">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Row
+                </Button>
+                <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm" className="whitespace-nowrap">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Sub
+                </Button>
+              </div>
               {/* Main Content Column - Wider for better description visibility */}
               <div className="flex-1 min-w-0 space-y-3">
                 {/* Create unified list of all items sorted by order_index */}
