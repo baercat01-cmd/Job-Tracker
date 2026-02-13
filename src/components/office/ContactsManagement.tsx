@@ -20,7 +20,8 @@ import {
   Download,
   FileSpreadsheet,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -219,7 +220,7 @@ export function ContactsManagement() {
         throw new Error('No data found in the Excel file');
       }
 
-      // Map Zoho CRM export fields to our schema
+      // Map Zoho CRM export fields to our schema - CAPTURE ALL DATA
       const mappedContacts = jsonData.map((row: any) => {
         // Handle name from multiple possible columns
         let contactName = row['Display Name'] || row['Contact Name'] || row['Full Name'] || '';
@@ -231,40 +232,57 @@ export function ContactsManagement() {
           contactName = `${firstName} ${lastName}`.trim();
         }
         
-        // Combine billing address fields if available
-        let fullAddress = '';
-        const billingAddress = row['Billing Address'] || '';
-        const billingCity = row['Billing City'] || '';
-        const billingState = row['Billing State'] || '';
-        const billingCode = row['Billing Code'] || '';
+        // Store ALL data fields in structured format
+        const allData: any[] = [];
         
-        if (billingAddress || billingCity || billingState || billingCode) {
-          fullAddress = [billingAddress, billingCity, billingState, billingCode]
-            .filter(Boolean)
-            .join(', ');
+        // === CUSTOMER/CONTACT INFO ===
+        if (row['Customer Number']) allData.push({ section: 'Customer Info', label: 'Customer #', value: row['Customer Number'] });
+        if (row['Contact ID']) allData.push({ section: 'Customer Info', label: 'Contact ID', value: row['Contact ID'] });
+        if (row['First Name']) allData.push({ section: 'Customer Info', label: 'First Name', value: row['First Name'] });
+        if (row['Last Name']) allData.push({ section: 'Customer Info', label: 'Last Name', value: row['Last Name'] });
+        if (row['Contact Name'] && row['Contact Name'] !== contactName) {
+          allData.push({ section: 'Customer Info', label: 'Contact Name', value: row['Contact Name'] });
         }
         
-        // Construct notes with additional info
-        let notes = row['Description'] || row['Notes'] || '';
+        // === CONTACT DETAILS ===
+        if (row['Mobile Phone']) allData.push({ section: 'Contact Details', label: 'Mobile', value: row['Mobile Phone'] });
+        if (row['Email ID']) allData.push({ section: 'Contact Details', label: 'Email', value: row['Email ID'] });
         
-        // Add customer number to notes if available
-        if (row['Customer Number']) {
-          notes = `Customer #: ${row['Customer Number']}${notes ? '\n' + notes : ''}`;
+        // === ADDRESS INFO ===
+        if (row['Billing Address']) allData.push({ section: 'Address', label: 'Street', value: row['Billing Address'] });
+        if (row['Billing City']) allData.push({ section: 'Address', label: 'City', value: row['Billing City'] });
+        if (row['Billing State']) allData.push({ section: 'Address', label: 'State', value: row['Billing State'] });
+        if (row['Billing Code']) allData.push({ section: 'Address', label: 'Zip Code', value: row['Billing Code'] });
+        if (row['Contact Address ID']) allData.push({ section: 'Address', label: 'Address ID', value: row['Contact Address ID'] });
+        
+        // Construct full address
+        const addressParts = [
+          row['Billing Address'],
+          row['Billing City'],
+          row['Billing State'],
+          row['Billing Code']
+        ].filter(Boolean);
+        if (addressParts.length > 0) {
+          allData.push({ section: 'Address', label: 'Full Address', value: addressParts.join(', ') });
         }
         
-        // Add tax info to notes if available
-        if (row['Tax ID']) {
-          notes = `${notes}\nTax ID: ${row['Tax ID']}`.trim();
+        // === TAX INFORMATION ===
+        if (row['Taxable']) allData.push({ section: 'Tax Info', label: 'Taxable', value: row['Taxable'] });
+        if (row['Tax ID']) allData.push({ section: 'Tax Info', label: 'Tax ID', value: row['Tax ID'] });
+        if (row['Tax Name']) allData.push({ section: 'Tax Info', label: 'Tax Name', value: row['Tax Name'] });
+        if (row['Tax Percentage']) allData.push({ section: 'Tax Info', label: 'Tax Rate', value: row['Tax Percentage'] + '%' });
+        if (row['Exemption Reason']) allData.push({ section: 'Tax Info', label: 'Tax Exemption', value: row['Exemption Reason'] });
+        if (row['Tax Authority']) allData.push({ section: 'Tax Info', label: 'Tax Authority', value: row['Tax Authority'] });
+        
+        // === ADDITIONAL INFO ===
+        if (row['Description'] || row['Notes']) {
+          allData.push({ section: 'Notes', label: 'Description', value: row['Description'] || row['Notes'] });
         }
         
-        if (row['Exemption Reason']) {
-          notes = `${notes}\nTax Exemption: ${row['Exemption Reason']}`.trim();
-        }
-        
-        // Add full address to notes if available
-        if (fullAddress) {
-          notes = `${notes}\nAddress: ${fullAddress}`.trim();
-        }
+        // Convert to formatted notes string with sections
+        const formattedNotes = allData.length > 0 
+          ? formatStructuredNotes(allData)
+          : null;
         
         return {
           name: contactName,
@@ -272,7 +290,8 @@ export function ContactsManagement() {
           phone: row['Phone'] || row['Mobile Phone'] || row['Mobile'] || row['Phone Number'] || '',
           category: determineCategory(row),
           company_name: row['Company Name'] || row['Company'] || row['Account Name'] || row['Organization'] || '',
-          notes: notes || null,
+          notes: formattedNotes,
+          hasDetailedInfo: allData.length > 0,
         };
       }).filter(c => c.name && c.email); // Only include contacts with name and email
 
@@ -288,6 +307,21 @@ export function ContactsManagement() {
       // Reset file input
       event.target.value = '';
     }
+  }
+
+  // Format structured data into organized notes
+  function formatStructuredNotes(dataArray: any[]): string {
+    const sections = dataArray.reduce((acc: any, item) => {
+      if (!acc[item.section]) acc[item.section] = [];
+      acc[item.section].push(`${item.label}: ${item.value}`);
+      return acc;
+    }, {});
+    
+    return Object.entries(sections)
+      .map(([section, items]: [string, any]) => {
+        return `=== ${section} ===\n${items.join('\n')}`;
+      })
+      .join('\n\n');
   }
 
   function determineCategory(row: any): 'customer' | 'vendor' | 'subcontractor' {
@@ -316,11 +350,14 @@ export function ContactsManagement() {
     try {
       for (const contact of importPreview) {
         try {
+          // Remove UI-only fields
+          const { hasDetailedInfo, ...contactData } = contact;
+          
           // Check if contact already exists by email
           const { data: existing } = await supabase
             .from('contacts')
             .select('id')
-            .eq('email', contact.email)
+            .eq('email', contactData.email)
             .maybeSingle();
 
           if (existing) {
@@ -332,13 +369,13 @@ export function ContactsManagement() {
           const { error } = await supabase
             .from('contacts')
             .insert([{
-              ...contact,
+              ...contactData,
               created_by: profile?.id,
               is_active: true,
             }]);
 
           if (error) {
-            console.error('Error inserting contact:', contact.email, error);
+            console.error('Error inserting contact:', contactData.email, error);
             stats.failed++;
           } else {
             stats.success++;
@@ -381,6 +418,8 @@ export function ContactsManagement() {
         'Billing City': 'Springfield',
         'Billing State': 'IL',
         'Billing Code': '62701',
+        'Tax ID': 'TAX-001',
+        'Taxable': 'Yes',
         'Description': 'Primary contact for ABC Construction projects',
       },
       {
@@ -397,6 +436,8 @@ export function ContactsManagement() {
         'Billing City': 'Chicago',
         'Billing State': 'IL',
         'Billing Code': '60601',
+        'Tax ID': 'TAX-002',
+        'Taxable': 'Yes',
         'Description': 'Material supplier - lumber and steel',
       },
     ];
@@ -532,12 +573,13 @@ export function ContactsManagement() {
                 <li>• Customers: <strong>{importPreview.filter(c => c.category === 'customer').length}</strong></li>
                 <li>• Vendors: <strong>{importPreview.filter(c => c.category === 'vendor').length}</strong></li>
                 <li>• Subcontractors: <strong>{importPreview.filter(c => c.category === 'subcontractor').length}</strong></li>
+                <li>• With detailed info: <strong>{importPreview.filter(c => c.hasDetailedInfo).length}</strong></li>
               </ul>
             </div>
 
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
               <p className="text-sm text-yellow-800">
-                ⚠️ Existing contacts (matched by email) will be skipped to prevent duplicates.
+                ⚠️ All data from your Excel file will be preserved in each contact record. Only key fields (name, email, phone, company) are displayed in the main view, but all information is stored and accessible when editing.
               </p>
             </div>
 
@@ -552,18 +594,26 @@ export function ContactsManagement() {
                       <th className="px-3 py-2 text-left font-semibold">Phone</th>
                       <th className="px-3 py-2 text-left font-semibold">Category</th>
                       <th className="px-3 py-2 text-left font-semibold">Company</th>
+                      <th className="px-3 py-2 text-center font-semibold">
+                        <Info className="w-4 h-4 mx-auto" title="Has detailed information" />
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {importPreview.slice(0, 50).map((contact, idx) => (
                       <tr key={idx} className="border-t hover:bg-slate-50">
-                        <td className="px-3 py-2">{contact.name}</td>
+                        <td className="px-3 py-2 font-medium">{contact.name}</td>
                         <td className="px-3 py-2 text-xs">{contact.email}</td>
                         <td className="px-3 py-2 text-xs">{contact.phone || '-'}</td>
                         <td className="px-3 py-2">
                           <Badge className="text-xs">{contact.category}</Badge>
                         </td>
                         <td className="px-3 py-2 text-xs">{contact.company_name || '-'}</td>
+                        <td className="px-3 py-2 text-center">
+                          {contact.hasDetailedInfo && (
+                            <CheckCircle className="w-4 h-4 text-green-600 mx-auto" />
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -691,7 +741,7 @@ export function ContactsManagement() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Additional notes..."
-                rows={3}
+                rows={5}
               />
             </div>
 
@@ -729,7 +779,7 @@ function ContactList({ contacts, onEdit, onDelete, getCategoryColor }: any) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {contacts.map((contact: Contact) => (
-        <Card key={contact.id}>
+        <Card key={contact.id} className="hover:shadow-lg transition-shadow">
           <CardContent className="pt-6">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
@@ -767,9 +817,27 @@ function ContactList({ contacts, onEdit, onDelete, getCategoryColor }: any) {
                 )}
 
                 {contact.notes && (
-                  <p className="text-sm text-muted-foreground mt-2 italic">
-                    {contact.notes}
-                  </p>
+                  <div className="mt-3 pt-3 border-t">
+                    <details className="cursor-pointer">
+                      <summary className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                        <Info className="w-3 h-3" />
+                        View All Information
+                      </summary>
+                      <div className="mt-2 text-xs text-muted-foreground space-y-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded">
+                        {contact.notes.split('\n').map((line, i) => {
+                          // Highlight section headers
+                          if (line.startsWith('===')) {
+                            return (
+                              <p key={i} className="font-bold text-slate-700 mt-2">
+                                {line.replace(/=/g, '').trim()}
+                              </p>
+                            );
+                          }
+                          return <p key={i} className="leading-relaxed">{line}</p>;
+                        })}
+                      </div>
+                    </details>
+                  </div>
                 )}
               </div>
             </div>
