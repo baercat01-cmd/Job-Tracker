@@ -36,6 +36,7 @@ export function ZohoIntegrationSettings() {
   const [showGrantCodeDialog, setShowGrantCodeDialog] = useState(false);
   const [grantCode, setGrantCode] = useState('');
   const [exchangingToken, setExchangingToken] = useState(false);
+  const [hasNewRefreshToken, setHasNewRefreshToken] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -72,17 +73,17 @@ export function ZohoIntegrationSettings() {
       return;
     }
 
-    // Don't update masked values
+    // Don't update masked values UNLESS we just got a new refresh token
     const updateData: any = {
       client_id: clientId,
       countywide_org_id: orgId,
     };
 
-    // Only update secrets if they're not masked
+    // Only update secrets if they're not masked OR if we have a new token
     if (clientSecret !== '••••••••') {
       updateData.client_secret = clientSecret;
     }
-    if (refreshToken !== '••••••••') {
+    if (refreshToken !== '••••••••' || hasNewRefreshToken) {
       updateData.refresh_token = refreshToken;
     }
 
@@ -95,7 +96,10 @@ export function ZohoIntegrationSettings() {
           .update(updateData)
           .eq('id', settings.id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Database error:', error);
+          throw new Error(error.message || 'Failed to update settings');
+        }
       } else {
         // Insert new
         const { error } = await supabase
@@ -107,14 +111,19 @@ export function ZohoIntegrationSettings() {
             countywide_org_id: orgId,
           }]);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Database error:', error);
+          throw new Error(error.message || 'Failed to insert settings');
+        }
       }
 
-      toast.success('Zoho settings saved successfully');
+      toast.success('✅ Zoho settings saved successfully');
+      setHasNewRefreshToken(false);
       await loadSettings();
     } catch (error: any) {
       console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      toast.error(`Failed to save: ${error.message}`);
+      // DON'T reload settings on error - keep user's input
     } finally {
       setSaving(false);
     }
@@ -201,9 +210,10 @@ export function ZohoIntegrationSettings() {
         throw new Error('No refresh token received from server');
       }
 
-      // Save the refresh token
+      // Save the refresh token and mark that we have a new one
       setRefreshToken(data.refresh_token);
-      toast.success('✅ Refresh token obtained successfully! Now click "Save Credentials" to store it.');
+      setHasNewRefreshToken(true);
+      toast.success('✅ Refresh token obtained! Click "Save Credentials" to store it.');
       setShowGrantCodeDialog(false);
       setGrantCode('');
     } catch (error: any) {
