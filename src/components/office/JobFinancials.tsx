@@ -2110,6 +2110,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customLaborPrice + proposalSubcontractorNonTaxablePrice;
   
+  // Combine materials with taxable subcontractors for display
+  const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + proposalSubcontractorTaxablePrice;
+  
   // Calculate subtotals
   const taxableSubtotal = proposalMaterialsPrice + proposalSubcontractorTaxablePrice;
   const nonTaxableSubtotal = proposalLaborPrice;
@@ -2400,14 +2403,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between py-2 border-b border-slate-200">
                       <span className="font-semibold text-slate-700">Materials</span>
-                      <span className="font-bold text-slate-900">${proposalMaterialsPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {proposalSubcontractorTaxablePrice > 0 && (
-                      <div className="flex justify-between py-2 border-b border-slate-200">
-                        <span className="font-semibold text-slate-700">Subcontractors (Taxable)</span>
-                        <span className="font-bold text-slate-900">${proposalSubcontractorTaxablePrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
                     {proposalLaborPrice > 0 && (
                       <div className="flex justify-between py-2 border-b border-slate-200">
                         <span className="font-semibold text-slate-700">Labor</span>
