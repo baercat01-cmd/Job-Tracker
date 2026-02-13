@@ -26,6 +26,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
+    job_number: '',
     client_name: '',
     address: '',
     description: '',
@@ -33,6 +34,26 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     status: 'quoting' as 'quoting' | 'active',
     projected_start_date: '',
     projected_end_date: '',
+  });
+  const [autoGenerateJobNumber, setAutoGenerateJobNumber] = useState(true);
+
+  // Auto-generate job number when dialog opens
+  async function generateJobNumber() {
+    try {
+      const { data, error } = await supabase.rpc('generate_job_number');
+      if (error) throw error;
+      setFormData(prev => ({ ...prev, job_number: data }));
+    } catch (error: any) {
+      console.error('Error generating job number:', error);
+      toast.error('Failed to generate job number');
+    }
+  }
+
+  // Generate job number when dialog opens
+  useState(() => {
+    if (open && autoGenerateJobNumber && !formData.job_number) {
+      generateJobNumber();
+    }
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -53,11 +74,20 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     setLoading(true);
 
     try {
+      // Generate job number if auto-generate is enabled and no manual number provided
+      let finalJobNumber = formData.job_number.trim();
+      if (autoGenerateJobNumber && !finalJobNumber) {
+        const { data: generatedNumber, error: genError } = await supabase.rpc('generate_job_number');
+        if (genError) throw genError;
+        finalJobNumber = generatedNumber;
+      }
+
       // Insert job with only valid columns
       const { data: job, error } = await supabase
         .from('jobs')
         .insert({
           name: formData.name.trim(),
+          job_number: finalJobNumber,
           client_name: formData.client_name.trim(),
           address: formData.address.trim(),
           description: formData.description.trim() || null,
@@ -83,7 +113,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         console.log('📍 Scroll restored to:', savedScrollPosition);
       });
 
-      toast.success(`Job "${formData.name}" created as ${formData.status === 'quoting' ? 'Quote' : 'Active'}`, {
+      toast.success(`Job "${finalJobNumber}" created successfully`, {
         duration: 2000,
         position: 'bottom-right'
       });
@@ -91,6 +121,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       // Reset form
       setFormData({
         name: '',
+        job_number: '',
         client_name: '',
         address: '',
         description: '',
@@ -116,6 +147,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       // Reset form on close
       setFormData({
         name: '',
+        job_number: '',
         client_name: '',
         address: '',
         description: '',
@@ -147,6 +179,42 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
               required
               disabled={loading}
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="job_number">Job Number</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="auto-generate"
+                  checked={autoGenerateJobNumber}
+                  onChange={(e) => {
+                    setAutoGenerateJobNumber(e.target.checked);
+                    if (e.target.checked && !formData.job_number) {
+                      generateJobNumber();
+                    }
+                  }}
+                  className="rounded"
+                />
+                <label htmlFor="auto-generate" className="text-xs text-muted-foreground">
+                  Auto-generate
+                </label>
+              </div>
+            </div>
+            <Input
+              id="job_number"
+              value={formData.job_number}
+              onChange={(e) => setFormData({ ...formData, job_number: e.target.value })}
+              placeholder="JOB-2025-1001"
+              disabled={loading || autoGenerateJobNumber}
+              className={autoGenerateJobNumber ? 'bg-muted' : ''}
+            />
+            {autoGenerateJobNumber && (
+              <p className="text-xs text-muted-foreground">
+                ✓ Job number will be auto-generated
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
