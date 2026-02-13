@@ -1568,11 +1568,3 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
     </div>
   );
 }
-
-function renderWorkEntry(entry: ComponentWorkEntry) {
-  return null; // Removed unused function
-}
-      </Tabs>
-    </div>
-  );
-}
