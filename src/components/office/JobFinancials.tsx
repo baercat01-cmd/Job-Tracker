@@ -308,12 +308,12 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           {/* Description */}
-          <div className="mt-0.5 ml-10 mr-[280px]">
+          <div className="ml-10 mr-[280px]">
             <Textarea
               value={sheet.sheetDescription}
               placeholder="Click to add description..."
               className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-              rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
+              rows={Math.max(2, Math.ceil((sheet.sheetDescription || '').length / 120) + 1)}
               onChange={(e) => {
                 const textarea = e.target;
                 textarea.onblur = async () => {
@@ -570,12 +570,12 @@ function SortableRow({ item, ...props }: any) {
 
           {/* Notes */}
           {row.notes && (
-            <div className="mt-0.5 ml-10 mr-[280px]">
+            <div className="ml-10 mr-[280px]">
               <Textarea
                 value={row.notes}
                 placeholder="Click to add notes..."
                 className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
+                rows={Math.max(2, Math.ceil((row.notes || '').length / 120) + 1)}
                 onChange={(e) => {
                   const textarea = e.target;
                   textarea.onblur = async () => {
@@ -778,12 +778,12 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           {/* Description */}
-          <div className="mt-0.5 ml-10 mr-[280px]">
+          <div className="ml-10 mr-[280px]">
             <Textarea
               value={est.scope_of_work || ''}
               placeholder="Click to add description..."
               className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-              rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
+              rows={Math.max(2, Math.ceil((est.scope_of_work || '').length / 120) + 1)}
               onChange={(e) => {
                 const textarea = e.target;
                 textarea.onblur = async () => {
