@@ -332,9 +332,36 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           <CollapsibleContent>
-            <div className="mt-2 ml-10 space-y-1">
+            <div className="mt-2 ml-10 space-y-3">
+              {/* Material Items by Category */}
+              {sheet.categories && sheet.categories.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Material Items</p>
+                  {sheet.categories.map((category: any, catIdx: number) => (
+                    <div key={catIdx} className="bg-slate-50 border border-slate-200 rounded p-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold text-slate-900">{category.name}</p>
+                          <p className="text-xs text-slate-600">{category.itemCount} items</p>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs">
+                          <div className="text-right">
+                            <p className="text-slate-500">Cost</p>
+                            <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-slate-500">Price</p>
+                            <p className="font-bold text-blue-700">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {linkedRows.length > 0 && (
-                <div className="space-y-1 mb-2">
+                <div className="space-y-1">
                   <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Additional Materials</p>
                   {linkedRows.map((row: any) => {
                     const lineItems = customRowLineItems[row.id] || [];
