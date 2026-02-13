@@ -81,22 +81,56 @@ export function QuotesView() {
 
   async function markQuoteAsWon(quoteId: string, e: React.MouseEvent) {
     e.stopPropagation();
+    
+    if (!confirm('Convert this quote to an active job? This will create a job with a job number and move it to "Prepping" status.')) {
+      return;
+    }
+    
     try {
-      const { error } = await supabase
+      // Get the quote details
+      const { data: quote, error: quoteError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', quoteId)
+        .single();
+
+      if (quoteError) throw quoteError;
+
+      // Create a new job from the quote
+      const { data: newJob, error: jobError } = await supabase
+        .from('jobs')
+        .insert({
+          name: quote.project_name || quote.customer_name || 'Untitled Job',
+          client_name: quote.customer_name || '',
+          address: quote.customer_address || '',
+          description: `Converted from Quote #${quote.quote_number}`,
+          status: 'prepping', // Start in prepping status
+          estimated_hours: 0,
+          is_internal: false,
+        })
+        .select()
+        .single();
+
+      if (jobError) throw jobError;
+
+      // Update the quote to reference the new job
+      const { error: updateError } = await supabase
         .from('quotes')
         .update({ 
           status: 'won',
           converted_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          job_id: newJob.id,
         })
         .eq('id', quoteId);
 
-      if (error) throw error;
-      toast.success('Quote marked as won');
+      if (updateError) throw updateError;
+
+      toast.success(`Quote converted to Job #${newJob.job_number}`);
       loadQuotes();
     } catch (error: any) {
-      console.error('Error marking quote as won:', error);
-      toast.error('Failed to update quote');
+      console.error('Error converting quote to job:', error);
+      toast.error('Failed to convert quote to job');
     }
   }
 
