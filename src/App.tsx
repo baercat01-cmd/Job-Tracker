@@ -12,6 +12,7 @@ import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
 import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { VendorPricingForm } from '@/pages/VendorPricingForm';
+import CustomerPortal from '@/pages/customer/CustomerPortal';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -218,6 +219,8 @@ export default function App() {
         <Routes>
           {/* Public vendor pricing form - no authentication required */}
           <Route path="/vendor-pricing/:token" element={<VendorPricingForm />} />
+          {/* Public customer portal - no authentication required */}
+          <Route path="/customer-portal" element={<CustomerPortal />} />
           
           {/* All other routes use main app authentication */}
           <Route path="/*" element={

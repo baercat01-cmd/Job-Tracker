@@ -14,6 +14,7 @@ import { JobDocuments } from './JobDocuments';
 import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
+import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -1137,6 +1138,15 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               <span className="hidden sm:inline">Subs</span>
             </TabsTrigger>
           </TabsList>
+          <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-blue-900 via-blue-800 to-blue-900 mt-0">
+            <TabsTrigger 
+              value="customer-portal" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <Users className="w-5 h-5 sm:mr-2" />
+              <span>Customer Portal</span>
+            </TabsTrigger>
+          </TabsList>
           <TabsList className="grid w-full grid-cols-1 h-12 rounded-none bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 mt-0">
             <TabsTrigger 
               value="orders" 
@@ -1604,6 +1614,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <TabsContent value="subcontractors" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <SubcontractorEstimatesManagement jobId={job.id} />
+          </div>
+        </TabsContent>
+
+        {/* Customer Portal Tab */}
+        <TabsContent value="customer-portal" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <CustomerPortalManagement job={job} />
           </div>
         </TabsContent>
       </Tabs>
