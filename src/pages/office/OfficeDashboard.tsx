@@ -548,7 +548,7 @@ export function OfficeDashboard() {
             </div>
             
             <Tabs defaultValue="export" className="w-full">
-              <TabsList className="grid w-full grid-cols-5 sm:grid-cols-12 bg-black border-2 border-yellow-500 rounded-none shadow-lg overflow-x-auto">
+              <TabsList className="flex flex-wrap w-full bg-black border-2 border-yellow-500 rounded-none shadow-lg">
                 <TabsTrigger value="export" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
                   <Download className="w-4 h-4 mr-2" />
                   Export
