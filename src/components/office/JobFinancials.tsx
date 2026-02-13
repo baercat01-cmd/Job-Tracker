@@ -1268,8 +1268,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   </div>
 
                                   {/* Middle: Description - FILLS REMAINING SPACE */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-slate-600 italic">
+                                  <div className="flex-1 min-w-0 px-2">
+                                    <p className="text-sm text-slate-600 italic truncate">
                                       {sheet.sheetDescription || '(No description provided)'}
                                     </p>
                                   </div>
@@ -1406,6 +1406,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                                   {/* Middle: Empty space - description only shown when expanded */}
                                   <div className="flex-1 min-w-0">
+                                    {/* No description in collapsed view */}
                                   </div>
 
                                   {/* Right: Pricing + Markup - COMPACT */}
@@ -1535,8 +1536,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                   </div>
 
                                   {/* Middle: Description/Notes - FILLS REMAINING SPACE */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-slate-600 italic">
+                                  <div className="flex-1 min-w-0 px-2">
+                                    <p className="text-sm text-slate-600 italic truncate">
                                       {row.notes && !rowLabor ? row.notes : '(No description provided)'}
                                     </p>
                                   </div>
