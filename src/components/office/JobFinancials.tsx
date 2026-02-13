@@ -1255,11 +1255,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
-                                  {/* Left: Chevron + Title - FIXED WIDTH, LEFT ALIGNED */}
-                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
+                                  {/* Left: Chevron + Title */}
+                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
                                     <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0 text-left">
+                                    <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate text-left">{sheet.sheetName}</h3>
                                       {sheetLabor[sheet.sheetId] && (
                                         <p className="text-sm text-amber-700 font-semibold text-left">Labor</p>
@@ -1267,17 +1267,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </div>
                                   </div>
 
-                                  {/* Middle: Description - FILLS REMAINING SPACE */}
-                                  <div className="flex-1 min-w-0 px-2">
-                                    <p className="text-sm text-slate-600 italic truncate">
+                                  {/* Middle: Description - Wide Space */}
+                                  <div className="flex-1 min-w-0 px-6">
+                                    <p className="text-sm text-slate-600 italic">
                                       {sheet.sheetDescription || '(No description provided)'}
                                     </p>
                                   </div>
 
-                                  {/* Right: Markup + Pricing + Actions */}
-                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
-                                    {/* Editable Markup - Plain Number */}
-                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  {/* Right: Markup + Pricing + Actions - Compact */}
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* Editable Markup % - Plain Number */}
+                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
                                         type="number"
                                         min="0"
@@ -1287,16 +1287,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                           const newMarkup = parseFloat(e.target.value) || 0;
                                           setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
                                         }}
-                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
+                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
                                       />
                                       <span className="text-xs text-slate-500">%</span>
                                     </div>
                                     
                                     {/* Pricing - Far Right */}
-                                    <div className="text-right flex-1">
-                                      <div className="flex items-center justify-end gap-2 mb-1">
-                                        <p className="text-xs text-slate-600">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      </div>
+                                    <div className="text-right w-44">
+                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       {sheetLabor[sheet.sheetId] && (
                                         <p className="text-sm text-amber-700 font-semibold mt-1">
@@ -1307,7 +1305,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                        <Button size="sm" variant="ghost">
+                                        <Button size="sm" variant="ghost" className="flex-shrink-0">
                                           <MoreVertical className="w-4 h-4" />
                                         </Button>
                                       </DropdownMenuTrigger>
@@ -1396,24 +1394,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
-                                  {/* Left: Chevron + Title - FIXED WIDTH, LEFT ALIGNED */}
-                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
+                                  {/* Left: Chevron + Title */}
+                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
                                     <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0 text-left">
+                                    <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate text-left">{est.company_name || 'Subcontractor'}</h3>
                                     </div>
                                   </div>
 
                                   {/* Middle: Empty space - description only shown when expanded */}
-                                  <div className="flex-1 min-w-0">
+                                  <div className="flex-1 min-w-0 px-6">
                                     {/* No description in collapsed view */}
                                   </div>
 
-                                  {/* Right: Markup + Pricing */}
-                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
-                                    {/* Editable Markup - Plain Number */}
-                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  {/* Right: Markup + Pricing - Compact */}
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* Editable Markup % - Plain Number */}
+                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
                                         type="number"
                                         min="0"
@@ -1434,14 +1432,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             toast.error('Failed to update markup');
                                           }
                                         }}
-                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
+                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
                                       />
                                       <span className="text-xs text-slate-500">%</span>
                                     </div>
                                     
                                     {/* Pricing - Far Right */}
-                                    <div className="text-right flex-1">
-                                      <p className="text-xs text-slate-600">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <div className="text-right w-44">
+                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     </div>
                                   </div>
@@ -1522,11 +1520,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center gap-2 border-b">
-                                  {/* Left: Chevron + Title - FIXED WIDTH, LEFT ALIGNED */}
-                                  <div className="flex items-center gap-2" style={{ width: '280px', minWidth: '280px' }}>
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
+                                  {/* Left: Chevron + Title */}
+                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
                                     <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0 text-left">
+                                    <div className="flex-1 min-w-0">
                                       <h3 className="text-lg font-bold text-slate-900 truncate text-left">{row.description}</h3>
                                       {hasLineItems && (
                                         <p className="text-xs text-slate-600 text-left">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
@@ -1537,17 +1535,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     </div>
                                   </div>
 
-                                  {/* Middle: Description/Notes - FILLS REMAINING SPACE */}
-                                  <div className="flex-1 min-w-0 px-2">
-                                    <p className="text-sm text-slate-600 italic truncate">
+                                  {/* Middle: Description/Notes - Wide Space */}
+                                  <div className="flex-1 min-w-0 px-6">
+                                    <p className="text-sm text-slate-600 italic">
                                       {row.notes && !rowLabor ? row.notes : '(No description provided)'}
                                     </p>
                                   </div>
 
-                                  {/* Right: Markup + Pricing + Actions */}
-                                  <div className="flex items-center gap-4" style={{ minWidth: '400px' }}>
-                                    {/* Editable Markup - Plain Number */}
-                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  {/* Right: Markup + Pricing + Actions - Compact */}
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* Editable Markup % - Plain Number */}
+                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
                                         type="number"
                                         min="0"
@@ -1568,16 +1566,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             toast.error('Failed to update markup');
                                           }
                                         }}
-                                        className="w-12 text-sm text-right bg-transparent border-none outline-none focus:bg-slate-100 rounded px-1"
+                                        className="w-14 text-sm text-right bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-300 rounded px-1"
                                       />
                                       <span className="text-xs text-slate-500">%</span>
                                     </div>
                                     
                                     {/* Pricing - Far Right */}
-                                    <div className="text-right flex-1">
-                                      <div className="flex items-center justify-end gap-2 mb-1">
-                                        <p className="text-xs text-slate-600">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                      </div>
+                                    <div className="text-right w-44">
+                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       {rowLabor && (
                                         <p className="text-sm text-amber-700 font-semibold mt-1">
@@ -1588,7 +1584,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                        <Button size="sm" variant="ghost">
+                                        <Button size="sm" variant="ghost" className="flex-shrink-0">
                                           <MoreVertical className="w-4 h-4" />
                                         </Button>
                                       </DropdownMenuTrigger>
