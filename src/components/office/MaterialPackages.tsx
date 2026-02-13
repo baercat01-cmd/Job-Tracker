@@ -45,6 +45,11 @@ interface MaterialItem {
   length: string | null;
   usage: string | null;
   cost_per_unit: number | null;
+  zoho_sales_order_id?: string | null;
+  zoho_sales_order_number?: string | null;
+  zoho_purchase_order_id?: string | null;
+  zoho_purchase_order_number?: string | null;
+  ordered_at?: string | null;
   sheets: {
     sheet_name: string;
   };
@@ -116,6 +121,24 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       toast.error('This package has no materials to order');
       return;
     }
+    
+    // Check if all materials are already ordered
+    const unorderedMaterials = pkg.bundle_items.filter(item => 
+      !item.material_items.zoho_sales_order_id && !item.material_items.zoho_purchase_order_id
+    );
+    
+    if (unorderedMaterials.length === 0) {
+      toast.error('All materials in this package have already been ordered in Zoho');
+      return;
+    }
+    
+    if (unorderedMaterials.length < pkg.bundle_items.length) {
+      const orderedCount = pkg.bundle_items.length - unorderedMaterials.length;
+      toast.warning(
+        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only unordered materials will be included`
+      );
+    }
+    
     setSelectedPackageForOrder(pkg);
     setShowZohoOrderDialog(true);
   }
@@ -178,6 +201,12 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
               length,
               usage,
               cost_per_unit,
+              price_per_unit,
+              zoho_sales_order_id,
+              zoho_sales_order_number,
+              zoho_purchase_order_id,
+              zoho_purchase_order_number,
+              ordered_at,
               sheets:material_sheets(sheet_name)
             )
           )
@@ -220,7 +249,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       // Get all material items
       const { data: itemsData } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, usage, cost_per_unit')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, cost_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
         .in('sheet_id', sheetIds)
         .order('material_name');
 
@@ -936,31 +965,48 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                         </p>
                       ) : (
                         <div className="space-y-2">
-                          {pkg.bundle_items.map(item => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border"
-                            >
-                              <div className="flex-1">
-                                <div className="font-medium">
-                                  {item.material_items.material_name}
-                                </div>
-                                <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                                  <span>{item.material_items.sheets.sheet_name}</span>
-                                  <span>•</span>
-                                  <span>{item.material_items.category}</span>
-                                  <span>•</span>
-                                  <span>Qty: {item.material_items.quantity}</span>
-                                  {item.material_items.length && (
-                                    <>
-                                      <span>•</span>
-                                      <span>{item.material_items.length}</span>
-                                    </>
+                          {pkg.bundle_items.map(item => {
+                            const hasOrders = item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id;
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border"
+                              >
+                                <div className="flex-1">
+                                  <div className="font-medium">
+                                    {item.material_items.material_name}
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                    <span>{item.material_items.sheets.sheet_name}</span>
+                                    <span>•</span>
+                                    <span>{item.material_items.category}</span>
+                                    <span>•</span>
+                                    <span>Qty: {item.material_items.quantity}</span>
+                                    {item.material_items.length && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{item.material_items.length}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {hasOrders && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {item.material_items.zoho_sales_order_id && (
+                                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
+                                          📄 SO: {item.material_items.zoho_sales_order_number}
+                                        </Badge>
+                                      )}
+                                      {item.material_items.zoho_purchase_order_id && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
+                                          📝 PO: {item.material_items.zoho_purchase_order_number}
+                                        </Badge>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1185,9 +1231,17 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       {selectedPackageForOrder && job && (
         <ZohoOrderConfirmationDialog
           open={showZohoOrderDialog}
-          onOpenChange={setShowZohoOrderDialog}
+          onOpenChange={(open) => {
+            setShowZohoOrderDialog(open);
+            if (!open) {
+              // Reload packages after closing dialog to show updated order status
+              loadPackages();
+            }
+          }}
           jobName={job.name}
-          materials={selectedPackageForOrder.bundle_items.map(item => item.material_items)}
+          materials={selectedPackageForOrder.bundle_items
+            .map(item => item.material_items)
+            .filter(m => !m.zoho_sales_order_id && !m.zoho_purchase_order_id)} // Only unordered materials
           packageName={selectedPackageForOrder.name}
         />
       )}

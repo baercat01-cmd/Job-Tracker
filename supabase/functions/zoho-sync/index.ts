@@ -209,6 +209,8 @@ serve(async (req) => {
 
     if (action === 'create_orders') {
       // Body already read above - use extracted values
+      const { materialItemIds, userId } = requestBody;
+      
       if (!jobName || !materialItems || materialItems.length === 0) {
         return new Response(
           JSON.stringify({ error: 'Missing required fields: jobName, materialItems' }),
@@ -332,6 +334,39 @@ serve(async (req) => {
         message += ` for ${jobName}`;
 
         result.message = message;
+
+        // Update material_items with Zoho order information
+        if (materialItemIds && materialItemIds.length > 0) {
+          console.log('📝 Updating material items with Zoho order info...');
+          
+          const updateData: any = {
+            updated_at: new Date().toISOString(),
+            ordered_at: new Date().toISOString(),
+            ordered_by: userId || null,
+          };
+
+          if (result.salesOrder) {
+            updateData.zoho_sales_order_id = result.salesOrder.id;
+            updateData.zoho_sales_order_number = result.salesOrder.number;
+          }
+
+          if (result.purchaseOrder) {
+            updateData.zoho_purchase_order_id = result.purchaseOrder.id;
+            updateData.zoho_purchase_order_number = result.purchaseOrder.number;
+          }
+
+          const { error: updateError } = await supabase
+            .from('material_items')
+            .update(updateData)
+            .in('id', materialItemIds);
+
+          if (updateError) {
+            console.error('⚠️ Error updating material items:', updateError);
+            // Don't throw - orders were created successfully
+          } else {
+            console.log('✅ Updated', materialItemIds.length, 'material items with order info');
+          }
+        }
 
         return new Response(
           JSON.stringify(result),

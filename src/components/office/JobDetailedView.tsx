@@ -16,6 +16,7 @@ import { JobFinancials } from './JobFinancials';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
+import { JobZohoOrders } from './JobZohoOrders';
 
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -1515,7 +1516,12 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         <TabsContent value="materials" className="space-y-2 pt-4 px-2">
           {profile?.id && (
-            <MaterialsManagement job={job} userId={profile.id} />
+            <div className="space-y-6">
+              <MaterialsManagement job={job} userId={profile.id} />
+              <div className="mt-8">
+                <JobZohoOrders jobId={job.id} />
+              </div>
+            </div>
           )}
         </TabsContent>
 

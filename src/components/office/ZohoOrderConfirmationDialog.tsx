@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Package, DollarSign, FileText, Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { FunctionsHttpError } from '@supabase/supabase-js';
@@ -35,6 +36,7 @@ export function ZohoOrderConfirmationDialog({
   materials,
   packageName,
 }: ZohoOrderConfirmationDialogProps) {
+  const { profile } = useAuth();
   const [creating, setCreating] = useState(false);
   const [orderType, setOrderType] = useState<'both' | 'sales_order' | 'purchase_order'>('both');
   const [createdOrders, setCreatedOrders] = useState<{
@@ -50,11 +52,28 @@ export function ZohoOrderConfirmationDialog({
     try {
       console.log('📤 Creating Zoho orders for materials:', materials.length, 'Type:', orderType);
       
+      // Check if any materials are already ordered
+      const alreadyOrdered = materials.filter(m => 
+        m.zoho_sales_order_id || m.zoho_purchase_order_id
+      );
+      
+      if (alreadyOrdered.length > 0) {
+        const proceed = confirm(
+          `${alreadyOrdered.length} material${alreadyOrdered.length !== 1 ? 's' : ''} already ha${alreadyOrdered.length !== 1 ? 've' : 's'} Zoho orders. Continue anyway?`
+        );
+        if (!proceed) {
+          setCreating(false);
+          return;
+        }
+      }
+      
       const { data, error } = await supabase.functions.invoke('zoho-sync', {
         body: {
           action: 'create_orders',
           jobName: jobName,
           materialItems: materials,
+          materialItemIds: materials.map(m => m.id),
+          userId: profile?.id,
           notes: packageName ? `Package: ${packageName}` : undefined,
           orderType: orderType,
         },
