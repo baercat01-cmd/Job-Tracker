@@ -11,7 +11,6 @@ import {
   Send, 
   Reply, 
   Inbox, 
-  Outbox, 
   Paperclip, 
   User,
   Calendar,
@@ -337,7 +336,7 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
                               )}
                               {lastEmail.direction === 'outbound' && (
                                 <Badge variant="outline" className="bg-green-100 text-green-700">
-                                  <Outbox className="w-3 h-3 mr-1" />
+                                  <Send className="w-3 h-3 mr-1" />
                                   Sent
                                 </Badge>
                               )}
@@ -367,7 +366,7 @@ export function JobCommunications({ job }: JobCommunicationsProps) {
                                       : 'You'}
                                   </p>
                                   <Badge variant="outline" className="text-xs">
-                                    {email.direction === 'inbound' ? <Inbox className="w-3 h-3" /> : <Outbox className="w-3 h-3" />}
+                                    {email.direction === 'inbound' ? <Inbox className="w-3 h-3" /> : <Send className="w-3 h-3" />}
                                   </Badge>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
