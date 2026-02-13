@@ -100,9 +100,10 @@ interface LineItem {
 interface SubcontractorEstimatesManagementProps {
   jobId?: string;
   quoteId?: string;
+  onClose?: () => void;
 }
 
-export function SubcontractorEstimatesManagement({ jobId, quoteId }: SubcontractorEstimatesManagementProps) {
+export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: SubcontractorEstimatesManagementProps) {
   const { profile } = useAuth();
   const [estimates, setEstimates] = useState<SubcontractorEstimate[]>([]);
   const [invoices, setInvoices] = useState<SubcontractorInvoice[]>([]);
@@ -651,6 +652,16 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
   return (
     <div className="space-y-4">
+      {/* Header with close button if onClose provided */}
+      {onClose && (
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold">Subcontractor Documents</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-2 border-b items-center justify-between">
         <div className="flex gap-2">
@@ -711,6 +722,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
               const markup = estimate.markup_percent || 0;
               const markedUpAmount = baseAmount * (1 + markup / 100);
               const hasExcludedItems = (estimate.line_items || []).some(item => item.excluded);
+              const isManualEntry = !estimate.pdf_url;
 
               return (
                 <Card key={estimate.id} className="border hover:border-primary/50 transition-colors">
@@ -728,7 +740,12 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                       {getStatusIcon(estimate.extraction_status)}
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name}</h3>
+                          <h3 className="font-semibold text-lg">{estimate.company_name || estimate.file_name || 'Unnamed Subcontractor'}</h3>
+                          {isManualEntry && (
+                            <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
+                              Manual Entry
+                            </Badge>
+                          )}
                           {hasExcludedItems && (
                             <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300">
                               Some items excluded
@@ -742,7 +759,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(estimate.uploaded_at).toLocaleDateString()}
+                          {new Date(estimate.uploaded_at || estimate.created_at).toLocaleDateString()}
                         </p>
                       </div>
                       {getStatusBadge(estimate.extraction_status)}
@@ -769,16 +786,19 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.open(estimate.pdf_url, '_blank');
-                        }}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
+                      {estimate.pdf_url && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(estimate.pdf_url, '_blank');
+                          }}
+                          title="View PDF"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -817,6 +837,14 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
                               <p className="font-medium">{estimate.contact_phone}</p>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* Scope of Work */}
+                      {estimate.scope_of_work && (
+                        <div className="pt-4">
+                          <h4 className="font-semibold mb-2 text-sm">Scope of Work</h4>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{estimate.scope_of_work}</p>
                         </div>
                       )}
 
@@ -918,14 +946,16 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
 
                       {/* Actions */}
                       <div className="flex gap-2 pt-3 border-t">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(estimate.pdf_url, '_blank')}
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          View PDF
-                        </Button>
+                        {estimate.pdf_url && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(estimate.pdf_url, '_blank')}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            View PDF
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -1137,7 +1167,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId }: Subcontract
         </div>
       )}
 
-      {/* Upload Estimate Dialog - keeping original */}
+      {/* All dialogs remain unchanged */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent>
           <DialogHeader>
