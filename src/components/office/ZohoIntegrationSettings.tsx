@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Save, RefreshCw, Settings2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Save, RefreshCw, Settings2, CheckCircle2, AlertCircle, Loader2, Key } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
@@ -30,6 +31,11 @@ export function ZohoIntegrationSettings() {
   const [clientSecret, setClientSecret] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
   const [orgId, setOrgId] = useState('');
+
+  // Grant code exchange state
+  const [showGrantCodeDialog, setShowGrantCodeDialog] = useState(false);
+  const [grantCode, setGrantCode] = useState('');
+  const [exchangingToken, setExchangingToken] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -151,6 +157,59 @@ export function ZohoIntegrationSettings() {
     }
   }
 
+  async function exchangeGrantCode() {
+    if (!grantCode || !clientId || !clientSecret) {
+      toast.error('Please fill in Client ID, Client Secret, and Grant Code');
+      return;
+    }
+
+    // Unmask client secret if needed
+    const actualClientSecret = clientSecret === '••••••••' ? '' : clientSecret;
+    if (!actualClientSecret) {
+      toast.error('Please enter your actual Client Secret first (not the masked value)');
+      return;
+    }
+
+    setExchangingToken(true);
+    try {
+      // Exchange grant code for refresh token via Zoho OAuth
+      const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
+      const params = new URLSearchParams({
+        code: grantCode,
+        client_id: clientId,
+        client_secret: actualClientSecret,
+        grant_type: 'authorization_code',
+        redirect_uri: 'https://www.zoho.com/books', // Standard redirect URI
+      });
+
+      const response = await fetch(`${tokenUrl}?${params.toString()}`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Zoho token exchange failed: ${errorText}`);
+      }
+
+      const tokenData = await response.json();
+      
+      if (!tokenData.refresh_token) {
+        throw new Error('No refresh token received from Zoho');
+      }
+
+      // Save the refresh token
+      setRefreshToken(tokenData.refresh_token);
+      toast.success('✅ Refresh token obtained successfully! Now click "Save Credentials" to store it.');
+      setShowGrantCodeDialog(false);
+      setGrantCode('');
+    } catch (error: any) {
+      console.error('Error exchanging grant code:', error);
+      toast.error(`Failed to exchange grant code: ${error.message}`);
+    } finally {
+      setExchangingToken(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -221,16 +280,28 @@ export function ZohoIntegrationSettings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="refreshToken">Refresh Token</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="refreshToken">Refresh Token</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowGrantCodeDialog(true)}
+                  className="h-7"
+                >
+                  <Key className="w-3 h-3 mr-1" />
+                  Exchange Grant Code
+                </Button>
+              </div>
               <Input
                 id="refreshToken"
                 type="password"
                 value={refreshToken}
                 onChange={(e) => setRefreshToken(e.target.value)}
-                placeholder="Enter refresh token"
+                placeholder="Enter refresh token or use Grant Code exchange"
               />
               <p className="text-xs text-muted-foreground">
-                This is the refresh token you received from Zoho OAuth flow
+                Use the "Exchange Grant Code" button if you have a grant code from Zoho
               </p>
             </div>
 
@@ -332,11 +403,78 @@ export function ZohoIntegrationSettings() {
             <li>Create a new "Server-based Application"</li>
             <li>Copy your <strong>Client ID</strong> and <strong>Client Secret</strong></li>
             <li>Generate a <strong>Grant Code</strong> with scopes: <code className="bg-white px-1 rounded">ZohoBooks.contacts.READ,ZohoBooks.items.READ</code></li>
-            <li>Exchange the Grant Code for a <strong>Refresh Token</strong></li>
+            <li>Use the <strong>"Exchange Grant Code"</strong> button above to get your Refresh Token</li>
             <li>Find your Organization ID in Zoho Books settings</li>
           </ol>
         </CardContent>
       </Card>
+
+      {/* Grant Code Exchange Dialog */}
+      <Dialog open={showGrantCodeDialog} onOpenChange={setShowGrantCodeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-blue-600" />
+              Exchange Grant Code for Refresh Token
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+              <p className="text-blue-900 font-semibold mb-1">Instructions:</p>
+              <ol className="list-decimal list-inside space-y-1 text-blue-800">
+                <li>Make sure you've entered your Client ID and Client Secret in the form above</li>
+                <li>Paste your Zoho Grant Code below</li>
+                <li>Click "Exchange for Refresh Token"</li>
+                <li>The refresh token will automatically populate in the form</li>
+                <li>Click "Save Credentials" to store everything</li>
+              </ol>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="grantCode">Grant Code</Label>
+              <Input
+                id="grantCode"
+                value={grantCode}
+                onChange={(e) => setGrantCode(e.target.value)}
+                placeholder="1000.xxxxxxxxxxxxx.yyyyyyyyyyyyyy"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste the grant code you received from Zoho API Console
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowGrantCodeDialog(false);
+                  setGrantCode('');
+                }}
+                disabled={exchangingToken}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={exchangeGrantCode}
+                disabled={exchangingToken || !grantCode || !clientId || !clientSecret}
+              >
+                {exchangingToken ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Exchanging...
+                  </>
+                ) : (
+                  <>
+                    <Key className="w-4 h-4 mr-2" />
+                    Exchange for Refresh Token
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
