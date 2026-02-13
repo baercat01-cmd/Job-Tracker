@@ -16,6 +16,7 @@ import { JobFinancials } from './JobFinancials';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
+import { useState as useEmailState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -390,6 +391,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [lastWorkDate, setLastWorkDate] = useState<string | null>(null);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [crewOrdersCount, setCrewOrdersCount] = useState(0);
+  const [emailStats, setEmailStats] = useState({ total: 0, customer: 0, vendor: 0, subcontractor: 0, unread: 0 });
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -544,6 +547,20 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         return sum + (Array.isArray(log.issues) ? log.issues.length : 0);
       }, 0);
       setIssueCount(totalIssues);
+
+      // Load email stats
+      const { data: emailsData } = await supabase
+        .from('job_emails')
+        .select('entity_category, is_read')
+        .eq('job_id', job.id);
+      
+      const total = emailsData?.length || 0;
+      const customer = emailsData?.filter(e => e.entity_category === 'customer').length || 0;
+      const vendor = emailsData?.filter(e => e.entity_category === 'vendor').length || 0;
+      const subcontractor = emailsData?.filter(e => e.entity_category === 'subcontractor').length || 0;
+      const unread = emailsData?.filter(e => !e.is_read && e.entity_category).length || 0;
+      
+      setEmailStats({ total, customer, vendor, subcontractor, unread });
     } catch (error) {
       console.error('Error loading job stats:', error);
     }
@@ -1196,6 +1213,57 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </CardHeader>
             </Card>
 
+            {/* Email Communications Quick Access */}
+            <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="w-6 h-6 text-blue-600" />
+                    Email Communications
+                  </CardTitle>
+                  <Button
+                    onClick={() => setShowEmailDialog(true)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    Open Email Center
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-5 gap-4">
+                  <div className="text-center p-3 bg-white rounded-lg border">
+                    <p className="text-2xl font-bold text-blue-600">{emailStats.total}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Total Emails</p>
+                  </div>
+                  <div className="text-center p-3 bg-white rounded-lg border">
+                    <p className="text-2xl font-bold text-green-600">{emailStats.customer}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Customers</p>
+                  </div>
+                  <div className="text-center p-3 bg-white rounded-lg border">
+                    <p className="text-2xl font-bold text-orange-600">{emailStats.vendor}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Vendors</p>
+                  </div>
+                  <div className="text-center p-3 bg-white rounded-lg border">
+                    <p className="text-2xl font-bold text-blue-600">{emailStats.subcontractor}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Subcontractors</p>
+                  </div>
+                  <div className="text-center p-3 bg-white rounded-lg border">
+                    <p className="text-2xl font-bold text-red-600">{emailStats.unread}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Unread</p>
+                  </div>
+                </div>
+                {emailStats.unread > 0 && (
+                  <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                    <p className="text-sm text-red-800 font-medium">
+                      You have {emailStats.unread} unread {emailStats.unread === 1 ? 'message' : 'messages'}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
@@ -1468,6 +1536,42 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             <JobCommunications job={job} />
           </div>
         </TabsContent>
+      </Tabs>
+
+      {/* Email Communications Dialog */}
+      <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden p-0">
+          <div className="h-[95vh] flex flex-col">
+            {/* Dialog Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-6 py-4 border-b-4 border-blue-800 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Mail className="w-6 h-6" />
+                  <div>
+                    <h2 className="text-xl font-bold">Email Communications Center</h2>
+                    <p className="text-blue-100 text-sm">{job.name}</p>
+                  </div>
+                </div>
+                <Button onClick={() => setShowEmailDialog(false)} variant="ghost" className="text-white hover:bg-white/10">
+                  ✕ Close
+                </Button>
+              </div>
+            </div>
+
+            {/* Email Content */}
+            <div className="flex-1 overflow-auto bg-slate-50 p-6">
+              <JobCommunications job={job} />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function renderWorkEntry(entry: ComponentWorkEntry) {
+  return null; // Removed unused function
+}
       </Tabs>
     </div>
   );
