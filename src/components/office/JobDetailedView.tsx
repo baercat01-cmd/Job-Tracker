@@ -11,7 +11,6 @@ import { MaterialsManagement } from './MaterialsManagement';
 import { JobComponents } from './JobComponents';
 import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
-import { MaterialOrdersManagement } from './MaterialOrdersManagement';
 import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
