@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Mail, Save, RefreshCw, CheckCircle, AlertCircle, Settings, Lock } from 'lucide-react';
+import { Mail, Save, RefreshCw, CheckCircle, AlertCircle, Settings, Lock, Users, Database } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -37,10 +37,22 @@ export function EmailSettings() {
   
   // Sync log
   const [syncLogs, setSyncLogs] = useState<any[]>([]);
+  
+  // Data sync stats
+  const [dataSyncStats, setDataSyncStats] = useState({
+    totalJobs: 0,
+    totalVendors: 0,
+    totalContacts: 0,
+    customerContacts: 0,
+    vendorContacts: 0,
+    subContacts: 0,
+  });
+  const [syncingData, setSyncingData] = useState(false);
 
   useEffect(() => {
     loadSettings();
     loadSyncLogs();
+    loadDataSyncStats();
   }, [profile?.id]);
 
   async function loadSettings() {
@@ -95,6 +107,172 @@ export function EmailSettings() {
       setSyncLogs(data || []);
     } catch (error: any) {
       console.error('Error loading sync logs:', error);
+    }
+  }
+
+  async function loadDataSyncStats() {
+    try {
+      // Count jobs
+      const { count: jobsCount } = await supabase
+        .from('jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
+      
+      // Count vendors
+      const { count: vendorsCount } = await supabase
+        .from('vendors')
+        .select('*', { count: 'exact', head: true });
+      
+      // Count total contacts
+      const { count: contactsCount } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true });
+      
+      // Count by category
+      const { count: customerCount } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'Customer');
+      
+      const { count: vendorContactsCount } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'Vendor');
+      
+      const { count: subCount } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true })
+        .eq('category', 'Sub-Contractor');
+      
+      setDataSyncStats({
+        totalJobs: jobsCount || 0,
+        totalVendors: vendorsCount || 0,
+        totalContacts: contactsCount || 0,
+        customerContacts: customerCount || 0,
+        vendorContacts: vendorContactsCount || 0,
+        subContacts: subCount || 0,
+      });
+    } catch (error: any) {
+      console.error('Error loading data sync stats:', error);
+    }
+  }
+
+  async function syncJobCustomersToContacts() {
+    setSyncingData(true);
+    try {
+      // Fetch all active jobs
+      const { data: jobs, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('status', 'active');
+      
+      if (jobsError) throw jobsError;
+      
+      let created = 0;
+      let skipped = 0;
+      
+      for (const job of jobs || []) {
+        // Check if contact already exists for this job
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('category', 'Customer')
+          .maybeSingle();
+        
+        if (existingContact) {
+          skipped++;
+          continue;
+        }
+        
+        // Create contact from job data
+        const { error: insertError } = await supabase
+          .from('contacts')
+          .insert({
+            name: job.client_name,
+            email: null, // Will need to be filled in manually
+            phone: null, // Will need to be filled in manually
+            category: 'Customer',
+            job_id: job.id,
+            company_name: job.client_name,
+            notes: `Auto-created from Job ${job.job_number || job.name}`,
+            created_by: profile?.id,
+          });
+        
+        if (!insertError) {
+          created++;
+        }
+      }
+      
+      toast.success(`Synced ${created} customers from jobs (${skipped} already existed)`);
+      await loadDataSyncStats();
+    } catch (error: any) {
+      console.error('Error syncing job customers:', error);
+      toast.error('Failed to sync job customers');
+    } finally {
+      setSyncingData(false);
+    }
+  }
+
+  async function syncVendorsToContacts() {
+    setSyncingData(true);
+    try {
+      // Fetch all vendors
+      const { data: vendors, error: vendorsError } = await supabase
+        .from('vendors')
+        .select('*');
+      
+      if (vendorsError) throw vendorsError;
+      
+      let created = 0;
+      let updated = 0;
+      
+      for (const vendor of vendors || []) {
+        // Check if vendor contact already exists
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('email', vendor.email)
+          .eq('category', 'Vendor')
+          .maybeSingle();
+        
+        if (existingContact) {
+          // Update existing
+          const { error: updateError } = await supabase
+            .from('contacts')
+            .update({
+              name: vendor.contact_person || vendor.name,
+              phone: vendor.phone,
+              company_name: vendor.name,
+            })
+            .eq('id', existingContact.id);
+          
+          if (!updateError) updated++;
+        } else {
+          // Create new
+          const { error: insertError } = await supabase
+            .from('contacts')
+            .insert({
+              name: vendor.contact_person || vendor.name,
+              email: vendor.email,
+              phone: vendor.phone,
+              category: 'Vendor',
+              company_name: vendor.name,
+              notes: `Auto-synced from Vendors table`,
+              created_by: profile?.id,
+            });
+          
+          if (!insertError) created++;
+        }
+      }
+      
+      toast.success(`Synced vendors: ${created} created, ${updated} updated`);
+      await loadDataSyncStats();
+    } catch (error: any) {
+      console.error('Error syncing vendors:', error);
+      toast.error('Failed to sync vendors');
+    } finally {
+      setSyncingData(false);
     }
   }
 
@@ -194,6 +372,84 @@ export function EmailSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Data Sync Section */}
+      <Card className="border-2 border-green-200 bg-green-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="w-6 h-6 text-green-600" />
+            Data Sync: Jobs, Customers & Vendors
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-white border border-green-200 rounded-lg p-4 space-y-3">
+            <h3 className="font-semibold text-green-900">Current Data Status:</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="text-center p-3 bg-slate-50 rounded-lg">
+                <p className="text-2xl font-bold text-slate-900">{dataSyncStats.totalJobs}</p>
+                <p className="text-xs text-slate-600">Active Jobs</p>
+              </div>
+              <div className="text-center p-3 bg-slate-50 rounded-lg">
+                <p className="text-2xl font-bold text-slate-900">{dataSyncStats.totalVendors}</p>
+                <p className="text-xs text-slate-600">Vendors</p>
+              </div>
+              <div className="text-center p-3 bg-slate-50 rounded-lg">
+                <p className="text-2xl font-bold text-slate-900">{dataSyncStats.totalContacts}</p>
+                <p className="text-xs text-slate-600">Total Contacts</p>
+              </div>
+              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-2xl font-bold text-green-900">{dataSyncStats.customerContacts}</p>
+                <p className="text-xs text-green-700">Customer Contacts</p>
+              </div>
+              <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <p className="text-2xl font-bold text-orange-900">{dataSyncStats.vendorContacts}</p>
+                <p className="text-xs text-orange-700">Vendor Contacts</p>
+              </div>
+              <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-2xl font-bold text-blue-900">{dataSyncStats.subContacts}</p>
+                <p className="text-xs text-blue-700">Sub-Contractor Contacts</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h4 className="font-semibold text-yellow-900 mb-2">⚠️ Before You Sync:</h4>
+            <ul className="list-disc list-inside space-y-1 text-sm text-yellow-800">
+              <li>This will create contacts from your existing jobs and vendors</li>
+              <li>Customer contacts need email addresses added manually in Settings → Contacts</li>
+              <li>Email categorization works by matching sender email to contacts</li>
+              <li>You can safely run this multiple times - existing contacts won't be duplicated</li>
+            </ul>
+          </div>
+          
+          <div className="flex gap-3">
+            <Button
+              onClick={syncJobCustomersToContacts}
+              disabled={syncingData}
+              className="flex-1"
+              variant="outline"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              {syncingData ? 'Syncing...' : 'Sync Job Customers'}
+            </Button>
+            <Button
+              onClick={syncVendorsToContacts}
+              disabled={syncingData}
+              className="flex-1"
+              variant="outline"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              {syncingData ? 'Syncing...' : 'Sync Vendors'}
+            </Button>
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-900">
+              <strong>Next Step:</strong> After syncing, go to <strong>Settings → Contacts</strong> to add email addresses for your customers and verify vendor information.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Header */}
       <Card className="border-2 border-blue-200 bg-blue-50">
         <CardHeader>
