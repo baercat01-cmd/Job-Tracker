@@ -1403,33 +1403,82 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const totalCost = qty * cost;
     const sellingPrice = totalCost * (1 + markup / 100);
 
-    let targetOrderIndex: number;
-
-    if (editingRow) {
-      targetOrderIndex = editingRow.order_index;
-    } else {
-      const maxOrderIndex = customRows.length > 0 
-        ? Math.max(...customRows.map(r => r.order_index))
-        : -1;
-      targetOrderIndex = maxOrderIndex + 1;
-    }
-
-    const rowData = {
-      job_id: job.id,
-      category,
-      description,
-      quantity: qty,
-      unit_cost: cost,
-      total_cost: totalCost,
-      markup_percent: markup,
-      selling_price: sellingPrice,
-      notes: notes || null,
-      taxable: taxable,
-      order_index: targetOrderIndex,
-      sheet_id: linkedSheetId || null,
-    };
-
     try {
+      // If category is subcontractor, create a subcontractor_estimate instead
+      if (category === 'subcontractor' && !editingRow) {
+        // Get max order_index for subcontractor estimates
+        const maxOrderIndex = subcontractorEstimates.length > 0
+          ? Math.max(...subcontractorEstimates.map(s => s.order_index))
+          : -1;
+        
+        // Create subcontractor estimate
+        const { data: estData, error: estError } = await supabase
+          .from('subcontractor_estimates')
+          .insert([{
+            job_id: job.id,
+            company_name: description,
+            total_amount: totalCost,
+            markup_percent: markup,
+            scope_of_work: notes || null,
+            order_index: maxOrderIndex + 1,
+            sheet_id: linkedSheetId || null,
+            extraction_status: 'completed',
+          }])
+          .select()
+          .single();
+
+        if (estError) throw estError;
+
+        // Create a single line item for the total
+        const { error: lineError } = await supabase
+          .from('subcontractor_estimate_line_items')
+          .insert([{
+            estimate_id: estData.id,
+            description: description,
+            quantity: qty,
+            unit_price: cost,
+            total_price: totalCost,
+            taxable: taxable,
+            excluded: false,
+            order_index: 0,
+          }]);
+
+        if (lineError) throw lineError;
+
+        toast.success('Subcontractor added');
+        setShowAddDialog(false);
+        resetForm();
+        await loadSubcontractorEstimates();
+        return;
+      }
+
+      // For all other categories (or editing existing custom row)
+      let targetOrderIndex: number;
+
+      if (editingRow) {
+        targetOrderIndex = editingRow.order_index;
+      } else {
+        const maxOrderIndex = customRows.length > 0 
+          ? Math.max(...customRows.map(r => r.order_index))
+          : -1;
+        targetOrderIndex = maxOrderIndex + 1;
+      }
+
+      const rowData = {
+        job_id: job.id,
+        category,
+        description,
+        quantity: qty,
+        unit_cost: cost,
+        total_cost: totalCost,
+        markup_percent: markup,
+        selling_price: sellingPrice,
+        notes: notes || null,
+        taxable: taxable,
+        order_index: targetOrderIndex,
+        sheet_id: linkedSheetId || null,
+      };
+
       if (editingRow) {
         const { data, error } = await supabase
           .from('custom_financial_rows')
