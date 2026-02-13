@@ -2100,7 +2100,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         body: { proposal: proposalData }
       });
 
-      if (error) throw error;
+      if (error) {
+        // Properly extract error details from Edge Function
+        let errorMessage = error.message;
+        if (error instanceof Error && 'context' in error) {
+          try {
+            const context = (error as any).context;
+            const statusCode = context?.status ?? 500;
+            const textContent = await context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
+      }
       
       // Download the PDF
       if (data?.pdfUrl) {
