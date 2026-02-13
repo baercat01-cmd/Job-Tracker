@@ -325,11 +325,18 @@ export function ZohoIntegrationSettings() {
                 id="orgId"
                 value={orgId}
                 onChange={(e) => setOrgId(e.target.value)}
-                placeholder="Enter organization ID"
+                placeholder="e.g., 123456789"
               />
-              <p className="text-xs text-muted-foreground">
-                The specific organization ID for COUNTYWIDE in Zoho Books
-              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
+                <p className="font-semibold text-blue-900">How to find your Organization ID:</p>
+                <ol className="list-decimal list-inside text-blue-800 space-y-1">
+                  <li>Log in to <a href="https://books.zoho.com" target="_blank" className="underline">Zoho Books</a></li>
+                  <li>Click on <strong>Settings</strong> (gear icon)</li>
+                  <li>Go to <strong>Organization Profile</strong></li>
+                  <li>Your Organization ID is shown at the top (numeric value)</li>
+                </ol>
+                <p className="text-blue-700 mt-2">Example: <code className="bg-white px-1 rounded">60012345678</code></p>
+              </div>
             </div>
           </div>
 

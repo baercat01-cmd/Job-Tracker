@@ -102,6 +102,18 @@ serve(async (req) => {
       );
     }
 
+    // Validate organization ID
+    if (!settings.countywide_org_id || settings.countywide_org_id.trim() === '') {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Organization ID is missing. Please enter your Zoho Books Organization ID in Settings.' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('🔍 Using Organization ID:', settings.countywide_org_id);
+
     // Get or refresh access token
     const accessToken = await getValidAccessToken(settings, supabase);
 
@@ -115,10 +127,12 @@ serve(async (req) => {
         .eq('id', settings.id);
 
       try {
+        console.log('📡 Fetching vendors from Zoho Books...');
         // Fetch vendors from Zoho
         const vendors = await fetchZohoVendors(accessToken, settings.countywide_org_id);
         console.log(`✅ Fetched ${vendors.length} vendors from Zoho`);
 
+        console.log('📡 Fetching items from Zoho Books...');
         // Fetch items (materials) from Zoho
         const items = await fetchZohoItems(accessToken, settings.countywide_org_id);
         console.log(`✅ Fetched ${items.length} items from Zoho`);
@@ -265,6 +279,8 @@ async function getValidAccessToken(
 async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any[]> {
   const url = `https://www.zohoapis.com/books/v3/contacts?contact_type=vendor&organization_id=${orgId}`;
   
+  console.log('🌐 Calling Zoho API:', url);
+  
   const response = await fetch(url, {
     headers: {
       'Authorization': `Zoho-oauthtoken ${accessToken}`,
@@ -273,6 +289,18 @@ async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('❌ Zoho API Error Response:', errorText);
+    
+    // Parse error to provide helpful message
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
+        throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
+      }
+    } catch (e) {
+      // If parsing fails, use original error
+    }
+    
     throw new Error(`Failed to fetch Zoho vendors: ${errorText}`);
   }
 
@@ -283,6 +311,8 @@ async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any
 async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]> {
   const url = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}`;
   
+  console.log('🌐 Calling Zoho API:', url);
+  
   const response = await fetch(url, {
     headers: {
       'Authorization': `Zoho-oauthtoken ${accessToken}`,
@@ -291,6 +321,18 @@ async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('❌ Zoho API Error Response:', errorText);
+    
+    // Parse error to provide helpful message
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
+        throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
+      }
+    } catch (e) {
+      // If parsing fails, use original error
+    }
+    
     throw new Error(`Failed to fetch Zoho items: ${errorText}`);
   }
 
