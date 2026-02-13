@@ -165,6 +165,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [markupPercent, setMarkupPercent] = useState('0');
   const [notes, setNotes] = useState('');
   const [taxable, setTaxable] = useState(true);
+  const [linkedSheetId, setLinkedSheetId] = useState<string | null>(null);
 
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
@@ -549,7 +550,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function openAddDialog(row?: CustomFinancialRow) {
+  function openAddDialog(row?: CustomFinancialRow, sheetId?: string) {
     if (row) {
       setEditingRow(row);
       setCategory(row.category);
@@ -559,8 +560,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setMarkupPercent(row.markup_percent.toString());
       setNotes(row.notes || '');
       setTaxable(row.taxable !== undefined ? row.taxable : true);
+      setLinkedSheetId((row as any).sheet_id || null);
     } else {
       resetForm();
+      if (sheetId) {
+        // If opening from a material sheet, pre-populate category and link
+        setCategory('materials');
+        setLinkedSheetId(sheetId);
+      }
     }
     setShowAddDialog(true);
   }
@@ -574,6 +581,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setMarkupPercent('0');
     setNotes('');
     setTaxable(true);
+    setLinkedSheetId(null);
   }
 
   async function saveCustomRow() {
@@ -611,6 +619,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       notes: notes || null,
       taxable: taxable,
       order_index: targetOrderIndex,
+      sheet_id: linkedSheetId || null,
     };
 
     try {
@@ -1313,6 +1322,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                         <DropdownMenuItem
                                           onClick={(e) => {
                                             e.stopPropagation();
+                                            openAddDialog(undefined, sheet.sheetId);
+                                          }}
+                                        >
+                                          <Plus className="w-4 h-4 mr-2" />
+                                          Add Material Row
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={(e) => {
+                                            e.stopPropagation();
                                             openLaborDialog(sheet.sheetId);
                                           }}
                                         >
@@ -1335,6 +1353,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                               </CollapsibleTrigger>
                               <CollapsibleContent>
                                 <div className="p-4 space-y-2">
+                                  {/* Material Categories */}
                                   {sheet.categories.map((category: any, catIndex: number) => {
                                     const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
                                     const catCost = category.totalPrice;
@@ -1353,6 +1372,62 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                       </div>
                                     );
                                   })}
+
+                                  {/* Custom Material Rows linked to this sheet */}
+                                  {(() => {
+                                    const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
+                                    if (linkedRows.length === 0) return null;
+
+                                    return (
+                                      <div className="mt-4 pt-4 border-t-2 border-blue-200 space-y-2">
+                                        <p className="text-xs font-semibold text-blue-700 uppercase mb-2">Additional Materials</p>
+                                        {linkedRows.map((row) => {
+                                          const lineItems = customRowLineItems[row.id] || [];
+                                          const baseCost = lineItems.length > 0 
+                                            ? lineItems.reduce((sum, item) => sum + item.total_cost, 0)
+                                            : row.total_cost;
+                                          const rowPrice = baseCost * (1 + row.markup_percent / 100);
+
+                                          return (
+                                            <div key={row.id} className="flex items-start justify-between py-2 px-3 bg-blue-50 rounded border border-blue-200">
+                                              <div className="flex-1">
+                                                <p className="font-semibold text-slate-900">{row.description}</p>
+                                                {lineItems.length > 0 && (
+                                                  <p className="text-xs text-slate-600">{lineItems.length} line item{lineItems.length > 1 ? 's' : ''}</p>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                <div className="text-right">
+                                                  <p className="font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                                  <p className="text-xs text-slate-500">+{row.markup_percent}%</p>
+                                                </div>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openAddDialog(row, sheet.sheetId);
+                                                  }}
+                                                >
+                                                  <Edit className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    deleteRow(row.id);
+                                                  }}
+                                                >
+                                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </CollapsibleContent>
                             </div>
