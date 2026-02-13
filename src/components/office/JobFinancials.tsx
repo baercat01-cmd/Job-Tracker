@@ -989,17 +989,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Proposal calculations with individual markups and tax
   const TAX_RATE = 0.07; // 7% tax
   
-  // Materials: calculate with individual sheet markups
+  // Materials: calculate with individual sheet markups AND linked custom rows
   const proposalMaterialsCost = materialsBreakdown.totals.totalPrice;
   const proposalMaterialsPrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
-    const sheetCost = sheet.totalPrice;
+    // Calculate cost from linked custom rows (already have their own markups applied)
+    const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
+    const linkedRowsTotal = linkedRows.reduce((rowSum, row) => {
+      const lineItems = customRowLineItems[row.id] || [];
+      const baseCost = lineItems.length > 0 
+        ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+        : row.total_cost;
+      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+    }, 0);
+    
+    // Sheet base cost = material items + linked custom rows
+    const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
     const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
-    return sum + (sheetCost * (1 + sheetMarkup / 100));
+    return sum + (sheetBaseCost * (1 + sheetMarkup / 100));
   }, 0);
   
   // Separate custom rows into taxable and non-taxable (using calculated totals)
-  const taxableRows = customRows.filter(r => r.taxable);
-  const nonTaxableRows = customRows.filter(r => !r.taxable);
+  // EXCLUDE custom rows that are linked to material sheets (they're already counted in materials)
+  const taxableRows = customRows.filter(r => r.taxable && !(r as any).sheet_id);
+  const nonTaxableRows = customRows.filter(r => !r.taxable && !(r as any).sheet_id);
   
   const taxableAdditionalCost = taxableRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
@@ -1263,9 +1275,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   return allItems.map((item) => {
                     if (item.type === 'material') {
                       const sheet = item.data as typeof materialsBreakdown.sheetBreakdowns[0];
-                      const sheetCost = sheet.totalPrice;
+                      
+                      // Calculate cost from linked custom rows (already have their own markups applied)
+                      const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
+                      const linkedRowsTotal = linkedRows.reduce((sum, row) => {
+                        const lineItems = customRowLineItems[row.id] || [];
+                        const baseCost = lineItems.length > 0 
+                          ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                          : row.total_cost;
+                        return sum + (baseCost * (1 + row.markup_percent / 100));
+                      }, 0);
+                      
+                      // Sheet base cost = material items + linked custom rows
+                      const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
                       const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
-                      const sheetPrice = sheetCost * (1 + sheetMarkup / 100);
+                      const sheetPrice = sheetBaseCost * (1 + sheetMarkup / 100);
 
                       return (
                         <div key={item.id}>
@@ -1336,7 +1360,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     
                                     {/* Pricing - Far Right */}
                                     <div className="text-right w-44">
-                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${sheetCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <p className="text-xs text-slate-500 mb-0.5">Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-slate-900">${sheetPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       {sheetLabor[sheet.sheetId] && (
                                         <p className="text-sm text-amber-700 font-semibold mt-1">
