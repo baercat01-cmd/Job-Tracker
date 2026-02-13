@@ -16,7 +16,7 @@ import { JobFinancials } from './JobFinancials';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
-import { useState as useEmailState } from 'react';
+
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
