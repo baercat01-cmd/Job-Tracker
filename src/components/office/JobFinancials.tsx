@@ -1048,13 +1048,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost;
   
   // Subcontractor estimates (with their individual markups, taxable)
+  // Only include non-excluded line items
   const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
-    return sum + (est.total_amount || 0);
+    const lineItems = subcontractorLineItems[est.id] || [];
+    const includedTotal = lineItems
+      .filter((item: any) => !item.excluded)
+      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
+    return sum + includedTotal;
   }, 0);
   const proposalSubcontractorPrice = subcontractorEstimates.reduce((sum, est) => {
-    const baseAmount = est.total_amount || 0;
+    const lineItems = subcontractorLineItems[est.id] || [];
+    const includedTotal = lineItems
+      .filter((item: any) => !item.excluded)
+      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     const estMarkup = est.markup_percent || 0;
-    return sum + (baseAmount * (1 + estMarkup / 100));
+    return sum + (includedTotal * (1 + estMarkup / 100));
   }, 0);
   
   // Calculate subtotals
@@ -1438,7 +1446,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       // Subcontractor estimate row with detailed breakdown
                       const est = item.data as any;
                       const lineItems = subcontractorLineItems[est.id] || [];
-                      const estCost = est.total_amount || 0;
+                      // Calculate base cost from included items only
+                      const includedTotal = lineItems
+                        .filter((item: any) => !item.excluded)
+                        .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
+                      const estCost = includedTotal;
                       const estMarkup = est.markup_percent || 0;
                       const finalPrice = estCost * (1 + estMarkup / 100);
 
