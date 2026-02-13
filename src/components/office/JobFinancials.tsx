@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -32,6 +32,23 @@ import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import type { Job } from '@/types';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface CustomFinancialRow {
   id: string;
@@ -86,6 +103,606 @@ interface MaterialsBreakdown {
 
 interface JobFinancialsProps {
   job: Job;
+}
+
+// Sortable Row Component
+function SortableRow({ item, ...props }: any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const {
+    sheetMarkups,
+    setSheetMarkups,
+    customRowLineItems,
+    sheetLabor,
+    customRowLabor,
+    subcontractorLineItems,
+    editingRowName,
+    editingRowNameType,
+    tempRowName,
+    setTempRowName,
+    startEditingRowName,
+    saveRowName,
+    cancelEditingRowName,
+    openSheetDescDialog,
+    openLaborDialog,
+    openAddDialog,
+    openLineItemDialog,
+    deleteRow,
+    deleteSheetLabor,
+    toggleSubcontractorLineItem,
+    updateSubcontractorMarkup,
+    deleteLineItem,
+    loadMaterialsData,
+    loadCustomRows,
+    loadSubcontractorEstimates,
+    customRows,
+  } = props;
+
+  const content = (() => {
+    if (item.type === 'material') {
+      const sheet = item.data;
+      const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
+      const linkedRowsTotal = linkedRows.reduce((rowSum: number, row: any) => {
+        const lineItems = customRowLineItems[row.id] || [];
+        const baseCost = lineItems.length > 0
+          ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+          : row.total_cost;
+        return rowSum + (baseCost * (1 + row.markup_percent / 100));
+      }, 0);
+      const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
+      const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+      const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
+
+      return (
+        <Collapsible className="border rounded bg-white p-2">
+          <div className="flex items-start gap-2">
+            {/* Drag Handle */}
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
+              <GripVertical className="w-4 h-4 text-slate-400" />
+            </div>
+
+            {/* Chevron */}
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                <ChevronDown className="w-4 h-4 text-slate-600" />
+              </Button>
+            </CollapsibleTrigger>
+
+            {/* Title */}
+            <div className="flex-1 min-w-0">
+              {editingRowName === sheet.sheetId && editingRowNameType === 'sheet' ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={tempRowName}
+                    onChange={(e) => setTempRowName(e.target.value)}
+                    className="h-7 text-sm font-bold"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveRowName();
+                      if (e.key === 'Escape') cancelEditingRowName();
+                    }}
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                    <Check className="w-3 h-3 text-green-600" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                    <X className="w-3 h-3 text-red-600" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                    onClick={() => startEditingRowName(sheet.sheetId, 'sheet', sheet.sheetName)}
+                  >
+                    <Edit className="w-3 h-3 text-slate-500" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Pricing */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>+</span>
+                  <Input
+                    type="number"
+                    value={sheetMarkups[sheet.sheetId] || 10}
+                    onChange={(e) => {
+                      const newMarkup = parseFloat(e.target.value) || 0;
+                      setSheetMarkups((prev: any) => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                    }}
+                    className="w-14 h-5 text-xs px-1 text-center"
+                    step="1"
+                    min="0"
+                  />
+                  <span>%</span>
+                </div>
+                <p className="text-base font-bold text-slate-900">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
+                    <Edit className="w-3 h-3 mr-2" />
+                    Edit Description
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                    <DollarSign className="w-3 h-3 mr-2" />
+                    {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Material Row
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="mt-1 ml-10 mr-[360px]">
+            <Textarea
+              value={sheet.sheetDescription}
+              placeholder="Click to add description..."
+              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
+              onChange={(e) => {
+                const textarea = e.target;
+                textarea.onblur = async () => {
+                  try {
+                    await supabase
+                      .from('material_sheets')
+                      .update({ description: e.target.value || null })
+                      .eq('id', sheet.sheetId);
+                    await loadMaterialsData();
+                  } catch (error) {
+                    console.error('Error saving description:', error);
+                  }
+                };
+              }}
+              style={{
+                maxHeight: '120px',
+                overflowY: (sheet.sheetDescription || '').length > 500 ? 'auto' : 'hidden'
+              }}
+            />
+          </div>
+
+          <CollapsibleContent>
+            <div className="mt-2 ml-10 space-y-1">
+              {linkedRows.length > 0 && (
+                <div className="space-y-1 mb-2">
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Additional Materials</p>
+                  {linkedRows.map((row: any) => {
+                    const lineItems = customRowLineItems[row.id] || [];
+                    const baseCost = lineItems.length > 0
+                      ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+                      : row.total_cost;
+                    const finalPrice = baseCost * (1 + row.markup_percent / 100);
+
+                    return (
+                      <div key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-slate-900">{row.description}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <p className="text-xs text-slate-600">+{row.markup_percent}%</p>
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openAddDialog(row)}>
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteRow(row.id)}>
+                              <Trash2 className="w-3 h-3 text-red-600" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {sheetLabor[sheet.sheetId] && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-slate-900">{sheetLabor[sheet.sheetId].description}</p>
+                      <p className="text-xs text-slate-600">
+                        {sheetLabor[sheet.sheetId].estimated_hours}h × ${sheetLabor[sheet.sheetId].hourly_rate}/hr
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-slate-900">
+                        ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
+                        <Trash2 className="w-3 h-3 text-red-600" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      );
+    } else if (item.type === 'custom') {
+      const row = item.data;
+      const lineItems = customRowLineItems[row.id] || [];
+      const baseCost = lineItems.length > 0
+        ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+        : row.total_cost;
+      const finalPrice = baseCost * (1 + row.markup_percent / 100);
+
+      return (
+        <Collapsible className="border rounded bg-white p-2">
+          <div className="flex items-start gap-2">
+            {/* Drag Handle */}
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
+              <GripVertical className="w-4 h-4 text-slate-400" />
+            </div>
+
+            {/* Chevron (only if has line items) */}
+            {lineItems.length > 0 && (
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                  <ChevronDown className="w-4 h-4 text-slate-600" />
+                </Button>
+              </CollapsibleTrigger>
+            )}
+
+            {/* Title */}
+            <div className="flex-1 min-w-0">
+              {editingRowName === row.id && editingRowNameType === 'custom' ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={tempRowName}
+                    onChange={(e) => setTempRowName(e.target.value)}
+                    className="h-7 text-sm font-bold"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveRowName();
+                      if (e.key === 'Escape') cancelEditingRowName();
+                    }}
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                    <Check className="w-3 h-3 text-green-600" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                    <X className="w-3 h-3 text-red-600" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                    onClick={() => startEditingRowName(row.id, 'custom', row.description)}
+                  >
+                    <Edit className="w-3 h-3 text-slate-500" />
+                  </Button>
+                  {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
+                  {lineItems.length > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {lineItems.length} item{lineItems.length !== 1 ? 's' : ''}
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Pricing */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>+{row.markup_percent}%</span>
+                </div>
+                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => openAddDialog(row)}>
+                    <Edit className="w-3 h-3 mr-2" />
+                    Edit Row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id)}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Line Item
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => deleteRow(row.id)}>
+                    <Trash2 className="w-3 h-3 mr-2" />
+                    Delete Row
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* Notes */}
+          {row.notes && (
+            <div className="mt-1 ml-10 mr-[360px]">
+              <Textarea
+                value={row.notes}
+                placeholder="Click to add notes..."
+                className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
+                onChange={(e) => {
+                  const textarea = e.target;
+                  textarea.onblur = async () => {
+                    try {
+                      await supabase
+                        .from('custom_financial_rows')
+                        .update({ notes: e.target.value || null })
+                        .eq('id', row.id);
+                      await loadCustomRows();
+                    } catch (error) {
+                      console.error('Error saving notes:', error);
+                    }
+                  };
+                }}
+                style={{
+                  maxHeight: '120px',
+                  overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Line Items */}
+          {lineItems.length > 0 && (
+            <CollapsibleContent>
+              <div className="mt-2 ml-10 space-y-1">
+                <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                  <List className="w-3 h-3" />
+                  Line Items
+                </p>
+                {lineItems.map((lineItem: any) => (
+                  <div key={lineItem.id} className="bg-slate-50 border border-slate-200 rounded p-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                        <p className="text-xs text-slate-600">
+                          {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        {lineItem.notes && (
+                          <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-slate-900">
+                          ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 w-5 p-0"
+                          onClick={() => openLineItemDialog(row.id, lineItem)}
+                        >
+                          <Edit className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 w-5 p-0"
+                          onClick={() => deleteLineItem(lineItem.id)}
+                        >
+                          <Trash2 className="w-3 h-3 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CollapsibleContent>
+          )}
+        </Collapsible>
+      );
+    } else if (item.type === 'subcontractor') {
+      const est = item.data;
+      const lineItems = subcontractorLineItems[est.id] || [];
+      const includedTotal = lineItems
+        .filter((item: any) => !item.excluded)
+        .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
+      const estMarkup = est.markup_percent || 0;
+      const finalPrice = includedTotal * (1 + estMarkup / 100);
+
+      return (
+        <Collapsible className="border rounded bg-white p-2">
+          <div className="flex items-start gap-2">
+            {/* Drag Handle */}
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
+              <GripVertical className="w-4 h-4 text-slate-400" />
+            </div>
+
+            {/* Chevron */}
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                <ChevronDown className="w-4 h-4 text-slate-600" />
+              </Button>
+            </CollapsibleTrigger>
+
+            {/* Title */}
+            <div className="flex-1 min-w-0">
+              {editingRowName === est.id && editingRowNameType === 'subcontractor' ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={tempRowName}
+                    onChange={(e) => setTempRowName(e.target.value)}
+                    className="h-7 text-sm font-bold"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveRowName();
+                      if (e.key === 'Escape') cancelEditingRowName();
+                    }}
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
+                    <Check className="w-3 h-3 text-green-600" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
+                    <X className="w-3 h-3 text-red-600" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 truncate">{est.company_name}</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
+                    onClick={() => startEditingRowName(est.id, 'subcontractor', est.company_name)}
+                  >
+                    <Edit className="w-3 h-3 text-slate-500" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Pricing */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>+</span>
+                  <Input
+                    type="number"
+                    value={estMarkup}
+                    onChange={(e) => {
+                      const newMarkup = parseFloat(e.target.value) || 0;
+                      updateSubcontractorMarkup(est.id, newMarkup);
+                    }}
+                    className="w-14 h-5 text-xs px-1 text-center"
+                    step="1"
+                    min="0"
+                  />
+                  <span>%</span>
+                </div>
+                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+
+              {est.pdf_url && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                  onClick={() => window.open(est.pdf_url, '_blank')}
+                >
+                  <Eye className="w-4 h-4 text-blue-600" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="mt-1 ml-10 mr-[360px]">
+            <Textarea
+              value={est.scope_of_work || ''}
+              placeholder="Click to add description..."
+              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
+              onChange={(e) => {
+                const textarea = e.target;
+                textarea.onblur = async () => {
+                  try {
+                    await supabase
+                      .from('subcontractor_estimates')
+                      .update({ scope_of_work: e.target.value || null })
+                      .eq('id', est.id);
+                    await loadSubcontractorEstimates();
+                  } catch (error) {
+                    console.error('Error saving scope of work:', error);
+                  }
+                };
+              }}
+              style={{
+                maxHeight: '120px',
+                overflowY: (est.scope_of_work || '').length > 500 ? 'auto' : 'hidden'
+              }}
+            />
+          </div>
+
+          <CollapsibleContent>
+            <div className="mt-2 ml-10 space-y-1">
+              {lineItems.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                    <List className="w-3 h-3" />
+                    Line Items
+                    <span className="text-slate-500">({lineItems.filter((item: any) => !item.excluded).length} of {lineItems.length} included)</span>
+                  </p>
+                  {lineItems.map((lineItem: any) => (
+                    <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!lineItem.excluded}
+                          onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                          {lineItem.description}
+                        </p>
+                        <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                          ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {est.exclusions && (
+                <div className="mt-3 pt-3 border-t border-slate-200">
+                  <p className="text-xs font-semibold text-red-700 mb-1">Exclusions</p>
+                  <p className="text-xs text-slate-600">{est.exclusions}</p>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      );
+    }
+    return null;
+  })();
+
+  return (
+    <div ref={setNodeRef} style={style} className="group">
+      {content}
+    </div>
+  );
 }
 
 export function JobFinancials({ job }: JobFinancialsProps) {
@@ -175,10 +792,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
   
-  // File upload state
-  const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
-  const [categoryFiles, setCategoryFiles] = useState<Record<string, string[]>>({});
-  const [materialFiles, setMaterialFiles] = useState<Record<string, string[]>>({});
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     loadData(false); // Initial load with spinner
@@ -1210,6 +1830,51 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     })),
   ].sort((a, b) => a.orderIndex - b.orderIndex);
 
+  // Handle drag end
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = allItems.findIndex(item => item.id === active.id);
+    const newIndex = allItems.findIndex(item => item.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Reorder items
+    const reorderedItems = arrayMove(allItems, oldIndex, newIndex);
+
+    // Update order_index for all affected items
+    const updates = reorderedItems.map((item, index) => {
+      if (item.type === 'material') {
+        return supabase
+          .from('material_sheets')
+          .update({ order_index: index })
+          .eq('id', item.id);
+      } else if (item.type === 'custom') {
+        return supabase
+          .from('custom_financial_rows')
+          .update({ order_index: index })
+          .eq('id', item.id);
+      } else if (item.type === 'subcontractor') {
+        return supabase
+          .from('subcontractor_estimates')
+          .update({ order_index: index })
+          .eq('id', item.id);
+      }
+      return null;
+    }).filter(Boolean);
+
+    try {
+      await Promise.all(updates);
+      toast.success('Order updated');
+      await loadData(true);
+    } catch (error: any) {
+      console.error('Error updating order:', error);
+      toast.error('Failed to update order');
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -1335,551 +2000,52 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         {/* Proposal Tab */}
         <TabsContent value="proposal">
           <div className="max-w-[1400px] mx-auto px-4">
-            {/* Proposal Layout: Main content area with sidebar */}
             <div className="flex gap-4 items-start">
               {/* Main Content Column */}
               <div className="flex-1 min-w-0 space-y-1">
-                {/* Render all items in order */}
-                {allItems.map((item) => {
-                  if (item.type === 'material') {
-                    const sheet = item.data;
-                    const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
-                    const linkedRowsTotal = linkedRows.reduce((rowSum, row) => {
-                      const lineItems = customRowLineItems[row.id] || [];
-                      const baseCost = lineItems.length > 0 
-                        ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-                        : row.total_cost;
-                      return rowSum + (baseCost * (1 + row.markup_percent / 100));
-                    }, 0);
-                    const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
-                    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
-                    const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
-
-                    return (
-                      <Collapsible key={`sheet-${item.id}`} className="border rounded bg-white p-2">
-                        <div className="flex items-start gap-2">
-                          {/* Left: Chevron + Title */}
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                <ChevronDown className="w-4 h-4 text-slate-600" />
-                              </Button>
-                            </CollapsibleTrigger>
-                            
-                            <div className="flex-1 min-w-0">
-                              {/* Row name with inline edit */}
-                              {editingRowName === sheet.sheetId && editingRowNameType === 'sheet' ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    value={tempRowName}
-                                    onChange={(e) => setTempRowName(e.target.value)}
-                                    className="h-7 text-sm font-bold"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') saveRowName();
-                                      if (e.key === 'Escape') cancelEditingRowName();
-                                    }}
-                                  />
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
-                                    <Check className="w-3 h-3 text-green-600" />
-                                  </Button>
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
-                                    <X className="w-3 h-3 text-red-600" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                                    onClick={() => startEditingRowName(sheet.sheetId, 'sheet', sheet.sheetName)}
-                                  >
-                                    <Edit className="w-3 h-3 text-slate-500" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Right: Pricing */}
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <div className="text-right">
-                              <div className="flex items-center gap-2 text-xs text-slate-600">
-                                <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                <span>+</span>
-                                <Input
-                                  type="number"
-                                  value={sheetMarkups[sheet.sheetId] || 10}
-                                  onChange={(e) => {
-                                    const newMarkup = parseFloat(e.target.value) || 0;
-                                    setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
-                                  }}
-                                  className="w-14 h-5 text-xs px-1 text-center"
-                                  step="1"
-                                  min="0"
-                                />
-                                <span>%</span>
-                              </div>
-                              <p className="text-base font-bold text-slate-900">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            </div>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
-                                  <Edit className="w-3 h-3 mr-2" />
-                                  Edit Description
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
-                                  <DollarSign className="w-3 h-3 mr-2" />
-                                  {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
-                                  <Plus className="w-3 h-3 mr-2" />
-                                  Add Material Row
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-
-                        {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-[360px]">
-                          <Textarea
-                            value={sheet.sheetDescription}
-                            placeholder="Click to add description..."
-                            className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                            rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
-                            onChange={(e) => {
-                              // Auto-save on blur
-                              const textarea = e.target;
-                              textarea.onblur = async () => {
-                                try {
-                                  await supabase
-                                    .from('material_sheets')
-                                    .update({ description: e.target.value || null })
-                                    .eq('id', sheet.sheetId);
-                                  await loadMaterialsData();
-                                } catch (error) {
-                                  console.error('Error saving description:', error);
-                                }
-                              };
-                            }}
-                            style={{ 
-                              maxHeight: '120px',
-                              overflowY: (sheet.sheetDescription || '').length > 500 ? 'auto' : 'hidden'
-                            }}
-                          />
-                        </div>
-
-                        <CollapsibleContent>
-                          <div className="mt-2 ml-6 space-y-1">
-                            {/* Linked custom rows */}
-                            {linkedRows.length > 0 && (
-                              <div className="space-y-1 mb-2">
-                                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Additional Materials</p>
-                                {linkedRows.map((row) => {
-                                  const lineItems = customRowLineItems[row.id] || [];
-                                  const baseCost = lineItems.length > 0 
-                                    ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-                                    : row.total_cost;
-                                  const finalPrice = baseCost * (1 + row.markup_percent / 100);
-
-                                  return (
-                                    <div key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-xs font-semibold text-slate-900">{row.description}</p>
-                                        <div className="flex items-center gap-2">
-                                          <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                          <p className="text-xs text-slate-600">+{row.markup_percent}%</p>
-                                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openAddDialog(row)}>
-                                            <Edit className="w-3 h-3" />
-                                          </Button>
-                                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteRow(row.id)}>
-                                            <Trash2 className="w-3 h-3 text-red-600" />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {/* Sheet labor */}
-                            {sheetLabor[sheet.sheetId] && (
-                              <div className="bg-amber-50 border border-amber-200 rounded p-2">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex-1">
-                                    <p className="text-xs font-semibold text-slate-900">{sheetLabor[sheet.sheetId].description}</p>
-                                    <p className="text-xs text-slate-600">
-                                      {sheetLabor[sheet.sheetId].estimated_hours}h × ${sheetLabor[sheet.sheetId].hourly_rate}/hr
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-xs font-bold text-slate-900">
-                                      ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </p>
-                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
-                                      <Edit className="w-3 h-3" />
-                                    </Button>
-                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteSheetLabor(sheetLabor[sheet.sheetId].id)}>
-                                      <Trash2 className="w-3 h-3 text-red-600" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    );
-                  } else if (item.type === 'custom') {
-                    const row = item.data;
-                    const lineItems = customRowLineItems[row.id] || [];
-                    const baseCost = lineItems.length > 0 
-                      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-                      : row.total_cost;
-                    const finalPrice = baseCost * (1 + row.markup_percent / 100);
-
-                    return (
-                      <Collapsible key={`custom-${item.id}`} className="border rounded bg-white p-2">
-                        <div className="flex items-start gap-2">
-                          {/* Left: Chevron + Title */}
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            {lineItems.length > 0 && (
-                              <CollapsibleTrigger asChild>
-                                <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                  <ChevronDown className="w-4 h-4 text-slate-600" />
-                                </Button>
-                              </CollapsibleTrigger>
-                            )}
-                            
-                            <div className="flex-1 min-w-0">
-                              {/* Row name with inline edit */}
-                              {editingRowName === row.id && editingRowNameType === 'custom' ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    value={tempRowName}
-                                    onChange={(e) => setTempRowName(e.target.value)}
-                                    className="h-7 text-sm font-bold"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') saveRowName();
-                                      if (e.key === 'Escape') cancelEditingRowName();
-                                    }}
-                                  />
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
-                                    <Check className="w-3 h-3 text-green-600" />
-                                  </Button>
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
-                                    <X className="w-3 h-3 text-red-600" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                                    onClick={() => startEditingRowName(row.id, 'custom', row.description)}
-                                  >
-                                    <Edit className="w-3 h-3 text-slate-500" />
-                                  </Button>
-                                  {row.category === 'labor' && <Badge variant="secondary" className="text-xs">Labor</Badge>}
-                                  {lineItems.length > 0 && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {lineItems.length} item{lineItems.length !== 1 ? 's' : ''}
-                                    </Badge>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Right: Pricing */}
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <div className="text-right">
-                              <div className="flex items-center gap-2 text-xs text-slate-600">
-                                <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                <span>+{row.markup_percent}%</span>
-                              </div>
-                              <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            </div>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openAddDialog(row)}>
-                                  <Edit className="w-3 h-3 mr-2" />
-                                  Edit Row
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openLineItemDialog(row.id)}>
-                                  <Plus className="w-3 h-3 mr-2" />
-                                  Add Line Item
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => deleteRow(row.id)}>
-                                  <Trash2 className="w-3 h-3 mr-2" />
-                                  Delete Row
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-
-                        {/* Notes below title */}
-                        {row.notes && (
-                          <div className="mt-1 ml-6 mr-[360px]">
-                            <Textarea
-                              value={row.notes}
-                              placeholder="Click to add notes..."
-                              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                              rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
-                              onChange={(e) => {
-                                // Auto-save on blur
-                                const textarea = e.target;
-                                textarea.onblur = async () => {
-                                  try {
-                                    await supabase
-                                      .from('custom_financial_rows')
-                                      .update({ notes: e.target.value || null })
-                                      .eq('id', row.id);
-                                    await loadCustomRows();
-                                  } catch (error) {
-                                    console.error('Error saving notes:', error);
-                                  }
-                                };
-                              }}
-                              style={{ 
-                                maxHeight: '120px',
-                                overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {/* Line Items */}
-                        {lineItems.length > 0 && (
-                          <CollapsibleContent>
-                            <div className="mt-2 ml-6 space-y-1">
-                              <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
-                                <List className="w-3 h-3" />
-                                Line Items
-                              </p>
-                              {lineItems.map((lineItem: CustomRowLineItem) => (
-                                <div key={lineItem.id} className="bg-slate-50 border border-slate-200 rounded p-2">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex-1">
-                                      <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
-                                      <p className="text-xs text-slate-600">
-                                        {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </p>
-                                      {lineItem.notes && (
-                                        <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-xs font-bold text-slate-900">
-                                        ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </p>
-                                      <Button 
-                                        size="sm" 
-                                        variant="ghost" 
-                                        className="h-5 w-5 p-0" 
-                                        onClick={() => openLineItemDialog(row.id, lineItem)}
-                                      >
-                                        <Edit className="w-3 h-3" />
-                                      </Button>
-                                      <Button 
-                                        size="sm" 
-                                        variant="ghost" 
-                                        className="h-5 w-5 p-0" 
-                                        onClick={() => deleteLineItem(lineItem.id)}
-                                      >
-                                        <Trash2 className="w-3 h-3 text-red-600" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </CollapsibleContent>
-                        )}
-                      </Collapsible>
-                    );
-                  } else if (item.type === 'subcontractor') {
-                    const est = item.data;
-                    const lineItems = subcontractorLineItems[est.id] || [];
-                    const includedTotal = lineItems
-                      .filter((item: any) => !item.excluded)
-                      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
-                    const estMarkup = est.markup_percent || 0;
-                    const finalPrice = includedTotal * (1 + estMarkup / 100);
-
-                    return (
-                      <Collapsible key={`sub-${item.id}`} className="border rounded bg-white p-2">
-                        <div className="flex items-start gap-2">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                <ChevronDown className="w-4 h-4 text-slate-600" />
-                              </Button>
-                            </CollapsibleTrigger>
-                            
-                            <div className="flex-1 min-w-0">
-                              {/* Row name with inline edit */}
-                              {editingRowName === est.id && editingRowNameType === 'subcontractor' ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    value={tempRowName}
-                                    onChange={(e) => setTempRowName(e.target.value)}
-                                    className="h-7 text-sm font-bold"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') saveRowName();
-                                      if (e.key === 'Escape') cancelEditingRowName();
-                                    }}
-                                  />
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveRowName}>
-                                    <Check className="w-3 h-3 text-green-600" />
-                                  </Button>
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditingRowName}>
-                                    <X className="w-3 h-3 text-red-600" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-slate-900 truncate">{est.company_name}</h3>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-                                    onClick={() => startEditingRowName(est.id, 'subcontractor', est.company_name)}
-                                  >
-                                    <Edit className="w-3 h-3 text-slate-500" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <div className="text-right">
-                              <div className="flex items-center gap-2 text-xs text-slate-600">
-                                <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                <span>+</span>
-                                <Input
-                                  type="number"
-                                  value={estMarkup}
-                                  onChange={(e) => {
-                                    const newMarkup = parseFloat(e.target.value) || 0;
-                                    updateSubcontractorMarkup(est.id, newMarkup);
-                                  }}
-                                  className="w-14 h-5 text-xs px-1 text-center"
-                                  step="1"
-                                  min="0"
-                                />
-                                <span>%</span>
-                              </div>
-                              <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            </div>
-
-                            {est.pdf_url && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() => window.open(est.pdf_url, '_blank')}
-                              >
-                                <Eye className="w-4 h-4 text-blue-600" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-[360px]">
-                          <Textarea
-                            value={est.scope_of_work || ''}
-                            placeholder="Click to add description..."
-                            className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                            rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
-                            onChange={(e) => {
-                              // Auto-save on blur
-                              const textarea = e.target;
-                              textarea.onblur = async () => {
-                                try {
-                                  await supabase
-                                    .from('subcontractor_estimates')
-                                    .update({ scope_of_work: e.target.value || null })
-                                    .eq('id', est.id);
-                                  await loadSubcontractorEstimates();
-                                } catch (error) {
-                                  console.error('Error saving scope of work:', error);
-                                }
-                              };
-                            }}
-                            style={{ 
-                              maxHeight: '120px',
-                              overflowY: (est.scope_of_work || '').length > 500 ? 'auto' : 'hidden'
-                            }}
-                          />
-                        </div>
-
-                        <CollapsibleContent>
-                          <div className="mt-2 ml-6 space-y-1">
-                            {lineItems.length > 0 && (
-                              <div>
-                                <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
-                                  <List className="w-3 h-3" />
-                                  Line Items
-                                  <span className="text-slate-500">({lineItems.filter((item: any) => !item.excluded).length} of {lineItems.length} included)</span>
-                                </p>
-                                {lineItems.map((lineItem: any) => (
-                                  <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
-                                    <div className="flex items-center gap-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={!lineItem.excluded}
-                                        onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
-                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                      />
-                                      <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                        {lineItem.description}
-                                      </p>
-                                      <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                        ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {est.exclusions && (
-                              <div className="mt-3 pt-3 border-t border-slate-200">
-                                <p className="text-xs font-semibold text-red-700 mb-1">Exclusions</p>
-                                <p className="text-xs text-slate-600">{est.exclusions}</p>
-                              </div>
-                            )}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    );
-                  }
-                  return null;
-                })}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={allItems.map(item => item.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {allItems.map((item) => (
+                      <SortableRow
+                        key={item.id}
+                        item={item}
+                        sheetMarkups={sheetMarkups}
+                        setSheetMarkups={setSheetMarkups}
+                        customRowLineItems={customRowLineItems}
+                        sheetLabor={sheetLabor}
+                        customRowLabor={customRowLabor}
+                        subcontractorLineItems={subcontractorLineItems}
+                        editingRowName={editingRowName}
+                        editingRowNameType={editingRowNameType}
+                        tempRowName={tempRowName}
+                        setTempRowName={setTempRowName}
+                        startEditingRowName={startEditingRowName}
+                        saveRowName={saveRowName}
+                        cancelEditingRowName={cancelEditingRowName}
+                        openSheetDescDialog={openSheetDescDialog}
+                        openLaborDialog={openLaborDialog}
+                        openAddDialog={openAddDialog}
+                        openLineItemDialog={openLineItemDialog}
+                        deleteRow={deleteRow}
+                        deleteSheetLabor={deleteSheetLabor}
+                        toggleSubcontractorLineItem={toggleSubcontractorLineItem}
+                        updateSubcontractorMarkup={updateSubcontractorMarkup}
+                        deleteLineItem={deleteLineItem}
+                        loadMaterialsData={loadMaterialsData}
+                        loadCustomRows={loadCustomRows}
+                        loadSubcontractorEstimates={loadSubcontractorEstimates}
+                        customRows={customRows}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
 
               {/* Project Total Box - Fixed Width Sidebar */}
@@ -1933,6 +2099,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </TabsContent>
       </Tabs>
 
+      {/* Dialogs remain unchanged - copying from original */}
       {/* Sheet Description Dialog */}
       <Dialog open={showSheetDescDialog} onOpenChange={setShowSheetDescDialog}>
         <DialogContent>
@@ -2105,6 +2272,64 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </Button>
               <Button onClick={saveCustomRow}>
                 {editingRow ? 'Update' : 'Add'} Row
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Line Item Dialog */}
+      <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingLineItem ? 'Edit Line Item' : 'Add Line Item'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={lineItemForm.description}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="e.g., Concrete materials"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  value={lineItemForm.quantity}
+                  onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                  step="0.01"
+                />
+              </div>
+              <div>
+                <Label>Unit Cost ($)</Label>
+                <Input
+                  type="number"
+                  value={lineItemForm.unit_cost}
+                  onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
+                  step="0.01"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={lineItemForm.notes}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveLineItem}>
+                {editingLineItem ? 'Update' : 'Add'} Line Item
               </Button>
             </div>
           </div>
