@@ -2076,96 +2076,141 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return null;
       }).filter(Boolean);
 
-      // Generate HTML for the proposal
+      // Generate HTML for the proposal in traditional format
       const html = `
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #2d5f3f; padding-bottom: 20px; }
-          .header h1 { color: #2d5f3f; font-size: 32px; margin-bottom: 10px; }
-          .header .meta { color: #666; font-size: 14px; margin-top: 10px; }
-          .customer-info { background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 30px; }
-          .customer-info h2 { font-size: 18px; color: #2d5f3f; margin-bottom: 10px; }
-          .customer-info p { margin: 5px 0; font-size: 14px; }
-          .section { margin-bottom: 25px; page-break-inside: avoid; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
-          .section-header { background: #f0f0f0; padding: 12px 15px; border-bottom: 2px solid #2d5f3f; }
-          .section-title { font-size: 18px; font-weight: bold; color: #1a1a1a; }
-          .section-price { font-size: 20px; font-weight: bold; color: #2d5f3f; float: right; }
-          .section-description { padding: 10px 15px; background: #fafafa; border-bottom: 1px solid #e0e0e0; font-size: 13px; color: #555; white-space: pre-wrap; }
-          .line-items { padding: 10px 15px; }
-          .line-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
-          .line-item:last-child { border-bottom: none; }
-          .line-item-desc { font-size: 13px; color: #555; }
-          .line-item-price { font-size: 13px; font-weight: 600; color: #2d5f3f; }
-          .totals { margin-top: 30px; border-top: 3px solid #2d5f3f; padding-top: 20px; }
-          .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; }
-          .total-row.grand { font-size: 24px; font-weight: bold; color: #2d5f3f; margin-top: 15px; padding-top: 15px; border-top: 2px solid #2d5f3f; }
+          body { font-family: Arial, sans-serif; line-height: 1.4; color: #000; max-width: 750px; margin: 0 auto; padding: 20px; font-size: 11pt; }
+          h1 { text-align: center; font-size: 24pt; margin-bottom: 15px; }
+          table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+          table td { padding: 3px 5px; vertical-align: top; }
+          .company-info { font-size: 10pt; margin-bottom: 10px; }
+          .terms { font-size: 9pt; line-height: 1.3; margin: 15px 0; text-align: justify; }
+          .section-title { font-weight: bold; margin-top: 15px; margin-bottom: 5px; }
+          .section-content { margin-left: 0; margin-bottom: 10px; white-space: pre-wrap; }
+          .footer { margin-top: 30px; font-size: 9pt; }
+          .signature-section { margin-top: 20px; }
+          .signature-line { border-top: 1px solid #000; width: 250px; margin-top: 30px; }
           @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .section { page-break-inside: avoid; }
+            .page-break { page-break-after: always; }
           }
         </style>
         
-        <div class="header">
-          <h1>PROPOSAL</h1>
-          <div class="meta">
-            <p><strong>Proposal #:</strong> ${proposalNumber}</p>
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-          </div>
+        <h1>Proposal</h1>
+        
+        <table>
+          <tr>
+            <td>Date</td>
+            <td>Proposal #</td>
+          </tr>
+          <tr>
+            <td>${new Date().toLocaleDateString()}</td>
+            <td>${proposalNumber}</td>
+          </tr>
+        </table>
+        
+        <div class="company-info">
+          Phone: 574-862-4448<br>
+          Fax: 574-862-1548<br>
+          Email: office@martinbuilder.net
         </div>
         
-        <div class="customer-info">
-          <h2>Customer Information</h2>
-          <p><strong>Name:</strong> ${job.client_name}</p>
-          <p><strong>Address:</strong> ${job.address}</p>
-          <p><strong>Project:</strong> ${job.name}</p>
+        <div class="terms">
+          All material is guaranteed to be as specified. All work to be completed in a professional manner according to standard practices. Any alteration or deviation from above specifications involving extra costs will be executed only upon written orders, and will become an extra charge over and above the estimate. All agreements contingent upon strikes, accidents, or delays are beyond our control. Owner to carry fire, tornado, and other necessary insurance. Our workers are fully covered by Worker's Compensation Insurance.
         </div>
         
-        <h2 style="margin-bottom: 20px; color: #2d5f3f;">Scope of Work</h2>
+        <table>
+          <tr>
+            <td><strong>Name/Address</strong></td>
+          </tr>
+          <tr>
+            <td>${job.client_name}</td>
+          </tr>
+          <tr>
+            <td>${job.address}</td>
+          </tr>
+        </table>
         
-        ${sections.map((section: any) => `
-          <div class="section">
-            <div class="section-header">
-              <span class="section-title">${section.name}</span>
-              <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              <div style="clear: both;"></div>
-            </div>
-            ${section.description ? `<div class="section-description">${section.description}</div>` : ''}
-            ${section.items && section.items.length > 0 ? `
-              <div class="line-items">
-                ${section.items.map((item: any) => `
-                  <div class="line-item">
-                    <span class="line-item-desc">${item.description}</span>
-                    <span class="line-item-price">$${item.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                `).join('')}
-              </div>
+        <table>
+          <tr>
+            <td><strong>Phone</strong></td>
+            <td colspan="3"><strong>${job.address}</strong></td>
+          </tr>
+          <tr>
+            <td></td>
+            <td colspan="3"><strong>Project:</strong> ${job.name}</td>
+          </tr>
+        </table>
+        
+        <p style="margin-top: 20px; margin-bottom: 10px;">We hereby submit specifications and estimates for:</p>
+        
+        ${sections.map((section: any) => {
+          let content = `<div class="section-title">${section.name}</div>`;
+          
+          if (section.description) {
+            content += `<div class="section-content">${section.description}</div>`;
+          }
+          
+          if (section.items && section.items.length > 0) {
+            section.items.forEach((item: any) => {
+              content += `<div class="section-content">${item.description}</div>`;
+            });
+          }
+          
+          return content;
+        }).join('')}
+        
+        <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
+        
+        ${showLineItems ? `
+          <table style="margin-top: 15px;">
+            <tr>
+              <td style="text-align: right;"><strong>Materials & Subcontractors:</strong></td>
+              <td style="text-align: right; width: 150px;">$${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            </tr>
+            ${proposalLaborPrice > 0 ? `
+              <tr>
+                <td style="text-align: right;"><strong>Labor:</strong></td>
+                <td style="text-align: right;">$${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
             ` : ''}
-          </div>
-        `).join('')}
+            <tr>
+              <td style="text-align: right;"><strong>Subtotal:</strong></td>
+              <td style="text-align: right;">$${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr>
+              <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
+              <td style="text-align: right;">$${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr>
+              <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
+              <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+            </tr>
+          </table>
+        ` : `
+          <p style="text-align: center; font-size: 16pt; font-weight: bold; margin: 20px 0;">$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+        `}
         
-        <div class="totals">
-          <div class="total-row">
-            <span>Materials & Subcontractors:</span>
-            <span>$${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          </div>
-          ${proposalLaborPrice > 0 ? `
-            <div class="total-row">
-              <span>Labor:</span>
-              <span>$${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+        <div class="footer">
+          <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
+          
+          <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
+          
+          <div class="signature-section">
+            <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
+            <p style="margin-bottom: 20px;">The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.</p>
+            
+            <div style="display: flex; justify-content: space-between; margin-top: 40px;">
+              <div>
+                <p>Authorized Signature</p>
+                <div class="signature-line"></div>
+              </div>
+              <div>
+                <p>Date of Acceptance</p>
+                <div class="signature-line"></div>
+              </div>
             </div>
-          ` : ''}
-          <div class="total-row">
-            <span>Subtotal:</span>
-            <span>$${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div class="total-row">
-            <span>Sales Tax (7%):</span>
-            <span>$${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div class="total-row grand">
-            <span>TOTAL:</span>
-            <span>$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
       `;
