@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -987,6 +987,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // Form state for labor pricing
   const [hourlyRate, setHourlyRate] = useState('60');
+  
+  // Export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showLineItems, setShowLineItems] = useState(true);
+  const [exporting, setExporting] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1974,6 +1979,146 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function handleExportPDF() {
+    setExporting(true);
+    
+    try {
+      // Get proposal number from job or generate one
+      const proposalNumber = job.id.split('-')[0].toUpperCase();
+      
+      // Format proposal data
+      const sections = allItems.map((item, index) => {
+        if (item.type === 'material') {
+          const sheet = item.data;
+          const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
+          const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
+          
+          const linkedRowsTotal = linkedRows.reduce((sum: number, row: any) => {
+            const lineItems = customRowLineItems[row.id] || [];
+            const baseCost = lineItems.length > 0
+              ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+              : row.total_cost;
+            return sum + (baseCost * (1 + row.markup_percent / 100));
+          }, 0);
+          
+          const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
+            const lineItems = subcontractorLineItems[sub.id] || [];
+            const taxableTotal = lineItems
+              .filter((item: any) => !item.excluded && item.taxable)
+              .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+            const estMarkup = sub.markup_percent || 0;
+            return sum + (taxableTotal * (1 + estMarkup / 100));
+          }, 0);
+          
+          const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
+          const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+          const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
+          
+          return {
+            name: sheet.sheetName,
+            description: sheet.sheetDescription || '',
+            price: sheetFinalPrice,
+            items: showLineItems ? sheet.categories?.map((cat: any) => ({
+              description: cat.name,
+              price: cat.totalPrice
+            })) : undefined
+          };
+        } else if (item.type === 'custom') {
+          const row = item.data;
+          const lineItems = customRowLineItems[row.id] || [];
+          const linkedSubs = linkedSubcontractors[row.id] || [];
+          
+          const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
+            const subLineItems = subcontractorLineItems[sub.id] || [];
+            const taxableTotal = subLineItems
+              .filter((item: any) => !item.excluded && item.taxable)
+              .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+            const estMarkup = sub.markup_percent || 0;
+            return sum + (taxableTotal * (1 + estMarkup / 100));
+          }, 0);
+          
+          const baseLineCost = lineItems.length > 0
+            ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+            : row.total_cost;
+          const baseCost = baseLineCost + linkedSubsTaxableTotal;
+          const finalPrice = baseCost * (1 + row.markup_percent / 100);
+          
+          return {
+            name: row.description,
+            description: row.notes || '',
+            price: finalPrice,
+            items: showLineItems && lineItems.length > 0 ? lineItems.map((li: any) => ({
+              description: li.description,
+              price: li.total_cost
+            })) : undefined
+          };
+        } else if (item.type === 'subcontractor') {
+          const est = item.data;
+          const lineItems = subcontractorLineItems[est.id] || [];
+          const includedTotal = lineItems
+            .filter((item: any) => !item.excluded)
+            .reduce((sum: number, item: any) => sum + item.total_price, 0);
+          const estMarkup = est.markup_percent || 0;
+          const finalPrice = includedTotal * (1 + estMarkup / 100);
+          
+          return {
+            name: est.company_name,
+            description: est.scope_of_work || '',
+            price: finalPrice,
+            items: showLineItems ? lineItems
+              .filter((item: any) => !item.excluded)
+              .map((li: any) => ({
+                description: li.description,
+                price: li.total_price
+              })) : undefined
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      const proposalData = {
+        proposalNumber,
+        date: new Date().toLocaleDateString(),
+        customer: {
+          name: job.client_name,
+          address: job.address,
+          project: job.name
+        },
+        sections,
+        totals: {
+          materials: proposalMaterialsTotalWithSubcontractors,
+          labor: proposalLaborPrice,
+          subtotal: proposalSubtotal,
+          tax: proposalTotalTax,
+          total: proposalGrandTotal
+        }
+      };
+
+      console.log('Generating PDF with data:', proposalData);
+      
+      const { data, error } = await supabase.functions.invoke('generate-pdf', {
+        body: { proposal: proposalData }
+      });
+
+      if (error) throw error;
+      
+      // Download the PDF
+      if (data?.pdfUrl) {
+        window.open(data.pdfUrl, '_blank');
+        toast.success('PDF exported successfully!');
+      } else {
+        throw new Error('No PDF URL returned');
+      }
+      
+      setShowExportDialog(false);
+    } catch (error: any) {
+      console.error('Error exporting PDF:', error);
+      toast.error(`Failed to export PDF: ${error.message || 'Unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Calculate custom row total from line items (if any) or from quantity * unit_cost
   function getCustomRowTotal(row: CustomFinancialRow): number {
     const lineItems = customRowLineItems[row.id] || [];
@@ -2261,6 +2406,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           {/* Action Buttons - Only show in Proposal tab */}
           {activeTab === 'proposal' && (
             <div className="flex gap-2">
+              <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
+                <Download className="w-4 h-4 mr-2" />
+                Export PDF
+              </Button>
               <Button onClick={() => openAddDialog()} variant="outline" size="sm">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Row
@@ -2569,11 +2718,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             )}
 
             <div>
-              <Label>Description</Label>
+              <Label>Name</Label>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g., Additional concrete work"
+                placeholder="e.g., Gutters, Electrical Work, Concrete"
               />
             </div>
 
@@ -2610,11 +2759,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             </div>
 
             <div>
-              <Label>Notes (Optional)</Label>
+              <Label>Description</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                rows={2}
+                placeholder="Enter detailed description of the work or materials..."
+                rows={3}
               />
             </div>
 
@@ -2710,6 +2860,50 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           }}
         />
       )}
+
+      {/* Export PDF Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Proposal as PDF</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="show-line-items"
+                checked={showLineItems}
+                onChange={(e) => setShowLineItems(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="show-line-items">Show individual line item prices</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {showLineItems 
+                ? 'The PDF will include detailed pricing for each item and category' 
+                : 'The PDF will only show total prices for each section'}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowExportDialog(false)} disabled={exporting}>
+                Cancel
+              </Button>
+              <Button onClick={handleExportPDF} disabled={exporting}>
+                {exporting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Export PDF
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Link Subcontractor Dialog */}
       <Dialog open={showSubcontractorDialog} onOpenChange={setShowSubcontractorDialog}>
