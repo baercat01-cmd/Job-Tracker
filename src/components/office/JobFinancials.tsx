@@ -167,7 +167,7 @@ function SortableRow({ item, ...props }: any) {
       const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
 
       return (
-        <Collapsible className="border rounded bg-white p-2">
+        <Collapsible className="border rounded bg-white py-1 px-2">
           <div className="flex items-start gap-2">
             {/* Drag Handle */}
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
@@ -264,11 +264,11 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           {/* Description */}
-          <div className="mt-1 ml-10 mr-[360px]">
+          <div className="mt-0.5 ml-10 mr-[280px]">
             <Textarea
               value={sheet.sheetDescription}
               placeholder="Click to add description..."
-              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
               rows={Math.max(1, Math.ceil((sheet.sheetDescription || '').length / 100))}
               onChange={(e) => {
                 const textarea = e.target;
@@ -283,10 +283,6 @@ function SortableRow({ item, ...props }: any) {
                     console.error('Error saving description:', error);
                   }
                 };
-              }}
-              style={{
-                maxHeight: '120px',
-                overflowY: (sheet.sheetDescription || '').length > 500 ? 'auto' : 'hidden'
               }}
             />
           </div>
@@ -360,7 +356,7 @@ function SortableRow({ item, ...props }: any) {
       const finalPrice = baseCost * (1 + row.markup_percent / 100);
 
       return (
-        <Collapsible className="border rounded bg-white p-2">
+        <Collapsible className="border rounded bg-white py-1 px-2">
           <div className="flex items-start gap-2">
             {/* Drag Handle */}
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
@@ -454,11 +450,11 @@ function SortableRow({ item, ...props }: any) {
 
           {/* Notes */}
           {row.notes && (
-            <div className="mt-1 ml-10 mr-[360px]">
+            <div className="mt-0.5 ml-10 mr-[280px]">
               <Textarea
                 value={row.notes}
                 placeholder="Click to add notes..."
-                className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
                 rows={Math.max(1, Math.ceil((row.notes || '').length / 100))}
                 onChange={(e) => {
                   const textarea = e.target;
@@ -473,10 +469,6 @@ function SortableRow({ item, ...props }: any) {
                       console.error('Error saving notes:', error);
                     }
                   };
-                }}
-                style={{
-                  maxHeight: '120px',
-                  overflowY: (row.notes || '').length > 500 ? 'auto' : 'hidden'
                 }}
               />
             </div>
@@ -541,7 +533,7 @@ function SortableRow({ item, ...props }: any) {
       const finalPrice = includedTotal * (1 + estMarkup / 100);
 
       return (
-        <Collapsible className="border rounded bg-white p-2">
+        <Collapsible className="border rounded bg-white py-1 px-2">
           <div className="flex items-start gap-2">
             {/* Drag Handle */}
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
@@ -627,11 +619,11 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           {/* Description */}
-          <div className="mt-1 ml-10 mr-[360px]">
+          <div className="mt-0.5 ml-10 mr-[280px]">
             <Textarea
               value={est.scope_of_work || ''}
               placeholder="Click to add description..."
-              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-2 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
               rows={Math.max(1, Math.ceil((est.scope_of_work || '').length / 100))}
               onChange={(e) => {
                 const textarea = e.target;
@@ -646,10 +638,6 @@ function SortableRow({ item, ...props }: any) {
                     console.error('Error saving scope of work:', error);
                   }
                 };
-              }}
-              style={{
-                maxHeight: '120px',
-                overflowY: (est.scope_of_work || '').length > 500 ? 'auto' : 'hidden'
               }}
             />
           </div>
