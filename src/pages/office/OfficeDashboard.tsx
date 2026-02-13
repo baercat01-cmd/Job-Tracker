@@ -34,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { EmailSettings } from '@/components/office/EmailSettings';
+import { PortalManagement } from '@/components/office/PortalManagement';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 import {
@@ -579,6 +580,10 @@ export function OfficeDashboard() {
                   <Settings className="w-4 h-4 mr-2" />
                   Email Settings
                 </TabsTrigger>
+                <TabsTrigger value="portal-management" className="rounded-none data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-800 data-[state=active]:to-green-900 data-[state=active]:text-white data-[state=active]:font-bold text-white hover:bg-green-900/20">
+                  <Users className="w-4 h-4 mr-2" />
+                  Portals
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="export" className="mt-6">
@@ -665,6 +670,10 @@ export function OfficeDashboard() {
 
               <TabsContent value="email-settings" className="mt-6">
                 <EmailSettings />
+              </TabsContent>
+
+              <TabsContent value="portal-management" className="mt-6">
+                <PortalManagement />
               </TabsContent>
             </Tabs>
           </div>
