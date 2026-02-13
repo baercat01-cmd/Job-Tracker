@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -1408,7 +1408,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                     {/* No description in collapsed view */}
                                   </div>
 
-                                  {/* Right: Markup + Pricing - Compact */}
+                                  {/* Right: Markup + Pricing + View PDF - Compact */}
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     {/* Editable Markup % - Plain Number */}
                                     <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
@@ -1442,6 +1442,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                       <p className="text-xs text-slate-500 mb-0.5">Base: ${estCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                       <p className="text-2xl font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     </div>
+                                    
+                                    {/* View PDF Button */}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open(est.pdf_url, '_blank');
+                                      }}
+                                      className="flex-shrink-0"
+                                      title="View PDF"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
                                   </div>
                                 </div>
                               </CollapsibleTrigger>
