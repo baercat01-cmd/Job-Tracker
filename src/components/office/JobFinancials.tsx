@@ -1010,8 +1010,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Separate custom rows into taxable and non-taxable (using calculated totals)
   // EXCLUDE custom rows that are linked to material sheets (they're already counted in materials)
-  const taxableRows = customRows.filter(r => r.taxable && !(r as any).sheet_id);
-  const nonTaxableRows = customRows.filter(r => !r.taxable && !(r as any).sheet_id);
+  // EXCLUDE custom rows with category="subcontractor" (they're counted with subcontractors)
+  const taxableRows = customRows.filter(r => r.taxable && !(r as any).sheet_id && r.category !== 'subcontractor');
+  const nonTaxableRows = customRows.filter(r => !r.taxable && !(r as any).sheet_id && r.category !== 'subcontractor');
   
   const taxableAdditionalCost = taxableRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
@@ -1060,14 +1061,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost;
   
   // Subcontractor estimates (with their individual markups, taxable)
-  // Only include non-excluded line items
+  // Only include non-excluded line items + custom rows with category="subcontractor"
+  const subcontractorCustomRows = customRows.filter(r => r.category === 'subcontractor' && !(r as any).sheet_id);
+  
   const subcontractorBaseCost = subcontractorEstimates.reduce((sum, est) => {
     const lineItems = subcontractorLineItems[est.id] || [];
     const includedTotal = lineItems
       .filter((item: any) => !item.excluded)
       .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     return sum + includedTotal;
+  }, 0) + subcontractorCustomRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    if (lineItems.length > 0) {
+      return sum + lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+    }
+    return sum + r.total_cost;
   }, 0);
+  
   const proposalSubcontractorPrice = subcontractorEstimates.reduce((sum, est) => {
     const lineItems = subcontractorLineItems[est.id] || [];
     const includedTotal = lineItems
@@ -1075,6 +1085,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     const estMarkup = est.markup_percent || 0;
     return sum + (includedTotal * (1 + estMarkup / 100));
+  }, 0) + subcontractorCustomRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
   }, 0);
   
   // Calculate subtotals
@@ -1126,14 +1142,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
+      {/* Tabs at the top - full width */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="cost-breakdown">Cost Breakdown</TabsTrigger>
-          <TabsTrigger value="proposal">Proposal</TabsTrigger>
-        </TabsList>
+        <div className="border-b mb-6">
+          <TabsList>
+            <TabsTrigger value="cost-breakdown">Cost Breakdown</TabsTrigger>
+            <TabsTrigger value="proposal">Proposal</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Cost Breakdown Tab - Materials Only */}
-        <TabsContent value="cost-breakdown">
+        <TabsContent value="cost-breakdown" className="mt-0">
           <div className="max-w-6xl mx-auto space-y-6">
             {/* Summary Card - Materials Only */}
             <Card>
@@ -1222,10 +1241,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </TabsContent>
 
         {/* Proposal Tab */}
-        <TabsContent value="proposal">
-          <div className="max-w-[1400px] mx-auto px-4">
-            {/* Proposal Layout: Left buttons + Main content + Right sidebar */}
-            <div className="flex gap-4 items-start">
+        <TabsContent value="proposal" className="mt-0">
+          {/* Full width layout for proposal */}
+          <div className="flex gap-4 items-start px-4">
               {/* Left Action Buttons */}
               <div className="flex flex-col gap-2 sticky top-4">
                 <Button onClick={() => openAddDialog()} variant="outline" size="sm" className="whitespace-nowrap">
@@ -1248,23 +1266,243 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       orderIndex: sheet.orderIndex,
                       data: sheet,
                     })),
-                    // Only include custom rows that are NOT linked to material sheets
-                    ...customRows.filter(row => !(row as any).sheet_id).map(row => ({
+                    // Only include custom rows that are NOT linked to material sheets AND NOT subcontractors
+                    ...customRows.filter(row => !(row as any).sheet_id && row.category !== 'subcontractor').map(row => ({
                       type: 'custom' as const,
                       id: row.id,
                       orderIndex: row.order_index,
                       data: row,
                     })),
+                    // Include PDF-extracted subcontractor estimates
                     ...subcontractorEstimates.map(est => ({
                       type: 'subcontractor' as const,
                       id: est.id,
                       orderIndex: est.order_index,
                       data: est,
                     })),
+                    // Include custom rows with category="subcontractor" as subcontractor type
+                    ...customRows.filter(row => row.category === 'subcontractor' && !(row as any).sheet_id).map(row => ({
+                      type: 'subcontractor-custom' as const,
+                      id: row.id,
+                      orderIndex: row.order_index,
+                      data: row,
+                    })),
                   ].sort((a, b) => a.orderIndex - b.orderIndex);
 
                   return allItems.map((item) => {
-                    if (item.type === 'material') {
+                    if (item.type === 'subcontractor-custom') {
+                      // Custom subcontractor row (no PDF) - display like a subcontractor estimate
+                      const row = item.data as CustomFinancialRow;
+                      const lineItems = customRowLineItems[row.id] || [];
+                      const hasLineItems = lineItems.length > 0;
+                      
+                      const baseCost = hasLineItems 
+                        ? lineItems.reduce((sum, item) => sum + item.total_cost, 0)
+                        : row.total_cost;
+                      const rowPrice = baseCost * (1 + row.markup_percent / 100);
+                      const rowLabor = customRowLabor[row.id];
+
+                      return (
+                        <div key={item.id}>
+                          <Collapsible defaultOpen={false}>
+                            <div className="border border-slate-300 rounded overflow-hidden bg-white cursor-move mb-1">
+                              <CollapsibleTrigger className="w-full">
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-2 border-b">
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <ChevronDown className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                                      <h3 className="text-sm font-bold text-slate-900 leading-tight">{row.description}</h3>
+                                      <Badge variant="outline" className="bg-purple-50 border-purple-300 text-purple-700 text-xs">Manual Entry</Badge>
+                                      {hasLineItems && (
+                                        <Badge variant="outline" className="bg-slate-100 text-slate-700 text-xs">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</Badge>
+                                      )}
+                                      {rowLabor && (
+                                        <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-700 text-xs">Labor</Badge>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                          <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                          <span>+</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            value={row.markup_percent}
+                                            onChange={async (e) => {
+                                              e.stopPropagation();
+                                              const newMarkup = parseFloat(e.target.value) || 0;
+                                              try {
+                                                const { error } = await supabase
+                                                  .from('custom_financial_rows')
+                                                  .update({ markup_percent: newMarkup })
+                                                  .eq('id', row.id);
+                                                
+                                                if (error) throw error;
+                                                await loadCustomRows();
+                                              } catch (error: any) {
+                                                console.error('Error updating markup:', error);
+                                                toast.error('Failed to update markup');
+                                              }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-12 text-right bg-white border border-slate-300 rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                          <span>%</span>
+                                        </div>
+                                        <p className="text-lg font-bold text-slate-900">${rowPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        {rowLabor && (
+                                          <p className="text-xs text-amber-700 font-semibold">
+                                            ${(rowLabor.estimated_hours * rowLabor.hourly_rate).toFixed(2)}
+                                          </p>
+                                        )}
+                                      </div>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openLineItemDialog(row.id);
+                                            }}
+                                          >
+                                            <List className="w-4 h-4 mr-2" />
+                                            Add Line Item
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openLaborDialog(undefined, row.id);
+                                            }}
+                                          >
+                                            <Clock className="w-4 h-4 mr-2" />
+                                            {rowLabor ? 'Edit Labor' : 'Add Labor'}
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openAddDialog(row);
+                                            }}
+                                          >
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            Edit Row
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              deleteRow(row.id);
+                                            }}
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete Row
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  </div>
+
+                                  <div className="pl-6" onClick={(e) => e.stopPropagation()}>
+                                    <Textarea
+                                      value={(() => {
+                                        if (rowLabor) return '';
+                                        try {
+                                          const parsed = JSON.parse(row.notes || '{}');
+                                          return parsed.labor ? '' : row.notes || '';
+                                        } catch {
+                                          return row.notes || '';
+                                        }
+                                      })()}
+                                      onChange={async (e) => {
+                                        const newNotes = e.target.value;
+                                        setCustomRows(prev => prev.map(r => 
+                                          r.id === row.id ? { ...r, notes: newNotes } : r
+                                        ));
+                                      }}
+                                      onBlur={async (e) => {
+                                        const newNotes = e.target.value;
+                                        try {
+                                          const { error } = await supabase
+                                            .from('custom_financial_rows')
+                                            .update({ notes: newNotes || null })
+                                            .eq('id', row.id);
+                                          
+                                          if (error) throw error;
+                                          await loadCustomRows();
+                                        } catch (error: any) {
+                                          console.error('Error saving notes:', error);
+                                          toast.error('Failed to save notes');
+                                        }
+                                      }}
+                                      placeholder="Click to add scope of work..."
+                                      className="text-xs border-0 bg-transparent resize-none p-1 min-h-[40px] focus:bg-white focus:border focus:border-slate-300 rounded w-full"
+                                      rows={1}
+                                      disabled={!!rowLabor}
+                                    />
+                                  </div>
+                                </div>
+                              </CollapsibleTrigger>
+                              
+                              <CollapsibleContent>
+                                <div className="p-4">
+                                  {hasLineItems ? (
+                                    <div className="space-y-2">
+                                      {lineItems.map((lineItem) => (
+                                        <div key={lineItem.id} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded">
+                                          <div className="flex-1">
+                                            <p className="font-medium text-slate-900">{lineItem.description}</p>
+                                            <p className="text-xs text-slate-600">
+                                              {lineItem.quantity} × ${lineItem.unit_cost.toFixed(2)} = ${lineItem.total_cost.toFixed(2)}
+                                            </p>
+                                            {lineItem.notes && (
+                                              <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-bold text-slate-900">${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openLineItemDialog(row.id, lineItem);
+                                              }}
+                                            >
+                                              <Edit className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                deleteLineItem(lineItem.id);
+                                              }}
+                                            >
+                                              <Trash2 className="w-4 h-4 text-destructive" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-4 text-sm text-muted-foreground">
+                                      No line items. Click "Add Line Item" to add detailed breakdown.
+                                    </div>
+                                  )}
+                                </div>
+                              </CollapsibleContent>
+                            </div>
+                          </Collapsible>
+                        </div>
+                      );
+                    } else if (item.type === 'material') {
                       const sheet = item.data as typeof materialsBreakdown.sheetBreakdowns[0];
                       
                       // Calculate cost from linked custom rows (already have their own markups applied)
