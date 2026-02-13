@@ -158,85 +158,82 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-r from-purple-50 to-purple-100 border-2 border-purple-200 rounded-lg p-4">
+    <Card className="border-2 border-purple-300">
+      <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2 border-purple-200">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-purple-900">Zoho Orders Summary</h3>
-            <p className="text-sm text-purple-700 mt-1">
-              {orderGroups.length} order{orderGroups.length !== 1 ? 's' : ''} • {orderedMaterials.length} material{orderedMaterials.length !== 1 ? 's' : ''}
-            </p>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="w-6 h-6 text-purple-700" />
+            Zoho Orders Summary
+          </CardTitle>
+          <div className="flex items-center gap-3">
+            <Badge className="bg-purple-700 text-lg px-3 py-1">
+              {orderGroups.length} Order{orderGroups.length !== 1 ? 's' : ''}
+            </Badge>
+            <Badge variant="outline" className="text-lg px-3 py-1 border-purple-300">
+              {orderedMaterials.length} Material{orderedMaterials.length !== 1 ? 's' : ''}
+            </Badge>
           </div>
-          <Package className="w-12 h-12 text-purple-600 opacity-50" />
         </div>
-      </div>
+      </CardHeader>
+      <CardContent className="pt-6 space-y-4">
 
-      <div className="space-y-3">
-        {orderGroups.map((group, index) => {
-          const totalCost = group.materials.reduce((sum, m) => sum + ((m.cost_per_unit || 0) * m.quantity), 0);
-          const totalPrice = group.materials.reduce((sum, m) => sum + ((m.price_per_unit || 0) * m.quantity), 0);
+        <div className="space-y-3">
+          {orderGroups.map((group, index) => {
+            const totalCost = group.materials.reduce((sum, m) => sum + ((m.cost_per_unit || 0) * m.quantity), 0);
+            const totalPrice = group.materials.reduce((sum, m) => sum + ((m.price_per_unit || 0) * m.quantity), 0);
 
-          return (
-            <Card key={index} className="border-2">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-                      {group.salesOrderNumber && (
-                        <Badge className="bg-green-600">
-                          <DollarSign className="w-3 h-3 mr-1" />
-                          SO: {group.salesOrderNumber}
+            return (
+              <Card key={index} className="border-2 border-slate-200 shadow-md">
+                <CardHeader className="pb-3 bg-gradient-to-r from-slate-50 to-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        {group.salesOrderNumber && (
+                          <a
+                            href={`https://books.zoho.com/app#/salesorders/${group.salesOrderId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold rounded-md hover:from-green-700 hover:to-green-800 transition-all shadow-sm"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                            Sales Order: {group.salesOrderNumber}
+                            <ExternalLink className="w-3 h-3 ml-1" />
+                          </a>
+                        )}
+                        {group.purchaseOrderNumber && (
+                          <a
+                            href={`https://books.zoho.com/app#/purchaseorders/${group.purchaseOrderId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-md hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Purchase Order: {group.purchaseOrderNumber}
+                            <ExternalLink className="w-3 h-3 ml-1" />
+                          </a>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <Badge variant="outline" className="bg-white">
+                          <Package className="w-3 h-3 mr-1" />
+                          {group.materials.length} Material{group.materials.length !== 1 ? 's' : ''}
                         </Badge>
-                      )}
-                      {group.purchaseOrderNumber && (
-                        <Badge className="bg-blue-600">
-                          <FileText className="w-3 h-3 mr-1" />
-                          PO: {group.purchaseOrderNumber}
-                        </Badge>
-                      )}
-                      <Badge variant="outline">
-                        {group.materials.length} material{group.materials.length !== 1 ? 's' : ''}
-                      </Badge>
-                    </CardTitle>
-                    {group.orderedAt && (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        Ordered: {new Date(group.orderedAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    )}
+                        {group.orderedAt && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(group.orderedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    {group.salesOrderId && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50"
-                        onClick={() => window.open(`https://books.zoho.com/app#/salesorders/${group.salesOrderId}`, '_blank')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        View SO
-                      </Button>
-                    )}
-                    {group.purchaseOrderId && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
-                        onClick={() => window.open(`https://books.zoho.com/app#/purchaseorders/${group.purchaseOrderId}`, '_blank')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        View PO
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
+                </CardHeader>
               <CardContent className="space-y-3">
                 {/* Order Totals */}
                 <div className="grid grid-cols-2 gap-3">
@@ -295,7 +292,8 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
             </Card>
           );
         })}
-      </div>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

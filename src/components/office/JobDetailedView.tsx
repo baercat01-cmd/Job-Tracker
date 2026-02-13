@@ -1514,13 +1514,20 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           </div>
         </TabsContent>
 
-        <TabsContent value="materials" className="space-y-2 pt-4 px-2">
+        <TabsContent value="materials" className="space-y-4 pt-4 px-2">
           {profile?.id && (
             <div className="space-y-6">
-              <MaterialsManagement job={job} userId={profile.id} />
-              <div className="mt-8">
+              {/* Zoho Orders Section - Prominent at Top */}
+              <div className="bg-gradient-to-r from-purple-100 to-purple-50 p-4 rounded-lg border-2 border-purple-300">
+                <div className="flex items-center gap-2 mb-3">
+                  <Package className="w-5 h-5 text-purple-700" />
+                  <h3 className="text-lg font-bold text-purple-900">Materials on Zoho Orders</h3>
+                </div>
                 <JobZohoOrders jobId={job.id} />
               </div>
+              
+              {/* Main Materials Management */}
+              <MaterialsManagement job={job} userId={profile.id} />
             </div>
           )}
         </TabsContent>
