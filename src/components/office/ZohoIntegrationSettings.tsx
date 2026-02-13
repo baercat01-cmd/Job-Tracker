@@ -324,18 +324,25 @@ export function ZohoIntegrationSettings() {
               <Input
                 id="orgId"
                 value={orgId}
-                onChange={(e) => setOrgId(e.target.value)}
-                placeholder="e.g., 123456789"
+                onChange={(e) => setOrgId(e.target.value.trim())}
+                placeholder="e.g., 60012345678"
               />
+              {orgId && orgId !== '' && (
+                <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded border">
+                  <strong>Current value:</strong> <code className="bg-white px-1 rounded">{orgId}</code> ({orgId.length} characters)
+                </div>
+              )}
               <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
-                <p className="font-semibold text-blue-900">How to find your Organization ID:</p>
+                <p className="font-semibold text-blue-900">⚠️ IMPORTANT - How to find your Organization ID:</p>
                 <ol className="list-decimal list-inside text-blue-800 space-y-1">
-                  <li>Log in to <a href="https://books.zoho.com" target="_blank" className="underline">Zoho Books</a></li>
-                  <li>Click on <strong>Settings</strong> (gear icon)</li>
+                  <li>Log in to <a href="https://books.zoho.com" target="_blank" className="underline font-semibold">Zoho Books</a></li>
+                  <li>Click on <strong>Settings</strong> (gear icon in top right)</li>
                   <li>Go to <strong>Organization Profile</strong></li>
-                  <li>Your Organization ID is shown at the top (numeric value)</li>
+                  <li>Your Organization ID is shown at the top (long numeric value)</li>
+                  <li><strong className="text-red-700">Make sure to select the COUNTYWIDE organization if you have multiple!</strong></li>
                 </ol>
-                <p className="text-blue-700 mt-2">Example: <code className="bg-white px-1 rounded">60012345678</code></p>
+                <p className="text-blue-700 mt-2 font-semibold">Example format: <code className="bg-white px-1 rounded">60012345678</code> (10-11 digits)</p>
+                <p className="text-red-700 mt-2"><strong>⚠️ Common mistake:</strong> Don't use company name, email, or account ID - only the numeric Organization ID!</p>
               </div>
             </div>
           </div>
