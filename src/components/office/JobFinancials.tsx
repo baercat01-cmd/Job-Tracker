@@ -1257,8 +1257,315 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
               {/* Main Content Column - Wider for better description visibility */}
               <div className="flex-1 min-w-0 space-y-3">
-                {/* Material rows content here - this section is very long, keeping it as-is */}
-                {/* ... keeping all the material rows rendering logic ... */}
+                {/* Material Sheets */}
+                {materialsBreakdown.sheetBreakdowns
+                  .filter(sheet => !materialSheets.find(s => s.id === sheet.sheetId)?.is_option)
+                  .map((sheet, idx) => {
+                    const labor = sheetLabor[sheet.sheetId];
+                    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+                    const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
+                    const linkedRowsTotal = linkedRows.reduce((rowSum, row) => {
+                      const lineItems = customRowLineItems[row.id] || [];
+                      const baseCost = lineItems.length > 0 
+                        ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                        : row.total_cost;
+                      return rowSum + (baseCost * (1 + row.markup_percent / 100));
+                    }, 0);
+                    const sheetBaseCost = sheet.totalPrice + linkedRowsTotal;
+                    const sheetTotalWithMarkup = sheetBaseCost * (1 + sheetMarkup / 100);
+                    const laborCost = labor ? labor.total_labor_cost : 0;
+                    const finalPrice = sheetTotalWithMarkup + laborCost;
+
+                    return (
+                      <Collapsible key={idx} defaultOpen={true}>
+                        <div className="border rounded overflow-hidden mb-0.5">
+                          <div className="bg-white">
+                            {/* Header Row */}
+                            <div className="flex items-center gap-3 py-1 px-2">
+                              <CollapsibleTrigger>
+                                <ChevronDown className="w-4 h-4 text-slate-600" />
+                              </CollapsibleTrigger>
+                              <div className="flex-1 font-semibold text-slate-900">{sheet.sheetName}</div>
+                              <Textarea
+                                value={sheet.sheetDescription}
+                                onChange={(e) => {
+                                  const newDesc = e.target.value;
+                                  setMaterialSheets(prev => prev.map(s => 
+                                    s.id === sheet.sheetId ? { ...s, description: newDesc } : s
+                                  ));
+                                }}
+                                onBlur={() => {
+                                  const currentSheet = materialSheets.find(s => s.id === sheet.sheetId);
+                                  if (currentSheet) {
+                                    supabase.from('material_sheets')
+                                      .update({ description: currentSheet.description })
+                                      .eq('id', sheet.sheetId)
+                                      .then(() => loadMaterialsData());
+                                  }
+                                }}
+                                placeholder="Click to add description..."
+                                className="flex-1 text-sm resize-none overflow-hidden p-0.5 border-0 focus:ring-0 bg-transparent"
+                                style={{ minHeight: '20px' }}
+                                onInput={(e: any) => {
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = e.target.scrollHeight + 'px';
+                                }}
+                                onFocus={(e: any) => {
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = e.target.scrollHeight + 'px';
+                                }}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} +</span>
+                                <Input
+                                  type="number"
+                                  value={sheetMarkup}
+                                  onChange={(e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    setSheetMarkups(prev => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                                  }}
+                                  className="w-14 h-6 text-xs text-center p-0"
+                                />
+                                <span className="text-xs">%</span>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                              </div>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {labor ? (
+                                    <>
+                                      <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                                        <Edit className="w-4 h-4 mr-2" /> Edit Labor
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => deleteSheetLabor(labor.id)} className="text-red-600">
+                                        <Trash2 className="w-4 h-4 mr-2" /> Remove Labor
+                                      </DropdownMenuItem>
+                                    </>
+                                  ) : (
+                                    <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                                      <Plus className="w-4 h-4 mr-2" /> Add Labor
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
+                                    <Plus className="w-4 h-4 mr-2" /> Add Material Row
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+
+                          {/* Collapsible Content */}
+                          <CollapsibleContent>
+                            <div className="px-4 py-2 bg-slate-50 space-y-1">
+                              {/* Categories */}
+                              {sheet.categories.map((cat: any, catIdx: number) => (
+                                <div key={catIdx} className="text-sm py-1">
+                                  <div className="flex justify-between">
+                                    <span className="text-slate-700">{cat.name}</span>
+                                    <div className="flex gap-4 text-xs">
+                                      <span className="text-slate-600">{cat.itemCount} items</span>
+                                      <span>Base: ${cat.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+
+                              {/* Linked Custom Rows */}
+                              {linkedRows.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-slate-300">
+                                  <p className="text-xs font-semibold text-blue-700 mb-1">ADDITIONAL MATERIALS</p>
+                                  {linkedRows.map((row) => {
+                                    const lineItems = customRowLineItems[row.id] || [];
+                                    const baseCost = lineItems.length > 0 
+                                      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                                      : row.total_cost;
+                                    const totalWithMarkup = baseCost * (1 + row.markup_percent / 100);
+
+                                    return (
+                                      <div key={row.id} className="bg-blue-50 p-2 mb-1 rounded text-sm">
+                                        <div className="flex justify-between items-center">
+                                          <span className="font-medium">{row.description}</span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs">+{row.markup_percent}%</span>
+                                            <span className="font-bold">${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-6 w-6 p-0"
+                                              onClick={() => openAddDialog(row)}
+                                            >
+                                              <Edit className="w-3 h-3" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-6 w-6 p-0 text-red-600"
+                                              onClick={() => deleteRow(row.id)}
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Labor */}
+                              {labor && (
+                                <div className="mt-2 pt-2 border-t border-slate-300">
+                                  <div className="flex justify-between items-center text-sm">
+                                    <div>
+                                      <span className="font-semibold text-slate-700">{labor.description}</span>
+                                      <span className="text-xs text-slate-600 ml-2">{labor.estimated_hours}h @ ${labor.hourly_rate}/hr</span>
+                                    </div>
+                                    <span className="font-bold">${laborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CollapsibleContent>
+                        </div>
+                      </Collapsible>
+                    );
+                  })}
+
+                {/* Subcontractor Estimates */}
+                {(subcontractorEstimates.length > 0 || subcontractorCustomRows.length > 0) && (
+                  <div className="mt-6">
+                    <h3 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+                      <Briefcase className="w-5 h-5" />
+                      Subcontractors
+                    </h3>
+                    {/* PDF-extracted estimates */}
+                    {subcontractorEstimates.map((est, idx) => {
+                      const lineItems = subcontractorLineItems[est.id] || [];
+                      const includedItems = lineItems.filter((item: any) => !item.excluded);
+                      const baseCost = includedItems.reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
+                      const markup = est.markup_percent || 0;
+                      const finalPrice = baseCost * (1 + markup / 100);
+
+                      return (
+                        <Collapsible key={est.id} defaultOpen={false}>
+                          <div className="border rounded overflow-hidden mb-0.5">
+                            <div className="bg-white">
+                              <div className="flex items-center gap-3 py-1 px-2">
+                                <CollapsibleTrigger>
+                                  <ChevronDown className="w-4 h-4 text-slate-600" />
+                                </CollapsibleTrigger>
+                                <div className="flex-1 font-semibold text-slate-900">{est.company_name || 'Subcontractor'}</div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} +</span>
+                                  <span className="text-xs">{markup}%</span>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-lg font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                </div>
+                                {est.pdf_url && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => window.open(est.pdf_url, '_blank')}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <CollapsibleContent>
+                              <div className="px-4 py-2 bg-slate-50 text-sm space-y-1">
+                                <p className="font-semibold">Materials ({includedItems.length} items included)</p>
+                                {includedItems.map((item: any) => (
+                                  <div key={item.id} className="flex justify-between py-0.5">
+                                    <span>{item.description}</span>
+                                    <span>${(item.total_price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                ))}
+                                {est.exclusions && (
+                                  <div className="mt-2 pt-2 border-t">
+                                    <p className="font-semibold text-red-600">Exclusions</p>
+                                    <p className="text-xs">{est.exclusions}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </CollapsibleContent>
+                          </div>
+                        </Collapsible>
+                      );
+                    })}
+
+                    {/* Manual subcontractor rows */}
+                    {subcontractorCustomRows.map((row) => {
+                      const lineItems = customRowLineItems[row.id] || [];
+                      const baseCost = lineItems.length > 0 
+                        ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+                        : row.total_cost;
+                      const finalPrice = baseCost * (1 + row.markup_percent / 100);
+
+                      return (
+                        <div key={row.id} className="border rounded overflow-hidden mb-0.5 bg-white">
+                          <div className="flex items-center gap-3 py-1 px-2">
+                            <div className="flex-1 font-semibold text-slate-900">{row.description}</div>
+                            <Badge variant="outline" className="text-xs bg-purple-50">Manual Entry</Badge>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} +</span>
+                              <span className="text-xs">{row.markup_percent}%</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => openAddDialog(row)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Options Section */}
+                {materialsBreakdown.sheetBreakdowns.filter(sheet => materialSheets.find(s => s.id === sheet.sheetId)?.is_option).length > 0 && (
+                  <div className="mt-6">
+                    <div className="bg-amber-100 border-2 border-amber-500 rounded-lg p-4">
+                      <h3 className="text-lg font-bold text-amber-900 mb-3">Optional Upgrades (Not Included in Price)</h3>
+                      {materialsBreakdown.sheetBreakdowns
+                        .filter(sheet => materialSheets.find(s => s.id === sheet.sheetId)?.is_option)
+                        .map((sheet, idx) => {
+                          const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+                          const sheetTotalWithMarkup = sheet.totalPrice * (1 + sheetMarkup / 100);
+
+                          return (
+                            <div key={idx} className="bg-white rounded p-3 mb-2">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <div className="font-semibold text-slate-900">{sheet.sheetName}</div>
+                                  <div className="text-sm text-slate-600">{sheet.sheetDescription}</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-lg font-bold text-amber-800">${sheetTotalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                  <div className="text-xs text-slate-500">+{sheetMarkup}% markup</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Project Total Box - Fixed Width Sidebar */}
