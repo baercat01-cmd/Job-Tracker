@@ -1472,9 +1472,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                       // Count excluded items
                       const excludedCount = lineItems.filter((item: any) => item.excluded).length;
-                      const includedTotal = lineItems
-                        .filter((item: any) => !item.excluded)
-                        .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
 
                       return (
                         <div key={item.id}>
