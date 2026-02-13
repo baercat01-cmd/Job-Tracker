@@ -1538,11 +1538,15 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </TabsContent>
       </Tabs>
 
-      {/* Email Communications Dialog */}
-      <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden p-0">
-          <div className="h-[95vh] flex flex-col">
-            {/* Dialog Header */}
+      {/* Email Communications Modal - Custom Implementation */}
+      {showEmailDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowEmailDialog(false)} />
+          
+          {/* Modal Content */}
+          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-[95vw] max-h-[95vh] flex flex-col overflow-hidden">
+            {/* Header */}
             <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-6 py-4 border-b-4 border-blue-800 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1558,13 +1562,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </div>
             </div>
 
-            {/* Email Content */}
+            {/* Content */}
             <div className="flex-1 overflow-auto bg-slate-50 p-6">
               <JobCommunications job={job} />
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
