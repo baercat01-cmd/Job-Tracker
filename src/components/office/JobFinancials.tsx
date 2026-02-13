@@ -1986,7 +1986,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       // Get proposal number from job or generate one
       const proposalNumber = job.id.split('-')[0].toUpperCase();
       
-      // Format proposal data
+      // Format proposal sections
       const sections = allItems.map((item, index) => {
         if (item.type === 'material') {
           const sheet = item.data;
@@ -2076,28 +2076,107 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return null;
       }).filter(Boolean);
 
-      const proposalData = {
-        proposalNumber,
-        date: new Date().toLocaleDateString(),
-        customer: {
-          name: job.client_name,
-          address: job.address,
-          project: job.name
-        },
-        sections,
-        totals: {
-          materials: proposalMaterialsTotalWithSubcontractors,
-          labor: proposalLaborPrice,
-          subtotal: proposalSubtotal,
-          tax: proposalTotalTax,
-          total: proposalGrandTotal
-        }
-      };
+      // Generate HTML for the proposal
+      const html = `
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #2d5f3f; padding-bottom: 20px; }
+          .header h1 { color: #2d5f3f; font-size: 32px; margin-bottom: 10px; }
+          .header .meta { color: #666; font-size: 14px; margin-top: 10px; }
+          .customer-info { background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 30px; }
+          .customer-info h2 { font-size: 18px; color: #2d5f3f; margin-bottom: 10px; }
+          .customer-info p { margin: 5px 0; font-size: 14px; }
+          .section { margin-bottom: 25px; page-break-inside: avoid; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
+          .section-header { background: #f0f0f0; padding: 12px 15px; border-bottom: 2px solid #2d5f3f; }
+          .section-title { font-size: 18px; font-weight: bold; color: #1a1a1a; }
+          .section-price { font-size: 20px; font-weight: bold; color: #2d5f3f; float: right; }
+          .section-description { padding: 10px 15px; background: #fafafa; border-bottom: 1px solid #e0e0e0; font-size: 13px; color: #555; white-space: pre-wrap; }
+          .line-items { padding: 10px 15px; }
+          .line-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+          .line-item:last-child { border-bottom: none; }
+          .line-item-desc { font-size: 13px; color: #555; }
+          .line-item-price { font-size: 13px; font-weight: 600; color: #2d5f3f; }
+          .totals { margin-top: 30px; border-top: 3px solid #2d5f3f; padding-top: 20px; }
+          .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; }
+          .total-row.grand { font-size: 24px; font-weight: bold; color: #2d5f3f; margin-top: 15px; padding-top: 15px; border-top: 2px solid #2d5f3f; }
+          @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .section { page-break-inside: avoid; }
+          }
+        </style>
+        
+        <div class="header">
+          <h1>PROPOSAL</h1>
+          <div class="meta">
+            <p><strong>Proposal #:</strong> ${proposalNumber}</p>
+            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+          </div>
+        </div>
+        
+        <div class="customer-info">
+          <h2>Customer Information</h2>
+          <p><strong>Name:</strong> ${job.client_name}</p>
+          <p><strong>Address:</strong> ${job.address}</p>
+          <p><strong>Project:</strong> ${job.name}</p>
+        </div>
+        
+        <h2 style="margin-bottom: 20px; color: #2d5f3f;">Scope of Work</h2>
+        
+        ${sections.map((section: any) => `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">${section.name}</span>
+              <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <div style="clear: both;"></div>
+            </div>
+            ${section.description ? `<div class="section-description">${section.description}</div>` : ''}
+            ${section.items && section.items.length > 0 ? `
+              <div class="line-items">
+                ${section.items.map((item: any) => `
+                  <div class="line-item">
+                    <span class="line-item-desc">${item.description}</span>
+                    <span class="line-item-price">$${item.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `).join('')}
+        
+        <div class="totals">
+          <div class="total-row">
+            <span>Materials & Subcontractors:</span>
+            <span>$${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </div>
+          ${proposalLaborPrice > 0 ? `
+            <div class="total-row">
+              <span>Labor:</span>
+              <span>$${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            </div>
+          ` : ''}
+          <div class="total-row">
+            <span>Subtotal:</span>
+            <span>$${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div class="total-row">
+            <span>Sales Tax (7%):</span>
+            <span>$${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div class="total-row grand">
+            <span>TOTAL:</span>
+            <span>$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+      `;
 
-      console.log('Generating PDF with data:', proposalData);
+      console.log('Generating PDF with HTML');
       
       const { data, error } = await supabase.functions.invoke('generate-pdf', {
-        body: { proposal: proposalData }
+        body: { 
+          html,
+          filename: `Proposal-${proposalNumber}.pdf`
+        }
       });
 
       if (error) {
@@ -2116,13 +2195,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         throw new Error(errorMessage);
       }
       
-      // Download the PDF
-      if (data?.pdfUrl) {
-        window.open(data.pdfUrl, '_blank');
-        toast.success('PDF exported successfully!');
-      } else {
-        throw new Error('No PDF URL returned');
-      }
+      // The Edge Function returns HTML for print-to-PDF, open in new tab
+      const blob = new Blob([data], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      toast.success('PDF preview opened! Use your browser\'s Print dialog to save as PDF.');
       
       setShowExportDialog(false);
     } catch (error: any) {
