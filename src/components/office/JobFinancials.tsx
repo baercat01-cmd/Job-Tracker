@@ -1258,7 +1258,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       orderIndex: sheet.orderIndex,
                       data: sheet,
                     })),
-                    ...customRows.map(row => ({
+                    // Only include custom rows that are NOT linked to material sheets
+                    ...customRows.filter(row => !(row as any).sheet_id).map(row => ({
                       type: 'custom' as const,
                       id: row.id,
                       orderIndex: row.order_index,
