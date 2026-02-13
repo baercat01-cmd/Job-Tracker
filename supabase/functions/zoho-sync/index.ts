@@ -205,6 +205,113 @@ serve(async (req) => {
       }
     }
 
+    if (action === 'create_orders') {
+      const { jobName, materialItems, notes } = await req.json();
+      
+      if (!jobName || !materialItems || materialItems.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields: jobName, materialItems' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('🔄 Creating Sales Order and PO for job:', jobName);
+
+      try {
+        // Get access token
+        const accessToken = await getValidAccessToken(settings, supabase);
+
+        // Create Sales Order
+        const salesOrderData = {
+          customer_name: jobName,
+          reference_number: `Job: ${jobName}`,
+          notes: notes || `Materials for ${jobName}`,
+          line_items: materialItems.map((item: any) => ({
+            item_id: item.sku || undefined,
+            name: item.material_name,
+            description: item.usage || item.category || '',
+            quantity: item.quantity,
+            rate: item.price_per_unit || item.cost_per_unit || 0,
+          })),
+        };
+
+        const salesOrderResponse = await fetch(
+          `https://www.zohoapis.com/books/v3/salesorders?organization_id=${settings.countywide_org_id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Zoho-oauthtoken ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(salesOrderData),
+          }
+        );
+
+        if (!salesOrderResponse.ok) {
+          const errorText = await salesOrderResponse.text();
+          throw new Error(`Failed to create Sales Order: ${errorText}`);
+        }
+
+        const salesOrderResult = await salesOrderResponse.json();
+        console.log('✅ Sales Order created:', salesOrderResult.salesorder?.salesorder_id);
+
+        // Create Purchase Order
+        const purchaseOrderData = {
+          vendor_name: 'Default Vendor', // Can be customized
+          reference_number: `Job: ${jobName}`,
+          notes: notes || `Materials for ${jobName}`,
+          line_items: materialItems.map((item: any) => ({
+            item_id: item.sku || undefined,
+            name: item.material_name,
+            description: item.usage || item.category || '',
+            quantity: item.quantity,
+            rate: item.cost_per_unit || item.price_per_unit || 0,
+          })),
+        };
+
+        const purchaseOrderResponse = await fetch(
+          `https://www.zohoapis.com/books/v3/purchaseorders?organization_id=${settings.countywide_org_id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Zoho-oauthtoken ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(purchaseOrderData),
+          }
+        );
+
+        if (!purchaseOrderResponse.ok) {
+          const errorText = await purchaseOrderResponse.text();
+          throw new Error(`Failed to create Purchase Order: ${errorText}`);
+        }
+
+        const purchaseOrderResult = await purchaseOrderResponse.json();
+        console.log('✅ Purchase Order created:', purchaseOrderResult.purchaseorder?.purchaseorder_id);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Created Sales Order and Purchase Order for ${jobName}`,
+            salesOrder: {
+              id: salesOrderResult.salesorder?.salesorder_id,
+              number: salesOrderResult.salesorder?.salesorder_number,
+              url: `https://books.zoho.com/app#/salesorders/${salesOrderResult.salesorder?.salesorder_id}`,
+            },
+            purchaseOrder: {
+              id: purchaseOrderResult.purchaseorder?.purchaseorder_id,
+              number: purchaseOrderResult.purchaseorder?.purchaseorder_number,
+              url: `https://books.zoho.com/app#/purchaseorders/${purchaseOrderResult.purchaseorder?.purchaseorder_id}`,
+            },
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (error: any) {
+        console.error('❌ Error creating orders:', error);
+        throw error;
+      }
+    }
+
     return new Response(
       JSON.stringify({ error: 'Unknown action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

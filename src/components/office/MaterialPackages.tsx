@@ -30,8 +30,11 @@ import {
   CheckSquare,
   Square,
   ChevronLeft,
+  ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
+import type { Job } from '@/types';
 
 interface MaterialItem {
   id: string;
@@ -84,9 +87,12 @@ interface MaterialPackagesProps {
   jobId: string;
   userId: string;
   workbook?: MaterialWorkbook | null;
+  job?: Job;
 }
 
-export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesProps) {
+export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPackagesProps) {
+  const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
+  const [selectedPackageForOrder, setSelectedPackageForOrder] = useState<MaterialBundle | null>(null);
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +110,15 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
   const [packageDescription, setPackageDescription] = useState('');
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+
+  function openZohoOrderDialog(pkg: MaterialBundle) {
+    if (pkg.bundle_items.length === 0) {
+      toast.error('This package has no materials to order');
+      return;
+    }
+    setSelectedPackageForOrder(pkg);
+    setShowZohoOrderDialog(true);
+  }
 
   useEffect(() => {
     loadPackages();
@@ -879,6 +894,15 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
                       </Select>
                       <Button
                         size="sm"
+                        onClick={() => openZohoOrderDialog(pkg)}
+                        className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white"
+                        title="Create Zoho Sales Order & PO"
+                      >
+                        <ShoppingCart className="w-4 h-4 mr-1" />
+                        Order
+                      </Button>
+                      <Button
+                        size="sm"
                         variant="outline"
                         onClick={() => openAddMaterialsDialog(pkg)}
                       >
@@ -1156,6 +1180,17 @@ export function MaterialPackages({ jobId, userId, workbook }: MaterialPackagesPr
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Zoho Order Confirmation Dialog */}
+      {selectedPackageForOrder && job && (
+        <ZohoOrderConfirmationDialog
+          open={showZohoOrderDialog}
+          onOpenChange={setShowZohoOrderDialog}
+          jobName={job.name}
+          materials={selectedPackageForOrder.bundle_items.map(item => item.material_items)}
+          packageName={selectedPackageForOrder.name}
+        />
+      )}
     </div>
   );
 }

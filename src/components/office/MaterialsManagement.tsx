@@ -38,6 +38,7 @@ import {
   CheckSquare,
   Square,
   CheckCircle,
+  ShoppingCart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -47,6 +48,7 @@ import { MaterialWorkbookManager } from './MaterialWorkbookManager';
 import { MaterialItemPhotos } from './MaterialItemPhotos';
 import { PhotoRecoveryTool } from './PhotoRecoveryTool';
 import { MaterialPackages } from './MaterialPackages';
+import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -147,6 +149,10 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [showAddToPackageDialog, setShowAddToPackageDialog] = useState(false);
   const [targetPackageId, setTargetPackageId] = useState('');
   const [addingMaterialsToPackage, setAddingMaterialsToPackage] = useState(false);
+
+  // Zoho order state
+  const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
+  const [selectedMaterialsForOrder, setSelectedMaterialsForOrder] = useState<MaterialItem[]>([]);
 
   // Sheet management state
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
@@ -744,6 +750,20 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     toast.success(`Material "${catalogItem.material_name}" loaded from database`);
   }
 
+  function openZohoOrderDialogForMaterial(item: MaterialItem) {
+    setSelectedMaterialsForOrder([item]);
+    setShowZohoOrderDialog(true);
+  }
+
+  function openZohoOrderDialogForCategory(categoryItems: MaterialItem[]) {
+    if (categoryItems.length === 0) {
+      toast.error('No materials to order');
+      return;
+    }
+    setSelectedMaterialsForOrder(categoryItems);
+    setShowZohoOrderDialog(true);
+  }
+
   function openAddDialog(categoryName?: string) {
     setAddToCategory(categoryName || '');
     setNewMaterialName('');
@@ -1165,14 +1185,24 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                         {catGroup.items.length} items
                                       </Badge>
                                     </div>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => openAddDialog(catGroup.category)}
-                                      className="bg-indigo-600 hover:bg-indigo-700"
-                                    >
-                                      <Plus className="w-3 h-3 mr-1" />
-                                      Add to {catGroup.category}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => openZohoOrderDialogForCategory(catGroup.items)}
+                                        className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white"
+                                      >
+                                        <ShoppingCart className="w-3 h-3 mr-1" />
+                                        Order All
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => openAddDialog(catGroup.category)}
+                                        className="bg-indigo-600 hover:bg-indigo-700"
+                                      >
+                                        <Plus className="w-3 h-3 mr-1" />
+                                        Add to {catGroup.category}
+                                      </Button>
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -1451,6 +1481,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
 
                                     <td className="p-1">
                                       <div className="flex items-center justify-center gap-1">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => openZohoOrderDialogForMaterial(item)}
+                                          className="text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                                          title="Create Zoho Order"
+                                        >
+                                          <ShoppingCart className="w-4 h-4" />
+                                        </Button>
                                         <MaterialItemPhotos 
                                           materialItemId={item.id}
                                           materialName={item.material_name}
@@ -1486,7 +1525,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         </TabsContent>
 
         <TabsContent value="packages" className="space-y-2">
-          <MaterialPackages jobId={job.id} userId={userId} workbook={workbook} />
+          <MaterialPackages jobId={job.id} userId={userId} workbook={workbook} job={job} />
         </TabsContent>
 
         <TabsContent value="crew-orders" className="space-y-2">
@@ -1979,6 +2018,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Zoho Order Confirmation Dialog */}
+      <ZohoOrderConfirmationDialog
+        open={showZohoOrderDialog}
+        onOpenChange={setShowZohoOrderDialog}
+        jobName={job.name}
+        materials={selectedMaterialsForOrder}
+      />
     </div>
   );
 }
