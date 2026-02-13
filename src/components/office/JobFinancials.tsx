@@ -1450,7 +1450,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-96">
+                        <div className="mt-1 ml-6 mr-[440px]">
                           <Textarea
                             value={sheet.sheetDescription}
                             placeholder="Click to add notes..."
@@ -1640,7 +1640,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
                         {/* Notes below title */}
                         {row.notes && (
-                          <div className="mt-1 ml-6 mr-96">
+                          <div className="mt-1 ml-6 mr-[440px]">
                             <Textarea
                               value={row.notes}
                               placeholder="Click to add notes..."
@@ -1809,7 +1809,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         </div>
 
                         {/* Description below title */}
-                        <div className="mt-1 ml-6 mr-96">
+                        <div className="mt-1 ml-6 mr-[440px]">
                           <Textarea
                             value={est.scope_of_work || ''}
                             placeholder="Click to add notes..."
