@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { Copy, ExternalLink, Plus, Trash2, Share2, CheckCircle, Eye, Building2, Calendar, DollarSign, FileText, Image, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,8 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface CustomerPortalLink {
   id: string;
-  job_id: string | null; // Legacy field - nullable for new customer-based links
-  customer_identifier: string; // Email or unique identifier
+  job_id: string | null;
+  customer_identifier: string;
   access_token: string;
   customer_name: string;
   customer_email: string | null;
@@ -24,6 +26,13 @@ interface CustomerPortalLink {
   expires_at: string | null;
   last_accessed_at: string | null;
   created_at: string;
+  show_proposal: boolean;
+  show_payments: boolean;
+  show_schedule: boolean;
+  show_documents: boolean;
+  show_photos: boolean;
+  show_financial_summary: boolean;
+  custom_message: string | null;
 }
 
 interface CustomerPortalManagementProps {
@@ -35,6 +44,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [loading, setLoading] = useState(true);
   const [portalLinks, setPortalLinks] = useState<CustomerPortalLink[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [selectedLink, setSelectedLink] = useState<CustomerPortalLink | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   // Form state
@@ -42,10 +53,22 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
-  const [existingCustomerLinks, setExistingCustomerLinks] = useState<string[]>([]); // Track existing customer identifiers
+  const [existingCustomerLinks, setExistingCustomerLinks] = useState<string[]>([]);
+  
+  // Visibility settings
+  const [showProposal, setShowProposal] = useState(true);
+  const [showPayments, setShowPayments] = useState(true);
+  const [showSchedule, setShowSchedule] = useState(true);
+  const [showDocuments, setShowDocuments] = useState(true);
+  const [showPhotos, setShowPhotos] = useState(true);
+  const [showFinancialSummary, setShowFinancialSummary] = useState(true);
+  const [customMessage, setCustomMessage] = useState('');
+
+  // Preview state
   const [showPreview, setShowPreview] = useState(false);
   const [previewJobs, setPreviewJobs] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewSettings, setPreviewSettings] = useState<any>(null);
 
   useEffect(() => {
     loadPortalLinks();
@@ -53,7 +76,6 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   async function loadPortalLinks() {
     try {
-      // Load all customer portal links (not filtered by job)
       const { data, error } = await supabase
         .from('customer_portal_access')
         .select('*')
@@ -61,11 +83,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
       if (error) throw error;
       
-      // Extract unique customer identifiers
       const customerIds = (data || []).map(link => link.customer_identifier).filter(Boolean);
       setExistingCustomerLinks(customerIds);
       
-      // For display purposes, show all links that match this job's customer
       const jobCustomerLinks = (data || []).filter(link => 
         link.customer_name === job.client_name || link.job_id === job.id
       );
@@ -98,7 +118,6 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       return;
     }
 
-    // Check if a link already exists for this customer
     if (existingCustomerLinks.includes(customerEmail)) {
       toast.error('A portal link already exists for this customer email. Each customer can only have one active link.');
       return;
@@ -118,8 +137,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data, error } = await supabase
         .from('customer_portal_access')
         .insert([{
-          job_id: null, // No longer tied to a single job
-          customer_identifier: customerEmail, // Use email as unique identifier
+          job_id: null,
+          customer_identifier: customerEmail,
           access_token: token,
           customer_name: customerName,
           customer_email: customerEmail,
@@ -127,6 +146,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           is_active: true,
           expires_at: expiresAt,
           created_by: profile?.id,
+          show_proposal: showProposal,
+          show_payments: showPayments,
+          show_schedule: showSchedule,
+          show_documents: showDocuments,
+          show_photos: showPhotos,
+          show_financial_summary: showFinancialSummary,
+          custom_message: customMessage || null,
         }])
         .select()
         .single();
@@ -138,7 +164,6 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       resetForm();
       await loadPortalLinks();
 
-      // Auto-copy the link
       const portalUrl = `${window.location.origin}/customer-portal?token=${token}`;
       navigator.clipboard.writeText(portalUrl);
       toast.success('Link copied to clipboard!');
@@ -148,11 +173,46 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     }
   }
 
+  async function updatePortalSettings() {
+    if (!selectedLink) return;
+
+    try {
+      const { error } = await supabase
+        .from('customer_portal_access')
+        .update({
+          show_proposal: showProposal,
+          show_payments: showPayments,
+          show_schedule: showSchedule,
+          show_documents: showDocuments,
+          show_photos: showPhotos,
+          show_financial_summary: showFinancialSummary,
+          custom_message: customMessage || null,
+        })
+        .eq('id', selectedLink.id);
+
+      if (error) throw error;
+
+      toast.success('Portal settings updated');
+      setShowSettingsDialog(false);
+      await loadPortalLinks();
+    } catch (error: any) {
+      console.error('Error updating portal settings:', error);
+      toast.error('Failed to update portal settings');
+    }
+  }
+
   function resetForm() {
     setCustomerName(job.client_name || '');
     setCustomerEmail('');
     setCustomerPhone('');
     setExpiresInDays('');
+    setShowProposal(true);
+    setShowPayments(true);
+    setShowSchedule(true);
+    setShowDocuments(true);
+    setShowPhotos(true);
+    setShowFinancialSummary(true);
+    setCustomMessage('');
     setShowPreview(false);
   }
 
@@ -164,7 +224,17 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
     setPreviewLoading(true);
     try {
-      // Find all jobs for this customer
+      // Store current visibility settings for preview
+      setPreviewSettings({
+        show_proposal: showProposal,
+        show_payments: showPayments,
+        show_schedule: showSchedule,
+        show_documents: showDocuments,
+        show_photos: showPhotos,
+        show_financial_summary: showFinancialSummary,
+        custom_message: customMessage,
+      });
+
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
@@ -173,45 +243,52 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
       if (jobsError) throw jobsError;
 
-      // For each job, load additional data
       const jobsWithData = await Promise.all((jobsData || []).map(async (job) => {
-        // Load quote/proposal data
         const { data: quoteData } = await supabase
           .from('quotes')
           .select('*')
           .eq('job_id', job.id)
           .maybeSingle();
 
-        // Load payments
         const { data: paymentsData } = await supabase
           .from('customer_payments')
           .select('*')
           .eq('job_id', job.id)
           .order('payment_date', { ascending: false });
 
-        // Load documents
         const { data: documentsData } = await supabase
           .from('job_documents')
-          .select('id')
+          .select('id, name, category')
           .eq('job_id', job.id);
 
-        // Load photos
         const { data: photosData } = await supabase
           .from('photos')
-          .select('id')
-          .eq('job_id', job.id);
+          .select('id, photo_url, caption, created_at')
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
 
-        // Calculate payment totals
+        const { data: scheduleData } = await supabase
+          .from('calendar_events')
+          .select('*')
+          .eq('job_id', job.id)
+          .order('event_date', { ascending: true });
+
+        // Load proposal data
+        const proposalData = await loadProposalData(job.id);
+
         const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
-        const estimatedPrice = quoteData?.estimated_price || 0;
+        const estimatedPrice = proposalData.totals.grandTotal;
         const remainingBalance = estimatedPrice - totalPaid;
 
         return {
           ...job,
           quote: quoteData,
           payments: paymentsData || [],
-          documentsCount: documentsData?.length || 0,
-          photosCount: photosData?.length || 0,
+          documents: documentsData || [],
+          photos: photosData || [],
+          scheduleEvents: scheduleData || [],
+          proposalData,
           totalPaid,
           estimatedPrice,
           remainingBalance,
@@ -226,6 +303,78 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     } finally {
       setPreviewLoading(false);
     }
+  }
+
+  async function loadProposalData(jobId: string) {
+    try {
+      const { data: workbookData } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('status', 'working')
+        .maybeSingle();
+
+      let materialSheets: any[] = [];
+      if (workbookData) {
+        const { data: sheetsData } = await supabase
+          .from('material_sheets')
+          .select('*')
+          .eq('workbook_id', workbookData.id)
+          .order('order_index');
+        materialSheets = sheetsData || [];
+      }
+
+      const { data: customRowsData } = await supabase
+        .from('custom_financial_rows')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('order_index');
+
+      const { data: subEstimatesData } = await supabase
+        .from('subcontractor_estimates')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('order_index');
+
+      const TAX_RATE = 0.07;
+      const subtotal = 
+        (customRowsData || []).reduce((sum, row) => sum + row.selling_price, 0) +
+        (subEstimatesData || []).reduce((sum, est) => {
+          const baseAmount = est.total_amount || 0;
+          const markup = est.markup_percent || 0;
+          return sum + (baseAmount * (1 + markup / 100));
+        }, 0);
+      
+      const tax = subtotal * TAX_RATE;
+      const grandTotal = subtotal + tax;
+
+      return {
+        materialSheets,
+        customRows: customRowsData || [],
+        subcontractorEstimates: subEstimatesData || [],
+        totals: { subtotal, tax, grandTotal },
+      };
+    } catch (error) {
+      console.error('Error loading proposal data:', error);
+      return {
+        materialSheets: [],
+        customRows: [],
+        subcontractorEstimates: [],
+        totals: { subtotal: 0, tax: 0, grandTotal: 0 },
+      };
+    }
+  }
+
+  function openSettingsDialog(link: CustomerPortalLink) {
+    setSelectedLink(link);
+    setShowProposal(link.show_proposal);
+    setShowPayments(link.show_payments);
+    setShowSchedule(link.show_schedule);
+    setShowDocuments(link.show_documents);
+    setShowPhotos(link.show_photos);
+    setShowFinancialSummary(link.show_financial_summary);
+    setCustomMessage(link.custom_message || '');
+    setShowSettingsDialog(true);
   }
 
   async function toggleLinkStatus(linkId: string, currentStatus: boolean) {
@@ -288,19 +437,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         <div>
           <h3 className="text-lg font-semibold">Customer Portal Access</h3>
           <p className="text-sm text-muted-foreground">
-            Create shareable links for customers to view ALL their projects. One link per customer email.
+            Create shareable links for customers to view their projects with customizable visibility settings.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadPreviewData} disabled={!customerName}>
-            <Eye className="w-4 h-4 mr-2" />
-            Preview Portal
-          </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Portal Link
-          </Button>
-        </div>
+        <Button onClick={() => setShowCreateDialog(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Create Portal Link
+        </Button>
       </div>
 
       {portalLinks.length > 0 ? (
@@ -334,12 +477,31 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                       {link.customer_email && (
                         <p className="text-sm text-muted-foreground">{link.customer_email}</p>
                       )}
-                      {link.customer_phone && (
-                        <p className="text-sm text-muted-foreground">{link.customer_phone}</p>
-                      )}
 
                       <div className="mt-3 p-3 bg-slate-50 rounded-lg font-mono text-xs break-all">
                         {portalUrl}
+                      </div>
+
+                      {/* Visibility Summary */}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {link.show_financial_summary && (
+                          <Badge variant="secondary" className="text-xs">Financial Summary</Badge>
+                        )}
+                        {link.show_proposal && (
+                          <Badge variant="secondary" className="text-xs">Proposal</Badge>
+                        )}
+                        {link.show_payments && (
+                          <Badge variant="secondary" className="text-xs">Payments</Badge>
+                        )}
+                        {link.show_schedule && (
+                          <Badge variant="secondary" className="text-xs">Schedule</Badge>
+                        )}
+                        {link.show_documents && (
+                          <Badge variant="secondary" className="text-xs">Documents</Badge>
+                        )}
+                        {link.show_photos && (
+                          <Badge variant="secondary" className="text-xs">Photos</Badge>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
@@ -354,6 +516,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                     </div>
 
                     <div className="flex items-center gap-2 ml-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openSettingsDialog(link)}
+                      >
+                        <Settings className="w-4 h-4" />
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -407,257 +576,213 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         </Card>
       )}
 
-      {/* Preview Portal Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      {/* Portal Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5" />
-              Customer Portal Preview - {customerName}
-            </DialogTitle>
+            <DialogTitle>Portal Visibility Settings</DialogTitle>
           </DialogHeader>
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-900">
+                Control what information {selectedLink?.customer_name} can see in their portal
+              </p>
+            </div>
 
-          {previewLoading ? (
-            <div className="text-center py-12">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-muted-foreground">Loading preview...</p>
-            </div>
-          ) : previewJobs.length === 0 ? (
-            <div className="text-center py-12">
-              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-2">No jobs found for {customerName}</p>
-              <p className="text-sm text-muted-foreground">The customer portal will be empty until jobs are assigned to this customer.</p>
-            </div>
-          ) : (
             <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-900">
-                  <strong>This is what {customerName} will see:</strong> {previewJobs.length} project{previewJobs.length !== 1 ? 's' : ''} found
-                </p>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Financial Summary</Label>
+                  <p className="text-sm text-muted-foreground">Show total amount, paid, and balance</p>
+                </div>
+                <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
               </div>
 
-              {previewJobs.map((previewJob) => (
-                <Card key={previewJob.id} className="border-2">
-                  <CardHeader className="bg-gradient-to-r from-blue-50 to-slate-50">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-xl">{previewJob.name || 'Untitled Project'}</CardTitle>
-                        <p className="text-sm text-muted-foreground mt-1">{previewJob.address}</p>
-                        <div className="flex gap-2 mt-2">
-                          <Badge variant={previewJob.status === 'active' ? 'default' : 'outline'}>
-                            {previewJob.status || 'active'}
-                          </Badge>
-                          {previewJob.quote && (
-                            <Badge variant="secondary">
-                              Quote #{previewJob.quote.quote_number}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      {previewJob.estimatedPrice > 0 && (
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Project Value</p>
-                          <p className="text-2xl font-bold text-green-700">
-                            ${previewJob.estimatedPrice.toLocaleString()}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <Tabs defaultValue="overview" className="w-full">
-                      <TabsList className="grid w-full grid-cols-5">
-                        <TabsTrigger value="overview">Overview</TabsTrigger>
-                        <TabsTrigger value="payments">Payments</TabsTrigger>
-                        <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                        <TabsTrigger value="documents">Documents</TabsTrigger>
-                        <TabsTrigger value="photos">Photos</TabsTrigger>
-                      </TabsList>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Proposal Details</Label>
+                  <p className="text-sm text-muted-foreground">Show itemized proposal/pricing breakdown</p>
+                </div>
+                <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+              </div>
 
-                      <TabsContent value="overview" className="space-y-4">
-                        <div className="grid grid-cols-4 gap-4">
-                          <Card>
-                            <CardContent className="pt-4">
-                              <DollarSign className="w-8 h-8 text-green-600 mb-2" />
-                              <p className="text-xs text-muted-foreground">Total Paid</p>
-                              <p className="text-xl font-bold">${previewJob.totalPaid.toLocaleString()}</p>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="pt-4">
-                              <DollarSign className="w-8 h-8 text-orange-600 mb-2" />
-                              <p className="text-xs text-muted-foreground">Balance Due</p>
-                              <p className="text-xl font-bold">${previewJob.remainingBalance.toLocaleString()}</p>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="pt-4">
-                              <FileText className="w-8 h-8 text-blue-600 mb-2" />
-                              <p className="text-xs text-muted-foreground">Documents</p>
-                              <p className="text-xl font-bold">{previewJob.documentsCount}</p>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="pt-4">
-                              <Image className="w-8 h-8 text-purple-600 mb-2" />
-                              <p className="text-xs text-muted-foreground">Photos</p>
-                              <p className="text-xl font-bold">{previewJob.photosCount}</p>
-                            </CardContent>
-                          </Card>
-                        </div>
-                        {previewJob.description && (
-                          <div>
-                            <h4 className="font-semibold mb-2">Project Description</h4>
-                            <p className="text-sm text-muted-foreground">{previewJob.description}</p>
-                          </div>
-                        )}
-                      </TabsContent>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Payment History</Label>
+                  <p className="text-sm text-muted-foreground">Show all payment records</p>
+                </div>
+                <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+              </div>
 
-                      <TabsContent value="payments">
-                        {previewJob.payments.length > 0 ? (
-                          <div className="space-y-2">
-                            {previewJob.payments.map((payment: any) => (
-                              <div key={payment.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                                <div>
-                                  <p className="font-medium">${parseFloat(payment.amount).toLocaleString()}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {new Date(payment.payment_date).toLocaleDateString()}
-                                  </p>
-                                  {payment.payment_method && (
-                                    <p className="text-xs text-muted-foreground">{payment.payment_method}</p>
-                                  )}
-                                </div>
-                                {payment.payment_notes && (
-                                  <p className="text-sm text-muted-foreground max-w-md">{payment.payment_notes}</p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-center text-muted-foreground py-8">No payments recorded yet</p>
-                        )}
-                      </TabsContent>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Schedule/Timeline</Label>
+                  <p className="text-sm text-muted-foreground">Show project timeline and milestones</p>
+                </div>
+                <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+              </div>
 
-                      <TabsContent value="schedule">
-                        <div className="space-y-2">
-                          {previewJob.projected_start_date && (
-                            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                              <Calendar className="w-5 h-5 text-blue-600" />
-                              <div>
-                                <p className="text-sm font-medium">Projected Start</p>
-                                <p className="text-sm">{new Date(previewJob.projected_start_date).toLocaleDateString()}</p>
-                              </div>
-                            </div>
-                          )}
-                          {previewJob.projected_end_date && (
-                            <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
-                              <Calendar className="w-5 h-5 text-green-600" />
-                              <div>
-                                <p className="text-sm font-medium">Projected Completion</p>
-                                <p className="text-sm">{new Date(previewJob.projected_end_date).toLocaleDateString()}</p>
-                              </div>
-                            </div>
-                          )}
-                          {!previewJob.projected_start_date && !previewJob.projected_end_date && (
-                            <p className="text-center text-muted-foreground py-8">Schedule dates not set yet</p>
-                          )}
-                        </div>
-                      </TabsContent>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Documents</Label>
+                  <p className="text-sm text-muted-foreground">Show project documents and drawings</p>
+                </div>
+                <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+              </div>
 
-                      <TabsContent value="documents">
-                        <p className="text-sm text-muted-foreground text-center py-8">
-                          {previewJob.documentsCount > 0 
-                            ? `${previewJob.documentsCount} document${previewJob.documentsCount !== 1 ? 's' : ''} available for download`
-                            : 'No documents uploaded yet'}
-                        </p>
-                      </TabsContent>
-
-                      <TabsContent value="photos">
-                        <p className="text-sm text-muted-foreground text-center py-8">
-                          {previewJob.photosCount > 0 
-                            ? `${previewJob.photosCount} photo${previewJob.photosCount !== 1 ? 's' : ''} available to view`
-                            : 'No photos uploaded yet'}
-                        </p>
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-              ))}
-
-              <div className="flex gap-3 pt-4 border-t">
-                <Button onClick={() => setShowCreateDialog(true)} className="flex-1">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Portal Link Now
-                </Button>
-                <Button variant="outline" onClick={() => setShowPreview(false)}>
-                  Close Preview
-                </Button>
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <Label className="font-medium">Photos</Label>
+                  <p className="text-sm text-muted-foreground">Show progress photos</p>
+                </div>
+                <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
               </div>
             </div>
-          )}
+
+            <div>
+              <Label>Custom Welcome Message (Optional)</Label>
+              <Textarea
+                value={customMessage}
+                onChange={(e) => setCustomMessage(e.target.value)}
+                placeholder="Add a custom message that will be displayed to the customer..."
+                rows={3}
+                className="mt-2"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={updatePortalSettings} className="flex-1">
+                Update Settings
+              </Button>
+              <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Create Portal Link Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Customer Portal Link</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Customer Name *</Label>
-              <Input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="John Doe"
-              />
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Customer Name *</Label>
+                <Input
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="John Doe"
+                />
+              </div>
+
+              <div>
+                <Label>Customer Email *</Label>
+                <Input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="customer@example.com"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used as unique identifier
+                </p>
+              </div>
+
+              <div>
+                <Label>Customer Phone (Optional)</Label>
+                <Input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+
+              <div>
+                <Label>Link Expires In (Days)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={expiresInDays}
+                  onChange={(e) => setExpiresInDays(e.target.value)}
+                  placeholder="Leave empty for no expiration"
+                />
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="font-semibold mb-4">Visibility Settings</h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Financial Summary</Label>
+                    <p className="text-sm text-muted-foreground">Show total amount, paid, and balance</p>
+                  </div>
+                  <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Proposal Details</Label>
+                    <p className="text-sm text-muted-foreground">Show itemized proposal/pricing</p>
+                  </div>
+                  <Switch checked={showProposal} onCheckedChange={setShowProposal} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Payment History</Label>
+                    <p className="text-sm text-muted-foreground">Show all payment records</p>
+                  </div>
+                  <Switch checked={showPayments} onCheckedChange={setShowPayments} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Schedule/Timeline</Label>
+                    <p className="text-sm text-muted-foreground">Show project timeline</p>
+                  </div>
+                  <Switch checked={showSchedule} onCheckedChange={setShowSchedule} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Documents</Label>
+                    <p className="text-sm text-muted-foreground">Show documents and drawings</p>
+                  </div>
+                  <Switch checked={showDocuments} onCheckedChange={setShowDocuments} />
+                </div>
+
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <Label className="font-medium">Photos</Label>
+                    <p className="text-sm text-muted-foreground">Show progress photos</p>
+                  </div>
+                  <Switch checked={showPhotos} onCheckedChange={setShowPhotos} />
+                </div>
+              </div>
             </div>
 
             <div>
-              <Label>Customer Email *</Label>
-              <Input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="customer@example.com"
+              <Label>Custom Welcome Message (Optional)</Label>
+              <Textarea
+                value={customMessage}
+                onChange={(e) => setCustomMessage(e.target.value)}
+                placeholder="Add a custom message that will be displayed to the customer..."
+                rows={3}
+                className="mt-2"
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Used as unique identifier - one link per email
-              </p>
-            </div>
-
-            <div>
-              <Label>Customer Phone (Optional)</Label>
-              <Input
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="(555) 123-4567"
-              />
-            </div>
-
-            <div>
-              <Label>Link Expires In (Days)</Label>
-              <Input
-                type="number"
-                min="1"
-                value={expiresInDays}
-                onChange={(e) => setExpiresInDays(e.target.value)}
-                placeholder="Leave empty for no expiration"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Leave empty for a link that never expires
-              </p>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-900">
-                <strong>Important:</strong> This link will give the customer access to ALL their projects (past, present, and future). They can view proposals, payments, schedules, documents, and photos for all jobs associated with their name.
-              </p>
             </div>
 
             <div className="flex gap-3 pt-4 border-t">
+              <Button onClick={loadPreviewData} variant="outline" className="flex-1" disabled={!customerName}>
+                <Eye className="w-4 h-4 mr-2" />
+                Preview Customer View
+              </Button>
               <Button onClick={createPortalLink} className="flex-1">
                 Create Portal Link
               </Button>
@@ -669,6 +794,139 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Dialog - Shows exactly what customer sees */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Customer Portal Preview - {customerName}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              This is EXACTLY what the customer will see with current visibility settings
+            </p>
+          </DialogHeader>
+
+          {previewLoading ? (
+            <div className="text-center py-12">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading preview...</p>
+            </div>
+          ) : previewJobs.length === 0 ? (
+            <div className="text-center py-12">
+              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground mb-2">No jobs found for {customerName}</p>
+              <p className="text-sm text-muted-foreground">The customer portal will be empty until jobs are assigned.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Custom Message */}
+              {previewSettings?.custom_message && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <p className="text-blue-900">{previewSettings.custom_message}</p>
+                </div>
+              )}
+
+              {/* Job Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {previewJobs.map((previewJob) => (
+                  <Card key={previewJob.id} className="border-2">
+                    <CardHeader className="bg-gradient-to-r from-blue-50 to-slate-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-xl flex items-center gap-2">
+                            <Building2 className="w-5 h-5 text-blue-600" />
+                            {previewJob.name}
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground mt-1">{previewJob.address}</p>
+                          <Badge variant={previewJob.status === 'active' ? 'default' : 'secondary'} className="mt-2">
+                            {previewJob.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-4">
+                      {/* Financial Summary - Only if enabled */}
+                      {previewSettings?.show_financial_summary && (
+                        <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg">
+                          <div className="text-center">
+                            <p className="text-xs text-muted-foreground">Total</p>
+                            <p className="font-bold text-sm">${previewJob.estimatedPrice.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-muted-foreground">Paid</p>
+                            <p className="font-bold text-sm text-green-600">${previewJob.totalPaid.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-muted-foreground">Balance</p>
+                            <p className="font-bold text-sm text-amber-600">${previewJob.remainingBalance.toLocaleString()}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Available Sections */}
+                      <div className="flex flex-wrap gap-2">
+                        {previewSettings?.show_proposal && (
+                          <Badge variant="secondary">
+                            <FileText className="w-3 h-3 mr-1" />
+                            Proposal Available
+                          </Badge>
+                        )}
+                        {previewSettings?.show_payments && previewJob.payments.length > 0 && (
+                          <Badge variant="secondary">
+                            <DollarSign className="w-3 h-3 mr-1" />
+                            {previewJob.payments.length} Payments
+                          </Badge>
+                        )}
+                        {previewSettings?.show_schedule && previewJob.scheduleEvents.length > 0 && (
+                          <Badge variant="secondary">
+                            <Calendar className="w-3 h-3 mr-1" />
+                            {previewJob.scheduleEvents.length} Events
+                          </Badge>
+                        )}
+                        {previewSettings?.show_documents && previewJob.documents.length > 0 && (
+                          <Badge variant="secondary">
+                            <FileText className="w-3 h-3 mr-1" />
+                            {previewJob.documents.length} Documents
+                          </Badge>
+                        )}
+                        {previewSettings?.show_photos && previewJob.photos.length > 0 && (
+                          <Badge variant="secondary">
+                            <Image className="w-3 h-3 mr-1" />
+                            {previewJob.photos.length} Photos
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Hidden Sections Notice */}
+                      {(!previewSettings?.show_proposal || !previewSettings?.show_payments || 
+                        !previewSettings?.show_schedule || !previewSettings?.show_documents || 
+                        !previewSettings?.show_photos) && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                          <p className="text-xs text-yellow-900">
+                            <strong>Note:</strong> Some sections are hidden from customer view based on your visibility settings
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
+                  Close Preview
+                </Button>
+                <Button onClick={createPortalLink} className="flex-1">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Portal Link with These Settings
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
