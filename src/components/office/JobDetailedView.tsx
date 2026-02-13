@@ -15,6 +15,7 @@ import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
+import { JobCommunications } from './JobCommunications';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
 
@@ -1071,7 +1072,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </Button>
             )}
           </div>
-          <TabsList className="grid w-full grid-cols-9 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+          <TabsList className="grid w-full grid-cols-10 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
@@ -1142,6 +1143,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
             >
               <Users className="w-5 h-5 sm:mr-2" />
               <span className="hidden sm:inline">Portal</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="communications" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <Mail className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Email</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1452,6 +1460,12 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         <TabsContent value="customer-portal" className="w-full">
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <CustomerPortalManagement job={job} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="communications" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <JobCommunications job={job} />
           </div>
         </TabsContent>
       </Tabs>
