@@ -659,7 +659,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
-                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <CardTitle className="text-base leading-tight flex-1">
+                                  {job.job_number && (
+                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
+                                  )}
+                                  {job.name}
+                                </CardTitle>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -923,7 +928,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
-                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <CardTitle className="text-base leading-tight flex-1">
+                                  {job.job_number && (
+                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
+                                  )}
+                                  {job.name}
+                                </CardTitle>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1138,7 +1148,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
-                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <CardTitle className="text-base leading-tight flex-1">
+                                  {job.job_number && (
+                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
+                                  )}
+                                  {job.name}
+                                </CardTitle>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1345,7 +1360,12 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
-                                <CardTitle className="text-base leading-tight flex-1">{job.name}</CardTitle>
+                                <CardTitle className="text-base leading-tight flex-1">
+                                  {job.job_number && (
+                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
+                                  )}
+                                  {job.name}
+                                </CardTitle>
                                 <Button
                                   variant="ghost"
                                   size="sm"
