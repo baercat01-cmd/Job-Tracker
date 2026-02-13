@@ -31,9 +31,61 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const { action } = await req.json();
+    const { action, grantCode, clientId, clientSecret } = await req.json();
 
     console.log('📡 Zoho sync request:', action);
+
+    // Handle grant code exchange (no settings needed yet)
+    if (action === 'exchange_grant_code') {
+      if (!grantCode || !clientId || !clientSecret) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields: grantCode, clientId, clientSecret' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('🔄 Exchanging grant code for refresh token...');
+
+      try {
+        const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
+        const params = new URLSearchParams({
+          code: grantCode,
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'authorization_code',
+          redirect_uri: 'https://www.zoho.com/books',
+        });
+
+        const response = await fetch(`${tokenUrl}?${params.toString()}`, {
+          method: 'POST',
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Zoho token exchange failed: ${errorText}`);
+        }
+
+        const tokenData = await response.json();
+
+        if (!tokenData.refresh_token) {
+          throw new Error('No refresh token received from Zoho');
+        }
+
+        console.log('✅ Grant code exchanged successfully');
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            refresh_token: tokenData.refresh_token,
+            message: 'Grant code exchanged successfully',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (exchangeError: any) {
+        console.error('❌ Grant code exchange error:', exchangeError);
+        throw new Error(`Grant code exchange failed: ${exchangeError.message}`);
+      }
+    }
 
     // Get Zoho settings
     const { data: settings, error: settingsError } = await supabase

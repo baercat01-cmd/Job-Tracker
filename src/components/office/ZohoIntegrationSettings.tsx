@@ -172,33 +172,37 @@ export function ZohoIntegrationSettings() {
 
     setExchangingToken(true);
     try {
-      // Exchange grant code for refresh token via Zoho OAuth
-      const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
-      const params = new URLSearchParams({
-        code: grantCode,
-        client_id: clientId,
-        client_secret: actualClientSecret,
-        grant_type: 'authorization_code',
-        redirect_uri: 'https://www.zoho.com/books', // Standard redirect URI
+      // Exchange grant code via Edge Function (to avoid CORS issues)
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: {
+          action: 'exchange_grant_code',
+          grantCode: grantCode,
+          clientId: clientId,
+          clientSecret: actualClientSecret,
+        }
       });
 
-      const response = await fetch(`${tokenUrl}?${params.toString()}`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Zoho token exchange failed: ${errorText}`);
+      if (error) {
+        // Extract detailed error message
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = error.context?.status ?? 500;
+            const textContent = await error.context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
       }
 
-      const tokenData = await response.json();
-      
-      if (!tokenData.refresh_token) {
-        throw new Error('No refresh token received from Zoho');
+      if (!data || !data.refresh_token) {
+        throw new Error('No refresh token received from server');
       }
 
       // Save the refresh token
-      setRefreshToken(tokenData.refresh_token);
+      setRefreshToken(data.refresh_token);
       toast.success('✅ Refresh token obtained successfully! Now click "Save Credentials" to store it.');
       setShowGrantCodeDialog(false);
       setGrantCode('');
