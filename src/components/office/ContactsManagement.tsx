@@ -219,16 +219,60 @@ export function ContactsManagement() {
         throw new Error('No data found in the Excel file');
       }
 
-      // Map Zoho fields to our schema
+      // Map Zoho CRM export fields to our schema
       const mappedContacts = jsonData.map((row: any) => {
-        // Zoho CRM typical fields (adjust based on your export)
+        // Handle name from multiple possible columns
+        let contactName = row['Display Name'] || row['Contact Name'] || row['Full Name'] || '';
+        
+        // If no display name, construct from First + Last Name
+        if (!contactName && (row['First Name'] || row['Last Name'])) {
+          const firstName = (row['First Name'] || '').trim();
+          const lastName = (row['Last Name'] || '').trim();
+          contactName = `${firstName} ${lastName}`.trim();
+        }
+        
+        // Combine billing address fields if available
+        let fullAddress = '';
+        const billingAddress = row['Billing Address'] || '';
+        const billingCity = row['Billing City'] || '';
+        const billingState = row['Billing State'] || '';
+        const billingCode = row['Billing Code'] || '';
+        
+        if (billingAddress || billingCity || billingState || billingCode) {
+          fullAddress = [billingAddress, billingCity, billingState, billingCode]
+            .filter(Boolean)
+            .join(', ');
+        }
+        
+        // Construct notes with additional info
+        let notes = row['Description'] || row['Notes'] || '';
+        
+        // Add customer number to notes if available
+        if (row['Customer Number']) {
+          notes = `Customer #: ${row['Customer Number']}${notes ? '\n' + notes : ''}`;
+        }
+        
+        // Add tax info to notes if available
+        if (row['Tax ID']) {
+          notes = `${notes}\nTax ID: ${row['Tax ID']}`.trim();
+        }
+        
+        if (row['Exemption Reason']) {
+          notes = `${notes}\nTax Exemption: ${row['Exemption Reason']}`.trim();
+        }
+        
+        // Add full address to notes if available
+        if (fullAddress) {
+          notes = `${notes}\nAddress: ${fullAddress}`.trim();
+        }
+        
         return {
-          name: row['Contact Name'] || row['Full Name'] || row['First Name'] + ' ' + row['Last Name'] || '',
-          email: row['Email'] || row['Email Address'] || '',
-          phone: row['Phone'] || row['Mobile'] || row['Phone Number'] || '',
+          name: contactName,
+          email: row['Email ID'] || row['Email'] || row['Email Address'] || '',
+          phone: row['Phone'] || row['Mobile Phone'] || row['Mobile'] || row['Phone Number'] || '',
           category: determineCategory(row),
-          company_name: row['Company'] || row['Account Name'] || row['Organization'] || '',
-          notes: row['Description'] || row['Notes'] || '',
+          company_name: row['Company Name'] || row['Company'] || row['Account Name'] || row['Organization'] || '',
+          notes: notes || null,
         };
       }).filter(c => c.name && c.email); // Only include contacts with name and email
 
@@ -247,11 +291,22 @@ export function ContactsManagement() {
   }
 
   function determineCategory(row: any): 'customer' | 'vendor' | 'subcontractor' {
-    const type = (row['Contact Type'] || row['Type'] || row['Category'] || '').toLowerCase();
+    // Check multiple possible category fields
+    const type = (row['Contact Type'] || row['Type'] || row['Category'] || row['Customer Type'] || '').toLowerCase();
     
-    if (type.includes('vendor') || type.includes('supplier')) return 'vendor';
-    if (type.includes('sub') || type.includes('contractor')) return 'subcontractor';
-    return 'customer'; // Default to customer
+    // Check company name for hints
+    const companyName = (row['Company Name'] || row['Company'] || '').toLowerCase();
+    
+    // Determine category based on type field or company name hints
+    if (type.includes('vendor') || type.includes('supplier') || companyName.includes('supply')) {
+      return 'vendor';
+    }
+    if (type.includes('sub') || type.includes('contractor') || type.includes('subcontractor')) {
+      return 'subcontractor';
+    }
+    
+    // Default to customer for Zoho contacts
+    return 'customer';
   }
 
   async function executeImport() {
@@ -313,19 +368,35 @@ export function ContactsManagement() {
   function downloadTemplate() {
     const template = [
       {
-        'Contact Name': 'John Doe',
-        'Email': 'john@example.com',
+        'Display Name': 'John Doe',
+        'Customer Number': 'CUST-001',
+        'Company Name': 'ABC Construction',
+        'First Name': 'John',
+        'Last Name': 'Doe',
+        'Email ID': 'john@example.com',
         'Phone': '(555) 123-4567',
+        'Mobile Phone': '(555) 123-4567',
         'Contact Type': 'Customer',
-        'Company': 'ABC Construction',
+        'Billing Address': '123 Main St',
+        'Billing City': 'Springfield',
+        'Billing State': 'IL',
+        'Billing Code': '62701',
         'Description': 'Primary contact for ABC Construction projects',
       },
       {
-        'Contact Name': 'Jane Smith',
-        'Email': 'jane@vendor.com',
+        'Display Name': 'Jane Smith',
+        'Customer Number': 'VEND-001',
+        'Company Name': 'Supply Co',
+        'First Name': 'Jane',
+        'Last Name': 'Smith',
+        'Email ID': 'jane@vendor.com',
         'Phone': '(555) 987-6543',
+        'Mobile Phone': '(555) 987-6543',
         'Contact Type': 'Vendor',
-        'Company': 'Supply Co',
+        'Billing Address': '456 Oak Ave',
+        'Billing City': 'Chicago',
+        'Billing State': 'IL',
+        'Billing Code': '60601',
         'Description': 'Material supplier - lumber and steel',
       },
     ];
@@ -339,7 +410,7 @@ export function ContactsManagement() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'contacts_import_template.csv';
+    a.download = 'contacts_import_template_zoho.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
