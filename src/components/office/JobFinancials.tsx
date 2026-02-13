@@ -1233,10 +1233,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </Button>
             </div>
 
-            {/* Proposal Layout: Content on left, Project Total on right */}
-            <div className="flex gap-6 items-start">
-              {/* All Rows Column - Mixed materials, custom rows, and subcontractor estimates */}
-              <div className="flex-1 space-y-3">
+            {/* Proposal Layout: Main content area with sidebar */}
+            <div className="flex gap-4 items-start">
+              {/* Main Content Column - Wider for better description visibility */}
+              <div className="flex-1 min-w-0 space-y-3">
                 {/* Create unified list of all items sorted by order_index */}
                 {(() => {
                   const allItems = [
@@ -1272,27 +1272,52 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
-                                  {/* Left: Chevron + Title */}
-                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
+                                  {/* Left: Chevron + Title - Compact */}
+                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
                                     <div className="flex-1 min-w-0">
-                                      <h3 className="text-lg font-bold text-slate-900 truncate text-left">{sheet.sheetName}</h3>
+                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{sheet.sheetName}</h3>
                                       {sheetLabor[sheet.sheetId] && (
-                                        <p className="text-sm text-amber-700 font-semibold text-left">Labor</p>
+                                        <p className="text-xs text-amber-700 font-semibold text-left mt-0.5">Labor</p>
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* Middle: Description - Wide Space */}
-                                  <div className="flex-1 min-w-0 px-6">
-                                    <p className="text-sm text-slate-600 italic">
-                                      {sheet.sheetDescription || '(No description provided)'}
-                                    </p>
+                                  {/* Middle: Editable Description - Maximum Space */}
+                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                    <Textarea
+                                      value={sheet.sheetDescription || ''}
+                                      onChange={async (e) => {
+                                        const newDesc = e.target.value;
+                                        // Optimistically update UI
+                                        setMaterialSheets(prev => prev.map(s => 
+                                          s.id === sheet.sheetId ? { ...s, description: newDesc } : s
+                                        ));
+                                      }}
+                                      onBlur={async (e) => {
+                                        const newDesc = e.target.value;
+                                        try {
+                                          const { error } = await supabase
+                                            .from('material_sheets')
+                                            .update({ description: newDesc || null })
+                                            .eq('id', sheet.sheetId);
+                                          
+                                          if (error) throw error;
+                                          await loadMaterialsData();
+                                        } catch (error: any) {
+                                          console.error('Error saving description:', error);
+                                          toast.error('Failed to save description');
+                                        }
+                                      }}
+                                      placeholder="Click to add description..."
+                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
+                                      rows={2}
+                                    />
                                   </div>
 
-                                  {/* Right: Markup + Pricing + Actions - Compact */}
-                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-start gap-2 flex-shrink-0">
                                     {/* Editable Markup % - Plain Number */}
                                     <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
@@ -1478,22 +1503,49 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white cursor-move mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
-                                  {/* Left: Chevron + Title */}
-                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
+                                  {/* Left: Chevron + Title - Compact */}
+                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
                                     <div className="flex-1 min-w-0">
-                                      <h3 className="text-lg font-bold text-slate-900 truncate text-left">{est.company_name || 'Subcontractor'}</h3>
+                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{est.company_name || 'Subcontractor'}</h3>
                                     </div>
                                   </div>
 
-                                  {/* Middle: Empty space - description only shown when expanded */}
-                                  <div className="flex-1 min-w-0 px-6">
-                                    {/* No description in collapsed view */}
+                                  {/* Middle: Editable Description - Maximum Space */}
+                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                    <Textarea
+                                      value={est.scope_of_work || ''}
+                                      onChange={async (e) => {
+                                        const newDesc = e.target.value;
+                                        // Optimistically update UI
+                                        setSubcontractorEstimates(prev => prev.map(se => 
+                                          se.id === est.id ? { ...se, scope_of_work: newDesc } : se
+                                        ));
+                                      }}
+                                      onBlur={async (e) => {
+                                        const newDesc = e.target.value;
+                                        try {
+                                          const { error } = await supabase
+                                            .from('subcontractor_estimates')
+                                            .update({ scope_of_work: newDesc || null })
+                                            .eq('id', est.id);
+                                          
+                                          if (error) throw error;
+                                          await loadSubcontractorEstimates();
+                                        } catch (error: any) {
+                                          console.error('Error saving scope of work:', error);
+                                          toast.error('Failed to save description');
+                                        }
+                                      }}
+                                      placeholder="Click to add scope of work..."
+                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
+                                      rows={2}
+                                    />
                                   </div>
 
-                                  {/* Right: Markup + Pricing + View PDF - Compact */}
-                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* Right: Markup + Pricing + View PDF */}
+                                  <div className="flex items-start gap-2 flex-shrink-0">
                                     {/* Editable Markup % - Plain Number */}
                                     <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
@@ -1618,30 +1670,64 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           <Collapsible defaultOpen={false}>
                             <div className="border-2 border-slate-300 rounded-lg overflow-hidden bg-white mb-2">
                               <CollapsibleTrigger className="w-full">
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center border-b">
-                                  {/* Left: Chevron + Title */}
-                                  <div className="flex items-center gap-2 w-64 flex-shrink-0">
-                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0" />
+                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-start gap-3 border-b">
+                                  {/* Left: Chevron + Title - Compact */}
+                                  <div className="flex items-start gap-2 w-52 flex-shrink-0">
+                                    <ChevronDown className="w-5 h-5 text-slate-700 flex-shrink-0 mt-1" />
                                     <div className="flex-1 min-w-0">
-                                      <h3 className="text-lg font-bold text-slate-900 truncate text-left">{row.description}</h3>
+                                      <h3 className="text-base font-bold text-slate-900 text-left leading-tight">{row.description}</h3>
                                       {hasLineItems && (
-                                        <p className="text-xs text-slate-600 text-left">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
+                                        <p className="text-xs text-slate-600 text-left mt-0.5">{lineItems.length} item{lineItems.length > 1 ? 's' : ''}</p>
                                       )}
                                       {rowLabor && (
-                                        <p className="text-sm text-amber-700 font-semibold text-left">Labor</p>
+                                        <p className="text-xs text-amber-700 font-semibold text-left mt-0.5">Labor</p>
                                       )}
                                     </div>
                                   </div>
 
-                                  {/* Middle: Description/Notes - Wide Space */}
-                                  <div className="flex-1 min-w-0 px-6">
-                                    <p className="text-sm text-slate-600 italic">
-                                      {row.notes && !rowLabor ? row.notes : '(No description provided)'}
-                                    </p>
+                                  {/* Middle: Editable Notes/Description - Maximum Space */}
+                                  <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                    <Textarea
+                                      value={(() => {
+                                        if (rowLabor) return '';
+                                        try {
+                                          const parsed = JSON.parse(row.notes || '{}');
+                                          return parsed.labor ? '' : row.notes || '';
+                                        } catch {
+                                          return row.notes || '';
+                                        }
+                                      })()}
+                                      onChange={async (e) => {
+                                        const newNotes = e.target.value;
+                                        // Optimistically update UI
+                                        setCustomRows(prev => prev.map(r => 
+                                          r.id === row.id ? { ...r, notes: newNotes } : r
+                                        ));
+                                      }}
+                                      onBlur={async (e) => {
+                                        const newNotes = e.target.value;
+                                        try {
+                                          const { error } = await supabase
+                                            .from('custom_financial_rows')
+                                            .update({ notes: newNotes || null })
+                                            .eq('id', row.id);
+                                          
+                                          if (error) throw error;
+                                          await loadCustomRows();
+                                        } catch (error: any) {
+                                          console.error('Error saving notes:', error);
+                                          toast.error('Failed to save notes');
+                                        }
+                                      }}
+                                      placeholder="Click to add notes..."
+                                      className="text-sm border-0 bg-transparent resize-none p-2 min-h-[60px] focus:bg-white focus:border focus:border-slate-300 rounded"
+                                      rows={2}
+                                      disabled={!!rowLabor}
+                                    />
                                   </div>
 
-                                  {/* Right: Markup + Pricing + Actions - Compact */}
-                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* Right: Markup + Pricing + Actions */}
+                                  <div className="flex items-start gap-2 flex-shrink-0">
                                     {/* Editable Markup % - Plain Number */}
                                     <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                       <input
@@ -1788,8 +1874,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 })()}
               </div>
 
-              {/* Project Total Box - Sticky on Right Side */}
-              <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg sticky top-4" style={{ minWidth: '400px', maxWidth: '450px' }}>
+              {/* Project Total Box - Fixed Width Sidebar */}
+              <div className="border-2 border-slate-900 rounded-lg overflow-hidden bg-white shadow-lg sticky top-4 w-80 flex-shrink-0">
                 <div className="bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white">
                   <h3 className="text-xl font-bold flex items-center gap-2">
                     <DollarSign className="w-6 h-6 text-amber-400" />
