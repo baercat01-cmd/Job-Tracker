@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Package, DollarSign, FileText, Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
@@ -34,6 +36,7 @@ export function ZohoOrderConfirmationDialog({
   packageName,
 }: ZohoOrderConfirmationDialogProps) {
   const [creating, setCreating] = useState(false);
+  const [orderType, setOrderType] = useState<'both' | 'sales_order' | 'purchase_order'>('both');
   const [createdOrders, setCreatedOrders] = useState<{
     salesOrder?: { id: string; number: string; url: string };
     purchaseOrder?: { id: string; number: string; url: string };
@@ -45,7 +48,7 @@ export function ZohoOrderConfirmationDialog({
   async function createOrders() {
     setCreating(true);
     try {
-      console.log('📤 Creating Zoho orders for materials:', materials.length);
+      console.log('📤 Creating Zoho orders for materials:', materials.length, 'Type:', orderType);
       
       const { data, error } = await supabase.functions.invoke('zoho-sync', {
         body: {
@@ -53,6 +56,7 @@ export function ZohoOrderConfirmationDialog({
           jobName: jobName,
           materialItems: materials,
           notes: packageName ? `Package: ${packageName}` : undefined,
+          orderType: orderType,
         },
       });
 
@@ -76,9 +80,17 @@ export function ZohoOrderConfirmationDialog({
         purchaseOrder: data.purchaseOrder,
       });
       
-      toast.success('Orders created in Zoho Books!', {
-        description: `Sales Order #${data.salesOrder?.number} and PO #${data.purchaseOrder?.number}`,
-      });
+      // Build toast description based on what was created
+      let description = '';
+      if (data.salesOrder && data.purchaseOrder) {
+        description = `Sales Order #${data.salesOrder.number} and PO #${data.purchaseOrder.number}`;
+      } else if (data.salesOrder) {
+        description = `Sales Order #${data.salesOrder.number}`;
+      } else if (data.purchaseOrder) {
+        description = `Purchase Order #${data.purchaseOrder.number}`;
+      }
+      
+      toast.success('Orders created in Zoho Books!', { description });
     } catch (error: any) {
       console.error('❌ Error creating orders:', error);
       toast.error(`Failed to create orders: ${error.message}`);
@@ -89,6 +101,7 @@ export function ZohoOrderConfirmationDialog({
 
   function handleClose() {
     setCreatedOrders(null);
+    setOrderType('both');
     onOpenChange(false);
   }
 
@@ -102,8 +115,8 @@ export function ZohoOrderConfirmationDialog({
           </DialogTitle>
           <DialogDescription>
             {createdOrders 
-              ? 'Sales Order and Purchase Order have been created in Zoho Books'
-              : `Create Sales Order and Purchase Order for: ${jobName}${packageName ? ` - ${packageName}` : ''}`
+              ? `Order${(createdOrders.salesOrder && createdOrders.purchaseOrder) ? 's' : ''} created in Zoho Books`
+              : `Create Zoho order(s) for: ${jobName}${packageName ? ` - ${packageName}` : ''}`
             }
           </DialogDescription>
         </DialogHeader>
@@ -136,6 +149,34 @@ export function ZohoOrderConfirmationDialog({
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Order Type Selection */}
+              <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+                <Label className="text-sm font-semibold text-purple-900 mb-3 block">Select Order Type:</Label>
+                <RadioGroup value={orderType} onValueChange={(v) => setOrderType(v as any)} className="space-y-2">
+                  <div className="flex items-center space-x-2 p-2 rounded hover:bg-purple-100 cursor-pointer">
+                    <RadioGroupItem value="both" id="both" />
+                    <Label htmlFor="both" className="flex-1 cursor-pointer">
+                      <div className="font-semibold">Both - Sales Order & Purchase Order</div>
+                      <div className="text-xs text-muted-foreground">Create both orders for complete workflow</div>
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2 p-2 rounded hover:bg-green-100 cursor-pointer">
+                    <RadioGroupItem value="sales_order" id="sales_order" />
+                    <Label htmlFor="sales_order" className="flex-1 cursor-pointer">
+                      <div className="font-semibold">Sales Order Only</div>
+                      <div className="text-xs text-muted-foreground">For invoicing the customer</div>
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2 p-2 rounded hover:bg-orange-100 cursor-pointer">
+                    <RadioGroupItem value="purchase_order" id="purchase_order" />
+                    <Label htmlFor="purchase_order" className="flex-1 cursor-pointer">
+                      <div className="font-semibold">Purchase Order Only</div>
+                      <div className="text-xs text-muted-foreground">For ordering from vendor</div>
+                    </Label>
+                  </div>
+                </RadioGroup>
               </div>
 
               {/* Financials */}
@@ -215,10 +256,14 @@ export function ZohoOrderConfirmationDialog({
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <h4 className="font-semibold text-blue-900 text-sm mb-2">What will be created:</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• <strong>Sales Order</strong> - For invoicing the customer</li>
-                  <li>• <strong>Purchase Order</strong> - For ordering from vendor</li>
-                  <li>• Both orders will reference: <strong>{jobName}</strong></li>
-                  <li>• Orders will be created in Zoho Books organization</li>
+                  {(orderType === 'both' || orderType === 'sales_order') && (
+                    <li>• <strong>Sales Order</strong> - For invoicing the customer (${totalPrice.toFixed(2)})</li>
+                  )}
+                  {(orderType === 'both' || orderType === 'purchase_order') && (
+                    <li>• <strong>Purchase Order</strong> - For ordering from vendor (${totalCost.toFixed(2)})</li>
+                  )}
+                  <li>• Order{orderType === 'both' ? 's' : ''} will reference: <strong>{jobName}</strong></li>
+                  <li>• Created in Zoho Books COUNTYWIDE organization</li>
                 </ul>
               </div>
             </div>
@@ -235,10 +280,20 @@ export function ZohoOrderConfirmationDialog({
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Creating Orders...
                   </>
-                ) : (
+                ) : orderType === 'both' ? (
                   <>
                     <Package className="w-4 h-4 mr-2" />
                     Create Sales Order & PO
+                  </>
+                ) : orderType === 'sales_order' ? (
+                  <>
+                    <DollarSign className="w-4 h-4 mr-2" />
+                    Create Sales Order
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Create Purchase Order
                   </>
                 )}
               </Button>
@@ -258,14 +313,20 @@ export function ZohoOrderConfirmationDialog({
               <div className="bg-green-50 border-2 border-green-300 rounded-lg p-6 text-center">
                 <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-green-900 mb-2">
-                  Orders Created Successfully!
+                  Order{(createdOrders.salesOrder && createdOrders.purchaseOrder) ? 's' : ''} Created Successfully!
                 </h3>
                 <p className="text-green-700">
-                  Both Sales Order and Purchase Order have been created in Zoho Books
+                  {createdOrders.salesOrder && createdOrders.purchaseOrder
+                    ? 'Both Sales Order and Purchase Order have been created'
+                    : createdOrders.salesOrder
+                    ? 'Sales Order has been created'
+                    : 'Purchase Order has been created'
+                  } in Zoho Books
                 </p>
               </div>
 
               {/* Sales Order Card */}
+              {createdOrders.salesOrder && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -294,8 +355,10 @@ export function ZohoOrderConfirmationDialog({
                   </Button>
                 </div>
               </div>
+              )}
 
               {/* Purchase Order Card */}
+              {createdOrders.purchaseOrder && (
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -324,6 +387,7 @@ export function ZohoOrderConfirmationDialog({
                   </Button>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Close Button */}

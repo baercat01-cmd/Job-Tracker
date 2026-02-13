@@ -31,7 +31,9 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const { action, grantCode, clientId, clientSecret } = await req.json();
+    // Read the request body ONCE and use it throughout
+    const requestBody = await req.json();
+    const { action, grantCode, clientId, clientSecret, jobName, materialItems, notes, orderType } = requestBody;
 
     console.log('📡 Zoho sync request:', action);
 
@@ -206,8 +208,7 @@ serve(async (req) => {
     }
 
     if (action === 'create_orders') {
-      const { jobName, materialItems, notes } = await req.json();
-      
+      // Body already read above - use extracted values
       if (!jobName || !materialItems || materialItems.length === 0) {
         return new Response(
           JSON.stringify({ error: 'Missing required fields: jobName, materialItems' }),
@@ -215,13 +216,16 @@ serve(async (req) => {
         );
       }
 
-      console.log('🔄 Creating Sales Order and PO for job:', jobName);
+      console.log('🔄 Creating orders for job:', jobName, 'Type:', orderType || 'both');
 
       try {
         // Get access token
         const accessToken = await getValidAccessToken(settings, supabase);
 
-        // Create Sales Order
+        const result: any = { success: true };
+
+        // Create Sales Order (if requested)
+        if (!orderType || orderType === 'both' || orderType === 'sales_order') {
         const salesOrderData = {
           customer_name: jobName,
           reference_number: `Job: ${jobName}`,
@@ -255,7 +259,15 @@ serve(async (req) => {
         const salesOrderResult = await salesOrderResponse.json();
         console.log('✅ Sales Order created:', salesOrderResult.salesorder?.salesorder_id);
 
-        // Create Purchase Order
+        result.salesOrder = {
+          id: salesOrderResult.salesorder?.salesorder_id,
+          number: salesOrderResult.salesorder?.salesorder_number,
+          url: `https://books.zoho.com/app#/salesorders/${salesOrderResult.salesorder?.salesorder_id}`,
+        };
+        }
+
+        // Create Purchase Order (if requested)
+        if (!orderType || orderType === 'both' || orderType === 'purchase_order') {
         const purchaseOrderData = {
           vendor_name: 'Default Vendor', // Can be customized
           reference_number: `Job: ${jobName}`,
@@ -289,21 +301,28 @@ serve(async (req) => {
         const purchaseOrderResult = await purchaseOrderResponse.json();
         console.log('✅ Purchase Order created:', purchaseOrderResult.purchaseorder?.purchaseorder_id);
 
+        result.purchaseOrder = {
+          id: purchaseOrderResult.purchaseorder?.purchaseorder_id,
+          number: purchaseOrderResult.purchaseorder?.purchaseorder_number,
+          url: `https://books.zoho.com/app#/purchaseorders/${purchaseOrderResult.purchaseorder?.purchaseorder_id}`,
+        };
+        }
+
+        // Build message based on what was created
+        let message = 'Created ';
+        if (result.salesOrder && result.purchaseOrder) {
+          message += `Sales Order #${result.salesOrder.number} and Purchase Order #${result.purchaseOrder.number}`;
+        } else if (result.salesOrder) {
+          message += `Sales Order #${result.salesOrder.number}`;
+        } else if (result.purchaseOrder) {
+          message += `Purchase Order #${result.purchaseOrder.number}`;
+        }
+        message += ` for ${jobName}`;
+
+        result.message = message;
+
         return new Response(
-          JSON.stringify({
-            success: true,
-            message: `Created Sales Order and Purchase Order for ${jobName}`,
-            salesOrder: {
-              id: salesOrderResult.salesorder?.salesorder_id,
-              number: salesOrderResult.salesorder?.salesorder_number,
-              url: `https://books.zoho.com/app#/salesorders/${salesOrderResult.salesorder?.salesorder_id}`,
-            },
-            purchaseOrder: {
-              id: purchaseOrderResult.purchaseorder?.purchaseorder_id,
-              number: purchaseOrderResult.purchaseorder?.purchaseorder_number,
-              url: `https://books.zoho.com/app#/purchaseorders/${purchaseOrderResult.purchaseorder?.purchaseorder_id}`,
-            },
-          }),
+          JSON.stringify(result),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } catch (error: any) {
