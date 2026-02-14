@@ -6,13 +6,27 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase, Archive, Lock } from 'lucide-react';
+import { 
+  FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, 
+  Briefcase, Archive, Lock, History, Eye, Download, Calendar 
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeasurement } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Quote {
   id: string;
   quote_number: string | null;
+  proposal_number: string | null;
   status: 'draft' | 'submitted' | 'estimated' | 'won' | 'lost' | 'signed';
   customer_name: string | null;
   project_name: string | null;
@@ -25,6 +39,30 @@ interface Quote {
   estimated_at: string | null;
   converted_at: string | null;
   job_id: string | null;
+  current_version: number | null;
+  signed_version: number | null;
+}
+
+interface ProposalVersion {
+  id: string;
+  quote_id: string;
+  version_number: number;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  project_name: string | null;
+  width: number;
+  length: number;
+  eave: number | null;
+  pitch: string | null;
+  estimated_price: number | null;
+  is_signed: boolean;
+  signed_at: string | null;
+  signed_by: string | null;
+  change_notes: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 const STATUS_CONFIG = {
@@ -38,10 +76,18 @@ const STATUS_CONFIG = {
 
 export function QuotesView() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | Quote['status']>('all');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [versions, setVersions] = useState<ProposalVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [showSignDialog, setShowSignDialog] = useState(false);
+  const [signQuoteId, setSignQuoteId] = useState<string | null>(null);
+  const [changeNotes, setChangeNotes] = useState('');
 
   useEffect(() => {
     loadQuotes();
@@ -80,6 +126,59 @@ export function QuotesView() {
     }
   }
 
+  async function loadVersionHistory(quoteId: string) {
+    try {
+      setLoadingVersions(true);
+      setSelectedQuoteId(quoteId);
+
+      const { data, error } = await supabase
+        .from('proposal_versions')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('version_number', { ascending: false });
+
+      if (error) throw error;
+      setVersions(data || []);
+      setShowVersionHistory(true);
+    } catch (error: any) {
+      console.error('Error loading version history:', error);
+      toast.error('Failed to load version history');
+    } finally {
+      setLoadingVersions(false);
+    }
+  }
+
+  async function createNewVersion(quoteId: string, notes?: string) {
+    try {
+      // Call the database function to create a new version
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quoteId
+      });
+
+      if (error) throw error;
+
+      // If notes provided, update the version with notes
+      if (notes && data) {
+        const { error: updateError } = await supabase
+          .from('proposal_versions')
+          .update({ 
+            change_notes: notes,
+            created_by: profile?.id 
+          })
+          .eq('id', data);
+
+        if (updateError) throw updateError;
+      }
+
+      toast.success('New proposal version created');
+      return data;
+    } catch (error: any) {
+      console.error('Error creating version:', error);
+      toast.error('Failed to create new version');
+      throw error;
+    }
+  }
+
   async function markQuoteAsWon(quoteId: string, e: React.MouseEvent) {
     e.stopPropagation();
     
@@ -96,6 +195,9 @@ export function QuotesView() {
         .single();
 
       if (quoteError) throw quoteError;
+
+      // Create a snapshot version before converting
+      await createNewVersion(quoteId, 'Quote marked as won and sent to estimating');
 
       // Create a new job from the quote with 'quoting' status (NO job number yet)
       const { data: newJob, error: jobError } = await supabase
@@ -159,19 +261,22 @@ export function QuotesView() {
     }
   }
 
-  async function markQuoteAsSigned(quoteId: string, e: React.MouseEvent) {
+  async function openSignDialog(quoteId: string, e: React.MouseEvent) {
     e.stopPropagation();
-    
-    if (!confirm('Mark this proposal as signed? This will:\n\n1. Lock in the proposal price as the job budget\n2. Create a baseline budget for cost tracking\n3. Mark the proposal as the official contract\n\nThis cannot be undone.')) {
-      return;
-    }
+    setSignQuoteId(quoteId);
+    setChangeNotes('');
+    setShowSignDialog(true);
+  }
+
+  async function markQuoteAsSigned() {
+    if (!signQuoteId) return;
     
     try {
       // Get the quote details
       const { data: quote, error: quoteError } = await supabase
         .from('quotes')
         .select('*')
-        .eq('id', quoteId)
+        .eq('id', signQuoteId)
         .single();
 
       if (quoteError) throw quoteError;
@@ -197,6 +302,28 @@ export function QuotesView() {
         toast.error('A budget already exists for this job. Please edit the existing budget instead.');
         return;
       }
+
+      // Create a signed version snapshot
+      const versionId = await createNewVersion(signQuoteId, changeNotes || 'Proposal signed and locked');
+
+      // Mark the version as signed
+      const { error: versionSignError } = await supabase
+        .from('proposal_versions')
+        .update({
+          is_signed: true,
+          signed_at: new Date().toISOString(),
+          signed_by: profile?.id,
+        })
+        .eq('id', versionId);
+
+      if (versionSignError) throw versionSignError;
+
+      // Get the version number that was just created
+      const { data: signedVersion } = await supabase
+        .from('proposal_versions')
+        .select('version_number')
+        .eq('id', versionId)
+        .single();
 
       // Get any subcontractor estimates for this quote
       const { data: subEstimates } = await supabase
@@ -235,22 +362,27 @@ export function QuotesView() {
           equipment_breakdown: [],
           other_costs: null,
           overhead_allocation: null,
+          created_by: profile?.id,
         });
 
       if (budgetError) throw budgetError;
 
-      // Update the quote status to 'signed'
+      // Update the quote status to 'signed' and record the signed version
       const { error: updateError } = await supabase
         .from('quotes')
         .update({ 
           status: 'signed',
+          signed_version: signedVersion?.version_number,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', quoteId);
+        .eq('id', signQuoteId);
 
       if (updateError) throw updateError;
 
-      toast.success(`✅ Proposal marked as signed!\n\nBudget created: $${quote.estimated_price.toLocaleString()}\n\nYou can now refine labor, materials, and other costs in the Job Budget section.`);
+      toast.success(`✅ Proposal Version ${signedVersion?.version_number} signed and locked!\n\nBudget created: $${quote.estimated_price.toLocaleString()}\n\nYou can now track costs in the Financials tab.`);
+      setShowSignDialog(false);
+      setSignQuoteId(null);
+      setChangeNotes('');
       loadQuotes();
     } catch (error: any) {
       console.error('Error marking quote as signed:', error);
@@ -264,7 +396,8 @@ export function QuotesView() {
       const matchesSearch = !searchTerm || 
         quote.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         quote.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        quote.quote_number?.toLowerCase().includes(searchTerm.toLowerCase());
+        quote.quote_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        quote.proposal_number?.toLowerCase().includes(searchTerm.toLowerCase());
       
       return matchesStatus && matchesSearch;
     });
@@ -296,10 +429,30 @@ export function QuotesView() {
               <CardTitle className="text-lg">
                 {quote.project_name || quote.customer_name || 'Untitled Quote'}
               </CardTitle>
-              {quote.quote_number && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  #{quote.quote_number}
-                </p>
+              <div className="flex items-center gap-2 mt-1">
+                {quote.quote_number && (
+                  <p className="text-sm text-muted-foreground">
+                    Quote #{quote.quote_number}
+                  </p>
+                )}
+                {quote.proposal_number && (
+                  <p className="text-sm text-muted-foreground">
+                    • Proposal #{quote.proposal_number}
+                  </p>
+                )}
+              </div>
+              {quote.current_version && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-xs">
+                    Version {quote.current_version}
+                  </Badge>
+                  {quote.signed_version && (
+                    <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-300">
+                      <Lock className="w-3 h-3 mr-1" />
+                      Signed v{quote.signed_version}
+                    </Badge>
+                  )}
+                </div>
               )}
             </div>
             <Badge className={`${config.color} text-white`}>
@@ -333,6 +486,22 @@ export function QuotesView() {
               Converted to Job
             </div>
           )}
+
+          {/* Version History Button */}
+          {quote.current_version && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full mt-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                loadVersionHistory(quote.id);
+              }}
+            >
+              <History className="w-3 h-3 mr-2" />
+              View Version History ({quote.current_version} {quote.current_version === 1 ? 'version' : 'versions'})
+            </Button>
+          )}
           
           {/* Action buttons for estimated quotes */}
           {quote.status === 'estimated' && !quote.job_id && (
@@ -365,10 +534,10 @@ export function QuotesView() {
                 size="sm"
                 variant="outline"
                 className="w-full text-white bg-gradient-to-r from-emerald-700 to-emerald-800 hover:from-emerald-800 hover:to-emerald-900 border-2 border-emerald-600 font-semibold"
-                onClick={(e) => markQuoteAsSigned(quote.id, e)}
+                onClick={(e) => openSignDialog(quote.id, e)}
               >
                 <Lock className="w-3 h-3 mr-1" />
-                Mark as Signed - Lock Budget
+                Sign Proposal & Lock Budget
               </Button>
             </div>
           )}
@@ -379,7 +548,9 @@ export function QuotesView() {
               <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-2 text-center">
                 <Lock className="w-4 h-4 text-emerald-700 mx-auto mb-1" />
                 <p className="text-xs font-semibold text-emerald-900">Proposal Signed</p>
-                <p className="text-xs text-emerald-700">Budget Locked</p>
+                <p className="text-xs text-emerald-700">
+                  Version {quote.signed_version} Locked - Budget Active
+                </p>
               </div>
             </div>
           )}
@@ -558,6 +729,25 @@ export function QuotesView() {
           )}
         </TabsContent>
 
+        {/* Tab Content - Won */}
+        <TabsContent value="won" className="space-y-4">
+          {getFilteredQuotes('won').length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <CheckCircle className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">No won quotes</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {searchTerm ? 'Try adjusting your search' : 'No quotes have been won yet'}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {getFilteredQuotes('won').map(renderQuoteCard)}
+            </div>
+          )}
+        </TabsContent>
+
         {/* Tab Content - Signed */}
         <TabsContent value="signed" className="space-y-4">
           {getFilteredQuotes('signed').length === 0 ? (
@@ -573,25 +763,6 @@ export function QuotesView() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {getFilteredQuotes('signed').map(renderQuoteCard)}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Tab Content - Signed */}
-        <TabsContent value="signed" className="space-y-4">
-          {getFilteredQuotes('won').length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <CheckCircle className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-lg font-medium text-muted-foreground">No won quotes</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {searchTerm ? 'Try adjusting your search' : 'No quotes have been won yet'}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {getFilteredQuotes('won').map(renderQuoteCard)}
             </div>
           )}
         </TabsContent>
@@ -615,6 +786,180 @@ export function QuotesView() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Version History Dialog */}
+      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Proposal Version History
+            </DialogTitle>
+            <DialogDescription>
+              View all versions of this proposal. Signed versions are locked and cannot be modified.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingVersions ? (
+            <div className="py-12 text-center">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading version history...</p>
+            </div>
+          ) : versions.length === 0 ? (
+            <div className="py-12 text-center">
+              <History className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-lg font-medium text-muted-foreground">No versions found</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Versions are automatically created when proposals are modified
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {versions.map((version) => (
+                <Card key={version.id} className={version.is_signed ? 'border-emerald-300 bg-emerald-50' : ''}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg">Version {version.version_number}</CardTitle>
+                          {version.is_signed && (
+                            <Badge className="bg-emerald-600">
+                              <Lock className="w-3 h-3 mr-1" />
+                              Signed
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          <span>
+                            {new Date(version.created_at).toLocaleDateString('en-US', {
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        {version.is_signed && version.signed_at && (
+                          <div className="flex items-center gap-2 mt-1 text-sm text-emerald-700 font-medium">
+                            <Lock className="w-3 h-3" />
+                            <span>
+                              Signed on {new Date(version.signed_at).toLocaleDateString('en-US', {
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <Button size="sm" variant="outline">
+                        <Eye className="w-3 h-3 mr-2" />
+                        View Details
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Customer</Label>
+                        <p className="font-medium">{version.customer_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Project</Label>
+                        <p className="font-medium">{version.project_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Size</Label>
+                        <p className="font-medium">
+                          {formatMeasurement(version.width)} × {formatMeasurement(version.length)}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Estimated Price</Label>
+                        <p className="font-medium text-green-700">
+                          {version.estimated_price ? `$${version.estimated_price.toLocaleString()}` : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    {version.change_notes && (
+                      <div className="pt-3 border-t">
+                        <Label className="text-xs text-muted-foreground">Notes</Label>
+                        <p className="text-sm mt-1">{version.change_notes}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Sign Proposal Dialog */}
+      <Dialog open={showSignDialog} onOpenChange={setShowSignDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-emerald-600" />
+              Sign Proposal & Lock Budget
+            </DialogTitle>
+            <DialogDescription>
+              This will create a locked version of the proposal and establish it as the official contract budget.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">What happens when you sign:</h4>
+              <ul className="space-y-1 text-sm text-blue-800">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>A new version snapshot is created and locked (cannot be modified)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>A job budget is created using the proposal price</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>You can track actual costs vs. budget in the Financials tab</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>Previous versions remain accessible in version history</span>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={changeNotes}
+                onChange={(e) => setChangeNotes(e.target.value)}
+                placeholder="Add notes about this signed version (e.g., 'Client requested extended warranty')"
+                rows={3}
+                className="mt-2"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setShowSignDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={markQuoteAsSigned}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Sign & Lock Proposal
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
