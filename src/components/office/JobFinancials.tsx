@@ -1002,6 +1002,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
   const [versionChangeNotes, setVersionChangeNotes] = useState('');
   const [creatingVersion, setCreatingVersion] = useState(false);
+  const [initializingVersions, setInitializingVersions] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1049,7 +1050,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           .order('version_number', { ascending: false });
 
         if (!versionsError && versionsData) {
-          setProposalVersions(versionsData);
+          setProposalVersions(versionsData || []);
+        } else {
+          setProposalVersions([]);
         }
       } else {
         setQuote(null);
@@ -1080,6 +1083,38 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.error('Failed to load version history');
     } finally {
       setLoadingVersions(false);
+    }
+  }
+
+  async function initializeVersioning() {
+    if (!quote || !profile) return;
+
+    if (!confirm(
+      'Initialize version tracking for this proposal?\n\n' +
+      'This will create Version 1 from the current proposal state.\n\n' +
+      'Continue?'
+    )) {
+      return;
+    }
+
+    setInitializingVersions(true);
+    
+    try {
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_created_by: profile.id,
+        p_change_notes: 'Initial version - migrated from existing proposal',
+      });
+
+      if (error) throw error;
+
+      toast.success('Version tracking initialized! Version 1 created.');
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error initializing versions:', error);
+      toast.error('Failed to initialize versions: ' + error.message);
+    } finally {
+      setInitializingVersions(false);
     }
   }
 
@@ -2695,54 +2730,95 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   return (
     <div className="w-full">
       {/* Proposal Version Info Banner - Show if quote exists */}
-      {quote && proposalVersions.length > 0 && (
+      {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-semibold text-blue-900">
-                    Proposal #{quote.proposal_number || quote.quote_number}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    Version {quote.current_version || 1}
-                  </Badge>
-                  {quote.signed_version && (
-                    <Badge className="text-xs bg-emerald-600">
-                      <Lock className="w-3 h-3 mr-1" />
-                      Signed v{quote.signed_version}
-                    </Badge>
+            {proposalVersions.length === 0 ? (
+              // No versions yet - show initialization prompt
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-blue-900">
+                      Proposal #{quote.proposal_number || quote.quote_number}
+                    </p>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      Version tracking not initialized
+                    </p>
+                  </div>
+                  {quote.estimated_price && (
+                    <div className="text-sm text-blue-700 ml-4">
+                      Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
                   )}
                 </div>
-                {quote.estimated_price && (
-                  <div className="text-sm text-blue-700">
-                    Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  onClick={() => setShowCreateVersionDialog(true)}
+                  onClick={initializeVersioning}
+                  disabled={initializingVersions}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  <Plus className="w-3 h-3 mr-2" />
-                  Create New Version
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={openVersionHistoryDialog}
-                  className="border-blue-300 hover:bg-blue-100"
-                >
-                  <History className="w-3 h-3 mr-2" />
-                  View History ({proposalVersions.length})
+                  {initializingVersions ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Initializing...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3 h-3 mr-2" />
+                      Initialize Version Tracking
+                    </>
+                  )}
                 </Button>
               </div>
-            </div>
+            ) : (
+              // Versions exist - show full controls
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-semibold text-blue-900">
+                      Proposal #{quote.proposal_number || quote.quote_number}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      Version {quote.current_version || 1}
+                    </Badge>
+                    {quote.signed_version && (
+                      <Badge className="text-xs bg-emerald-600">
+                        <Lock className="w-3 h-3 mr-1" />
+                        Signed v{quote.signed_version}
+                      </Badge>
+                    )}
+                  </div>
+                  {quote.estimated_price && (
+                    <div className="text-sm text-blue-700">
+                      Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setShowCreateVersionDialog(true)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Plus className="w-3 h-3 mr-2" />
+                    Create New Version
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={openVersionHistoryDialog}
+                    className="border-blue-300 hover:bg-blue-100"
+                  >
+                    <History className="w-3 h-3 mr-2" />
+                    View History ({proposalVersions.length})
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
