@@ -196,9 +196,22 @@ export function ContactsManagement() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check file type
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast.error('Please upload an Excel file (.xlsx or .xls)');
+    // Check file type - Accept CSV, Excel, or VCF (vCard)
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    if (!['csv', 'xlsx', 'xls', 'vcf'].includes(fileExtension || '')) {
+      toast.error('Please upload a CSV, Excel, or vCard file');
+      return;
+    }
+
+    // Handle CSV files (Thunderbird export)
+    if (fileExtension === 'csv') {
+      handleCSVImport(file);
+      return;
+    }
+
+    // Handle vCard files (Thunderbird export)
+    if (fileExtension === 'vcf') {
+      handleVCardImport(file);
       return;
     }
 
@@ -402,43 +415,192 @@ export function ContactsManagement() {
     }
   }
 
+  async function handleCSVImport(file: File) {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split('\n');
+      
+      if (lines.length < 2) {
+        throw new Error('CSV file is empty or invalid');
+      }
+
+      // Parse CSV headers
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"/, '').replace(/"$/, ''));
+      
+      // Parse data rows
+      const mappedContacts = lines.slice(1)
+        .filter(line => line.trim())
+        .map(line => {
+          // Simple CSV parser (handles quoted values)
+          const values = [];
+          let current = '';
+          let inQuotes = false;
+          
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              values.push(current.trim());
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          values.push(current.trim());
+
+          // Map CSV columns to contact fields
+          const row: any = {};
+          headers.forEach((header, idx) => {
+            row[header] = values[idx] || '';
+          });
+
+          // Map common Thunderbird/CSV field names
+          const name = row['Display Name'] || row['First Name'] || row['Name'] || '';
+          const lastName = row['Last Name'] || '';
+          const fullName = lastName ? `${name} ${lastName}`.trim() : name;
+          
+          return {
+            name: fullName || row['Email'] || 'Unknown',
+            email: row['Email'] || row['Email Address'] || row['Primary Email'] || '',
+            phone: row['Phone'] || row['Work Phone'] || row['Mobile Phone'] || row['Home Phone'] || '',
+            category: 'customer' as const,
+            company_name: row['Company'] || row['Organization'] || row['Company Name'] || '',
+            notes: row['Notes'] || '',
+          };
+        })
+        .filter(c => c.email); // Only include contacts with email
+
+      setImportPreview(mappedContacts);
+      setShowImportDialog(true);
+      
+      toast.success(`Found ${mappedContacts.length} valid contacts in CSV`);
+    } catch (error: any) {
+      console.error('Error importing CSV:', error);
+      toast.error('Failed to parse CSV file: ' + error.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleVCardImport(file: File) {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const vcards = text.split('BEGIN:VCARD').filter(v => v.trim());
+      
+      const mappedContacts = vcards.map(vcard => {
+        const lines = vcard.split('\n');
+        const contact: any = {
+          name: '',
+          email: '',
+          phone: '',
+          category: 'customer' as const,
+          company_name: '',
+          notes: '',
+        };
+
+        lines.forEach(line => {
+          const [field, ...valueParts] = line.split(':');
+          const value = valueParts.join(':').trim();
+          
+          if (field.startsWith('FN')) contact.name = value;
+          if (field.startsWith('EMAIL')) contact.email = value;
+          if (field.startsWith('TEL')) contact.phone = value;
+          if (field.startsWith('ORG')) contact.company_name = value;
+          if (field.startsWith('NOTE')) contact.notes = value;
+        });
+
+        return contact;
+      }).filter(c => c.email);
+
+      setImportPreview(mappedContacts);
+      setShowImportDialog(true);
+      
+      toast.success(`Found ${mappedContacts.length} valid contacts in vCard`);
+    } catch (error: any) {
+      console.error('Error importing vCard:', error);
+      toast.error('Failed to parse vCard file: ' + error.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function autoCreateFromEmails() {
+    setImporting(true);
+    try {
+      // Get all emails that don't have a matching contact
+      const { data: emails, error: emailsError } = await supabase
+        .from('job_emails')
+        .select('from_email, from_name, entity_category')
+        .not('from_email', 'is', null);
+
+      if (emailsError) throw emailsError;
+
+      // Get existing contacts
+      const { data: existingContacts, error: contactsError } = await supabase
+        .from('contacts')
+        .select('email');
+
+      if (contactsError) throw contactsError;
+
+      const existingEmails = new Set(existingContacts?.map(c => c.email.toLowerCase()) || []);
+
+      // Find unique emails that don't have contacts yet
+      const uniqueEmails = new Map();
+      emails?.forEach(email => {
+        const emailLower = email.from_email.toLowerCase();
+        if (!existingEmails.has(emailLower) && !uniqueEmails.has(emailLower)) {
+          uniqueEmails.set(emailLower, {
+            name: email.from_name || email.from_email.split('@')[0],
+            email: email.from_email,
+            phone: '',
+            category: email.entity_category || 'customer',
+            company_name: '',
+            notes: 'Auto-created from email communications',
+          });
+        }
+      });
+
+      const newContacts = Array.from(uniqueEmails.values());
+
+      if (newContacts.length === 0) {
+        toast.info('No new contacts found from emails');
+        return;
+      }
+
+      setImportPreview(newContacts);
+      setShowImportDialog(true);
+      
+      toast.success(`Found ${newContacts.length} new contacts from emails`);
+    } catch (error: any) {
+      console.error('Error auto-creating contacts:', error);
+      toast.error('Failed to extract contacts from emails');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function downloadTemplate() {
     const template = [
       {
         'Display Name': 'John Doe',
-        'Customer Number': 'CUST-001',
-        'Company Name': 'ABC Construction',
+        'Email': 'john@example.com',
+        'Phone': '(555) 123-4567',
+        'Company': 'ABC Construction',
         'First Name': 'John',
         'Last Name': 'Doe',
-        'Email ID': 'john@example.com',
-        'Phone': '(555) 123-4567',
-        'Mobile Phone': '(555) 123-4567',
-        'Contact Type': 'Customer',
-        'Billing Address': '123 Main St',
-        'Billing City': 'Springfield',
-        'Billing State': 'IL',
-        'Billing Code': '62701',
-        'Tax ID': 'TAX-001',
-        'Taxable': 'Yes',
-        'Description': 'Primary contact for ABC Construction projects',
+        'Notes': 'Primary contact',
       },
       {
         'Display Name': 'Jane Smith',
-        'Customer Number': 'VEND-001',
-        'Company Name': 'Supply Co',
+        'Email': 'jane@vendor.com',
+        'Phone': '(555) 987-6543',
+        'Company': 'Supply Co',
         'First Name': 'Jane',
         'Last Name': 'Smith',
-        'Email ID': 'jane@vendor.com',
-        'Phone': '(555) 987-6543',
-        'Mobile Phone': '(555) 987-6543',
-        'Contact Type': 'Vendor',
-        'Billing Address': '456 Oak Ave',
-        'Billing City': 'Chicago',
-        'Billing State': 'IL',
-        'Billing Code': '60601',
-        'Tax ID': 'TAX-002',
-        'Taxable': 'Yes',
-        'Description': 'Material supplier - lumber and steel',
+        'Notes': 'Material supplier',
       },
     ];
 
@@ -451,7 +613,7 @@ export function ContactsManagement() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'contacts_import_template_zoho.csv';
+    a.download = 'contacts_import_template.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -488,8 +650,15 @@ export function ContactsManagement() {
           <p className="text-sm text-muted-foreground">
             Manage customers, vendors, and subcontractors for email categorization
           </p>
+          <div className="mt-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-3 py-2 max-w-2xl">
+            💡 <strong>Import Options:</strong> Upload CSV/Excel from Thunderbird, import vCard files, or auto-create contacts from your synced emails
+          </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={autoCreateFromEmails} disabled={importing}>
+            <Mail className="w-4 h-4 mr-2" />
+            {importing ? 'Processing...' : 'From Emails'}
+          </Button>
           <Button variant="outline" onClick={downloadTemplate}>
             <Download className="w-4 h-4 mr-2" />
             Template
@@ -498,14 +667,14 @@ export function ContactsManagement() {
             <Button variant="outline" disabled={importing} asChild>
               <span>
                 <Upload className="w-4 h-4 mr-2" />
-                {importing ? 'Importing...' : 'Import Excel'}
+                {importing ? 'Importing...' : 'Import File'}
               </span>
             </Button>
           </label>
           <input
             id="contact-import"
             type="file"
-            accept=".xlsx,.xls"
+            accept=".csv,.xlsx,.xls,.vcf"
             className="hidden"
             onChange={handleFileImport}
           />
