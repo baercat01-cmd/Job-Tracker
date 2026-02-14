@@ -33,7 +33,7 @@ serve(async (req) => {
   try {
     // Read the request body ONCE and use it throughout
     const requestBody = await req.json();
-    const { action, grantCode, clientId, clientSecret, jobName, materialItems, notes, orderType } = requestBody;
+    const { action, grantCode, clientId, clientSecret, jobName, jobId, materialItems, notes, orderType } = requestBody;
 
     console.log('📡 Zoho sync request:', action);
 
@@ -374,6 +374,121 @@ serve(async (req) => {
         );
       } catch (error: any) {
         console.error('❌ Error creating orders:', error);
+        throw error;
+      }
+    }
+
+    if (action === 'create_quote') {
+      const { materialItemIds, userId } = requestBody;
+      
+      if (!jobName || !materialItems || materialItems.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields: jobName, materialItems' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('🔄 Creating Zoho quote for job:', jobName, '- Materials:', materialItems.length);
+
+      try {
+        // Get access token
+        const accessToken = await getValidAccessToken(settings, supabase);
+
+        // Find or create customer
+        const customerId = await findOrCreateCustomer(accessToken, settings.countywide_org_id, jobName);
+        console.log('✅ Customer ID:', customerId);
+        
+        const quoteData = {
+          customer_id: customerId,
+          reference_number: `Job: ${jobName}`,
+          notes: notes || `Material tracking quote for ${jobName}`,
+          line_items: materialItems.map((item: any) => ({
+            item_id: item.sku || undefined,
+            name: item.material_name,
+            description: item.usage || item.category || '',
+            quantity: item.quantity,
+            rate: item.price_per_unit || item.cost_per_unit || 0,
+          })),
+        };
+
+        const quoteResponse = await fetch(
+          `https://www.zohoapis.com/books/v3/estimates?organization_id=${settings.countywide_org_id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Zoho-oauthtoken ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(quoteData),
+          }
+        );
+
+        if (!quoteResponse.ok) {
+          const errorText = await quoteResponse.text();
+          throw new Error(`Failed to create Quote: ${errorText}`);
+        }
+
+        const quoteResult = await quoteResponse.json();
+        console.log('✅ Quote created:', quoteResult.estimate?.estimate_id);
+
+        const result = {
+          success: true,
+          quote: {
+            id: quoteResult.estimate?.estimate_id,
+            number: quoteResult.estimate?.estimate_number,
+            url: `https://books.zoho.com/app#/quotes/${quoteResult.estimate?.estimate_id}`,
+          },
+          message: `Created Quote #${quoteResult.estimate?.estimate_number} for ${jobName}`,
+        };
+
+        // Update job with quote information
+        if (jobId) {
+          console.log('📝 Updating job with quote info...');
+          
+          const { error: jobUpdateError } = await supabase
+            .from('jobs')
+            .update({
+              zoho_quote_id: result.quote.id,
+              zoho_quote_number: result.quote.number,
+              zoho_quote_created_at: new Date().toISOString(),
+            })
+            .eq('id', jobId);
+
+          if (jobUpdateError) {
+            console.error('⚠️ Error updating job:', jobUpdateError);
+            // Don't throw - quote was created successfully
+          } else {
+            console.log('✅ Updated job with quote info');
+          }
+        }
+
+        // Update material_items with quote information
+        if (materialItemIds && materialItemIds.length > 0) {
+          console.log('📝 Updating material items with quote info...');
+          
+          const { error: updateError } = await supabase
+            .from('material_items')
+            .update({
+              zoho_quote_id: result.quote.id,
+              zoho_quote_number: result.quote.number,
+              updated_at: new Date().toISOString(),
+            })
+            .in('id', materialItemIds);
+
+          if (updateError) {
+            console.error('⚠️ Error updating material items:', updateError);
+            // Don't throw - quote was created successfully
+          } else {
+            console.log('✅ Updated', materialItemIds.length, 'material items with quote info');
+          }
+        }
+
+        return new Response(
+          JSON.stringify(result),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (error: any) {
+        console.error('❌ Error creating quote:', error);
         throw error;
       }
     }
