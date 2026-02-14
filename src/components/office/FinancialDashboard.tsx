@@ -86,6 +86,8 @@ export function FinancialDashboard() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [selectedJobForOrders, setSelectedJobForOrders] = useState<string | null>(null);
   const [jobOrders, setJobOrders] = useState<any[]>([]);
+  const [allOrders, setAllOrders] = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   
   // Date range for financial overview (default: current month)
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>(() => {
@@ -98,6 +100,7 @@ export function FinancialDashboard() {
   useEffect(() => {
     loadFinancialData();
     loadJobs();
+    loadAllOrders();
   }, [dateRange]);
 
   useEffect(() => {
@@ -160,7 +163,6 @@ export function FinancialDashboard() {
 
   async function loadJobOrders(jobId: string) {
     try {
-      // Load all material items for this job that have Zoho orders
       const { data, error } = await supabase
         .from('material_items')
         .select(`
@@ -179,11 +181,9 @@ export function FinancialDashboard() {
 
       if (error) throw error;
 
-      // Group by order numbers
       const ordersMap = new Map();
 
       data?.forEach(item => {
-        // Sales Orders
         if (item.zoho_sales_order_id && item.zoho_sales_order_number) {
           const key = `SO-${item.zoho_sales_order_number}`;
           if (!ordersMap.has(key)) {
@@ -200,7 +200,6 @@ export function FinancialDashboard() {
           order.total += item.extended_price || 0;
         }
 
-        // Purchase Orders
         if (item.zoho_purchase_order_id && item.zoho_purchase_order_number) {
           const key = `PO-${item.zoho_purchase_order_number}`;
           if (!ordersMap.has(key)) {
@@ -225,8 +224,84 @@ export function FinancialDashboard() {
     }
   }
 
+  async function loadAllOrders() {
+    setOrdersLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('material_items')
+        .select(`
+          *,
+          sheet:material_sheets!inner(
+            id,
+            sheet_name,
+            workbook:material_workbooks!inner(
+              job_id,
+              job:jobs!inner(
+                id,
+                name,
+                job_number,
+                client_name
+              )
+            )
+          )
+        `)
+        .or('zoho_sales_order_id.not.is.null,zoho_purchase_order_id.not.is.null')
+        .order('ordered_at', { ascending: false });
+
+      if (error) throw error;
+
+      const ordersMap = new Map();
+
+      data?.forEach(item => {
+        const job = item.sheet.workbook.job;
+        
+        if (item.zoho_sales_order_id && item.zoho_sales_order_number) {
+          const key = `SO-${item.zoho_sales_order_number}`;
+          if (!ordersMap.has(key)) {
+            ordersMap.set(key, {
+              type: 'Sales Order',
+              number: item.zoho_sales_order_number,
+              id: item.zoho_sales_order_id,
+              job: job,
+              items: [],
+              total: 0,
+              orderedAt: item.ordered_at
+            });
+          }
+          const order = ordersMap.get(key);
+          order.items.push(item);
+          order.total += item.extended_price || 0;
+        }
+
+        if (item.zoho_purchase_order_id && item.zoho_purchase_order_number) {
+          const key = `PO-${item.zoho_purchase_order_number}`;
+          if (!ordersMap.has(key)) {
+            ordersMap.set(key, {
+              type: 'Purchase Order',
+              number: item.zoho_purchase_order_number,
+              id: item.zoho_purchase_order_id,
+              job: job,
+              items: [],
+              total: 0,
+              orderedAt: item.ordered_at
+            });
+          }
+          const order = ordersMap.get(key);
+          order.items.push(item);
+          order.total += item.extended_cost || 0;
+        }
+      });
+
+      setAllOrders(Array.from(ordersMap.values()));
+    } catch (error: any) {
+      console.error('Error loading all orders:', error);
+      toast.error('Failed to load orders');
+    } finally {
+      setOrdersLoading(false);
+    }
+  }
+
   async function loadJobActuals() {
-    // Calculate actual costs from time entries and materials
     const { data: jobs, error: jobsError } = await supabase
       .from('jobs')
       .select('id')
@@ -237,7 +312,6 @@ export function FinancialDashboard() {
     const actuals: JobActuals[] = [];
 
     for (const job of jobs || []) {
-      // Get actual labor hours and costs (from time_entries)
       const { data: timeEntries } = await supabase
         .from('time_entries')
         .select('total_hours, crew_count')
@@ -246,19 +320,15 @@ export function FinancialDashboard() {
       const actualLaborHours = timeEntries?.reduce((sum, entry) => 
         sum + ((entry.total_hours || 0) * (entry.crew_count || 1)), 0) || 0;
 
-      // Assume $30/hr average labor rate for actual cost calculation
       const actualLaborCost = actualLaborHours * 30;
 
-      // Get actual materials costs
       const { data: materials } = await supabase
         .from('materials')
         .select('total_cost')
         .eq('job_id', job.id);
 
       const actualMaterialsCost = materials?.reduce((sum, m) => sum + (m.total_cost || 0), 0) || 0;
-
-      // Get actual subcontractor costs (from subcontractor_schedules - would need cost field)
-      const actualSubcontractorCost = 0; // Placeholder
+      const actualSubcontractorCost = 0;
 
       actuals.push({
         job_id: job.id,
@@ -272,10 +342,8 @@ export function FinancialDashboard() {
     setJobActuals(actuals);
   }
 
-  // Calculate financial metrics
   const totalOverhead = overheadExpenses.reduce((sum, exp) => {
     if (exp.frequency === 'monthly') {
-      // Calculate how many months in the date range
       const months = Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24 * 30));
       return sum + (exp.amount * months);
     } else if (exp.frequency === 'annual') {
@@ -306,7 +374,6 @@ export function FinancialDashboard() {
     ? ((estimatedProfit / totalQuotedRevenue) * 100) 
     : 0;
 
-  // Jobs with budget variance issues
   const jobsOverBudget = jobBudgets.filter(budget => {
     const actual = jobActuals.find(a => a.job_id === budget.job_id);
     if (!actual) return false;
@@ -333,13 +400,11 @@ export function FinancialDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Financial Management</h1>
         <p className="text-gray-600 mt-2">Track overhead, job budgets, and profitability</p>
       </div>
 
-      {/* Books Button */}
       <div className="flex justify-end">
         <Button onClick={() => setShowBooksDialog(true)} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
           <BookOpen className="w-4 h-4 mr-2" />
@@ -350,15 +415,13 @@ export function FinancialDashboard() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="orders">Job Orders</TabsTrigger>
+          <TabsTrigger value="orders">All Orders</TabsTrigger>
           <TabsTrigger value="overhead">Overhead</TabsTrigger>
           <TabsTrigger value="budgets">Job Budgets</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          {/* Key Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -418,7 +481,6 @@ export function FinancialDashboard() {
             </Card>
           </div>
 
-          {/* Budget Alerts */}
           {jobsOverBudget.length > 0 && (
             <Card className="border-red-200 bg-red-50">
               <CardHeader>
@@ -467,7 +529,6 @@ export function FinancialDashboard() {
             </Card>
           )}
 
-          {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab('overhead')}>
               <CardContent className="pt-6">
@@ -513,134 +574,177 @@ export function FinancialDashboard() {
           </div>
         </TabsContent>
 
-        {/* Job Orders Tab */}
         <TabsContent value="orders" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="border-green-200 bg-green-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-700 font-medium">Total Sales Orders</p>
+                    <p className="text-2xl font-bold text-green-800">
+                      ${allOrders.filter(o => o.type === 'Sales Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-green-600 mt-1">
+                      {allOrders.filter(o => o.type === 'Sales Order').length} orders
+                    </p>
+                  </div>
+                  <ShoppingCart className="w-8 h-8 text-green-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-700 font-medium">Total Purchase Orders</p>
+                    <p className="text-2xl font-bold text-blue-800">
+                      ${allOrders.filter(o => o.type === 'Purchase Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      {allOrders.filter(o => o.type === 'Purchase Order').length} orders
+                    </p>
+                  </div>
+                  <Package className="w-8 h-8 text-blue-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-purple-200 bg-purple-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-purple-700 font-medium">Total Orders</p>
+                    <p className="text-2xl font-bold text-purple-800">
+                      {allOrders.length}
+                    </p>
+                    <p className="text-xs text-purple-600 mt-1">
+                      Across all jobs
+                    </p>
+                  </div>
+                  <Briefcase className="w-8 h-8 text-purple-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-orange-200 bg-orange-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-orange-700 font-medium">Net Difference</p>
+                    <p className="text-2xl font-bold text-orange-800">
+                      ${(
+                        allOrders.filter(o => o.type === 'Sales Order').reduce((sum, o) => sum + o.total, 0) -
+                        allOrders.filter(o => o.type === 'Purchase Order').reduce((sum, o) => sum + o.total, 0)
+                      ).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-orange-600 mt-1">
+                      SO - PO
+                    </p>
+                  </div>
+                  <DollarSign className="w-8 h-8 text-orange-600" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5" />
-                  Sales Orders & Purchase Orders by Job
+                  All Sales Orders & Purchase Orders
                 </CardTitle>
+                <Badge variant="secondary">
+                  {allOrders.length} Total Orders
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Job Selector */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">Select Job</label>
-                <Select value={selectedJobForOrders || ''} onValueChange={setSelectedJobForOrders}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a job to view orders..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jobs.map(job => (
-                      <SelectItem key={job.id} value={job.id}>
-                        {job.job_number ? `#${job.job_number} - ` : ''}{job.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Orders Display */}
-              {selectedJobForOrders ? (
-                jobOrders.length > 0 ? (
-                  <div className="space-y-4">
-                    {jobOrders.map((order, idx) => (
-                      <Card key={idx} className={order.type === 'Sales Order' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between">
-                            <div>
+              {ordersLoading ? (
+                <div className="text-center py-12">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading orders...</p>
+                </div>
+              ) : allOrders.length > 0 ? (
+                <div className="space-y-4">
+                  {allOrders.map((order, idx) => (
+                    <Card key={idx} className={order.type === 'Sales Order' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
                               <Badge className={order.type === 'Sales Order' ? 'bg-green-600' : 'bg-blue-600'}>
                                 {order.type}
                               </Badge>
-                              <div className="mt-2">
-                                <a
-                                  href={`https://books.zoho.com/app/60007115224#/${order.type === 'Sales Order' ? 'salesorders' : 'purchaseorders'}/${order.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-lg font-bold text-blue-600 hover:text-blue-800 flex items-center gap-2"
-                                >
-                                  {order.number}
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
+                              <a
+                                href={`https://books.zoho.com/app/60007115224#/${order.type === 'Sales Order' ? 'salesorders' : 'purchaseorders'}/${order.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-lg font-bold text-blue-600 hover:text-blue-800 flex items-center gap-2"
+                              >
+                                {order.number}
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Briefcase className="w-4 h-4" />
+                              <span className="font-medium">
+                                {order.job.job_number ? `#${order.job.job_number} - ` : ''}
+                                {order.job.name}
+                              </span>
+                              <span>({order.job.client_name})</span>
+                            </div>
+                            {order.orderedAt && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                <Calendar className="w-3 h-3" />
+                                Ordered: {new Date(order.orderedAt).toLocaleDateString()}
                               </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-muted-foreground">Total</div>
-                              <div className="text-xl font-bold text-gray-900">
-                                ${order.total.toLocaleString()}
-                              </div>
-                            </div>
+                            )}
                           </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Materials on Order:</span>
-                              <span className="font-semibold">{order.items.length} items</span>
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground">Total</div>
+                            <div className="text-xl font-bold text-gray-900">
+                              ${order.total.toLocaleString()}
                             </div>
-                            <details className="cursor-pointer">
-                              <summary className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                                View Material Details
-                              </summary>
-                              <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-                                {order.items.map((item: any) => (
-                                  <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-white rounded border">
-                                    <div className="flex-1">
-                                      <div className="font-medium">{item.material_name}</div>
-                                      {item.sku && <div className="text-muted-foreground">SKU: {item.sku}</div>}
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="font-semibold">Qty: {item.quantity}</div>
-                                      <div className="text-muted-foreground">
-                                        ${(order.type === 'Sales Order' ? item.extended_price : item.extended_cost)?.toFixed(2)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </details>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-
-                    {/* Order Summary */}
-                    <Card className="border-2 border-gray-300 bg-gray-50">
-                      <CardContent className="pt-6">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="text-sm text-muted-foreground">Total Sales Orders</div>
-                            <div className="text-2xl font-bold text-green-600">
-                              ${jobOrders.filter(o => o.type === 'Sales Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">Total Purchase Orders</div>
-                            <div className="text-2xl font-bold text-blue-600">
-                              ${jobOrders.filter(o => o.type === 'Purchase Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {order.items.length} items
                             </div>
                           </div>
                         </div>
+                      </CardHeader>
+                      <CardContent>
+                        <details className="cursor-pointer">
+                          <summary className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                            View Material Details ({order.items.length} items)
+                          </summary>
+                          <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                            {order.items.map((item: any) => (
+                              <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-white rounded border">
+                                <div className="flex-1">
+                                  <div className="font-medium">{item.material_name}</div>
+                                  {item.sku && <div className="text-muted-foreground">SKU: {item.sku}</div>}
+                                </div>
+                                <div className="text-right">
+                                  <div className="font-semibold">Qty: {item.quantity}</div>
+                                  <div className="text-muted-foreground">
+                                    ${(order.type === 'Sales Order' ? item.extended_price : item.extended_cost)?.toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
                       </CardContent>
                     </Card>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-lg font-medium text-muted-foreground">No orders found for this job</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Orders will appear here once materials are synced with Zoho Books
-                    </p>
-                  </div>
-                )
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-12">
-                  <Briefcase className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-lg font-medium text-muted-foreground">Select a job to view orders</p>
+                  <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-lg font-medium text-muted-foreground">No orders found</p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Choose a job from the dropdown above to see all Sales Orders and Purchase Orders
+                    Orders will appear here once materials are synced with Zoho Books
                   </p>
                 </div>
               )}
@@ -648,17 +752,14 @@ export function FinancialDashboard() {
           </Card>
         </TabsContent>
 
-        {/* Overhead Tab */}
         <TabsContent value="overhead">
           <OverheadManagement onUpdate={loadFinancialData} />
         </TabsContent>
 
-        {/* Job Budgets Tab */}
         <TabsContent value="budgets">
           <JobBudgetManagement onUpdate={loadFinancialData} />
         </TabsContent>
 
-        {/* Reports Tab */}
         <TabsContent value="reports">
           <ProfitabilityReports 
             jobBudgets={jobBudgets}
@@ -668,7 +769,6 @@ export function FinancialDashboard() {
         </TabsContent>
       </Tabs>
 
-      {/* Books Dialog */}
       <Dialog open={showBooksDialog} onOpenChange={setShowBooksDialog}>
         <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
