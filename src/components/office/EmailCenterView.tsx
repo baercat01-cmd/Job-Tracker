@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { JobCommunications } from './JobCommunications';
+import { EmailJobAssignment } from './EmailJobAssignment';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ export function EmailCenterView() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'communications' | 'assign'>('communications');
   const [emailStats, setEmailStats] = useState({
     total: 0,
     customer: 0,
@@ -126,7 +128,19 @@ export function EmailCenterView() {
   }
 
   return (
-    <div className="space-y-4">
+    <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-4">
+      <TabsList className="grid w-full grid-cols-2">
+        <TabsTrigger value="communications">
+          <Mail className="w-4 h-4 mr-2" />
+          Email Communications
+        </TabsTrigger>
+        <TabsTrigger value="assign">
+          <Filter className="w-4 h-4 mr-2" />
+          Assign Emails to Jobs
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="communications" className="space-y-4">
       {/* Stats Overview */}
       <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
         <CardHeader>
@@ -239,6 +253,11 @@ export function EmailCenterView() {
           </CardContent>
         </Card>
       )}
-    </div>
+      </TabsContent>
+
+      <TabsContent value="assign" className="space-y-4">
+        <EmailJobAssignment />
+      </TabsContent>
+    </Tabs>
   );
 }
