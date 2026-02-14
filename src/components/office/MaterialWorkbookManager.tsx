@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { parseExcelWorkbook, validateMaterialWorkbook, normalizeColumnName, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
 import { CrewMaterialProcessing } from './CrewMaterialProcessing';
+import { JobZohoOrders } from './JobZohoOrders';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
 interface MaterialWorkbook {
@@ -160,6 +161,9 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   // Quote creation state
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [job, setJob] = useState<any>(null);
+
+  // Active tab state
+  const [activeTab, setActiveTab] = useState('workbook');
 
   useEffect(() => {
     loadWorkbooks();
@@ -558,11 +562,28 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             Manage material workbooks and create Zoho Books quotes for tracking
           </p>
         </div>
-        <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
-          <Upload className="w-4 h-4 mr-2" />
-          Upload Workbook
-        </Button>
+        {activeTab === 'workbook' && (
+          <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Workbook
+          </Button>
+        )}
       </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="workbook">
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Workbook
+          </TabsTrigger>
+          <TabsTrigger value="books-orders">
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Books Orders
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="workbook" className="space-y-4 mt-4">
 
       {/* Working Version */}
       {workingVersion && (
@@ -648,6 +669,12 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       <div className="text-center text-muted-foreground py-8">
         <p className="text-sm">Material workbook interface continues here...</p>
       </div>
+        </TabsContent>
+
+        <TabsContent value="books-orders" className="mt-4">
+          <JobZohoOrders jobId={jobId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
