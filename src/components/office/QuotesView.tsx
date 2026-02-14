@@ -6,14 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase, Archive } from 'lucide-react';
+import { FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, Briefcase, Archive, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeasurement } from '@/lib/utils';
 
 interface Quote {
   id: string;
   quote_number: string | null;
-  status: 'draft' | 'submitted' | 'estimated' | 'won' | 'lost';
+  status: 'draft' | 'submitted' | 'estimated' | 'won' | 'lost' | 'signed';
   customer_name: string | null;
   project_name: string | null;
   width: number;
@@ -32,6 +32,7 @@ const STATUS_CONFIG = {
   submitted: { label: 'Submitted', color: 'bg-blue-700', icon: FileText },
   estimated: { label: 'Estimated', color: 'bg-purple-700', icon: DollarSign },
   won: { label: 'Won', color: 'bg-green-700', icon: CheckCircle },
+  signed: { label: 'Signed', color: 'bg-emerald-700', icon: Lock },
   lost: { label: 'Lost', color: 'bg-red-800', icon: XCircle },
 };
 
@@ -158,6 +159,105 @@ export function QuotesView() {
     }
   }
 
+  async function markQuoteAsSigned(quoteId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    
+    if (!confirm('Mark this proposal as signed? This will:\n\n1. Lock in the proposal price as the job budget\n2. Create a baseline budget for cost tracking\n3. Mark the proposal as the official contract\n\nThis cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      // Get the quote details
+      const { data: quote, error: quoteError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', quoteId)
+        .single();
+
+      if (quoteError) throw quoteError;
+
+      if (!quote.job_id) {
+        toast.error('This quote must be converted to a job first');
+        return;
+      }
+
+      if (!quote.estimated_price || quote.estimated_price <= 0) {
+        toast.error('Quote must have a valid estimated price');
+        return;
+      }
+
+      // Check if budget already exists for this job
+      const { data: existingBudget } = await supabase
+        .from('job_budgets')
+        .select('id')
+        .eq('job_id', quote.job_id)
+        .maybeSingle();
+
+      if (existingBudget) {
+        toast.error('A budget already exists for this job. Please edit the existing budget instead.');
+        return;
+      }
+
+      // Get any subcontractor estimates for this quote
+      const { data: subEstimates } = await supabase
+        .from('subcontractor_estimates')
+        .select('*')
+        .eq('quote_id', quote.id)
+        .not('total_amount', 'is', null);
+
+      const totalSubcontractorBudget = subEstimates?.reduce((sum, est) => {
+        const markup = (est.markup_percent || 0) / 100;
+        return sum + (est.total_amount * (1 + markup));
+      }, 0) || 0;
+
+      const subcontractorBreakdown = subEstimates?.map(est => ({
+        description: est.company_name || 'Subcontractor',
+        scope: est.scope_of_work,
+        cost: est.total_amount,
+        markup: est.markup_percent || 0,
+      })) || [];
+
+      // Create the job budget from the quote
+      const { error: budgetError } = await supabase
+        .from('job_budgets')
+        .insert({
+          job_id: quote.job_id,
+          total_quoted_price: quote.estimated_price,
+          total_subcontractor_budget: totalSubcontractorBudget > 0 ? totalSubcontractorBudget : null,
+          subcontractor_breakdown: subcontractorBreakdown,
+          target_profit_margin: 15, // Default 15% target margin
+          estimated_labor_hours: null,
+          labor_rate_per_hour: 30, // Default $30/hr
+          total_labor_budget: null,
+          total_materials_budget: null,
+          materials_breakdown: [],
+          total_equipment_budget: null,
+          equipment_breakdown: [],
+          other_costs: null,
+          overhead_allocation: null,
+        });
+
+      if (budgetError) throw budgetError;
+
+      // Update the quote status to 'signed'
+      const { error: updateError } = await supabase
+        .from('quotes')
+        .update({ 
+          status: 'signed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', quoteId);
+
+      if (updateError) throw updateError;
+
+      toast.success(`✅ Proposal marked as signed!\n\nBudget created: $${quote.estimated_price.toLocaleString()}\n\nYou can now refine labor, materials, and other costs in the Job Budget section.`);
+      loadQuotes();
+    } catch (error: any) {
+      console.error('Error marking quote as signed:', error);
+      toast.error('Failed to create budget from proposal: ' + error.message);
+    }
+  }
+
   const getFilteredQuotes = (status: 'all' | Quote['status']) => {
     return quotes.filter(quote => {
       const matchesStatus = status === 'all' ? quote.status !== 'lost' : quote.status === status;
@@ -176,6 +276,7 @@ export function QuotesView() {
     submitted: quotes.filter(q => q.status === 'submitted').length,
     estimated: quotes.filter(q => q.status === 'estimated').length,
     won: quotes.filter(q => q.status === 'won').length,
+    signed: quotes.filter(q => q.status === 'signed').length,
     lost: quotes.filter(q => q.status === 'lost').length,
   };
 
@@ -257,6 +358,32 @@ export function QuotesView() {
             </div>
           )}
           
+          {/* Action button for won quotes with jobs */}
+          {quote.status === 'won' && quote.job_id && (
+            <div className="pt-2 border-t" onClick={(e) => e.stopPropagation()}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-white bg-gradient-to-r from-emerald-700 to-emerald-800 hover:from-emerald-800 hover:to-emerald-900 border-2 border-emerald-600 font-semibold"
+                onClick={(e) => markQuoteAsSigned(quote.id, e)}
+              >
+                <Lock className="w-3 h-3 mr-1" />
+                Mark as Signed - Lock Budget
+              </Button>
+            </div>
+          )}
+          
+          {/* Signed indicator */}
+          {quote.status === 'signed' && (
+            <div className="pt-2 border-t">
+              <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-2 text-center">
+                <Lock className="w-4 h-4 text-emerald-700 mx-auto mb-1" />
+                <p className="text-xs font-semibold text-emerald-900">Proposal Signed</p>
+                <p className="text-xs text-emerald-700">Budget Locked</p>
+              </div>
+            </div>
+          )}
+          
           <div className="text-xs text-muted-foreground pt-2 border-t">
             Created {new Date(quote.created_at).toLocaleDateString()}
           </div>
@@ -302,7 +429,7 @@ export function QuotesView() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="all" className="relative">
             All
             <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
@@ -335,6 +462,13 @@ export function QuotesView() {
             Won
             <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
               {statusCounts.won}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="signed" className="relative">
+            <Lock className="w-3 h-3 mr-1" />
+            Signed
+            <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1">
+              {statusCounts.signed}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="lost" className="relative">
@@ -424,8 +558,27 @@ export function QuotesView() {
           )}
         </TabsContent>
 
-        {/* Tab Content - Won */}
-        <TabsContent value="won" className="space-y-4">
+        {/* Tab Content - Signed */}
+        <TabsContent value="signed" className="space-y-4">
+          {getFilteredQuotes('signed').length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Lock className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">No signed proposals</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {searchTerm ? 'Try adjusting your search' : 'No proposals have been signed yet'}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {getFilteredQuotes('signed').map(renderQuoteCard)}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab Content - Signed */}
+        <TabsContent value="signed" className="space-y-4">
           {getFilteredQuotes('won').length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
