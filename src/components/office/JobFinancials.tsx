@@ -999,6 +999,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [proposalVersions, setProposalVersions] = useState<any[]>([]);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
+  const [versionChangeNotes, setVersionChangeNotes] = useState('');
+  const [creatingVersion, setCreatingVersion] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1077,6 +1080,97 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.error('Failed to load version history');
     } finally {
       setLoadingVersions(false);
+    }
+  }
+
+  async function createNewProposalVersion() {
+    if (!quote || !profile) return;
+
+    setCreatingVersion(true);
+    
+    try {
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_created_by: profile.id,
+        p_change_notes: versionChangeNotes || null,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Version ${data} created successfully`);
+      setShowCreateVersionDialog(false);
+      setVersionChangeNotes('');
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error creating version:', error);
+      toast.error('Failed to create version: ' + error.message);
+    } finally {
+      setCreatingVersion(false);
+    }
+  }
+
+  async function signAndLockVersion(versionId: string) {
+    if (!profile) return;
+
+    if (!confirm(
+      'Sign and lock this version?\n\n' +
+      'This will:\n' +
+      '• Mark this version as the signed/accepted proposal\n' +
+      '• Lock this version permanently (cannot be edited)\n' +
+      '• Create a new working version for future changes\n\n' +
+      'Continue?'
+    )) {
+      return;
+    }
+
+    try {
+      // Mark version as signed
+      const { error: signError } = await supabase
+        .from('proposal_versions')
+        .update({
+          is_signed: true,
+          signed_at: new Date().toISOString(),
+          signed_by: profile.id,
+        })
+        .eq('id', versionId);
+
+      if (signError) throw signError;
+
+      // Get the version number that was signed
+      const { data: signedVersion, error: getError } = await supabase
+        .from('proposal_versions')
+        .select('version_number, quote_id')
+        .eq('id', versionId)
+        .single();
+
+      if (getError) throw getError;
+
+      // Update quote to track signed version
+      const { error: quoteError } = await supabase
+        .from('quotes')
+        .update({ signed_version: signedVersion.version_number })
+        .eq('id', signedVersion.quote_id);
+
+      if (quoteError) throw quoteError;
+
+      // Create new working version automatically
+      const { error: newVersionError } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: signedVersion.quote_id,
+        p_created_by: profile.id,
+        p_change_notes: `Created after signing version ${signedVersion.version_number}`,
+      });
+
+      if (newVersionError) throw newVersionError;
+
+      toast.success(
+        `Version ${signedVersion.version_number} signed and locked!\n` +
+        `New working version ${signedVersion.version_number + 1} created.`
+      );
+      
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error signing version:', error);
+      toast.error('Failed to sign version: ' + error.message);
     }
   }
 
@@ -2629,15 +2723,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   </div>
                 )}
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={openVersionHistoryDialog}
-                className="border-blue-300 hover:bg-blue-100"
-              >
-                <History className="w-3 h-3 mr-2" />
-                View Version History ({proposalVersions.length} {proposalVersions.length === 1 ? 'version' : 'versions'})
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => setShowCreateVersionDialog(true)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="w-3 h-3 mr-2" />
+                  Create New Version
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={openVersionHistoryDialog}
+                  className="border-blue-300 hover:bg-blue-100"
+                >
+                  <History className="w-3 h-3 mr-2" />
+                  View History ({proposalVersions.length})
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -3210,6 +3314,57 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Create New Version Dialog */}
+      <Dialog open={showCreateVersionDialog} onOpenChange={setShowCreateVersionDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Proposal Version</DialogTitle>
+            <DialogDescription>
+              Create a snapshot of the current proposal state. This allows you to track changes over time.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Change Notes (Optional)</Label>
+              <Textarea
+                value={versionChangeNotes}
+                onChange={(e) => setVersionChangeNotes(e.target.value)}
+                placeholder="e.g., Updated pricing for customer request, Added optional items, Changed materials..."
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Describe what changed in this version to help track the proposal evolution
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCreateVersionDialog(false);
+                  setVersionChangeNotes('');
+                }}
+                disabled={creatingVersion}
+              >
+                Cancel
+              </Button>
+              <Button onClick={createNewProposalVersion} disabled={creatingVersion}>
+                {creatingVersion ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Version
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Proposal Version History Dialog */}
       <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -3251,6 +3406,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                               Signed
                             </Badge>
                           )}
+                          {version.version_number === quote?.current_version && !version.is_signed && (
+                            <Badge variant="outline" className="bg-blue-100 text-blue-700">
+                              Current
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                           <Calendar className="w-3 h-3" />
@@ -3277,10 +3437,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-3 h-3 mr-2" />
-                        View Details
-                      </Button>
+                      <div className="flex gap-2">
+                        {!version.is_signed && version.version_number === quote?.current_version && (
+                          <Button
+                            size="sm"
+                            onClick={() => signAndLockVersion(version.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            <Lock className="w-3 h-3 mr-2" />
+                            Sign & Lock
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline">
+                          <Eye className="w-3 h-3 mr-2" />
+                          View Details
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
