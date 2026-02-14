@@ -11,13 +11,32 @@ import {
   Calendar,
   Building2,
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  BookOpen,
+  Package,
+  ShoppingCart,
+  ExternalLink
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { OverheadManagement } from './OverheadManagement';
 import { JobBudgetManagement } from './JobBudgetManagement';
 import { ProfitabilityReports } from './ProfitabilityReports';
+import { ZohoDataManagement } from './ZohoDataManagement';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface OverheadExpense {
   id: string;
@@ -63,6 +82,10 @@ export function FinancialDashboard() {
   const [overheadExpenses, setOverheadExpenses] = useState<OverheadExpense[]>([]);
   const [jobBudgets, setJobBudgets] = useState<JobBudget[]>([]);
   const [jobActuals, setJobActuals] = useState<JobActuals[]>([]);
+  const [showBooksDialog, setShowBooksDialog] = useState(false);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [selectedJobForOrders, setSelectedJobForOrders] = useState<string | null>(null);
+  const [jobOrders, setJobOrders] = useState<any[]>([]);
   
   // Date range for financial overview (default: current month)
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>(() => {
@@ -74,7 +97,14 @@ export function FinancialDashboard() {
 
   useEffect(() => {
     loadFinancialData();
+    loadJobs();
   }, [dateRange]);
+
+  useEffect(() => {
+    if (selectedJobForOrders) {
+      loadJobOrders(selectedJobForOrders);
+    }
+  }, [selectedJobForOrders]);
 
   async function loadFinancialData() {
     setLoading(true);
@@ -115,6 +145,84 @@ export function FinancialDashboard() {
 
     if (error) throw error;
     setJobBudgets(data || []);
+  }
+
+  async function loadJobs() {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .in('status', ['active', 'prepping', 'quoting'])
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    setJobs(data || []);
+  }
+
+  async function loadJobOrders(jobId: string) {
+    try {
+      // Load all material items for this job that have Zoho orders
+      const { data, error } = await supabase
+        .from('material_items')
+        .select(`
+          *,
+          sheet:material_sheets!inner(
+            id,
+            sheet_name,
+            workbook:material_workbooks!inner(
+              job_id
+            )
+          )
+        `)
+        .eq('sheet.workbook.job_id', jobId)
+        .or('zoho_sales_order_id.not.is.null,zoho_purchase_order_id.not.is.null')
+        .order('ordered_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Group by order numbers
+      const ordersMap = new Map();
+
+      data?.forEach(item => {
+        // Sales Orders
+        if (item.zoho_sales_order_id && item.zoho_sales_order_number) {
+          const key = `SO-${item.zoho_sales_order_number}`;
+          if (!ordersMap.has(key)) {
+            ordersMap.set(key, {
+              type: 'Sales Order',
+              number: item.zoho_sales_order_number,
+              id: item.zoho_sales_order_id,
+              items: [],
+              total: 0
+            });
+          }
+          const order = ordersMap.get(key);
+          order.items.push(item);
+          order.total += item.extended_price || 0;
+        }
+
+        // Purchase Orders
+        if (item.zoho_purchase_order_id && item.zoho_purchase_order_number) {
+          const key = `PO-${item.zoho_purchase_order_number}`;
+          if (!ordersMap.has(key)) {
+            ordersMap.set(key, {
+              type: 'Purchase Order',
+              number: item.zoho_purchase_order_number,
+              id: item.zoho_purchase_order_id,
+              items: [],
+              total: 0
+            });
+          }
+          const order = ordersMap.get(key);
+          order.items.push(item);
+          order.total += item.extended_cost || 0;
+        }
+      });
+
+      setJobOrders(Array.from(ordersMap.values()));
+    } catch (error: any) {
+      console.error('Error loading job orders:', error);
+      toast.error('Failed to load job orders');
+    }
   }
 
   async function loadJobActuals() {
@@ -231,9 +339,18 @@ export function FinancialDashboard() {
         <p className="text-gray-600 mt-2">Track overhead, job budgets, and profitability</p>
       </div>
 
+      {/* Books Button */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowBooksDialog(true)} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+          <BookOpen className="w-4 h-4 mr-2" />
+          Books
+        </Button>
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="orders">Job Orders</TabsTrigger>
           <TabsTrigger value="overhead">Overhead</TabsTrigger>
           <TabsTrigger value="budgets">Job Budgets</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
@@ -396,6 +513,141 @@ export function FinancialDashboard() {
           </div>
         </TabsContent>
 
+        {/* Job Orders Tab */}
+        <TabsContent value="orders" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5" />
+                  Sales Orders & Purchase Orders by Job
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Job Selector */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Select Job</label>
+                <Select value={selectedJobForOrders || ''} onValueChange={setSelectedJobForOrders}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a job to view orders..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jobs.map(job => (
+                      <SelectItem key={job.id} value={job.id}>
+                        {job.job_number ? `#${job.job_number} - ` : ''}{job.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Orders Display */}
+              {selectedJobForOrders ? (
+                jobOrders.length > 0 ? (
+                  <div className="space-y-4">
+                    {jobOrders.map((order, idx) => (
+                      <Card key={idx} className={order.type === 'Sales Order' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <Badge className={order.type === 'Sales Order' ? 'bg-green-600' : 'bg-blue-600'}>
+                                {order.type}
+                              </Badge>
+                              <div className="mt-2">
+                                <a
+                                  href={`https://books.zoho.com/app/60007115224#/${order.type === 'Sales Order' ? 'salesorders' : 'purchaseorders'}/${order.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-lg font-bold text-blue-600 hover:text-blue-800 flex items-center gap-2"
+                                >
+                                  {order.number}
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm text-muted-foreground">Total</div>
+                              <div className="text-xl font-bold text-gray-900">
+                                ${order.total.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Materials on Order:</span>
+                              <span className="font-semibold">{order.items.length} items</span>
+                            </div>
+                            <details className="cursor-pointer">
+                              <summary className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                                View Material Details
+                              </summary>
+                              <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                                {order.items.map((item: any) => (
+                                  <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-white rounded border">
+                                    <div className="flex-1">
+                                      <div className="font-medium">{item.material_name}</div>
+                                      {item.sku && <div className="text-muted-foreground">SKU: {item.sku}</div>}
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="font-semibold">Qty: {item.quantity}</div>
+                                      <div className="text-muted-foreground">
+                                        ${(order.type === 'Sales Order' ? item.extended_price : item.extended_cost)?.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+
+                    {/* Order Summary */}
+                    <Card className="border-2 border-gray-300 bg-gray-50">
+                      <CardContent className="pt-6">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-sm text-muted-foreground">Total Sales Orders</div>
+                            <div className="text-2xl font-bold text-green-600">
+                              ${jobOrders.filter(o => o.type === 'Sales Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">Total Purchase Orders</div>
+                            <div className="text-2xl font-bold text-blue-600">
+                              ${jobOrders.filter(o => o.type === 'Purchase Order').reduce((sum, o) => sum + o.total, 0).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-lg font-medium text-muted-foreground">No orders found for this job</p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Orders will appear here once materials are synced with Zoho Books
+                    </p>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-12">
+                  <Briefcase className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-lg font-medium text-muted-foreground">Select a job to view orders</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Choose a job from the dropdown above to see all Sales Orders and Purchase Orders
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Overhead Tab */}
         <TabsContent value="overhead">
           <OverheadManagement onUpdate={loadFinancialData} />
@@ -415,6 +667,19 @@ export function FinancialDashboard() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Books Dialog */}
+      <Dialog open={showBooksDialog} onOpenChange={setShowBooksDialog}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="w-6 h-6 text-blue-600" />
+              Zoho Books Integration
+            </DialogTitle>
+          </DialogHeader>
+          <ZohoDataManagement />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

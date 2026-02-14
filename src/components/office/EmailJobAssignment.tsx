@@ -71,11 +71,11 @@ export function EmailJobAssignment() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'assigned' | 'unassigned'>('unassigned');
   const [selectedEmail, setSelectedEmail] = useState<JobEmail | null>(null);
-  const [selectedJob, setSelectedJob] = useState<string>('');
+  const [selectedJob, setSelectedJob] = useState<string | undefined>(undefined);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedMatch[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
-  const [bulkAssignJob, setBulkAssignJob] = useState<string>('');
+  const [bulkAssignJob, setBulkAssignJob] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     loadData();
@@ -201,7 +201,7 @@ export function EmailJobAssignment() {
       loadData();
       setShowAssignDialog(false);
       setSelectedEmail(null);
-      setSelectedJob('');
+      setSelectedJob(undefined);
     } catch (error: any) {
       console.error('Error assigning email:', error);
       toast.error('Failed to assign email to job');
@@ -229,7 +229,7 @@ export function EmailJobAssignment() {
 
       toast.success(`${selectedEmails.size} emails assigned to job`);
       setSelectedEmails(new Set());
-      setBulkAssignJob('');
+      setBulkAssignJob(undefined);
       loadData();
     } catch (error: any) {
       console.error('Error bulk assigning emails:', error);
@@ -419,7 +419,7 @@ export function EmailJobAssignment() {
                       {selectedEmails.size} email{selectedEmails.size !== 1 ? 's' : ''} selected
                     </p>
                   </div>
-                  <Select value={bulkAssignJob} onValueChange={setBulkAssignJob}>
+                  <Select value={bulkAssignJob || ''} onValueChange={(value) => setBulkAssignJob(value || undefined)}>
                     <SelectTrigger className="w-64">
                       <SelectValue placeholder="Select job..." />
                     </SelectTrigger>
@@ -699,7 +699,7 @@ export function EmailJobAssignment() {
               {/* Job Selection */}
               <div className="space-y-2">
                 <Label>Select Job</Label>
-                <Select value={selectedJob} onValueChange={setSelectedJob}>
+                <Select value={selectedJob || ''} onValueChange={(value) => setSelectedJob(value || undefined)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a job..." />
                   </SelectTrigger>
