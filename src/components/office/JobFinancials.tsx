@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   DropdownMenu,
@@ -24,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -993,6 +994,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showLineItems, setShowLineItems] = useState(true);
   const [exporting, setExporting] = useState(false);
   
+  // Proposal versioning state
+  const [quote, setQuote] = useState<any>(null);
+  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1003,14 +1010,75 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   useEffect(() => {
     loadData(false); // Initial load with spinner
+    loadQuoteData(); // Load proposal/quote data
     
     // Set up polling for real-time updates (every 5 seconds)
     const pollInterval = setInterval(() => {
         loadData(true); // Silent updates during polling
+        loadQuoteData(); // Also refresh quote data
     }, 5000);
     
     return () => clearInterval(pollInterval);
   }, [job.id]);
+
+  async function loadQuoteData() {
+    try {
+      // Find quote associated with this job
+      const { data: quoteData, error: quoteError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', job.id)
+        .maybeSingle();
+
+      if (quoteError && quoteError.code !== 'PGRST116') {
+        console.error('Error loading quote:', quoteError);
+        return;
+      }
+
+      if (quoteData) {
+        setQuote(quoteData);
+        
+        // Load proposal versions for this quote
+        const { data: versionsData, error: versionsError } = await supabase
+          .from('proposal_versions')
+          .select('*')
+          .eq('quote_id', quoteData.id)
+          .order('version_number', { ascending: false });
+
+        if (!versionsError && versionsData) {
+          setProposalVersions(versionsData);
+        }
+      } else {
+        setQuote(null);
+        setProposalVersions([]);
+      }
+    } catch (error: any) {
+      console.error('Error loading quote data:', error);
+    }
+  }
+
+  async function openVersionHistoryDialog() {
+    if (!quote) return;
+    
+    setLoadingVersions(true);
+    setShowVersionHistory(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('proposal_versions')
+        .select('*')
+        .eq('quote_id', quote.id)
+        .order('version_number', { ascending: false });
+
+      if (error) throw error;
+      setProposalVersions(data || []);
+    } catch (error: any) {
+      console.error('Error loading version history:', error);
+      toast.error('Failed to load version history');
+    } finally {
+      setLoadingVersions(false);
+    }
+  }
 
   async function loadData(silent = false) {
     // Only show loading spinner on initial load, not during polling
@@ -2532,6 +2600,49 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
+      {/* Proposal Version Info Banner - Show if quote exists */}
+      {quote && proposalVersions.length > 0 && (
+        <Card className="mb-4 border-blue-200 bg-blue-50">
+          <CardContent className="py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-blue-900">
+                    Proposal #{quote.proposal_number || quote.quote_number}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    Version {quote.current_version || 1}
+                  </Badge>
+                  {quote.signed_version && (
+                    <Badge className="text-xs bg-emerald-600">
+                      <Lock className="w-3 h-3 mr-1" />
+                      Signed v{quote.signed_version}
+                    </Badge>
+                  )}
+                </div>
+                {quote.estimated_price && (
+                  <div className="text-sm text-blue-700">
+                    Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openVersionHistoryDialog}
+                className="border-blue-300 hover:bg-blue-100"
+              >
+                <History className="w-3 h-3 mr-2" />
+                View Version History ({proposalVersions.length} {proposalVersions.length === 1 ? 'version' : 'versions'})
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <div className="flex items-center justify-between mb-4">
           <TabsList>
@@ -3096,6 +3207,116 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </TabsContent>
             </Tabs>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proposal Version History Dialog */}
+      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Proposal Version History
+            </DialogTitle>
+            <DialogDescription>
+              View all versions of this proposal. Signed versions are locked and cannot be modified.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingVersions ? (
+            <div className="py-12 text-center">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading version history...</p>
+            </div>
+          ) : proposalVersions.length === 0 ? (
+            <div className="py-12 text-center">
+              <History className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-lg font-medium text-muted-foreground">No versions found</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Versions are automatically created when proposals are modified
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {proposalVersions.map((version) => (
+                <Card key={version.id} className={version.is_signed ? 'border-emerald-300 bg-emerald-50' : ''}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg">Version {version.version_number}</CardTitle>
+                          {version.is_signed && (
+                            <Badge className="bg-emerald-600">
+                              <Lock className="w-3 h-3 mr-1" />
+                              Signed
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          <span>
+                            {new Date(version.created_at).toLocaleDateString('en-US', {
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        {version.is_signed && version.signed_at && (
+                          <div className="flex items-center gap-2 mt-1 text-sm text-emerald-700 font-medium">
+                            <Lock className="w-3 h-3" />
+                            <span>
+                              Signed on {new Date(version.signed_at).toLocaleDateString('en-US', {
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <Button size="sm" variant="outline">
+                        <Eye className="w-3 h-3 mr-2" />
+                        View Details
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Customer</Label>
+                        <p className="font-medium">{version.customer_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Project</Label>
+                        <p className="font-medium">{version.project_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Size</Label>
+                        <p className="font-medium">
+                          {version.width}' × {version.length}'
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Estimated Price</Label>
+                        <p className="font-medium text-green-700">
+                          {version.estimated_price ? `$${version.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    {version.change_notes && (
+                      <div className="pt-3 border-t">
+                        <Label className="text-xs text-muted-foreground">Notes</Label>
+                        <p className="text-sm mt-1">{version.change_notes}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
