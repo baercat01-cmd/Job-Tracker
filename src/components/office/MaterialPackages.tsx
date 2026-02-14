@@ -31,6 +31,8 @@ import {
   Square,
   ChevronLeft,
   ShoppingCart,
+  FileText,
+  DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
@@ -128,14 +130,14 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
     );
     
     if (unorderedMaterials.length === 0) {
-      toast.error('All materials in this package have already been ordered in Zoho');
+      toast.error('All materials in this package have already been ordered in Zoho Books. Check the "Order History" section below to view the orders.');
       return;
     }
     
     if (unorderedMaterials.length < pkg.bundle_items.length) {
       const orderedCount = pkg.bundle_items.length - unorderedMaterials.length;
       toast.warning(
-        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only unordered materials will be included`
+        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only NEW unordered materials will be included in this order`
       );
     }
     
@@ -958,56 +960,192 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                 </CardHeader>
                 {isExpanded && (
                   <CardContent className="pt-0">
-                    <div className="border-t pt-3">
+                    <div className="border-t pt-3 space-y-4">
                       {pkg.bundle_items.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-4">
                           No materials in this package
                         </p>
                       ) : (
-                        <div className="space-y-2">
-                          {pkg.bundle_items.map(item => {
-                            const hasOrders = item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id;
-                            return (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border"
-                              >
-                                <div className="flex-1">
-                                  <div className="font-medium">
-                                    {item.material_items.material_name}
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                                    <span>{item.material_items.sheets.sheet_name}</span>
-                                    <span>•</span>
-                                    <span>{item.material_items.category}</span>
-                                    <span>•</span>
-                                    <span>Qty: {item.material_items.quantity}</span>
-                                    {item.material_items.length && (
-                                      <>
+                        <>
+                          {/* Materials List */}
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2">Package Materials ({pkg.bundle_items.length})</h4>
+                            <div className="space-y-2">
+                              {pkg.bundle_items.map(item => {
+                                const hasOrders = item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id;
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={`flex items-center justify-between p-3 rounded-lg border ${
+                                      hasOrders ? 'bg-green-50 border-green-200' : 'bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="flex-1">
+                                      <div className="font-medium">
+                                        {item.material_items.material_name}
+                                      </div>
+                                      <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                        <span>{item.material_items.sheets.sheet_name}</span>
                                         <span>•</span>
-                                        <span>{item.material_items.length}</span>
-                                      </>
-                                    )}
-                                  </div>
-                                  {hasOrders && (
-                                    <div className="flex flex-wrap gap-1 mt-2">
-                                      {item.material_items.zoho_sales_order_id && (
-                                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
-                                          📄 SO: {item.material_items.zoho_sales_order_number}
-                                        </Badge>
-                                      )}
-                                      {item.material_items.zoho_purchase_order_id && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
-                                          📝 PO: {item.material_items.zoho_purchase_order_number}
-                                        </Badge>
+                                        <span>{item.material_items.category}</span>
+                                        <span>•</span>
+                                        <span>Qty: {item.material_items.quantity}</span>
+                                        {item.material_items.length && (
+                                          <>
+                                            <span>•</span>
+                                            <span>{item.material_items.length}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      {hasOrders && (
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                          {item.material_items.zoho_sales_order_id && (
+                                            <a
+                                              href={`https://books.zoho.com/app/60007115224#/salesorders/${item.material_items.zoho_sales_order_id}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300 hover:bg-green-100 cursor-pointer">
+                                                📄 SO: {item.material_items.zoho_sales_order_number}
+                                              </Badge>
+                                            </a>
+                                          )}
+                                          {item.material_items.zoho_purchase_order_id && (
+                                            <a
+                                              href={`https://books.zoho.com/app/60007115224#/purchaseorders/${item.material_items.zoho_purchase_order_id}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 cursor-pointer">
+                                                📝 PO: {item.material_items.zoho_purchase_order_number}
+                                              </Badge>
+                                            </a>
+                                          )}
+                                          {item.material_items.ordered_at && (
+                                            <Badge variant="outline" className="text-xs">
+                                              {new Date(item.material_items.ordered_at).toLocaleDateString()}
+                                            </Badge>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
-                                  )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Order History Section */}
+                          {(() => {
+                            // Group materials by their orders
+                            const salesOrders = new Map<string, { number: string; id: string; materials: any[] }>();
+                            const purchaseOrders = new Map<string, { number: string; id: string; materials: any[] }>();
+                            
+                            pkg.bundle_items.forEach(item => {
+                              if (item.material_items.zoho_sales_order_id && item.material_items.zoho_sales_order_number) {
+                                const key = item.material_items.zoho_sales_order_number;
+                                if (!salesOrders.has(key)) {
+                                  salesOrders.set(key, {
+                                    number: item.material_items.zoho_sales_order_number,
+                                    id: item.material_items.zoho_sales_order_id,
+                                    materials: []
+                                  });
+                                }
+                                salesOrders.get(key)!.materials.push(item.material_items);
+                              }
+                              
+                              if (item.material_items.zoho_purchase_order_id && item.material_items.zoho_purchase_order_number) {
+                                const key = item.material_items.zoho_purchase_order_number;
+                                if (!purchaseOrders.has(key)) {
+                                  purchaseOrders.set(key, {
+                                    number: item.material_items.zoho_purchase_order_number,
+                                    id: item.material_items.zoho_purchase_order_id,
+                                    materials: []
+                                  });
+                                }
+                                purchaseOrders.get(key)!.materials.push(item.material_items);
+                              }
+                            });
+                            
+                            const hasOrders = salesOrders.size > 0 || purchaseOrders.size > 0;
+                            
+                            if (!hasOrders) return null;
+                            
+                            return (
+                              <div className="border-t pt-4">
+                                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                                  <FileText className="w-4 h-4" />
+                                  Order History
+                                </h4>
+                                <div className="space-y-2">
+                                  {/* Sales Orders */}
+                                  {Array.from(salesOrders.values()).map((order, idx) => (
+                                    <a
+                                      key={`so-${idx}`}
+                                      href={`https://books.zoho.com/app/60007115224#/salesorders/${order.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <DollarSign className="w-4 h-4 text-green-600" />
+                                            <div>
+                                              <div className="font-semibold text-green-900">
+                                                Sales Order: {order.number}
+                                              </div>
+                                              <div className="text-xs text-green-700">
+                                                {order.materials.length} material{order.materials.length !== 1 ? 's' : ''}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <Badge className="bg-green-600">
+                                            View in Zoho
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    </a>
+                                  ))}
+                                  
+                                  {/* Purchase Orders */}
+                                  {Array.from(purchaseOrders.values()).map((order, idx) => (
+                                    <a
+                                      key={`po-${idx}`}
+                                      href={`https://books.zoho.com/app/60007115224#/purchaseorders/${order.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <FileText className="w-4 h-4 text-blue-600" />
+                                            <div>
+                                              <div className="font-semibold text-blue-900">
+                                                Purchase Order: {order.number}
+                                              </div>
+                                              <div className="text-xs text-blue-700">
+                                                {order.materials.length} material{order.materials.length !== 1 ? 's' : ''}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <Badge className="bg-blue-600">
+                                            View in Zoho
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    </a>
+                                  ))}
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
+                          })()}
+                        </>
                       )}
                     </div>
                   </CardContent>
