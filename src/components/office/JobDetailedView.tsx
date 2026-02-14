@@ -1090,7 +1090,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               </Button>
             )}
           </div>
-          <TabsList className="grid w-full grid-cols-10 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+          <TabsList className="grid w-full grid-cols-11 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
               value="overview" 
               className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
@@ -1140,6 +1140,13 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
                   {crewOrdersCount}
                 </Badge>
               )}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="orders" 
+              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+            >
+              <FileSpreadsheet className="w-5 h-5 sm:mr-2" />
+              <span className="hidden sm:inline">Orders</span>
             </TabsTrigger>
             <TabsTrigger 
               value="photos" 
@@ -1516,20 +1523,14 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         <TabsContent value="materials" className="space-y-4 pt-4 px-2">
           {profile?.id && (
-            <div className="space-y-6">
-              {/* Zoho Orders Section - Prominent at Top */}
-              <div className="bg-gradient-to-r from-purple-100 to-purple-50 p-4 rounded-lg border-2 border-purple-300">
-                <div className="flex items-center gap-2 mb-3">
-                  <Package className="w-5 h-5 text-purple-700" />
-                  <h3 className="text-lg font-bold text-purple-900">Materials on Zoho Orders</h3>
-                </div>
-                <JobZohoOrders jobId={job.id} />
-              </div>
-              
-              {/* Main Materials Management */}
-              <MaterialsManagement job={job} userId={profile.id} />
-            </div>
+            <MaterialsManagement job={job} userId={profile.id} />
           )}
+        </TabsContent>
+
+        <TabsContent value="orders" className="w-full">
+          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
+            <JobZohoOrders jobId={job.id} />
+          </div>
         </TabsContent>
 
         <TabsContent value="subcontractors" className="w-full">

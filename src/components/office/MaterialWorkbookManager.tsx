@@ -162,8 +162,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [job, setJob] = useState<any>(null);
 
-  // Active tab state
-  const [activeTab, setActiveTab] = useState('workbook');
+  // Active tab state - removed, no longer needed
 
   useEffect(() => {
     loadWorkbooks();
@@ -570,24 +569,12 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         )}
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="workbook">
-            <FileSpreadsheet className="w-4 h-4 mr-2" />
-            Workbook
-          </TabsTrigger>
-          <TabsTrigger value="books-orders">
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Books Orders
-          </TabsTrigger>
-        </TabsList>
+      {/* Main Content - No Tabs */}
+      <div className="space-y-4">
 
-        <TabsContent value="workbook" className="space-y-4 mt-4">
-
-      {/* Working Version */}
-      {workingVersion && (
-        <Card className="border-2 border-green-500">
+        {/* Working Version */}
+        {workingVersion && (
+          <Card className="border-2 border-green-500">
           <CardHeader className="bg-green-50">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -665,16 +652,11 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         </Card>
       )}
 
-      {/* Rest of component... */}
-      <div className="text-center text-muted-foreground py-8">
-        <p className="text-sm">Material workbook interface continues here...</p>
+        {/* Rest of component... */}
+        <div className="text-center text-muted-foreground py-8">
+          <p className="text-sm">Material workbook interface continues here...</p>
+        </div>
       </div>
-        </TabsContent>
-
-        <TabsContent value="books-orders" className="mt-4">
-          <JobZohoOrders jobId={jobId} />
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }
