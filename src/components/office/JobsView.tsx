@@ -685,7 +685,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
-                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
                                   ) : job.description && job.description.includes('Quote #') ? (
                                     <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
                                   ) : null}
@@ -956,7 +956,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
-                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
                                   ) : job.description && job.description.includes('Quote #') ? (
                                     <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
                                   ) : null}
@@ -1178,7 +1178,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
-                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
                                   ) : job.description && job.description.includes('Quote #') ? (
                                     <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
                                   ) : null}
@@ -1392,7 +1392,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
-                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
                                   ) : job.description && job.description.includes('Quote #') ? (
                                     <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
                                   ) : null}
