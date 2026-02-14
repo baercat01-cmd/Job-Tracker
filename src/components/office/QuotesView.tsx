@@ -82,7 +82,7 @@ export function QuotesView() {
   async function markQuoteAsWon(quoteId: string, e: React.MouseEvent) {
     e.stopPropagation();
     
-    if (!confirm('Convert this quote to an active job? This will create a job with a job number and move it to "Prepping" status.')) {
+    if (!confirm('Send this quote to estimating? It will appear in the Jobs page under "Quoting" for office estimating.')) {
       return;
     }
     
@@ -96,17 +96,18 @@ export function QuotesView() {
 
       if (quoteError) throw quoteError;
 
-      // Create a new job from the quote
+      // Create a new job from the quote with 'quoting' status (NO job number yet)
       const { data: newJob, error: jobError } = await supabase
         .from('jobs')
         .insert({
           name: quote.project_name || quote.customer_name || 'Untitled Job',
           client_name: quote.customer_name || '',
           address: quote.customer_address || '',
-          description: `Converted from Quote #${quote.quote_number}`,
-          status: 'prepping', // Start in prepping status
+          description: `Quote #${quote.quote_number}`,
+          status: 'quoting', // Start in quoting status for estimating
           estimated_hours: 0,
           is_internal: false,
+          job_number: null, // No job number until moved to prepping/active
         })
         .select()
         .single();
@@ -126,11 +127,14 @@ export function QuotesView() {
 
       if (updateError) throw updateError;
 
-      toast.success(`Quote converted to Job #${newJob.job_number}`);
+      toast.success(`Quote sent to Jobs page for estimating! (Quote #${quote.quote_number})`);
       loadQuotes();
+      
+      // Navigate to jobs page to show the new quote
+      navigate('/office?tab=jobs');
     } catch (error: any) {
       console.error('Error converting quote to job:', error);
-      toast.error('Failed to convert quote to job');
+      toast.error('Failed to send quote to estimating');
     }
   }
 
@@ -239,7 +243,7 @@ export function QuotesView() {
                 onClick={(e) => markQuoteAsWon(quote.id, e)}
               >
                 <CheckCircle className="w-3 h-3 mr-1" />
-                Won
+                Send to Estimating
               </Button>
               <Button
                 size="sm"

@@ -196,6 +196,14 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
   async function setJobPrepping(jobId: string) {
     try {
+      // Get the current job to check if it needs a job number
+      const { data: currentJob } = await supabase
+        .from('jobs')
+        .select('job_number, status')
+        .eq('id', jobId)
+        .single();
+
+      // If moving from 'quoting' to 'prepping' and no job number, it will get one automatically via trigger
       const { error } = await supabase
         .from('jobs')
         .update({ status: 'prepping', updated_at: new Date().toISOString() })
@@ -203,7 +211,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       if (error) throw error;
 
-      toast.success('Job set to prepping - hidden from crew');
+      if (currentJob?.status === 'quoting') {
+        toast.success('Job moved to Prepping and assigned a job number!');
+      } else {
+        toast.success('Job set to prepping - hidden from crew');
+      }
       loadJobs();
     } catch (error: any) {
       console.error('Error setting job to prepping:', error);
@@ -213,6 +225,14 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
   async function activateJob(jobId: string) {
     try {
+      // Get the current job to check if it needs a job number
+      const { data: currentJob } = await supabase
+        .from('jobs')
+        .select('job_number, status')
+        .eq('id', jobId)
+        .single();
+
+      // If moving from 'quoting' to 'active' and no job number, it will get one automatically via trigger
       const { error } = await supabase
         .from('jobs')
         .update({ status: 'active', updated_at: new Date().toISOString() })
@@ -220,7 +240,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
 
       if (error) throw error;
 
-      toast.success('Job activated - now visible to crew');
+      if (currentJob?.status === 'quoting') {
+        toast.success('Job activated and assigned a job number!');
+      } else {
+        toast.success('Job activated - now visible to crew');
+      }
       loadJobs();
     } catch (error: any) {
       console.error('Error activating job:', error);
@@ -660,9 +684,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number && (
-                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
-                                  )}
+                                  {job.job_number ? (
+                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                  ) : job.description && job.description.includes('Quote #') ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : null}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -929,9 +955,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number && (
-                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
-                                  )}
+                                  {job.job_number ? (
+                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                  ) : job.description && job.description.includes('Quote #') ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : null}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -1149,9 +1177,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number && (
-                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
-                                  )}
+                                  {job.job_number ? (
+                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                  ) : job.description && job.description.includes('Quote #') ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : null}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -1361,9 +1391,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number && (
-                                    <span className="text-xs font-mono text-muted-foreground mr-1.5">#{job.job_number}</span>
-                                  )}
+                                  {job.job_number ? (
+                                    <span className="text-xs font-mono text-blue-700 font-bold mr-1.5">#{job.job_number}</span>
+                                  ) : job.description && job.description.includes('Quote #') ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : null}
                                   {job.name}
                                 </CardTitle>
                                 <Button
