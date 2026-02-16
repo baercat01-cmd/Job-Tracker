@@ -318,7 +318,7 @@ function buildModel(group: THREE.Group, state: BuildingState, visibility: Visibi
   }
 }
 
-export default function BuildingEstimator3D({
+export function BuildingEstimator3D({
   quoteId,
   initialWidth = 35,
   initialLength = 56,
