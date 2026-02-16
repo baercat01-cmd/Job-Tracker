@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, MapPin, FileText, Clock, Camera, BarChart3, Archive, ArchiveRestore, Edit, FileCheck, Calendar, AlertTriangle, MoreVertical, DollarSign, TrendingUp, TrendingDown, ScrollText } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -904,11 +904,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal');
                               }}
                             >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              $
+                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
+                              Proposal
                             </Button>
                             <Button
                               variant="ghost"
@@ -1129,11 +1129,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal');
                               }}
                             >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              $
+                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
+                              Proposal
                             </Button>
                             <Button
                               variant="ghost"
@@ -1345,11 +1345,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal');
                               }}
                             >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              $
+                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
+                              Proposal
                             </Button>
                             <Button
                               variant="ghost"
@@ -1561,11 +1561,11 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal');
                               }}
                             >
-                              <DollarSign className="w-2.5 h-2.5 mr-0.5" />
-                              $
+                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
+                              Proposal
                             </Button>
                             <Button
                               variant="ghost"
