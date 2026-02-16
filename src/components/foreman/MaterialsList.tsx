@@ -323,10 +323,67 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
 
       console.log('📦 Loaded materials:', materialsData?.length || 0);
       console.log('Materials data sample:', materialsData?.[0]);
+      
+      // ALSO load materials from the new material_workbooks system for this job
+      // These use different status values: pull_from_shop, ready_for_job, at_job
+      const { data: workbooksData } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working');
+      
+      const workbookIds = (workbooksData || []).map(wb => wb.id);
+      
+      if (workbookIds.length > 0) {
+        // Get sheets for these workbooks
+        const { data: sheetsData } = await supabase
+          .from('material_sheets')
+          .select('id, sheet_name')
+          .in('workbook_id', workbookIds);
+        
+        const sheetIds = (sheetsData || []).map(s => s.id);
+        const sheetMap = new Map((sheetsData || []).map(s => [s.id, s.sheet_name]));
+        
+        if (sheetIds.length > 0) {
+          // Get material items with pull_from_shop, ready_for_job, or at_job status
+          const { data: workbookMaterials } = await supabase
+            .from('material_items')
+            .select('*')
+            .in('sheet_id', sheetIds)
+            .in('status', ['pull_from_shop', 'ready_for_job', 'at_job']);
+          
+          // Convert material_items to the old materials format for display
+          const convertedMaterials = (workbookMaterials || []).map((item: any) => ({
+            id: item.id,
+            category_id: 'workbook-materials-virtual', // Virtual category
+            name: item.material_name,
+            quantity: item.quantity,
+            length: item.length,
+            // Map new statuses to old format
+            status: item.status === 'pull_from_shop' ? 'ready_to_pull' : 
+                    item.status === 'ready_for_job' ? 'at_shop' :
+                    item.status === 'at_job' ? 'at_job' : 'not_ordered',
+            notes: item.notes,
+            updated_at: item.updated_at,
+            use_case: item.usage,
+            date_needed_by: item.date_needed_by,
+            import_source: 'material_workbook',
+            _sheet_name: sheetMap.get(item.sheet_id) || 'Unknown Sheet',
+          }));
+          
+          console.log('📚 Loaded workbook materials:', convertedMaterials.length);
+          
+          // Merge with existing materials
+          materialsData?.push(...convertedMaterials);
+        }
+      }
 
-      // Separate field requests from regular materials
+      // Separate field requests, workbook materials, and regular materials
       const fieldRequestMaterials = (materialsData || []).filter((m: any) => m.import_source === 'field_catalog');
-      const regularMaterials = (materialsData || []).filter((m: any) => m.import_source !== 'field_catalog');
+      const workbookMaterials = (materialsData || []).filter((m: any) => m.import_source === 'material_workbook');
+      const regularMaterials = (materialsData || []).filter((m: any) => 
+        m.import_source !== 'field_catalog' && m.import_source !== 'material_workbook'
+      );
 
       // Group regular materials by category
       const categoriesWithMaterials: Category[] = (categoriesData || []).map(cat => {
@@ -340,7 +397,31 @@ export function MaterialsList({ job, userId, userRole = 'foreman', allowBundleCr
         };
       });
 
-      // Add virtual "Field Requests" category at the top if there are any field requests
+      // Add virtual "Shop Materials" category at the top if there are any workbook materials
+      if (workbookMaterials.length > 0) {
+        // Group workbook materials by sheet name
+        const materialsBySheet = new Map<string, any[]>();
+        workbookMaterials.forEach((m: any) => {
+          const sheetName = m._sheet_name || 'Unknown Sheet';
+          if (!materialsBySheet.has(sheetName)) {
+            materialsBySheet.set(sheetName, []);
+          }
+          materialsBySheet.get(sheetName)!.push(m);
+        });
+        
+        // Add each sheet as a virtual category
+        let sheetIndex = -100;
+        materialsBySheet.forEach((materials, sheetName) => {
+          categoriesWithMaterials.unshift({
+            id: `workbook-sheet-${sheetName}`,
+            name: `📦 ${sheetName}`,
+            order_index: sheetIndex++,
+            materials: materials,
+          });
+        });
+      }
+
+      // Add virtual "Field Requests" category if there are any field requests
       if (fieldRequestMaterials.length > 0) {
         categoriesWithMaterials.unshift({
           id: 'field-requests-virtual',
