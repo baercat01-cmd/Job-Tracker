@@ -159,13 +159,17 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
         const sheet = workbook.sheets[sheetIndex];
 
+        // Check if sheet name contains "(Option)" to mark as option sheet
+        const isOptionSheet = sheet.name.toLowerCase().includes('(option)');
+
         // Create sheet record
-        const { data: newSheet, error: sheetError } = await supabase
+        const { data: newSheet, error: sheetError} = await supabase
           .from('material_sheets')
           .insert({
             workbook_id: newWorkbook.id,
             sheet_name: sheet.name,
             order_index: sheetIndex,
+            is_option: isOptionSheet,
           })
           .select()
           .single();
