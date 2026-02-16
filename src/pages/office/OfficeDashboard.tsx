@@ -425,29 +425,6 @@ export function OfficeDashboard() {
       <main className="w-full px-1 sm:px-2 py-3 sm:py-6">
         {activeTab === 'jobs' && (
           <div className="space-y-6">
-            {/* Zoho Books Quick Access Button */}
-            <Card className="border-2 border-purple-300 bg-gradient-to-r from-purple-50 to-blue-50 shadow-lg">
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Database className="w-8 h-8 text-purple-600" />
-                    <div>
-                      <h3 className="text-lg font-bold text-purple-900">Zoho Books Integration</h3>
-                      <p className="text-sm text-purple-700">Access synced materials, vendors, and customers</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => navigate('/office/zoho-settings')}
-                    size="lg"
-                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold shadow-lg"
-                  >
-                    <Database className="w-5 h-5 mr-2" />
-                    Open Books
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Active Jobs Cards */}
             <JobsView 
               selectedJobId={selectedJobId} 
