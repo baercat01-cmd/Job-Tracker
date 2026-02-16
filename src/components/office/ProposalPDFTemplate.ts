@@ -268,81 +268,83 @@ export function generateProposalHTML(data: {
         
         <div class="intro-box" style="margin-top: 20px;">
           <div class="box-header">Building Information & Work to be Completed</div>
-          <div style="padding: 10px 0;">
+          <div style="padding: 15px 10px;">
             <strong>Project:</strong> ${job.name}<br/>
             <strong>Location:</strong> ${job.address}<br/>
             <strong>Customer:</strong> ${job.client_name}
           </div>
+          
+          <div style="border-top: 1px solid #ddd; margin-top: 15px; padding: 15px 10px 10px 10px;">
+            ${sections.map((section: any) => {
+              let content = '';
+              
+              if (showInternalDetails) {
+                // OFFICE VIEW: Show section name with price, description, and all items with individual unit and total prices
+                content += '<div class="section-title" style="margin-top: 15px;">';
+                content += '<span style="font-weight: bold; font-size: 13pt;">' + section.name + '</span>';
+                if (section.price) {
+                  content += '<span class="section-price" style="font-weight: bold; font-size: 13pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                }
+                content += '</div>';
+                
+                // Show description first if exists
+                if (section.description) {
+                  content += '<div class="section-content" style="margin: 8px 0 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
+                }
+                
+                // Show all sub-items with individual prices in a detailed table
+                if (section.items && section.items.length > 0) {
+                  content += '<div style="margin: 10px 0 20px 0;">';
+                  content += '<p style="font-size: 10pt; font-weight: 600; color: #666; margin-bottom: 8px;">LINE ITEM BREAKDOWN:</p>';
+                  content += '<table class="items-table"><thead><tr>';
+                  content += '<th style="width: 45%;">Item Description</th>';
+                  content += '<th style="width: 15%; text-align: center;">Quantity</th>';
+                  content += '<th style="width: 20%; text-align: right;">Unit Price</th>';
+                  content += '<th style="width: 20%; text-align: right;">Total Price</th>';
+                  content += '</tr></thead><tbody>';
+                  
+                  section.items.forEach((item: any) => {
+                    const qty = item.quantity || 1;
+                    const totalPrice = item.price || 0;
+                    const unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
+                    content += '<tr>';
+                    content += '<td style="padding: 8px;">' + item.description + '</td>';
+                    content += '<td style="text-align: center; padding: 8px;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
+                    content += '<td style="text-align: right; padding: 8px;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                    content += '<td style="text-align: right; padding: 8px; font-weight: 600;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                    content += '</tr>';
+                  });
+                  
+                  content += '<tr class="total-row">';
+                  content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
+                  content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: 11pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                  content += '</tr>';
+                  content += '</tbody></table>';
+                  content += '</div>';
+                }
+              } else {
+                // CUSTOMER VERSION: Only show section name (with optional price) and description
+                // Do NOT show sub-items
+                if (showSectionPrices && section.price) {
+                  // Show section name with price on the right
+                  content += '<div class="section-title" style="margin-top: 15px;">';
+                  content += '<span>' + section.name + '</span>';
+                  content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                  content += '</div>';
+                } else {
+                  // Show section name only
+                  content += '<div class="section-title" style="display: block; margin-top: 15px;">' + section.name + '</div>';
+                }
+                
+                if (section.description) {
+                  content += '<div class="section-content">' + section.description + '</div>';
+                }
+              }
+              
+              return content;
+            }).join('')}
+          </div>
         </div>
-        
-        ${sections.map((section: any) => {
-          let content = '';
-          
-          if (showInternalDetails) {
-            // OFFICE VIEW: Show section name with price, description, and all items with individual unit and total prices
-            content += '<div class="section-title">';
-            content += '<span style="font-weight: bold; font-size: 13pt;">' + section.name + '</span>';
-            if (section.price) {
-              content += '<span class="section-price" style="font-weight: bold; font-size: 13pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
-            }
-            content += '</div>';
-            
-            // Show description first if exists
-            if (section.description) {
-              content += '<div class="section-content" style="margin: 8px 0 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
-            }
-            
-            // Show all sub-items with individual prices in a detailed table
-            if (section.items && section.items.length > 0) {
-              content += '<div style="margin: 10px 0 20px 0;">';
-              content += '<p style="font-size: 10pt; font-weight: 600; color: #666; margin-bottom: 8px;">LINE ITEM BREAKDOWN:</p>';
-              content += '<table class="items-table"><thead><tr>';
-              content += '<th style="width: 45%;">Item Description</th>';
-              content += '<th style="width: 15%; text-align: center;">Quantity</th>';
-              content += '<th style="width: 20%; text-align: right;">Unit Price</th>';
-              content += '<th style="width: 20%; text-align: right;">Total Price</th>';
-              content += '</tr></thead><tbody>';
-              
-              section.items.forEach((item: any) => {
-                const qty = item.quantity || 1;
-                const totalPrice = item.price || 0;
-                const unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
-                content += '<tr>';
-                content += '<td style="padding: 8px;">' + item.description + '</td>';
-                content += '<td style="text-align: center; padding: 8px;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
-                content += '<td style="text-align: right; padding: 8px;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
-                content += '<td style="text-align: right; padding: 8px; font-weight: 600;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
-                content += '</tr>';
-              });
-              
-              content += '<tr class="total-row">';
-              content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
-              content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: 11pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
-              content += '</tr>';
-              content += '</tbody></table>';
-              content += '</div>';
-            }
-          } else {
-            // CUSTOMER VERSION: Only show section name (with optional price) and description
-            // Do NOT show sub-items
-            if (showSectionPrices && section.price) {
-              // Show section name with price on the right
-              content += '<div class="section-title">';
-              content += '<span>' + section.name + '</span>';
-              content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
-              content += '</div>';
-            } else {
-              // Show section name only
-              content += '<div class="section-title" style="display: block;">' + section.name + '</div>';
-            }
-            
-            if (section.description) {
-              content += '<div class="section-content">' + section.description + '</div>';
-            }
-          }
-          
-          return content;
-        }).join('')}
         
         ${showInternalDetails ? `
           <!-- Office View - Summary Only (No Payment Terms) -->
