@@ -19,6 +19,8 @@ interface MaterialItem {
   category?: string;
   cost_per_unit?: number | null;
   price_per_unit?: number | null;
+  zoho_sales_order_id?: string | null;
+  zoho_purchase_order_id?: string | null;
 }
 
 interface ZohoOrderConfirmationDialogProps {

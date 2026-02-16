@@ -112,14 +112,24 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
           zoho_invoice_id,
           zoho_invoice_number,
           ordered_at,
-          sheets:material_sheets(sheet_name)
+          sheet_id,
+          material_sheets!inner(sheet_name)
         `)
         .in('sheet_id', sheetIds)
         .or('zoho_sales_order_id.not.is.null,zoho_purchase_order_id.not.is.null,zoho_invoice_id.not.is.null')
         .order('ordered_at', { ascending: false });
 
       if (error) throw error;
-      setOrderedMaterials(data || []);
+      
+      // Transform the data to match MaterialWithOrder interface
+      const transformedData = (data || []).map(item => ({
+        ...item,
+        sheets: {
+          sheet_name: (item as any).material_sheets?.sheet_name || ''
+        }
+      }));
+      
+      setOrderedMaterials(transformedData);
     } catch (error: any) {
       console.error('Error loading ordered materials:', error);
     } finally {

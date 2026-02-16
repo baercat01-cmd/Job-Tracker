@@ -63,6 +63,7 @@ interface MaterialItem {
   material_name: string;
   quantity: number;
   length: string | null;
+  color: string | null;
   cost_per_unit: number | null;
   markup_percent: number | null;
   price_per_unit: number | null;

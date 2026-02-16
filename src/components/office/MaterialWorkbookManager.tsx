@@ -561,12 +561,10 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             Manage material workbooks and create Zoho Books quotes for tracking
           </p>
         </div>
-        {activeTab === 'workbook' && (
-          <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Workbook
-          </Button>
-        )}
+        <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+          <Upload className="w-4 h-4 mr-2" />
+          Upload Workbook
+        </Button>
       </div>
 
       {/* Main Content - No Tabs */}
