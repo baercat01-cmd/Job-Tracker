@@ -21,8 +21,9 @@ export function generateProposalHTML(data: {
     grandTotal: number;
   };
   showLineItems: boolean;
+  showSectionPrices?: boolean; // New option to show/hide individual section prices
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = true } = data;
 
   return `
     <!DOCTYPE html>
@@ -120,14 +121,26 @@ export function generateProposalHTML(data: {
           
           .section-title { 
             font-weight: bold; 
-            margin-top: 15px; 
-            margin-bottom: 5px; 
+            font-size: 12pt;
+            margin-top: 20px; 
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
           }
           
           .section-content { 
             margin-left: 0; 
-            margin-bottom: 10px; 
-            white-space: pre-wrap; 
+            margin-bottom: 15px; 
+            white-space: pre-wrap;
+            line-height: 1.5;
+            color: #333;
+          }
+          
+          .section-price {
+            font-weight: bold;
+            color: #000;
+            margin-left: 20px;
           }
           
           .footer { margin-top: 30px; font-size: 9pt; }
@@ -210,16 +223,25 @@ export function generateProposalHTML(data: {
         </div>
         
         ${sections.map((section: any) => {
-          let content = `<div class="section-title">${section.name}</div>`;
+          // Only show section name (with optional price) and description
+          // Do NOT show sub-items
+          let content = '';
+          
+          if (showSectionPrices && section.price) {
+            // Show section name with price on the right
+            content += `
+              <div class="section-title">
+                <span>${section.name}</span>
+                <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              </div>
+            `;
+          } else {
+            // Show section name only
+            content += `<div class="section-title">${section.name}</div>`;
+          }
           
           if (section.description) {
             content += `<div class="section-content">${section.description}</div>`;
-          }
-          
-          if (section.items && section.items.length > 0) {
-            section.items.forEach((item: any) => {
-              content += `<div class="section-content">${item.description}</div>`;
-            });
           }
           
           return content;
