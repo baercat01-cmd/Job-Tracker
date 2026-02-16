@@ -273,8 +273,8 @@ export function generateProposalHTML(data: {
               
               section.items.forEach((item: any) => {
                 const qty = item.quantity || 1;
-                const unitPrice = item.price || 0;
-                const totalPrice = qty * unitPrice;
+                const totalPrice = item.price || 0;
+                const unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
                 content += '<tr>';
                 content += '<td>' + item.description + '</td>';
                 content += '<td style="text-align: center;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
