@@ -216,7 +216,99 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       
       console.log(`✅ Found ${packagesWithShopMaterials.length} packages with shop materials`);
       
-      setPackages(packagesWithShopMaterials);
+      // ALSO load unbundled materials that have pull_from_shop, ready_for_job, or at_job status
+      // These are materials that haven't been added to a bundle yet
+      const { data: unbundledMaterials, error: unbundledError } = await supabase
+        .from('material_items')
+        .select(`
+          id,
+          sheet_id,
+          category,
+          material_name,
+          quantity,
+          length,
+          usage,
+          status,
+          cost_per_unit,
+          sheets:material_sheets(
+            sheet_name,
+            workbook_id,
+            workbooks:material_workbooks(
+              job_id,
+              jobs:jobs(
+                id,
+                name,
+                client_name
+              )
+            )
+          )
+        `)
+        .in('status', ['pull_from_shop', 'ready_for_job', 'at_job'])
+        .order('material_name');
+
+      if (unbundledError) {
+        console.error('❌ Error loading unbundled materials:', unbundledError);
+      } else {
+        console.log(`📋 Found ${unbundledMaterials?.length || 0} total materials with shop statuses`);
+        
+        // Get IDs of materials that are already in bundles
+        const bundledMaterialIds = new Set(
+          packagesWithShopMaterials.flatMap(pkg => 
+            pkg.bundle_items.map(item => item.material_items.id)
+          )
+        );
+        
+        // Filter out materials that are already in bundles
+        const trulyUnbundled = (unbundledMaterials || []).filter(
+          (material: any) => !bundledMaterialIds.has(material.id)
+        );
+        
+        console.log(`🔓 Found ${trulyUnbundled.length} unbundled materials needing shop processing`);
+        
+        // Group unbundled materials by job
+        const unbundledByJob = new Map<string, any[]>();
+        trulyUnbundled.forEach((material: any) => {
+          const jobId = material.sheets?.workbooks?.jobs?.id;
+          if (jobId) {
+            if (!unbundledByJob.has(jobId)) {
+              unbundledByJob.set(jobId, []);
+            }
+            unbundledByJob.get(jobId)!.push(material);
+          }
+        });
+        
+        // Create virtual packages for unbundled materials
+        const virtualPackages: MaterialBundle[] = Array.from(unbundledByJob.entries()).map(([jobId, materials]) => {
+          const firstMaterial = materials[0];
+          const job = firstMaterial.sheets?.workbooks?.jobs;
+          
+          return {
+            id: `unbundled-${jobId}`,
+            job_id: jobId,
+            name: `Unbundled Materials`,
+            description: 'Materials not yet assigned to a package',
+            status: 'not_ordered',
+            jobs: {
+              name: job?.name || 'Unknown Job',
+              client_name: job?.client_name || '',
+            },
+            bundle_items: materials.map(material => ({
+              id: `virtual-${material.id}`,
+              bundle_id: `unbundled-${jobId}`,
+              material_item_id: material.id,
+              material_items: {
+                ...material,
+                sheets: material.sheets,
+              },
+            })),
+          };
+        });
+        
+        console.log(`📦 Created ${virtualPackages.length} virtual packages for unbundled materials`);
+        
+        // Combine bundled and unbundled packages
+        setPackages([...packagesWithShopMaterials, ...virtualPackages]);
+      }
     } catch (error: any) {
       console.error('Error loading packages:', error);
       toast.error('Failed to load packages');
