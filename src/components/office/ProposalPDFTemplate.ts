@@ -21,10 +21,10 @@ export function generateProposalHTML(data: {
     grandTotal: number;
   };
   showLineItems: boolean;
-  showSectionPrices?: boolean; // Option to show/hide individual section prices (customer version)
+  showSectionPrices?: boolean; // Option to show/hide individual section prices (customer version - defaults to false)
   showInternalDetails?: boolean; // Option to show all row items with individual prices (Office View - internal use only)
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = true, showInternalDetails = false } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false } = data;
 
   return `
     <!DOCTYPE html>
@@ -264,12 +264,6 @@ export function generateProposalHTML(data: {
         <p style="margin: 20px 0; font-size: 11pt; line-height: 1.6;">
           We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
         </p>
-        
-        <div style="margin: 15px 0; padding: 10px 0;">
-          <strong>Project:</strong> ${job.name}<br/>
-          <strong>Location:</strong> ${job.address}<br/>
-          <strong>Customer:</strong> ${job.client_name}
-        </div>
         
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
