@@ -381,34 +381,20 @@ export function generateProposalHTML(data: {
           <!-- Customer Version - Full Footer with Payment Terms -->
           <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
           
-          ${showLineItems ? `
-            <table style="margin-top: 15px;">
-              <tr>
-                <td style="text-align: right;"><strong>Materials & Subcontractors:</strong></td>
-                <td style="text-align: right; width: 150px;">$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
-              ${totals.labor > 0 ? `
-                <tr>
-                  <td style="text-align: right;"><strong>Labor:</strong></td>
-                  <td style="text-align: right;">$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              ` : ''}
-              <tr>
-                <td style="text-align: right;"><strong>Subtotal:</strong></td>
-                <td style="text-align: right;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
-              <tr>
-                <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
-                <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
-              <tr>
-                <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
-                <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
-              </tr>
-            </table>
-          ` : `
-            <p style="text-align: center; font-size: 16pt; font-weight: bold; margin: 20px 0;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-          `}
+          <table style="margin-top: 15px;">
+            <tr>
+              <td style="text-align: right;"><strong>Subtotal:</strong></td>
+              <td style="text-align: right; width: 150px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr>
+              <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
+              <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr>
+              <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
+              <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+            </tr>
+          </table>
           
           <div class="footer">
             <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
