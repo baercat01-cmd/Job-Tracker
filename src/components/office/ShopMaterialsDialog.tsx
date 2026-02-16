@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
@@ -9,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight } from 'lucide-react';
+import { Package, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Select,
@@ -18,6 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface MaterialItem {
   id: string;
@@ -81,6 +85,7 @@ function getStatusColor(status: string): string {
 export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterialsDialogProps) {
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Empty set = all collapsed by default
 
   useEffect(() => {
     if (open) {
@@ -137,12 +142,12 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
       // Transform Supabase response to match our interface
       const transformedPackages: MaterialBundle[] = (data || []).map((pkg: any) => ({
         ...pkg,
-        jobs: pkg.jobs, // This was `pkg.jobs[0]`, but Supabase `!inner` join should return an object if there's one, or null. If it's an array, it means there are multiple jobs, which is unexpected for `job_id`
+        jobs: pkg.jobs,
         bundle_items: pkg.bundle_items.map((item: any) => ({
           ...item,
           material_items: {
-            ...item.material_items, // This was `item.material_items[0]`
-            sheets: item.material_items.sheets, // This was `item.material_items[0].sheets[0]`
+            ...item.material_items,
+            sheets: item.material_items.sheets,
           },
         })),
       }));
@@ -185,6 +190,16 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
     }
   }
 
+  function togglePackageExpanded(packageId: string) {
+    const newSet = new Set(expandedPackages);
+    if (newSet.has(packageId)) {
+      newSet.delete(packageId);
+    } else {
+      newSet.add(packageId);
+    }
+    setExpandedPackages(newSet);
+  }
+
   // Separate packages by status
   const pullFromShopPackages = packages.filter(pkg => 
     pkg.bundle_items.some(item => 
@@ -193,7 +208,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
   );
   
   const readyForJobPackages = packages.filter(pkg => 
-    pkg.bundle_items.some(item => // Changed .every() to .some() because a package can have both 'ready_for_job' and 'pull_from_shop'
+    pkg.bundle_items.some(item =>
       item.material_items.status === 'ready_for_job'
     )
   );
@@ -240,89 +255,97 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                     <p className="text-sm">No materials need to be pulled</p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
+                  <div className="space-y-3">
                     {pullFromShopPackages.map((pkg) => {
                       const pullItems = pkg.bundle_items.filter(item => 
                         item.material_items.status === 'pull_from_shop'
                       );
+                      const isExpanded = expandedPackages.has(pkg.id);
                       
                       return (
-                      <div key={pkg.id} className="space-y-2">
+                      <Collapsible key={pkg.id} open={isExpanded} onOpenChange={() => togglePackageExpanded(pkg.id)}>
                         {/* Package Header */}
-                        <div 
-                          className="bg-gradient-to-r from-slate-800 to-slate-700 border-l-4 border-purple-500 p-3 cursor-pointer hover:from-slate-700 hover:to-slate-600 transition-all shadow-md"
-                          onClick={() => {
-                            onJobSelect?.(pkg.job_id);
-                            onClose();
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-bold text-base text-white flex items-center gap-2">
-                                <Package className="w-4 h-4" />
-                                {pkg.name}
-                              </p>
-                              <p className="text-xs text-purple-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
-                              {pkg.description && (
-                                <p className="text-xs text-purple-200 mt-1">{pkg.description}</p>
-                              )}
+                        <div className="bg-gradient-to-r from-slate-800 to-slate-700 border-l-4 border-purple-500 rounded-lg shadow-md overflow-hidden">
+                          <CollapsibleTrigger asChild>
+                            <div className="p-3 cursor-pointer hover:from-slate-700 hover:to-slate-600 transition-all">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 flex-1">
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-5 h-5 text-purple-300 flex-shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="w-5 h-5 text-purple-300 flex-shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="font-bold text-base text-white flex items-center gap-2">
+                                      <Package className="w-4 h-4" />
+                                      {pkg.name}
+                                    </p>
+                                    <p className="text-xs text-purple-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
+                                    {pkg.description && (
+                                      <p className="text-xs text-purple-200 mt-1">{pkg.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Badge variant="secondary" className="text-xs bg-purple-500 text-slate-900 font-semibold">
+                                  {pullItems.length} item{pullItems.length !== 1 ? 's' : ''}
+                                </Badge>
+                              </div>
                             </div>
-                            <Badge variant="secondary" className="text-xs bg-purple-500 text-slate-900 font-semibold">
-                              {pullItems.length} item{pullItems.length !== 1 ? 's' : ''}
-                            </Badge>
-                          </div>
+                          </CollapsibleTrigger>
                         </div>
                         
                         {/* Materials in this package */}
-                        <div className="space-y-2 pl-2">
-                          {pullItems.map((item) => (
-                            <Card key={item.id} className="border-l-4 border-l-purple-600 bg-white hover:shadow-md transition-shadow">
-                              <CardContent className="py-3 px-3">
-                                <div className="flex items-center gap-3">
-                                  {/* Left side: Sheet and Category */}
-                                  <div className="flex flex-col gap-1 flex-shrink-0">
-                                    <Badge variant="outline" className="text-xs border-blue-300 bg-blue-50 whitespace-nowrap">
-                                      {item.material_items.sheets.sheet_name}
-                                    </Badge>
-                                    <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
-                                      {item.material_items.category}
-                                    </Badge>
-                                  </div>
-                                  
-                                  {/* Middle: Material info */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-sm text-slate-900 mb-1">{item.material_items.material_name}</p>
-                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                      <span className="font-semibold">Qty: {item.material_items.quantity}</span>
-                                      {item.material_items.length && <span>Length: {item.material_items.length}</span>}
-                                      {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
+                        <CollapsibleContent>
+                          <div className="space-y-2 mt-2 pl-2">
+                            {pullItems.map((item) => (
+                              <Card key={item.id} className="border-l-4 border-l-purple-600 bg-white hover:shadow-md transition-shadow">
+                                <CardContent className="py-3 px-3">
+                                  <div className="flex items-center gap-3">
+                                    {/* Left side: Sheet and Category */}
+                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                      <Badge variant="outline" className="text-xs border-blue-300 bg-blue-50 whitespace-nowrap">
+                                        {item.material_items.sheets.sheet_name}
+                                      </Badge>
+                                      <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
+                                        {item.material_items.category}
+                                      </Badge>
+                                    </div>
+                                    
+                                    {/* Middle: Material info */}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-bold text-sm text-slate-900 mb-1">{item.material_items.material_name}</p>
+                                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                        <span className="font-semibold">Qty: {item.material_items.quantity}</span>
+                                        {item.material_items.length && <span>Length: {item.material_items.length}</span>}
+                                        {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Right side: Status selector */}
+                                    <div className="flex-shrink-0 w-36">
+                                      <Select
+                                        value={item.material_items.status}
+                                        onValueChange={(value) => updateMaterialStatus(item.material_items.id, value)}
+                                      >
+                                        <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="not_ordered">Not Ordered</SelectItem>
+                                          <SelectItem value="ordered">Ordered</SelectItem>
+                                          <SelectItem value="received">Received</SelectItem>
+                                          <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
+                                          <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                   </div>
-                                  
-                                  {/* Right side: Status selector */}
-                                  <div className="flex-shrink-0 w-36">
-                                    <Select
-                                      value={item.material_items.status}
-                                      onValueChange={(value) => updateMaterialStatus(item.material_items.id, value)}
-                                    >
-                                      <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="not_ordered">Not Ordered</SelectItem>
-                                        <SelectItem value="ordered">Ordered</SelectItem>
-                                        <SelectItem value="received">Received</SelectItem>
-                                        <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
-                                        <SelectItem value="ready_for_job">Ready for Job</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                       );
                     })}
                   </div>
@@ -344,89 +367,97 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                     <p className="text-sm">No materials ready for job</p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
+                  <div className="space-y-3">
                     {readyForJobPackages.map((pkg) => {
                       const readyItems = pkg.bundle_items.filter(item => 
                         item.material_items.status === 'ready_for_job'
                       );
+                      const isExpanded = expandedPackages.has(pkg.id);
                       
                       return (
-                      <div key={pkg.id} className="space-y-2">
+                      <Collapsible key={pkg.id} open={isExpanded} onOpenChange={() => togglePackageExpanded(pkg.id)}>
                         {/* Package Header */}
-                        <div 
-                          className="bg-gradient-to-r from-slate-800 to-slate-700 border-l-4 border-blue-500 p-3 cursor-pointer hover:from-slate-700 hover:to-slate-600 transition-all shadow-md"
-                          onClick={() => {
-                            onJobSelect?.(pkg.job_id);
-                            onClose();
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-bold text-base text-white flex items-center gap-2">
-                                <Package className="w-4 h-4" />
-                                {pkg.name}
-                              </p>
-                              <p className="text-xs text-blue-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
-                              {pkg.description && (
-                                <p className="text-xs text-blue-200 mt-1">{pkg.description}</p>
-                              )}
+                        <div className="bg-gradient-to-r from-slate-800 to-slate-700 border-l-4 border-blue-500 rounded-lg shadow-md overflow-hidden">
+                          <CollapsibleTrigger asChild>
+                            <div className="p-3 cursor-pointer hover:from-slate-700 hover:to-slate-600 transition-all">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 flex-1">
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-5 h-5 text-blue-300 flex-shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="w-5 h-5 text-blue-300 flex-shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="font-bold text-base text-white flex items-center gap-2">
+                                      <Package className="w-4 h-4" />
+                                      {pkg.name}
+                                    </p>
+                                    <p className="text-xs text-blue-100">{pkg.jobs.name} - {pkg.jobs.client_name}</p>
+                                    {pkg.description && (
+                                      <p className="text-xs text-blue-200 mt-1">{pkg.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Badge variant="secondary" className="text-xs bg-blue-500 text-slate-900 font-semibold">
+                                  {readyItems.length} item{readyItems.length !== 1 ? 's' : ''}
+                                </Badge>
+                              </div>
                             </div>
-                            <Badge variant="secondary" className="text-xs bg-blue-500 text-slate-900 font-semibold">
-                              {readyItems.length} item{readyItems.length !== 1 ? 's' : ''}
-                            </Badge>
-                          </div>
+                          </CollapsibleTrigger>
                         </div>
                         
                         {/* Materials in this package */}
-                        <div className="space-y-2 pl-2">
-                          {readyItems.map((item) => (
-                            <Card key={item.id} className="border-l-4 border-l-blue-600 bg-white hover:shadow-md transition-shadow">
-                              <CardContent className="py-3 px-3">
-                                <div className="flex items-center gap-3">
-                                  {/* Left side: Sheet and Category */}
-                                  <div className="flex flex-col gap-1 flex-shrink-0">
-                                    <Badge variant="outline" className="text-xs border-blue-300 bg-blue-50 whitespace-nowrap">
-                                      {item.material_items.sheets.sheet_name}
-                                    </Badge>
-                                    <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
-                                      {item.material_items.category}
-                                    </Badge>
-                                  </div>
-                                  
-                                  {/* Middle: Material info */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-sm text-slate-900 mb-1">{item.material_items.material_name}</p>
-                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                      <span className="font-semibold">Qty: {item.material_items.quantity}</span>
-                                      {item.material_items.length && <span>Length: {item.material_items.length}</span>}
-                                      {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
+                        <CollapsibleContent>
+                          <div className="space-y-2 mt-2 pl-2">
+                            {readyItems.map((item) => (
+                              <Card key={item.id} className="border-l-4 border-l-blue-600 bg-white hover:shadow-md transition-shadow">
+                                <CardContent className="py-3 px-3">
+                                  <div className="flex items-center gap-3">
+                                    {/* Left side: Sheet and Category */}
+                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                      <Badge variant="outline" className="text-xs border-blue-300 bg-blue-50 whitespace-nowrap">
+                                        {item.material_items.sheets.sheet_name}
+                                      </Badge>
+                                      <Badge variant="outline" className="text-xs border-slate-300 whitespace-nowrap">
+                                        {item.material_items.category}
+                                      </Badge>
+                                    </div>
+                                    
+                                    {/* Middle: Material info */}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-bold text-sm text-slate-900 mb-1">{item.material_items.material_name}</p>
+                                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                        <span className="font-semibold">Qty: {item.material_items.quantity}</span>
+                                        {item.material_items.length && <span>Length: {item.material_items.length}</span>}
+                                        {item.material_items.usage && <span>Usage: {item.material_items.usage}</span>}
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Right side: Status selector */}
+                                    <div className="flex-shrink-0 w-36">
+                                      <Select
+                                        value={item.material_items.status}
+                                        onValueChange={(value) => updateMaterialStatus(item.material_items.id, value)}
+                                      >
+                                        <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="not_ordered">Not Ordered</SelectItem>
+                                          <SelectItem value="ordered">Ordered</SelectItem>
+                                          <SelectItem value="received">Received</SelectItem>
+                                          <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
+                                          <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                   </div>
-                                  
-                                  {/* Right side: Status selector */}
-                                  <div className="flex-shrink-0 w-36">
-                                    <Select
-                                      value={item.material_items.status}
-                                      onValueChange={(value) => updateMaterialStatus(item.material_items.id, value)}
-                                    >
-                                      <SelectTrigger className={`h-8 font-medium border text-xs ${getStatusColor(item.material_items.status)}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="not_ordered">Not Ordered</SelectItem>
-                                        <SelectItem value="ordered">Ordered</SelectItem>
-                                        <SelectItem value="received">Received</SelectItem>
-                                        <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
-                                        <SelectItem value="ready_for_job">Ready for Job</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                       );
                     })}
                   </div>
