@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,6 +17,10 @@ import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
 import { JobZohoOrders } from './JobZohoOrders';
+
+import { toast } from 'sonner';
+import { FunctionsHttpError } from '@supabase/supabase-js';
+import { format } from 'date-fns';
 
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -394,6 +398,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [crewOrdersCount, setCrewOrdersCount] = useState(0);
   const [emailStats, setEmailStats] = useState({ total: 0, customer: 0, vendor: 0, subcontractor: 0, unread: 0 });
   const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -973,6 +978,106 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
     return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
   }
 
+  async function printJobHours() {
+    setExporting(true);
+
+    try {
+      // Load all time entries for this job
+      const { data: allEntries, error: entriesError } = await supabase
+        .from('time_entries')
+        .select(`
+          *,
+          components(name),
+          user_profiles(username, email)
+        `)
+        .eq('job_id', job.id)
+        .eq('is_active', false)
+        .order('start_time', { ascending: true });
+
+      if (entriesError) throw entriesError;
+
+      if (!allEntries || allEntries.length === 0) {
+        toast.error('No time entries to print');
+        setExporting(false);
+        return;
+      }
+
+      // Group entries by user
+      const userMap = new Map<string, any>();
+      
+      allEntries.forEach(entry => {
+        const userId = entry.user_id;
+        const userName = entry.user_profiles?.username || entry.user_profiles?.email || 'Unknown User';
+        
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            userId,
+            userName,
+            totalHours: 0,
+            entries: [],
+          });
+        }
+        
+        const userData = userMap.get(userId)!;
+        userData.totalHours += entry.total_hours || 0;
+        userData.entries.push({
+          date: format(new Date(entry.start_time), 'MMM d, yyyy'),
+          component: entry.components?.name || 'Clock In/Out',
+          startTime: format(new Date(entry.start_time), 'h:mm a'),
+          endTime: entry.end_time ? format(new Date(entry.end_time), 'h:mm a') : '-',
+          hours: (entry.total_hours || 0).toFixed(2),
+          crewCount: entry.crew_count || 1,
+          notes: entry.notes || '',
+          isManual: entry.is_manual,
+        });
+      });
+
+      const users = Array.from(userMap.values()).sort((a, b) => 
+        a.userName.localeCompare(b.userName)
+      );
+
+      const pdfData = {
+        title: 'Job Hours Report',
+        jobName: job.name,
+        clientName: job.client_name,
+        address: job.address,
+        totalHours: totalManHours.toFixed(2),
+        users,
+      };
+
+      const { data, error } = await supabase.functions.invoke('generate-pdf', {
+        body: {
+          type: 'job-hours',
+          data: pdfData,
+        },
+      });
+
+      if (error) {
+        if (error instanceof FunctionsHttpError) {
+          const errorText = await error.context.text();
+          throw new Error(errorText || error.message);
+        }
+        throw error;
+      }
+
+      // Open HTML in new window with print dialog
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(data);
+        printWindow.document.close();
+      } else {
+        toast.error('Please allow popups to print');
+      }
+
+      toast.success('Print dialog opened');
+    } catch (error: any) {
+      console.error('Print error:', error);
+      toast.error(error.message || 'Failed to generate print preview');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function renderWorkEntry(entry: ComponentWorkEntry) {
     return (
       <div
@@ -1274,15 +1379,42 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
+              <Card 
+                className="cursor-pointer hover:shadow-lg hover:border-blue-400 transition-all"
+                onClick={printJobHours}
+              >
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm text-muted-foreground">Total Hours</p>
                       <p className="text-3xl font-bold">{totalManHours.toFixed(1)}</p>
                       <p className="text-xs text-muted-foreground mt-1">man-hours logged</p>
                     </div>
-                    <Clock className="w-10 h-10 text-blue-600" />
+                    <div className="flex flex-col items-end gap-1">
+                      <Clock className="w-10 h-10 text-blue-600" />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={exporting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          printJobHours();
+                        }}
+                        className="h-7 text-xs"
+                      >
+                        {exporting ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                            Printing...
+                          </>
+                        ) : (
+                          <>
+                            <Printer className="w-3 h-3 mr-1" />
+                            Print
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
