@@ -19,6 +19,7 @@ interface ZohoSettings {
   workdrive_client_id: string | null;
   workdrive_client_secret: string | null;
   workdrive_refresh_token: string | null;
+  martin_builder_org_id: string | null;
   last_sync_at: string | null;
   sync_status: string;
   sync_error: string | null;
@@ -39,12 +40,19 @@ export function ZohoIntegrationSettings() {
   const [wdClientId, setWdClientId] = useState('');
   const [wdClientSecret, setWdClientSecret] = useState('');
   const [wdRefreshToken, setWdRefreshToken] = useState('');
+  const [martinBuilderOrgId, setMartinBuilderOrgId] = useState('');
 
-  // Grant code exchange state
+  // Grant code exchange state for Books
   const [showGrantCodeDialog, setShowGrantCodeDialog] = useState(false);
   const [grantCode, setGrantCode] = useState('');
   const [exchangingToken, setExchangingToken] = useState(false);
   const [hasNewRefreshToken, setHasNewRefreshToken] = useState(false);
+  
+  // Grant code exchange state for WorkDrive
+  const [showWdGrantCodeDialog, setShowWdGrantCodeDialog] = useState(false);
+  const [wdGrantCode, setWdGrantCode] = useState('');
+  const [exchangingWdToken, setExchangingWdToken] = useState(false);
+  const [hasNewWdRefreshToken, setHasNewWdRefreshToken] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -71,6 +79,7 @@ export function ZohoIntegrationSettings() {
         setWdClientId(data.workdrive_client_id || '');
         setWdClientSecret(data.workdrive_client_secret ? '••••••••' : '');
         setWdRefreshToken(data.workdrive_refresh_token ? '••••••••' : '');
+        setMartinBuilderOrgId(data.martin_builder_org_id || '');
       }
     } catch (error: any) {
       console.error('Error loading Zoho settings:', error);
@@ -107,8 +116,11 @@ export function ZohoIntegrationSettings() {
     if (wdClientSecret && wdClientSecret !== '••••••••') {
       updateData.workdrive_client_secret = wdClientSecret;
     }
-    if (wdRefreshToken && wdRefreshToken !== '••••••••') {
+    if (wdRefreshToken && wdRefreshToken !== '••••••••' || hasNewWdRefreshToken) {
       updateData.workdrive_refresh_token = wdRefreshToken;
+    }
+    if (martinBuilderOrgId) {
+      updateData.martin_builder_org_id = martinBuilderOrgId;
     }
 
     setSaving(true);
@@ -143,6 +155,7 @@ export function ZohoIntegrationSettings() {
 
       toast.success('✅ Zoho settings saved successfully');
       setHasNewRefreshToken(false);
+      setHasNewWdRefreshToken(false);
       await loadSettings();
     } catch (error: any) {
       console.error('Error saving settings:', error);
@@ -187,6 +200,64 @@ export function ZohoIntegrationSettings() {
       toast.error(`Sync failed: ${error.message}`);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function exchangeWorkDriveGrantCode() {
+    if (!wdGrantCode || !wdClientId || !wdClientSecret) {
+      toast.error('Please fill in WorkDrive Client ID, Client Secret, and Grant Code');
+      return;
+    }
+
+    // Unmask client secret if needed
+    const actualClientSecret = wdClientSecret === '••••••••' ? '' : wdClientSecret;
+    if (!actualClientSecret) {
+      toast.error('Please enter your actual WorkDrive Client Secret first (not the masked value)');
+      return;
+    }
+
+    setExchangingWdToken(true);
+    try {
+      // Exchange grant code via Edge Function (to avoid CORS issues)
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: {
+          action: 'exchange_grant_code',
+          grantCode: wdGrantCode,
+          clientId: wdClientId,
+          clientSecret: actualClientSecret,
+        }
+      });
+
+      if (error) {
+        // Extract detailed error message
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = error.context?.status ?? 500;
+            const textContent = await error.context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (!data || !data.refresh_token) {
+        throw new Error('No refresh token received from server');
+      }
+
+      // Save the refresh token and mark that we have a new one
+      setWdRefreshToken(data.refresh_token);
+      setHasNewWdRefreshToken(true);
+      toast.success('✅ WorkDrive Refresh token obtained! Click "Save Credentials" to store it.');
+      setShowWdGrantCodeDialog(false);
+      setWdGrantCode('');
+    } catch (error: any) {
+      console.error('Error exchanging WorkDrive grant code:', error);
+      toast.error(`Failed to exchange grant code: ${error.message}`);
+    } finally {
+      setExchangingWdToken(false);
     }
   }
 
@@ -405,7 +476,19 @@ export function ZohoIntegrationSettings() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="wdRefreshToken">WorkDrive Refresh Token</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="wdRefreshToken">WorkDrive Refresh Token</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowWdGrantCodeDialog(true)}
+                  className="h-7 bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-300"
+                >
+                  <Key className="w-3 h-3 mr-1" />
+                  Exchange WorkDrive Grant Code
+                </Button>
+              </div>
               <Input
                 id="wdRefreshToken"
                 type="password"
@@ -418,13 +501,27 @@ export function ZohoIntegrationSettings() {
               </p>
             </div>
             
+            <div className="space-y-2">
+              <Label htmlFor="martinBuilderOrgId">Martin Builder Organization ID (Optional)</Label>
+              <Input
+                id="martinBuilderOrgId"
+                value={martinBuilderOrgId}
+                onChange={(e) => setMartinBuilderOrgId(e.target.value.trim())}
+                placeholder="e.g., 60087654321 (optional)"
+              />
+              <p className="text-xs text-muted-foreground">
+                ⚠️ Only needed if you want to sync Zoho Books materials from Martin Builder's organization. Leave blank if only using WorkDrive.
+              </p>
+            </div>
+            
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
-              <p className="font-semibold text-purple-900 mb-2">🔑 Getting Martin Builder WorkDrive Credentials:</p>
+              <p className="font-semibold text-purple-900 mb-2">🔑 Getting Martin Builder Credentials:</p>
               <ol className="list-decimal list-inside space-y-1 text-purple-800">
                 <li>Log in to <a href="https://api-console.zoho.com/" target="_blank" className="underline font-semibold">Zoho API Console</a> with Martin Builder account</li>
                 <li>Create a new "Server-based Application"</li>
                 <li>Generate Grant Code with scope: <code className="bg-white px-1 rounded">WorkDrive.files.ALL</code></li>
-                <li>Use the Exchange Grant Code button (top section) to get Refresh Token</li>
+                <li>Use the Exchange Grant Code button above to get Refresh Token</li>
+                <li>If you need to sync Books data, get the Organization ID from Zoho Books → Settings → Organization Profile</li>
                 <li>Paste the credentials here and Save</li>
               </ol>
             </div>
@@ -571,6 +668,74 @@ export function ZohoIntegrationSettings() {
                 disabled={exchangingToken || !grantCode || !clientId || !clientSecret}
               >
                 {exchangingToken ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Exchanging...
+                  </>
+                ) : (
+                  <>
+                    <Key className="w-4 h-4 mr-2" />
+                    Exchange for Refresh Token
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* WorkDrive Grant Code Exchange Dialog */}
+      <Dialog open={showWdGrantCodeDialog} onOpenChange={setShowWdGrantCodeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-purple-600" />
+              Exchange WorkDrive Grant Code for Refresh Token
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
+              <p className="text-purple-900 font-semibold mb-1">Instructions:</p>
+              <ol className="list-decimal list-inside space-y-1 text-purple-800">
+                <li>Make sure you've entered your WorkDrive Client ID and Client Secret in the purple section above</li>
+                <li>Paste your Martin Builder Zoho Grant Code below</li>
+                <li>Click "Exchange for Refresh Token"</li>
+                <li>The refresh token will automatically populate in the WorkDrive section</li>
+                <li>Click "Save Credentials" to store everything</li>
+              </ol>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="wdGrantCode">WorkDrive Grant Code (Martin Builder Account)</Label>
+              <Input
+                id="wdGrantCode"
+                value={wdGrantCode}
+                onChange={(e) => setWdGrantCode(e.target.value)}
+                placeholder="1000.xxxxxxxxxxxxx.yyyyyyyyyyyyyy"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Paste the grant code from Martin Builder's Zoho API Console with scope: <code className="bg-purple-100 px-1 rounded">WorkDrive.files.ALL</code>
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowWdGrantCodeDialog(false);
+                  setWdGrantCode('');
+                }}
+                disabled={exchangingWdToken}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={exchangeWorkDriveGrantCode}
+                disabled={exchangingWdToken || !wdGrantCode || !wdClientId || !wdClientSecret}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {exchangingWdToken ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Exchanging...
