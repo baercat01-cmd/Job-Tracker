@@ -639,10 +639,10 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
     } catch (error: any) {
       console.error('Error generating proposal number:', error);
       toast.error('Failed to generate proposal number');
-      // Fallback format
-      const year = new Date().getFullYear();
-      const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
-      return `PROP-${year}-${random}-V1`;
+      // Fallback format: YYXXX-1
+      const year = new Date().getFullYear().toString().slice(-2);
+      const random = Math.floor(Math.random() * 999).toString().padStart(3, '0');
+      return `${year}${random}-1`;
     }
   }
 
