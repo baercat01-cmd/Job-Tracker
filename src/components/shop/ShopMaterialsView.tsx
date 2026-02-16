@@ -233,9 +233,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           sheets:material_sheets!inner(
             sheet_name,
             workbook_id,
-            workbooks:material_workbooks!inner(
+            material_workbooks!inner(
               job_id,
-              jobs:jobs!inner(
+              jobs!inner(
                 id,
                 name,
                 client_name
@@ -268,36 +268,47 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         // Group unbundled materials by job
         const unbundledByJob = new Map<string, any[]>();
         trulyUnbundled.forEach((material: any) => {
-          // Extract nested data - Supabase always returns arrays for joins
+          // Extract nested data - Supabase returns arrays for joins
           const sheet = Array.isArray(material.sheets) ? material.sheets[0] : material.sheets;
-          const workbook = Array.isArray(sheet?.workbooks) ? sheet.workbooks[0] : sheet?.workbooks;
-          const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
-          const jobId = job?.id;
+          if (!sheet) {
+            console.warn('Material has no sheet:', material.id, material.material_name);
+            return;
+          }
           
-          console.log('Processing unbundled material:', {
+          const workbook = Array.isArray(sheet.material_workbooks) ? sheet.material_workbooks[0] : sheet.material_workbooks;
+          if (!workbook) {
+            console.warn('Sheet has no workbook:', sheet.sheet_name);
+            return;
+          }
+          
+          const job = Array.isArray(workbook.jobs) ? workbook.jobs[0] : workbook.jobs;
+          if (!job) {
+            console.warn('Workbook has no job:', workbook.workbook_id);
+            return;
+          }
+          
+          const jobId = job.id;
+          
+          console.log('✅ Processing unbundled material:', {
             materialId: material.id,
             materialName: material.material_name,
-            sheet: sheet?.sheet_name,
+            sheet: sheet.sheet_name,
             jobId,
-            jobName: job?.name
+            jobName: job.name
           });
           
-          if (jobId) {
-            if (!unbundledByJob.has(jobId)) {
-              unbundledByJob.set(jobId, []);
-            }
-            unbundledByJob.get(jobId)!.push(material);
-          } else {
-            console.warn('Material has no job:', material.id, material.material_name);
+          if (!unbundledByJob.has(jobId)) {
+            unbundledByJob.set(jobId, []);
           }
+          unbundledByJob.get(jobId)!.push(material);
         });
         
         // Create virtual packages for unbundled materials
         const virtualPackages: MaterialBundle[] = Array.from(unbundledByJob.entries()).map(([jobId, materials]) => {
           const firstMaterial = materials[0];
-          // Extract nested data - Supabase always returns arrays for joins
+          // Extract nested data
           const sheet = Array.isArray(firstMaterial.sheets) ? firstMaterial.sheets[0] : firstMaterial.sheets;
-          const workbook = Array.isArray(sheet?.workbooks) ? sheet.workbooks[0] : sheet?.workbooks;
+          const workbook = Array.isArray(sheet?.material_workbooks) ? sheet.material_workbooks[0] : sheet?.material_workbooks;
           const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
           
           return {
