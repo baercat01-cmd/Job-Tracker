@@ -166,14 +166,17 @@ export function ZohoIntegrationSettings() {
     }
   }
 
-  async function syncMaterials() {
+  async function testCredentials() {
     if (!settings) {
       toast.error('Please configure Zoho integration first');
       return;
     }
 
     setSyncing(true);
+    toast.info('🔍 Testing which organization these credentials can access...');
+    
     try {
+      // Try with the configured org ID first
       const { data, error } = await supabase.functions.invoke('zoho-sync', {
         body: { action: 'sync_materials' }
       });
@@ -190,6 +193,21 @@ export function ZohoIntegrationSettings() {
             errorMessage = error.message || 'Failed to read response';
           }
         }
+        
+        // Check if it's an org mismatch error
+        if (errorMessage.includes('6041') || errorMessage.includes('not associated')) {
+          toast.error(
+            `❌ CREDENTIALS MISMATCH DETECTED!\n\n` +
+            `Your OAuth credentials are from a DIFFERENT Zoho account.\n\n` +
+            `Current Organization ID: ${settings.countywide_org_id}\n\n` +
+            `Options:\n` +
+            `1. Change Organization ID to 901282564 (Martin Builder)\n` +
+            `2. OR get new OAuth credentials from Countywide's Zoho account`,
+            { duration: 10000 }
+          );
+        } else {
+          throw new Error(errorMessage);
+        }
         throw new Error(errorMessage);
       }
 
@@ -197,10 +215,16 @@ export function ZohoIntegrationSettings() {
       await loadSettings(); // Reload to get updated sync status
     } catch (error: any) {
       console.error('Error syncing materials:', error);
-      toast.error(`Sync failed: ${error.message}`);
+      if (!error.message.includes('CREDENTIALS MISMATCH')) {
+        toast.error(`Sync failed: ${error.message}`);
+      }
     } finally {
       setSyncing(false);
     }
+  }
+
+  async function syncMaterials() {
+    await testCredentials();
   }
 
   async function exchangeWorkDriveGrantCode() {
@@ -418,29 +442,41 @@ export function ZohoIntegrationSettings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="orgId">COUNTYWIDE Organization ID</Label>
+              <Label htmlFor="orgId">Organization ID</Label>
               <Input
                 id="orgId"
                 value={orgId}
                 onChange={(e) => setOrgId(e.target.value.trim())}
-                placeholder="e.g., 60012345678"
+                placeholder="e.g., 905775078 (Countywide) or 901282564 (Martin Builder)"
               />
               {orgId && orgId !== '' && (
                 <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded border">
                   <strong>Current value:</strong> <code className="bg-white px-1 rounded">{orgId}</code> ({orgId.length} characters)
+                  {orgId === '905775078' && (
+                    <div className="mt-1 text-blue-700 font-semibold">
+                      ✅ This is COUNTYWIDE (905775078)
+                    </div>
+                  )}
+                  {orgId === '901282564' && (
+                    <div className="mt-1 text-purple-700 font-semibold">
+                      ✅ This is MARTIN BUILDER (901282564)
+                    </div>
+                  )}
                 </div>
               )}
-              <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
-                <p className="font-semibold text-blue-900">⚠️ IMPORTANT - How to find your Organization ID:</p>
-                <ol className="list-decimal list-inside text-blue-800 space-y-1">
-                  <li>Log in to <a href="https://books.zoho.com" target="_blank" className="underline font-semibold">Zoho Books</a></li>
-                  <li>Click on <strong>Settings</strong> (gear icon in top right)</li>
-                  <li>Go to <strong>Organization Profile</strong></li>
-                  <li>Your Organization ID is shown at the top (long numeric value)</li>
-                  <li><strong className="text-red-700">Make sure to select the COUNTYWIDE organization if you have multiple!</strong></li>
-                </ol>
-                <p className="text-blue-700 mt-2 font-semibold">Example format: <code className="bg-white px-1 rounded">60012345678</code> (10-11 digits)</p>
-                <p className="text-red-700 mt-2"><strong>⚠️ Common mistake:</strong> Don't use company name, email, or account ID - only the numeric Organization ID!</p>
+              <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-3 text-sm space-y-2">
+                <p className="font-bold text-yellow-900 text-base">🚨 CRITICAL: Organization ID & Credentials MUST Match!</p>
+                <div className="bg-white rounded p-2 border border-yellow-300">
+                  <p className="font-semibold text-red-700 mb-1">If you're getting error "user is not associated with CompanyID", this is why:</p>
+                  <p className="text-red-600">Your OAuth credentials (Client ID, Secret, Refresh Token) are from one Zoho account,</p>
+                  <p className="text-red-600">but you're trying to use them with an Organization ID from a DIFFERENT account!</p>
+                </div>
+                <div className="space-y-1 text-yellow-900">
+                  <p className="font-semibold">Two solutions:</p>
+                  <p className="pl-4"><strong className="text-blue-700">Option 1 (Easy):</strong> Change the Organization ID above to match your OAuth account:</p>
+                  <p className="pl-8 font-mono bg-white border rounded px-2 py-1">• Countywide = 905775078<br/>• Martin Builder = 901282564</p>
+                  <p className="pl-4"><strong className="text-purple-700">Option 2 (Complex):</strong> Get NEW OAuth credentials from the account that owns the Organization ID you want to use</p>
+                </div>
               </div>
             </div>
           </div>
