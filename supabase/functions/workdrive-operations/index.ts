@@ -28,9 +28,14 @@ Deno.serve(async (req) => {
     if (settingsError || !settings) {
       throw new Error('Zoho integration not configured');
     }
+    
+    // Check if WorkDrive credentials are configured separately
+    if (!settings.workdrive_client_id || !settings.workdrive_refresh_token) {
+      throw new Error('WorkDrive credentials not configured. Please configure Martin Builder\'s Zoho One WorkDrive credentials in Zoho Settings.');
+    }
 
-    // Refresh access token
-    const accessToken = await refreshAccessToken(settings);
+    // Refresh access token using WorkDrive credentials
+    const accessToken = await refreshWorkDriveAccessToken(settings, supabaseClient);
 
     if (action === 'create_job_folders') {
       // Create parent folder for the job
@@ -124,23 +129,23 @@ Deno.serve(async (req) => {
   }
 });
 
-async function refreshAccessToken(settings: any): Promise<string> {
-  // Check if current token is still valid
-  if (settings.access_token && settings.token_expires_at) {
-    const expiresAt = new Date(settings.token_expires_at);
+async function refreshWorkDriveAccessToken(settings: any, supabaseClient: any): Promise<string> {
+  // Check if current WorkDrive token is still valid
+  if (settings.workdrive_access_token && settings.workdrive_token_expires_at) {
+    const expiresAt = new Date(settings.workdrive_token_expires_at);
     const now = new Date();
     const bufferMinutes = 5;
     
     if (expiresAt.getTime() - now.getTime() > bufferMinutes * 60 * 1000) {
-      return settings.access_token;
+      return settings.workdrive_access_token;
     }
   }
 
-  // Refresh token
+  // Refresh WorkDrive token using WorkDrive credentials
   const params = new URLSearchParams({
-    refresh_token: settings.refresh_token,
-    client_id: settings.client_id,
-    client_secret: settings.client_secret,
+    refresh_token: settings.workdrive_refresh_token,
+    client_id: settings.workdrive_client_id,
+    client_secret: settings.workdrive_client_secret,
     grant_type: 'refresh_token',
   });
 
@@ -151,25 +156,22 @@ async function refreshAccessToken(settings: any): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to refresh Zoho access token');
+    const errorText = await response.text();
+    console.error('WorkDrive token refresh failed:', errorText);
+    throw new Error('Failed to refresh WorkDrive access token. Make sure Martin Builder\'s WorkDrive credentials are correct.');
   }
 
   const data = await response.json();
 
-  // Update stored token
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
-
+  // Update stored WorkDrive token
   const expiresAt = new Date();
   expiresAt.setSeconds(expiresAt.getSeconds() + data.expires_in);
 
   await supabaseClient
     .from('zoho_integration_settings')
     .update({
-      access_token: data.access_token,
-      token_expires_at: expiresAt.toISOString(),
+      workdrive_access_token: data.access_token,
+      workdrive_token_expires_at: expiresAt.toISOString(),
     })
     .eq('id', settings.id);
 

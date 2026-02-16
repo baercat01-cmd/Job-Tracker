@@ -16,6 +16,9 @@ interface ZohoSettings {
   client_secret: string;
   refresh_token: string;
   countywide_org_id: string;
+  workdrive_client_id: string | null;
+  workdrive_client_secret: string | null;
+  workdrive_refresh_token: string | null;
   last_sync_at: string | null;
   sync_status: string;
   sync_error: string | null;
@@ -31,6 +34,11 @@ export function ZohoIntegrationSettings() {
   const [clientSecret, setClientSecret] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
   const [orgId, setOrgId] = useState('');
+  
+  // WorkDrive credentials (separate from Books)
+  const [wdClientId, setWdClientId] = useState('');
+  const [wdClientSecret, setWdClientSecret] = useState('');
+  const [wdRefreshToken, setWdRefreshToken] = useState('');
 
   // Grant code exchange state
   const [showGrantCodeDialog, setShowGrantCodeDialog] = useState(false);
@@ -58,6 +66,11 @@ export function ZohoIntegrationSettings() {
         setClientSecret('••••••••'); // Mask for security
         setRefreshToken('••••••••'); // Mask for security
         setOrgId(data.countywide_org_id);
+        
+        // Load WorkDrive credentials
+        setWdClientId(data.workdrive_client_id || '');
+        setWdClientSecret(data.workdrive_client_secret ? '••••••••' : '');
+        setWdRefreshToken(data.workdrive_refresh_token ? '••••••••' : '');
       }
     } catch (error: any) {
       console.error('Error loading Zoho settings:', error);
@@ -69,7 +82,7 @@ export function ZohoIntegrationSettings() {
 
   async function saveSettings() {
     if (!clientId || !clientSecret || !refreshToken || !orgId) {
-      toast.error('Please fill in all fields');
+      toast.error('Please fill in all Books credentials fields');
       return;
     }
 
@@ -85,6 +98,17 @@ export function ZohoIntegrationSettings() {
     }
     if (refreshToken !== '••••••••' || hasNewRefreshToken) {
       updateData.refresh_token = refreshToken;
+    }
+    
+    // Update WorkDrive credentials if provided
+    if (wdClientId) {
+      updateData.workdrive_client_id = wdClientId;
+    }
+    if (wdClientSecret && wdClientSecret !== '••••••••') {
+      updateData.workdrive_client_secret = wdClientSecret;
+    }
+    if (wdRefreshToken && wdRefreshToken !== '••••••••') {
+      updateData.workdrive_refresh_token = wdRefreshToken;
     }
 
     setSaving(true);
@@ -256,19 +280,22 @@ export function ZohoIntegrationSettings() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-blue-600" />
-                Zoho Books Integration
+                Zoho Integration
               </CardTitle>
               <CardDescription className="mt-2">
-                Configure your Zoho Books API credentials to sync vendors and materials from COUNTYWIDE organization
+                Configure your Zoho OAuth credentials for multiple accounts:
               </CardDescription>
             </div>
             {getSyncStatusBadge()}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Credentials Section */}
+          {/* Books Credentials Section */}
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-900">API Credentials</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <h3 className="text-base font-bold text-blue-900 mb-1">📚 Zoho Books (Countywide Metals)</h3>
+              <p className="text-sm text-blue-800">For material sync and vendor data from COUNTYWIDE organization</p>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -344,6 +371,62 @@ export function ZohoIntegrationSettings() {
                 <p className="text-blue-700 mt-2 font-semibold">Example format: <code className="bg-white px-1 rounded">60012345678</code> (10-11 digits)</p>
                 <p className="text-red-700 mt-2"><strong>⚠️ Common mistake:</strong> Don't use company name, email, or account ID - only the numeric Organization ID!</p>
               </div>
+            </div>
+          </div>
+          
+          {/* WorkDrive Credentials Section */}
+          <div className="space-y-4 pt-6 border-t-2">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <h3 className="text-base font-bold text-purple-900 mb-1">📁 Zoho WorkDrive (Martin Builder's Zoho One)</h3>
+              <p className="text-sm text-purple-800">For auto-creating job folders and uploading site photos</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="wdClientId">WorkDrive Client ID</Label>
+                <Input
+                  id="wdClientId"
+                  value={wdClientId}
+                  onChange={(e) => setWdClientId(e.target.value)}
+                  placeholder="1000.XXXXXXXXXXXXX"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="wdClientSecret">WorkDrive Client Secret</Label>
+                <Input
+                  id="wdClientSecret"
+                  type="password"
+                  value={wdClientSecret}
+                  onChange={(e) => setWdClientSecret(e.target.value)}
+                  placeholder="Enter WorkDrive client secret"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="wdRefreshToken">WorkDrive Refresh Token</Label>
+              <Input
+                id="wdRefreshToken"
+                type="password"
+                value={wdRefreshToken}
+                onChange={(e) => setWdRefreshToken(e.target.value)}
+                placeholder="Enter WorkDrive refresh token or use Grant Code exchange"
+              />
+              <p className="text-xs text-muted-foreground">
+                ⚠️ This should be from <strong>Martin Builder's Zoho One account</strong>, not Countywide
+              </p>
+            </div>
+            
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
+              <p className="font-semibold text-purple-900 mb-2">🔑 Getting Martin Builder WorkDrive Credentials:</p>
+              <ol className="list-decimal list-inside space-y-1 text-purple-800">
+                <li>Log in to <a href="https://api-console.zoho.com/" target="_blank" className="underline font-semibold">Zoho API Console</a> with Martin Builder account</li>
+                <li>Create a new "Server-based Application"</li>
+                <li>Generate Grant Code with scope: <code className="bg-white px-1 rounded">WorkDrive.files.ALL</code></li>
+                <li>Use the Exchange Grant Code button (top section) to get Refresh Token</li>
+                <li>Paste the credentials here and Save</li>
+              </ol>
             </div>
           </div>
 
@@ -430,7 +513,7 @@ export function ZohoIntegrationSettings() {
             <li>Go to <a href="https://api-console.zoho.com/" target="_blank" className="text-blue-600 hover:underline">Zoho API Console</a></li>
             <li>Create a new "Server-based Application"</li>
             <li>Copy your <strong>Client ID</strong> and <strong>Client Secret</strong></li>
-            <li>Generate a <strong>Grant Code</strong> with scopes: <code className="bg-white px-1 rounded">ZohoBooks.contacts.READ,ZohoBooks.items.READ</code></li>
+            <li>Generate a <strong>Grant Code</strong> with scopes: <code className="bg-white px-1 rounded">ZohoBooks.contacts.READ,ZohoBooks.items.READ,WorkDrive.files.ALL</code></li>
             <li>Use the <strong>"Exchange Grant Code"</strong> button above to get your Refresh Token</li>
             <li>Find your Organization ID in Zoho Books settings</li>
           </ol>
