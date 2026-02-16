@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
+import { generateProposalHTML } from './ProposalPDFTemplate';
 import type { Job } from '@/types';
 import {
   DndContext,
@@ -2263,7 +2264,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       // Get proposal number from quote if available, otherwise use job ID
       const proposalNumber = quote?.proposal_number || job.id.split('-')[0].toUpperCase();
       
-      // Format proposal sections
+      // Prepare sections data for the template
       const sections = allItems.map((item, index) => {
         if (item.type === 'material') {
           const sheet = item.data;
@@ -2297,6 +2298,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             price: sheetFinalPrice,
             items: showLineItems ? sheet.categories?.map((cat: any) => ({
               description: cat.name,
+              quantity: cat.itemCount,
+              unit: 'items',
               price: cat.totalPrice
             })) : undefined
           };
@@ -2326,6 +2329,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             price: finalPrice,
             items: showLineItems && lineItems.length > 0 ? lineItems.map((li: any) => ({
               description: li.description,
+              quantity: li.quantity,
+              unit: '',
               price: li.total_cost
             })) : undefined
           };
@@ -2346,6 +2351,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               .filter((item: any) => !item.excluded)
               .map((li: any) => ({
                 description: li.description,
+                quantity: li.quantity || 1,
+                unit: li.unit_price ? '' : '',
                 price: li.total_price
               })) : undefined
           };
@@ -2353,144 +2360,27 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return null;
       }).filter(Boolean);
 
-      // Generate HTML for the proposal in traditional format
-      const html = `
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; line-height: 1.4; color: #000; max-width: 750px; margin: 0 auto; padding: 20px; font-size: 11pt; }
-          h1 { text-align: center; font-size: 24pt; margin-bottom: 15px; }
-          table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-          table td { padding: 3px 5px; vertical-align: top; }
-          .company-info { font-size: 10pt; margin-bottom: 10px; }
-          .terms { font-size: 9pt; line-height: 1.3; margin: 15px 0; text-align: justify; }
-          .section-title { font-weight: bold; margin-top: 15px; margin-bottom: 5px; }
-          .section-content { margin-left: 0; margin-bottom: 10px; white-space: pre-wrap; }
-          .footer { margin-top: 30px; font-size: 9pt; }
-          .signature-section { margin-top: 20px; }
-          .signature-line { border-top: 1px solid #000; width: 250px; margin-top: 30px; }
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page-break { page-break-after: always; }
-          }
-        </style>
-        
-        <h1>Proposal</h1>
-        
-        <table>
-          <tr>
-            <td>Date</td>
-            <td>Proposal #</td>
-          </tr>
-          <tr>
-            <td>${new Date().toLocaleDateString()}</td>
-            <td>${proposalNumber}</td>
-          </tr>
-        </table>
-        
-        <div class="company-info">
-          Phone: 574-862-4448<br>
-          Fax: 574-862-1548<br>
-          Email: office@martinbuilder.net
-        </div>
-        
-        <div class="terms">
-          All material is guaranteed to be as specified. All work to be completed in a professional manner according to standard practices. Any alteration or deviation from above specifications involving extra costs will be executed only upon written orders, and will become an extra charge over and above the estimate. All agreements contingent upon strikes, accidents, or delays are beyond our control. Owner to carry fire, tornado, and other necessary insurance. Our workers are fully covered by Worker's Compensation Insurance.
-        </div>
-        
-        <table>
-          <tr>
-            <td><strong>Name/Address</strong></td>
-          </tr>
-          <tr>
-            <td>${job.client_name}</td>
-          </tr>
-          <tr>
-            <td>${job.address}</td>
-          </tr>
-        </table>
-        
-        <table>
-          <tr>
-            <td><strong>Phone</strong></td>
-            <td colspan="3"><strong>${job.address}</strong></td>
-          </tr>
-          <tr>
-            <td></td>
-            <td colspan="3"><strong>Project:</strong> ${job.name}</td>
-          </tr>
-        </table>
-        
-        <p style="margin-top: 20px; margin-bottom: 10px;">We hereby submit specifications and estimates for:</p>
-        
-        ${sections.map((section: any) => {
-          let content = `<div class="section-title">${section.name}</div>`;
-          
-          if (section.description) {
-            content += `<div class="section-content">${section.description}</div>`;
-          }
-          
-          if (section.items && section.items.length > 0) {
-            section.items.forEach((item: any) => {
-              content += `<div class="section-content">${item.description}</div>`;
-            });
-          }
-          
-          return content;
-        }).join('')}
-        
-        <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
-        
-        ${showLineItems ? `
-          <table style="margin-top: 15px;">
-            <tr>
-              <td style="text-align: right;"><strong>Materials & Subcontractors:</strong></td>
-              <td style="text-align: right; width: 150px;">$${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            ${proposalLaborPrice > 0 ? `
-              <tr>
-                <td style="text-align: right;"><strong>Labor:</strong></td>
-                <td style="text-align: right;">$${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-              </tr>
-            ` : ''}
-            <tr>
-              <td style="text-align: right;"><strong>Subtotal:</strong></td>
-              <td style="text-align: right;">$${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
-              <td style="text-align: right;">$${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
-              <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
-            </tr>
-          </table>
-        ` : `
-          <p style="text-align: center; font-size: 16pt; font-weight: bold; margin: 20px 0;">$${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-        `}
-        
-        <div class="footer">
-          <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
-          
-          <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
-          
-          <div class="signature-section">
-            <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
-            <p style="margin-bottom: 20px;">The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.</p>
-            
-            <div style="display: flex; justify-content: space-between; margin-top: 40px;">
-              <div>
-                <p>Authorized Signature</p>
-                <div class="signature-line"></div>
-              </div>
-              <div>
-                <p>Date of Acceptance</p>
-                <div class="signature-line"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+      // Generate HTML using the template
+      const html = generateProposalHTML({
+        proposalNumber,
+        date: new Date().toLocaleDateString(),
+        job: {
+          client_name: job.client_name,
+          address: job.address,
+          name: job.name,
+        },
+        sections,
+        totals: {
+          materials: proposalMaterialsTotalWithSubcontractors,
+          labor: proposalLaborPrice,
+          subtotal: proposalSubtotal,
+          tax: proposalTotalTax,
+          grandTotal: proposalGrandTotal,
+        },
+        showLineItems,
+        showSectionPrices: true,
+        showInternalDetails: false,
+      });
 
       console.log('Generating PDF with HTML');
       
