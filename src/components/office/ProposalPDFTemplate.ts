@@ -113,12 +113,11 @@ export function generateProposalHTML(data: {
           }
           
           .intro-box { 
-            border: 1px solid #000; 
-            padding: 10px; 
+            border: 2px solid #000; 
+            padding: 0;
             margin: 15px 0; 
+            border-radius: 4px;
           }
-          
-          .intro-header { font-weight: bold; margin-bottom: 8px; }
           
           .section-title { 
             font-weight: bold; 
@@ -148,32 +147,46 @@ export function generateProposalHTML(data: {
             width: 100%;
             margin: 10px 0;
             border-collapse: collapse;
-            font-size: 10pt;
+            font-size: 9.5pt;
+            border: 1px solid #ddd;
           }
 
           .items-table thead tr {
             border-bottom: 2px solid #333;
-            background: #f5f5f5;
+            background: #e8f4e8;
           }
 
           .items-table th {
             text-align: left;
-            padding: 8px;
+            padding: 10px 8px;
             font-weight: bold;
+            color: #2d5f3f;
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
           }
 
           .items-table tbody tr {
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid #e0e0e0;
+          }
+
+          .items-table tbody tr:hover {
+            background: #f9f9f9;
           }
 
           .items-table td {
-            padding: 6px 8px;
+            padding: 8px;
+            vertical-align: top;
           }
 
           .items-table .total-row {
-            border-top: 2px solid #333;
+            border-top: 3px double #2d5f3f;
             font-weight: bold;
-            background: #f9f9f9;
+            background: #e8f4e8;
+          }
+
+          .items-table .total-row td {
+            padding: 12px 8px;
           }
           
           .footer { margin-top: 30px; font-size: 9pt; }
@@ -249,26 +262,45 @@ export function generateProposalHTML(data: {
           </div>
         </div>
         
-        <div class="intro-box">
-          <div class="intro-header">We hereby submit specifications and estimates for:</div>
-          <div>Thanks for requesting a Martin Builder building quotation</div>
-          <div style="margin-top: 8px;">We propose to furnish material, labor and equipment as described below</div>
+        <p style="margin: 20px 0; font-size: 11pt; line-height: 1.6;">
+          We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
+        </p>
+        
+        <div class="intro-box" style="margin-top: 20px;">
+          <div class="box-header">Building Information & Work to be Completed</div>
+          <div style="padding: 10px 0;">
+            <strong>Project:</strong> ${job.name}<br/>
+            <strong>Location:</strong> ${job.address}<br/>
+            <strong>Customer:</strong> ${job.client_name}
+          </div>
         </div>
         
         ${sections.map((section: any) => {
           let content = '';
           
           if (showInternalDetails) {
-            // OFFICE VIEW: Show section name, all items with individual unit and total prices
-            content += '<div class="section-title" style="display: block;">' + section.name + '</div>';
+            // OFFICE VIEW: Show section name with price, description, and all items with individual unit and total prices
+            content += '<div class="section-title">';
+            content += '<span style="font-weight: bold; font-size: 13pt;">' + section.name + '</span>';
+            if (section.price) {
+              content += '<span class="section-price" style="font-weight: bold; font-size: 13pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+            }
+            content += '</div>';
             
-            // Show all sub-items with individual prices in a table
+            // Show description first if exists
+            if (section.description) {
+              content += '<div class="section-content" style="margin: 8px 0 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
+            }
+            
+            // Show all sub-items with individual prices in a detailed table
             if (section.items && section.items.length > 0) {
+              content += '<div style="margin: 10px 0 20px 0;">';
+              content += '<p style="font-size: 10pt; font-weight: 600; color: #666; margin-bottom: 8px;">LINE ITEM BREAKDOWN:</p>';
               content += '<table class="items-table"><thead><tr>';
-              content += '<th style="width: 50%;">Item</th>';
+              content += '<th style="width: 45%;">Item Description</th>';
               content += '<th style="width: 15%; text-align: center;">Quantity</th>';
-              content += '<th style="width: 17.5%; text-align: right;">Unit Price</th>';
-              content += '<th style="width: 17.5%; text-align: right;">Total Price</th>';
+              content += '<th style="width: 20%; text-align: right;">Unit Price</th>';
+              content += '<th style="width: 20%; text-align: right;">Total Price</th>';
               content += '</tr></thead><tbody>';
               
               section.items.forEach((item: any) => {
@@ -276,22 +308,19 @@ export function generateProposalHTML(data: {
                 const totalPrice = item.price || 0;
                 const unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
                 content += '<tr>';
-                content += '<td>' + item.description + '</td>';
-                content += '<td style="text-align: center;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
-                content += '<td style="text-align: right;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
-                content += '<td style="text-align: right;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="padding: 8px;">' + item.description + '</td>';
+                content += '<td style="text-align: center; padding: 8px;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
+                content += '<td style="text-align: right; padding: 8px;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="text-align: right; padding: 8px; font-weight: 600;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
                 content += '</tr>';
               });
               
               content += '<tr class="total-row">';
-              content += '<td colspan="3" style="text-align: right; font-weight: bold;">Section Total:</td>';
-              content += '<td style="text-align: right; font-weight: bold;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+              content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
+              content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: 11pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
               content += '</tr>';
               content += '</tbody></table>';
-            }
-            
-            if (section.description) {
-              content += '<div class="section-content">' + section.description + '</div>';
+              content += '</div>';
             }
           } else {
             // CUSTOMER VERSION: Only show section name (with optional price) and description

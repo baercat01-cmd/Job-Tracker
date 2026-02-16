@@ -998,6 +998,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Export dialog state
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLineItems, setShowLineItems] = useState(true);
+  const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
   const [exporting, setExporting] = useState(false);
   
   // Proposal versioning state
@@ -2361,6 +2362,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }).filter(Boolean);
 
       // Generate HTML using the template
+      const isOfficeView = exportViewType === 'office';
       const html = generateProposalHTML({
         proposalNumber,
         date: new Date().toLocaleDateString(),
@@ -2377,9 +2379,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           tax: proposalTotalTax,
           grandTotal: proposalGrandTotal,
         },
-        showLineItems,
-        showSectionPrices: true,
-        showInternalDetails: false,
+        showLineItems: isOfficeView ? true : showLineItems,
+        showSectionPrices: !isOfficeView,
+        showInternalDetails: isOfficeView,
       });
 
       console.log('Generating PDF with HTML');
@@ -3339,23 +3341,61 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Export Proposal as PDF</DialogTitle>
+            <DialogDescription>
+              Choose the version to export: Customer version for clients or Office view with detailed pricing.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="show-line-items"
-                checked={showLineItems}
-                onChange={(e) => setShowLineItems(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="show-line-items">Show individual line item prices</Label>
+            <div>
+              <Label className="mb-2 block">Export Version</Label>
+              <Select value={exportViewType} onValueChange={(v) => setExportViewType(v as 'customer' | 'office')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="customer">Customer Version</SelectItem>
+                  <SelectItem value="office">Office View (Internal)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {showLineItems 
-                ? 'The PDF will include detailed pricing for each item and category' 
-                : 'The PDF will only show total prices for each section'}
-            </p>
+
+            {exportViewType === 'customer' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="show-line-items"
+                  checked={showLineItems}
+                  onChange={(e) => setShowLineItems(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="show-line-items">Show section prices</Label>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
+              {exportViewType === 'office' ? (
+                <>
+                  <p className="font-semibold text-blue-900 mb-1">Office View includes:</p>
+                  <ul className="list-disc list-inside text-blue-800 space-y-0.5">
+                    <li>All line items with individual unit prices and totals</li>
+                    <li>Detailed breakdown for each section</li>
+                    <li>No payment terms or signature sections</li>
+                    <li>Internal use only - NOT for customer distribution</li>
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-blue-900 mb-1">Customer Version includes:</p>
+                  <ul className="list-disc list-inside text-blue-800 space-y-0.5">
+                    <li>Section descriptions without line item details</li>
+                    <li>Optional section pricing</li>
+                    <li>Payment terms and signature areas</li>
+                    <li>Professional customer-facing format</li>
+                  </ul>
+                </>
+              )}
+            </div>
+            
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowExportDialog(false)} disabled={exporting}>
                 Cancel
@@ -3369,7 +3409,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 ) : (
                   <>
                     <Download className="w-4 h-4 mr-2" />
-                    Export PDF
+                    Export {exportViewType === 'office' ? 'Office View' : 'Customer PDF'}
                   </>
                 )}
               </Button>
