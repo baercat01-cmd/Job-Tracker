@@ -11,7 +11,7 @@ export function generateProposalHTML(data: {
     name: string;
     description: string;
     price?: number;
-    items?: Array<{ description: string; price?: number }>;
+    items?: Array<{ description: string; price?: number; quantity?: number; unit?: string }>;
   }>;
   totals: {
     materials: number;
@@ -21,9 +21,10 @@ export function generateProposalHTML(data: {
     grandTotal: number;
   };
   showLineItems: boolean;
-  showSectionPrices?: boolean; // New option to show/hide individual section prices
+  showSectionPrices?: boolean; // Option to show/hide individual section prices (customer version)
+  showInternalDetails?: boolean; // Option to show all row items with prices (internal version)
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = true } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = true, showInternalDetails = false } = data;
 
   return `
     <!DOCTYPE html>
@@ -142,6 +143,38 @@ export function generateProposalHTML(data: {
             color: #000;
             margin-left: 20px;
           }
+
+          .items-table {
+            width: 100%;
+            margin: 10px 0;
+            border-collapse: collapse;
+            font-size: 10pt;
+          }
+
+          .items-table thead tr {
+            border-bottom: 2px solid #333;
+            background: #f5f5f5;
+          }
+
+          .items-table th {
+            text-align: left;
+            padding: 8px;
+            font-weight: bold;
+          }
+
+          .items-table tbody tr {
+            border-bottom: 1px solid #ddd;
+          }
+
+          .items-table td {
+            padding: 6px 8px;
+          }
+
+          .items-table .total-row {
+            border-top: 2px solid #333;
+            font-weight: bold;
+            background: #f9f9f9;
+          }
           
           .footer { margin-top: 30px; font-size: 9pt; }
           .signature-section { margin-top: 20px; }
@@ -223,25 +256,62 @@ export function generateProposalHTML(data: {
         </div>
         
         ${sections.map((section: any) => {
-          // Only show section name (with optional price) and description
-          // Do NOT show sub-items
           let content = '';
           
-          if (showSectionPrices && section.price) {
-            // Show section name with price on the right
-            content += `
-              <div class="section-title">
-                <span>${section.name}</span>
-                <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              </div>
-            `;
+          if (showInternalDetails) {
+            // INTERNAL VERSION: Show section name, all items with prices, and description
+            content += `<div class="section-title" style="display: block;">${section.name}</div>`;
+            
+            // Show all sub-items with prices in a table
+            if (section.items && section.items.length > 0) {
+              content += `
+                <table class="items-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 60%;">Item</th>
+                      <th style="width: 20%; text-align: center;">Quantity</th>
+                      <th style="width: 20%; text-align: right;">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${section.items.map((item: any) => `
+                      <tr>
+                        <td>${item.description}</td>
+                        <td style="text-align: center;">${item.quantity || 1}${item.unit ? ' ' + item.unit : ''}</td>
+                        <td style="text-align: right;">$${(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    `).join('')}
+                    <tr class="total-row">
+                      <td colspan="2" style="text-align: right;">Section Total:</td>
+                      <td style="text-align: right;">$${(section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              `;
+            }
+            
+            if (section.description) {
+              content += `<div class="section-content">${section.description}</div>`;
+            }
           } else {
-            // Show section name only
-            content += `<div class="section-title">${section.name}</div>`;
-          }
-          
-          if (section.description) {
-            content += `<div class="section-content">${section.description}</div>`;
+            // CUSTOMER VERSION: Only show section name (with optional price) and description
+            // Do NOT show sub-items
+            if (showSectionPrices && section.price) {
+              // Show section name with price on the right
+              content += `
+                <div class="section-title">
+                  <span>${section.name}</span>
+                  <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+              `;
+            } else {
+              // Show section name only
+              content += `<div class="section-title" style="display: block;">${section.name}</div>`;
+            }
+            
+            if (section.description) {
+              content += `<div class="section-content">${section.description}</div>`;
+            }
           }
           
           return content;
