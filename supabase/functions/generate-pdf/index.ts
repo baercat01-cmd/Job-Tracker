@@ -1,6 +1,259 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
+function generateJobHoursHTML(data: any): string {
+  const { title, jobName, clientName, address, totalHours, users } = data;
+  
+  return `
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #1a1a1a;
+        line-height: 1.5;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding-bottom: 15px;
+        border-bottom: 3px solid #2d5f3f;
+      }
+      
+      .header h1 {
+        color: #2d5f3f;
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+      
+      .job-info {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 15px 20px;
+        margin: 15px auto;
+        display: inline-block;
+        text-align: left;
+      }
+      
+      .job-info-row {
+        margin-bottom: 8px;
+      }
+      
+      .job-info-label {
+        font-size: 12px;
+        color: #666;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      
+      .job-info-value {
+        font-size: 15px;
+        color: #1a1a1a;
+      }
+      
+      .total-hours {
+        background: #2d5f3f;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        font-size: 18px;
+        font-weight: bold;
+        margin-top: 10px;
+        text-align: center;
+      }
+      
+      .user-section {
+        margin-bottom: 40px;
+        page-break-inside: avoid;
+      }
+      
+      .user-header {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border-left: 4px solid #2d5f3f;
+        margin-bottom: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .user-name {
+        font-size: 20px;
+        font-weight: bold;
+        color: #1a1a1a;
+      }
+      
+      .user-total {
+        font-size: 24px;
+        font-weight: bold;
+        color: #2d5f3f;
+      }
+      
+      .time-table {
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      
+      .entries-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      
+      .entries-table th {
+        background: #f0f0f0;
+        padding: 8px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        color: #555;
+        border-bottom: 2px solid #ddd;
+      }
+      
+      .entries-table th:last-child { text-align: right; }
+      
+      .entries-table td {
+        padding: 6px 8px;
+        font-size: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        vertical-align: top;
+      }
+      
+      .entries-table tbody tr:last-child td {
+        border-bottom: none;
+      }
+      
+      .entries-table td:last-child { text-align: right; }
+      
+      .date-cell {
+        font-weight: 500;
+        font-size: 12px;
+      }
+      
+      .component-cell {
+        font-weight: 500;
+      }
+      
+      .time-cell {
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+      }
+      
+      .hours-cell {
+        font-weight: bold;
+        color: #2d5f3f;
+      }
+      
+      .manual-badge {
+        display: inline-block;
+        background: #fbbf24;
+        color: #78350f;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 8px;
+      }
+      
+      .notes-row {
+        background: #f9fafb;
+      }
+      
+      .notes-cell {
+        font-size: 11px;
+        color: #666;
+        font-style: italic;
+      }
+      
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          max-width: 100%;
+          margin: 0;
+          padding: 20px;
+        }
+        
+        .user-section {
+          page-break-inside: avoid;
+        }
+      }
+    </style>
+    
+    <div class="header">
+      <h1>${title}</h1>
+      <div class="job-info">
+        <div class="job-info-row">
+          <div class="job-info-label">Job Name</div>
+          <div class="job-info-value"><strong>${jobName}</strong></div>
+        </div>
+        <div class="job-info-row">
+          <div class="job-info-label">Client</div>
+          <div class="job-info-value">${clientName}</div>
+        </div>
+        <div class="job-info-row">
+          <div class="job-info-label">Address</div>
+          <div class="job-info-value">${address}</div>
+        </div>
+        <div class="total-hours">
+          Total Hours: ${totalHours}h
+        </div>
+      </div>
+    </div>
+    
+    ${users.map((user: any, userIdx: number) => `
+      <div class="user-section">
+        <div class="user-header">
+          <div class="user-name">${user.userName}</div>
+          <div class="user-total">${user.totalHours.toFixed(2)}h</div>
+        </div>
+        
+        <div class="time-table">
+          <table class="entries-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Component</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Crew</th>
+                <th>Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${user.entries.map((entry: any) => `
+                <tr>
+                  <td class="date-cell">${entry.date}</td>
+                  <td class="component-cell">
+                    ${entry.component}
+                    ${entry.isManual ? '<span class="manual-badge">MANUAL</span>' : ''}
+                  </td>
+                  <td class="time-cell">${entry.startTime}</td>
+                  <td class="time-cell">${entry.endTime}</td>
+                  <td>${entry.crewCount}</td>
+                  <td class="hours-cell">${entry.hours}</td>
+                </tr>
+                ${entry.notes ? `
+                  <tr class="notes-row">
+                    <td colspan="6" class="notes-cell">Note: ${entry.notes}</td>
+                  </tr>
+                ` : ''}
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
 function generatePayrollHTML(data: any): string {
   const { title, periodLabel, startDate, endDate, users } = data;
   
@@ -319,7 +572,7 @@ serve(async (req) => {
     const body = await req.json();
     const { html, filename, type, data } = body;
 
-    // If type is payroll, generate HTML from data
+    // If type is payroll or job-hours, generate HTML from data
     let finalHtml = html;
     let finalFilename = filename || 'report.pdf';
 
@@ -327,6 +580,10 @@ serve(async (req) => {
       console.log('📊 Generating payroll PDF from structured data');
       finalHtml = generatePayrollHTML(data);
       finalFilename = data.title.replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_') + '.pdf';
+    } else if (type === 'job-hours' && data) {
+      console.log('📊 Generating job hours PDF from structured data');
+      finalHtml = generateJobHoursHTML(data);
+      finalFilename = `${data.jobName.replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_')}_Hours.pdf`;
     } else if (!finalHtml) {
       return new Response(
         JSON.stringify({ error: 'HTML content or data is required' }),
