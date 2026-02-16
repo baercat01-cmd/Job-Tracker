@@ -1034,6 +1034,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     try {
       let quoteData = null;
       
+      // Try 1: Direct job_id match
       const { data: directMatch, error: directError } = await supabase
         .from('quotes')
         .select('*')
@@ -1046,8 +1047,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (directMatch) {
         quoteData = directMatch;
+        console.log('Found quote by job_id:', quoteData.id);
       } else {
-        const { data: fallbackMatches, error: fallbackError } = await supabase
+        // Try 2: Exact customer name and address match
+        const { data: exactMatches, error: exactError } = await supabase
           .from('quotes')
           .select('*')
           .eq('customer_name', job.client_name)
@@ -1055,9 +1058,48 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           .order('created_at', { ascending: false })
           .limit(1);
 
-        if (!fallbackError && fallbackMatches && fallbackMatches.length > 0) {
-          quoteData = fallbackMatches[0];
-          
+        if (!exactError && exactMatches && exactMatches.length > 0) {
+          quoteData = exactMatches[0];
+          console.log('Found quote by exact match:', quoteData.id);
+        } else {
+          // Try 3: Case-insensitive partial match
+          const { data: allQuotes, error: allError } = await supabase
+            .from('quotes')
+            .select('*')
+            .is('job_id', null)
+            .order('created_at', { ascending: false });
+
+          if (!allError && allQuotes) {
+            // Find best match by comparing customer names (case-insensitive)
+            const normalizedJobName = job.client_name.toLowerCase().trim();
+            const normalizedJobAddress = job.address.toLowerCase().trim();
+            
+            const match = allQuotes.find(q => {
+              const qName = (q.customer_name || '').toLowerCase().trim();
+              const qAddress = (q.customer_address || '').toLowerCase().trim();
+              return qName === normalizedJobName && qAddress === normalizedJobAddress;
+            });
+
+            if (match) {
+              quoteData = match;
+              console.log('Found quote by case-insensitive match:', quoteData.id);
+            } else {
+              // Try 4: Match by customer name only (if unique)
+              const nameMatches = allQuotes.filter(q => 
+                (q.customer_name || '').toLowerCase().trim() === normalizedJobName
+              );
+              
+              if (nameMatches.length === 1) {
+                quoteData = nameMatches[0];
+                console.log('Found quote by unique customer name:', quoteData.id);
+              }
+            }
+          }
+        }
+        
+        // If we found a match via fallback, link it to the job
+        if (quoteData) {
+          console.log('Linking quote', quoteData.id, 'to job', job.id);
           const { error: updateError } = await supabase
             .from('quotes')
             .update({ job_id: job.id })
@@ -1065,12 +1107,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             
           if (updateError) {
             console.error('Error linking quote to job:', updateError);
+          } else {
+            console.log('Successfully linked quote to job');
           }
         }
       }
 
       if (quoteData) {
         setQuote(quoteData);
+        console.log('Quote loaded:', quoteData.proposal_number || quoteData.quote_number);
         
         const { data: versionsData, error: versionsError } = await supabase
           .from('proposal_versions')
@@ -1080,10 +1125,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         if (!versionsError && versionsData) {
           setProposalVersions(versionsData || []);
+          console.log('Loaded', versionsData.length, 'proposal versions');
         } else {
           setProposalVersions([]);
+          console.log('No proposal versions found');
         }
       } else {
+        console.log('No quote found for job:', job.name);
         setQuote(null);
         setProposalVersions([]);
       }
