@@ -737,19 +737,71 @@ export function OfficeDashboard() {
               </TabsContent>
 
               <TabsContent value="zoho-integration" className="mt-6">
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">Zoho Books Integration</h3>
-                    <p className="text-sm text-slate-600">Connect to Zoho Books to sync vendors and materials from COUNTYWIDE organization</p>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Zoho Integration Settings</h3>
+                    <p className="text-sm text-slate-600">Configure separate credentials for Zoho Books and WorkDrive</p>
                   </div>
-                  <Button
-                    variant="default"
-                    onClick={() => navigate('/office/zoho-settings')}
-                    className="rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold"
-                  >
-                    <Database className="w-4 h-4 mr-2" />
-                    Configure Zoho Integration
-                  </Button>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Zoho Books Card */}
+                    <Card className="border-2 border-blue-500 hover:shadow-xl transition-shadow">
+                      <CardHeader className="bg-blue-50">
+                        <CardTitle className="text-blue-900 flex items-center gap-2">
+                          <Database className="w-5 h-5" />
+                          Zoho Books
+                        </CardTitle>
+                        <CardDescription>Countywide Metals Organization</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-6 space-y-4">
+                        <div className="text-sm text-slate-700 space-y-2">
+                          <p>• Sync materials and vendors</p>
+                          <p>• Create orders and quotes</p>
+                          <p>• Organization: 905775078</p>
+                        </div>
+                        <Button
+                          variant="default"
+                          onClick={() => navigate('/office/zoho-books')}
+                          className="w-full rounded-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold"
+                        >
+                          Configure Books Settings
+                        </Button>
+                      </CardContent>
+                    </Card>
+                    
+                    {/* WorkDrive Card */}
+                    <Card className="border-2 border-purple-500 hover:shadow-xl transition-shadow">
+                      <CardHeader className="bg-purple-50">
+                        <CardTitle className="text-purple-900 flex items-center gap-2">
+                          <Database className="w-5 h-5" />
+                          Zoho WorkDrive
+                        </CardTitle>
+                        <CardDescription>Martin Builder's Zoho One</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-6 space-y-4">
+                        <div className="text-sm text-slate-700 space-y-2">
+                          <p>• Create job folders</p>
+                          <p>• Upload site photos</p>
+                          <p>• Document management</p>
+                        </div>
+                        <Button
+                          variant="default"
+                          onClick={() => navigate('/office/zoho-workdrive')}
+                          className="w-full rounded-none bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold"
+                        >
+                          Configure WorkDrive Settings
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4 text-sm">
+                    <p className="font-bold text-yellow-900 mb-2">⚠️ Important: Keep Accounts Separate</p>
+                    <p className="text-yellow-800">
+                      These are TWO DIFFERENT Zoho accounts. Configure each separately using the correct email and organization.
+                      DO NOT mix credentials between the two.
+                    </p>
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
