@@ -233,9 +233,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           sheets:material_sheets(
             sheet_name,
             workbook_id,
-            workbooks:material_workbooks(
+            material_workbooks(
               job_id,
-              jobs:jobs(
+              jobs(
                 id,
                 name,
                 client_name
@@ -268,7 +268,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         // Group unbundled materials by job
         const unbundledByJob = new Map<string, any[]>();
         trulyUnbundled.forEach((material: any) => {
-          const jobId = material.sheets?.workbooks?.jobs?.id;
+          // Handle nested workbook/job data - might be array or object
+          const workbook = Array.isArray(material.sheets?.material_workbooks) 
+            ? material.sheets.material_workbooks[0] 
+            : material.sheets?.material_workbooks;
+          const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
+          const jobId = job?.id;
+          
           if (jobId) {
             if (!unbundledByJob.has(jobId)) {
               unbundledByJob.set(jobId, []);
@@ -280,7 +286,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         // Create virtual packages for unbundled materials
         const virtualPackages: MaterialBundle[] = Array.from(unbundledByJob.entries()).map(([jobId, materials]) => {
           const firstMaterial = materials[0];
-          const job = firstMaterial.sheets?.workbooks?.jobs;
+          // Handle nested workbook/job data - might be array or object
+          const workbook = Array.isArray(firstMaterial.sheets?.material_workbooks) 
+            ? firstMaterial.sheets.material_workbooks[0] 
+            : firstMaterial.sheets?.material_workbooks;
+          const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
           
           return {
             id: `unbundled-${jobId}`,
@@ -298,7 +308,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               material_item_id: material.id,
               material_items: {
                 ...material,
-                sheets: material.sheets,
+                sheets: {
+                  sheet_name: material.sheets?.sheet_name || 'Unknown Sheet'
+                },
               },
             })),
           };
