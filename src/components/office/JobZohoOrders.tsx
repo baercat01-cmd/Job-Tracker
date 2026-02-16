@@ -3,7 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ExternalLink, Package, DollarSign, FileText, Calendar, Receipt } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ExternalLink, Package, DollarSign, FileText, Calendar, Receipt, ChevronDown, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface MaterialWithOrder {
   id: string;
@@ -245,39 +247,54 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
 
   const renderMaterialsList = (materials: MaterialWithOrder[]) => (
     <div className="border rounded-lg overflow-hidden">
-      <div className="bg-slate-100 px-3 py-2 text-sm font-semibold border-b">
-        Materials in Order ({materials.length})
-      </div>
-      <div className="divide-y max-h-64 overflow-y-auto">
-        {materials.map(material => (
-          <div key={material.id} className="p-3 hover:bg-slate-50">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="font-medium text-sm">{material.material_name}</div>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <Badge variant="secondary" className="text-xs">
-                    {material.category}
-                  </Badge>
-                  <span>•</span>
-                  <span>{material.sheets.sheet_name}</span>
-                </div>
-              </div>
-              <div className="text-right ml-4">
-                <div className="text-sm font-semibold">Qty: {material.quantity}</div>
-                {material.price_per_unit && (
-                  <div className="text-xs text-green-600">
-                    ${material.price_per_unit.toFixed(2)}/unit
-                  </div>
-                )}
-                {material.cost_per_unit && (
-                  <div className="text-xs text-blue-600">
-                    Cost: ${material.cost_per_unit.toFixed(2)}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-slate-800 text-white">
+            <tr>
+              <th className="text-left px-4 py-3 font-semibold text-sm">#</th>
+              <th className="text-left px-4 py-3 font-semibold text-sm">Item & Description</th>
+              <th className="text-right px-4 py-3 font-semibold text-sm">Qty</th>
+              <th className="text-right px-4 py-3 font-semibold text-sm">Cost</th>
+              <th className="text-right px-4 py-3 font-semibold text-sm">Markup %</th>
+              <th className="text-right px-4 py-3 font-semibold text-sm">Price</th>
+              <th className="text-right px-4 py-3 font-semibold text-sm">Amount</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {materials.map((material, index) => {
+              const cost = material.cost_per_unit || 0;
+              const price = material.price_per_unit || 0;
+              const markup = cost > 0 ? ((price - cost) / cost * 100) : 0;
+              const amount = price * material.quantity;
+              
+              return (
+                <tr key={material.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 text-sm text-slate-600">{index + 1}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-sm text-slate-900">{material.material_name}</div>
+                    <div className="text-xs text-slate-600 mt-0.5">{material.sheets.sheet_name}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm">
+                    {material.quantity}
+                    <div className="text-xs text-slate-500">pcs</div>
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-medium">
+                    ${cost.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-medium text-green-700">
+                    {markup.toFixed(1)}%
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-medium text-blue-700">
+                    ${price.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm font-bold">
+                    ${amount.toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -349,27 +366,32 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
               </Card>
             ) : (
               salesOrders.map((so) => (
-                <Card key={so.id} className="border-2 border-green-200 shadow-md">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-green-50 to-white">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <a
-                          href={`https://books.zoho.com/app#/salesorders/${so.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold rounded-md hover:from-green-700 hover:to-green-800 transition-all shadow-sm"
-                        >
-                          <DollarSign className="w-5 h-5" />
-                          Sales Order: {so.number}
-                          <ExternalLink className="w-4 h-4 ml-1" />
-                        </a>
-                        <div className="flex items-center gap-3 mt-3 text-sm text-muted-foreground">
+                <Collapsible key={so.id}>
+                  <Card className="border-2 border-green-200 shadow-md">
+                    <div className="bg-gradient-to-r from-green-50 to-white border-b p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                              <ChevronRight className="w-5 h-5 text-green-700 transition-transform [&[data-state=open]]:rotate-90" />
+                            </Button>
+                          </CollapsibleTrigger>
+                          <a
+                            href={`https://books.zoho.com/app#/salesorders/${so.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold rounded hover:from-green-700 hover:to-green-800 transition-all text-sm"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                            SO #{so.number}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                           <Badge variant="outline" className="bg-white">
                             <Package className="w-3 h-3 mr-1" />
-                            {so.materials.length} Material{so.materials.length !== 1 ? 's' : ''}
+                            {so.materials.length} items
                           </Badge>
                           {so.orderedAt && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="w-3 h-3" />
                               {new Date(so.orderedAt).toLocaleDateString('en-US', {
                                 month: 'short',
@@ -379,19 +401,21 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-                        <div className="text-xs text-green-700 mb-1">Order Total</div>
-                        <div className="text-2xl font-bold text-green-900">
-                          ${so.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <div className="bg-green-50 border border-green-200 rounded px-4 py-1">
+                          <div className="text-xs text-green-700">Total</div>
+                          <div className="text-xl font-bold text-green-900">
+                            ${so.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    {renderMaterialsList(so.materials)}
-                  </CardContent>
-                </Card>
+                    <CollapsibleContent>
+                      <CardContent className="pt-4">
+                        {renderMaterialsList(so.materials)}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
               ))
             )}
           </TabsContent>
@@ -410,27 +434,32 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
               </Card>
             ) : (
               invoices.map((inv) => (
-                <Card key={inv.id} className="border-2 border-amber-200 shadow-md">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-amber-50 to-white">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <a
-                          href={`https://books.zoho.com/app#/invoices/${inv.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 text-white font-semibold rounded-md hover:from-amber-700 hover:to-amber-800 transition-all shadow-sm"
-                        >
-                          <Receipt className="w-5 h-5" />
-                          Invoice: {inv.number}
-                          <ExternalLink className="w-4 h-4 ml-1" />
-                        </a>
-                        <div className="flex items-center gap-3 mt-3 text-sm text-muted-foreground">
+                <Collapsible key={inv.id}>
+                  <Card className="border-2 border-amber-200 shadow-md">
+                    <div className="bg-gradient-to-r from-amber-50 to-white border-b p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                              <ChevronRight className="w-5 h-5 text-amber-700 transition-transform [&[data-state=open]]:rotate-90" />
+                            </Button>
+                          </CollapsibleTrigger>
+                          <a
+                            href={`https://books.zoho.com/app#/invoices/${inv.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-amber-600 to-amber-700 text-white font-semibold rounded hover:from-amber-700 hover:to-amber-800 transition-all text-sm"
+                          >
+                            <Receipt className="w-4 h-4" />
+                            INV #{inv.number}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                           <Badge variant="outline" className="bg-white">
                             <Package className="w-3 h-3 mr-1" />
-                            {inv.materials.length} Material{inv.materials.length !== 1 ? 's' : ''}
+                            {inv.materials.length} items
                           </Badge>
                           {inv.orderedAt && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="w-3 h-3" />
                               {new Date(inv.orderedAt).toLocaleDateString('en-US', {
                                 month: 'short',
@@ -440,19 +469,21 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
-                        <div className="text-xs text-amber-700 mb-1">Invoice Total</div>
-                        <div className="text-2xl font-bold text-amber-900">
-                          ${inv.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <div className="bg-amber-50 border border-amber-200 rounded px-4 py-1">
+                          <div className="text-xs text-amber-700">Total</div>
+                          <div className="text-xl font-bold text-amber-900">
+                            ${inv.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    {renderMaterialsList(inv.materials)}
-                  </CardContent>
-                </Card>
+                    <CollapsibleContent>
+                      <CardContent className="pt-4">
+                        {renderMaterialsList(inv.materials)}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
               ))
             )}
           </TabsContent>
@@ -471,27 +502,32 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
               </Card>
             ) : (
               purchaseOrders.map((po) => (
-                <Card key={po.id} className="border-2 border-blue-200 shadow-md">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-white">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <a
-                          href={`https://books.zoho.com/app#/purchaseorders/${po.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-md hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm"
-                        >
-                          <FileText className="w-5 h-5" />
-                          Purchase Order: {po.number}
-                          <ExternalLink className="w-4 h-4 ml-1" />
-                        </a>
-                        <div className="flex items-center gap-3 mt-3 text-sm text-muted-foreground">
+                <Collapsible key={po.id}>
+                  <Card className="border-2 border-blue-200 shadow-md">
+                    <div className="bg-gradient-to-r from-blue-50 to-white border-b p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                              <ChevronRight className="w-5 h-5 text-blue-700 transition-transform [&[data-state=open]]:rotate-90" />
+                            </Button>
+                          </CollapsibleTrigger>
+                          <a
+                            href={`https://books.zoho.com/app#/purchaseorders/${po.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded hover:from-blue-700 hover:to-blue-800 transition-all text-sm"
+                          >
+                            <FileText className="w-4 h-4" />
+                            PO #{po.number}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                           <Badge variant="outline" className="bg-white">
                             <Package className="w-3 h-3 mr-1" />
-                            {po.materials.length} Material{po.materials.length !== 1 ? 's' : ''}
+                            {po.materials.length} items
                           </Badge>
                           {po.orderedAt && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="w-3 h-3" />
                               {new Date(po.orderedAt).toLocaleDateString('en-US', {
                                 month: 'short',
@@ -501,19 +537,21 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-                        <div className="text-xs text-blue-700 mb-1">Order Total</div>
-                        <div className="text-2xl font-bold text-blue-900">
-                          ${po.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <div className="bg-blue-50 border border-blue-200 rounded px-4 py-1">
+                          <div className="text-xs text-blue-700">Total</div>
+                          <div className="text-xl font-bold text-blue-900">
+                            ${po.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    {renderMaterialsList(po.materials)}
-                  </CardContent>
-                </Card>
+                    <CollapsibleContent>
+                      <CardContent className="pt-4">
+                        {renderMaterialsList(po.materials)}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
               ))
             )}
           </TabsContent>

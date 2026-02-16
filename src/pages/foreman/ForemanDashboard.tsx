@@ -23,6 +23,7 @@ import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import { JobComponents } from '@/components/office/JobComponents';
 
 import { MaterialsList } from '@/components/foreman/MaterialsList';
+import { ShopMaterialsView } from '@/components/shop/ShopMaterialsView';
 import { NotificationBell } from '@/components/office/NotificationBell';
 import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
 import { MasterCalendar } from '@/components/office/MasterCalendar';
@@ -55,6 +56,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
   const [showGanttChart, setShowGanttChart] = useState(false);
   const [jobData, setJobData] = useState<Job | null>(selectedJob);
   const [showFleet, setShowFleet] = useState(false);
+  const [showShopMaterials, setShowShopMaterials] = useState(false);
   const isForeman = false; // Legacy foreman role no longer used
 
   // Update jobData when selectedJob changes
@@ -137,6 +139,46 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     clearUser();
     toast.success('Signed out successfully');
   };
+
+  // If showing shop materials, render that view
+  if (showShopMaterials) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <Button variant="outline" size="sm" onClick={() => setShowShopMaterials(false)} className="rounded-none border-slate-300 flex-shrink-0 h-8 sm:h-9 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="font-bold text-green-900 text-sm sm:text-base truncate">Shop Material Packages</p>
+                <p className="text-xs text-black truncate hidden sm:block">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-slate-900">Process Shop Materials</h2>
+            <p className="text-sm text-slate-600">Mark materials as ready when they're pulled from shop and prepared for job sites</p>
+          </div>
+          <ShopMaterialsView userId={profile?.id || ''} />
+        </main>
+      </div>
+    );
+  }
 
   // If showing fleet management, render that view
   if (showFleet) {
@@ -515,8 +557,19 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               }}
             />
             
-            {/* Grid layout for time off calendar, fleet, and my time button */}
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 px-2 sm:px-4">
+            {/* Grid layout for shop materials, time off calendar, fleet, and my time button */}
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2 px-2 sm:px-4">
+              {/* Shop Materials Button - Leftmost */}
+              <Button
+                onClick={() => setShowShopMaterials(true)}
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-1.5 sm:px-2 py-2 h-auto rounded-none font-semibold"
+              >
+                <Package className="w-3 h-3 mr-0.5 sm:mr-1" />
+                Shop
+              </Button>
+              
               {/* Time Off Calendar Button - Left side */}
               <Button
                 onClick={() => setShowUnavailableCalendar(true)}
