@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface MaterialItem {
@@ -382,19 +382,19 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     }
   }
 
-  async function markMaterialReady(materialId: string, bundleId: string) {
+  async function updateMaterialStatus(materialId: string, bundleId: string, newStatus: 'ready_for_job' | 'at_job') {
     if (processingMaterials.has(materialId)) return;
     
     setProcessingMaterials(prev => new Set(prev).add(materialId));
 
     try {
-      console.log(`🔄 Marking material ${materialId} as ready_for_job`);
+      console.log(`🔄 Updating material ${materialId} to ${newStatus}`);
       
-      // Update material status to ready_for_job
+      // Update material status
       const { error: materialError } = await supabase
         .from('material_items')
         .update({ 
-          status: 'ready_for_job',
+          status: newStatus,
           updated_at: new Date().toISOString() 
         })
         .eq('id', materialId);
@@ -402,40 +402,41 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       if (materialError) throw materialError;
 
       // Check if this is the first material in the package being marked as ready
-      // Get all materials in the package
-      const { data: bundleItems, error: bundleItemsError } = await supabase
-        .from('material_bundle_items')
-        .select(`
-          material_item_id,
-          material_items!inner(status)
-        `)
-        .eq('bundle_id', bundleId);
+      // Get all materials in the package (only for non-virtual bundles)
+      if (!bundleId.startsWith('unbundled-')) {
+        const { data: bundleItems, error: bundleItemsError } = await supabase
+          .from('material_bundle_items')
+          .select(`
+            material_item_id,
+            material_items!inner(status)
+          `)
+          .eq('bundle_id', bundleId);
 
-      if (bundleItemsError) throw bundleItemsError;
+        if (bundleItemsError) throw bundleItemsError;
 
-      // Count how many materials are now ready_for_job
-      const readyMaterials = bundleItems?.filter(
-        (item: any) => item.material_items.status === 'ready_for_job'
-      ).length || 0;
+        // Count how many materials are now ready_for_job or at_job
+        const readyMaterials = bundleItems?.filter(
+          (item: any) => item.material_items.status === 'ready_for_job' || item.material_items.status === 'at_job'
+        ).length || 0;
 
-      console.log(`📊 Package ${bundleId}: ${readyMaterials}/${bundleItems?.length || 0} materials ready`);
+        console.log(`📊 Package ${bundleId}: ${readyMaterials}/${bundleItems?.length || 0} materials ready`);
 
-      // If this is the first material being marked ready, update package status to ready_for_job
-      if (readyMaterials === 1) {
-        console.log('🔄 First material marked ready - updating package to ready_for_job');
-        const { error: packageError } = await supabase
-          .from('material_bundles')
-          .update({
-            status: 'delivered', // Database value for ready_for_job
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', bundleId);
+        // If this is the first material being marked ready, update package status
+        if (readyMaterials === 1) {
+          console.log('🔄 First material marked ready - updating package status');
+          const { error: packageError } = await supabase
+            .from('material_bundles')
+            .update({
+              status: 'delivered', // Database value for ready_for_job
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', bundleId);
 
-        if (packageError) throw packageError;
-        toast.success('Material marked ready - Package moved to Ready for Job');
-      } else {
-        toast.success('Material marked ready');
+          if (packageError) throw packageError;
+        }
       }
+
+      toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
 
       loadPackages();
     } catch (error: any) {
@@ -681,24 +682,33 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                   {item.material_items.length || '-'}
                                 </td>
                                 <td className="p-3">
-                                  <div className="flex justify-center">
+                                  <div className="flex justify-center gap-2">
                                     <Button
                                       size="sm"
-                                      onClick={() => markMaterialReady(item.material_items.id, pkg.id)}
+                                      onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
                                       disabled={processingMaterials.has(item.material_items.id)}
                                       className="bg-emerald-600 hover:bg-emerald-700"
                                     >
                                       {processingMaterials.has(item.material_items.id) ? (
                                         <>
                                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                          Processing...
+                                          ...
                                         </>
                                       ) : (
                                         <>
                                           <CheckCircle2 className="w-4 h-4 mr-2" />
-                                          Mark Ready
+                                          Ready
                                         </>
                                       )}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
+                                      disabled={processingMaterials.has(item.material_items.id)}
+                                      className="bg-teal-600 hover:bg-teal-700"
+                                    >
+                                      <Truck className="w-4 h-4 mr-2" />
+                                      At Job
                                     </Button>
                                   </div>
                                 </td>
@@ -859,11 +869,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                   <th className="text-left p-3 font-semibold">Usage</th>
                                   <th className="text-center p-3 font-semibold">Qty</th>
                                   <th className="text-center p-3 font-semibold">Length</th>
+                                  <th className="text-center p-3 font-semibold">Action</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {readyItems.map((item) => (
-                                  <tr key={item.id} className="border-b bg-emerald-50/30">
+                                  <tr key={item.id} className="border-b bg-emerald-50/30 hover:bg-emerald-100/50 transition-colors">
                                     <td className="p-3">
                                       <Badge variant="outline" className="bg-blue-50">
                                         {item.material_items.sheets.sheet_name}
@@ -881,6 +892,28 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                     </td>
                                     <td className="p-3 text-center">
                                       {item.material_items.length || '-'}
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex justify-center">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
+                                          disabled={processingMaterials.has(item.material_items.id)}
+                                          className="bg-teal-600 hover:bg-teal-700"
+                                        >
+                                          {processingMaterials.has(item.material_items.id) ? (
+                                            <>
+                                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                              ...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Truck className="w-4 h-4 mr-2" />
+                                              At Job
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -933,24 +966,33 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                       {item.material_items.length || '-'}
                                     </td>
                                     <td className="p-3">
-                                      <div className="flex justify-center">
+                                      <div className="flex justify-center gap-2">
                                         <Button
                                           size="sm"
-                                          onClick={() => markMaterialReady(item.material_items.id, pkg.id)}
+                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
                                           disabled={processingMaterials.has(item.material_items.id)}
                                           className="bg-emerald-600 hover:bg-emerald-700"
                                         >
                                           {processingMaterials.has(item.material_items.id) ? (
                                             <>
                                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                              Processing...
+                                              ...
                                             </>
                                           ) : (
                                             <>
                                               <CheckCircle2 className="w-4 h-4 mr-2" />
-                                              Mark Ready
+                                              Ready
                                             </>
                                           )}
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
+                                          disabled={processingMaterials.has(item.material_items.id)}
+                                          className="bg-teal-600 hover:bg-teal-700"
+                                        >
+                                          <Truck className="w-4 h-4 mr-2" />
+                                          At Job
                                         </Button>
                                       </div>
                                     </td>

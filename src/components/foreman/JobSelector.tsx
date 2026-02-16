@@ -250,6 +250,7 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
                             className="h-auto p-0 hover:bg-transparent"
                             onClick={(e) => {
                               e.stopPropagation();
+                              // Navigate to the job with pull tab active
                               onSelectJobForPullMaterials?.(job);
                             }}
                           >
