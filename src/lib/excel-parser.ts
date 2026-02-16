@@ -133,7 +133,7 @@ export async function parseExcelWorkbook(file: File | Blob): Promise<ExcelWorkbo
 
 /**
  * Validate workbook structure for material imports
- * Expected columns: Category, Material, Qty, Length, Cost per unit, etc.
+ * Expected columns: Material, Qty (Category is optional - will use sheet name if missing)
  */
 export function validateMaterialWorkbook(workbook: ExcelWorkbook): {
   valid: boolean;
@@ -146,8 +146,8 @@ export function validateMaterialWorkbook(workbook: ExcelWorkbook): {
     return { valid: false, errors };
   }
   
-  // Check each sheet for required columns
-  const requiredColumns = ['Category', 'Material', 'Qty'];
+  // Check each sheet for required columns (Category is optional)
+  const requiredColumns = ['Material', 'Qty'];
   
   workbook.sheets.forEach(sheet => {
     if (sheet.rows.length === 0) {

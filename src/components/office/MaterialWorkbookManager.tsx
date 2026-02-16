@@ -176,7 +176,18 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         const categories = new Map<string, any[]>();
 
         sheet.rows.forEach((row, rowIndex) => {
-          const category = String(row['Category'] || row['category'] || 'Uncategorized').trim();
+          // Use Category column if available, otherwise use sheet name as category
+          let category: string;
+          if (row['Category'] || row['category']) {
+            category = String(row['Category'] || row['category']).trim();
+          } else {
+            // No Category column - use sheet name as the category
+            category = sheet.name;
+          }
+          
+          if (!category || category === '') {
+            category = 'Uncategorized';
+          }
           
           if (!categories.has(category)) {
             categories.set(category, []);
@@ -580,15 +591,19 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>Each sheet will become a separate material category</span>
+                  <span>Each sheet will be organized by categories (Category column or sheet name)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>Required columns: Category, Material, Qty, Cost per unit, Extended cost</span>
+                  <span>Required columns: Material, Qty</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>Optional columns: Usage, SKU, Length, Color, Markup, Price per unit, Extended price</span>
+                  <span>Optional columns: Category, Usage, SKU, Length, Color, Cost per unit, Markup, Price per unit, Extended cost, Extended price</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>If no Category column, sheet name will be used as the category</span>
                 </li>
               </ul>
             </div>
