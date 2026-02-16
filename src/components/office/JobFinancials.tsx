@@ -2841,6 +2841,66 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           {/* Action Buttons - Only show in Proposal tab */}
           {activeTab === 'proposal' && (
             <div className="flex gap-2">
+              {/* Versioning Buttons - Show if quote exists */}
+              {quote && (
+                <>
+                  {proposalVersions.length === 0 ? (
+                    <Button
+                      size="sm"
+                      onClick={initializeVersions}
+                      disabled={initializingVersions}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {initializingVersions ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          Initializing...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3 h-3 mr-2" />
+                          Initialize Versioning
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => setShowCreateVersionDialog(true)}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="w-3 h-3 mr-2" />
+                        Create Version
+                      </Button>
+                      {/* Show Sign & Lock for current version only */}
+                      {!quote.signed_version && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
+                            if (currentVersion) signAndLockVersion(currentVersion.id);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          <Lock className="w-3 h-3 mr-2" />
+                          Sign & Lock
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={openVersionHistoryDialog}
+                        className="border-blue-300 hover:bg-blue-100"
+                      >
+                        <History className="w-3 h-3 mr-2" />
+                        History ({proposalVersions.length})
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+              <div className="h-6 w-px bg-border" />
               <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
                 <Download className="w-4 h-4 mr-2" />
                 Export PDF
