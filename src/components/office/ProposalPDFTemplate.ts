@@ -22,7 +22,7 @@ export function generateProposalHTML(data: {
   };
   showLineItems: boolean;
   showSectionPrices?: boolean; // Option to show/hide individual section prices (customer version)
-  showInternalDetails?: boolean; // Option to show all row items with prices (internal version)
+  showInternalDetails?: boolean; // Option to show all row items with individual prices (Office View - internal use only)
 }): string {
   const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = true, showInternalDetails = false } = data;
 
@@ -259,116 +259,148 @@ export function generateProposalHTML(data: {
           let content = '';
           
           if (showInternalDetails) {
-            // INTERNAL VERSION: Show section name, all items with prices, and description
-            content += `<div class="section-title" style="display: block;">${section.name}</div>`;
+            // OFFICE VIEW: Show section name, all items with individual unit and total prices
+            content += '<div class="section-title" style="display: block;">' + section.name + '</div>';
             
-            // Show all sub-items with prices in a table
+            // Show all sub-items with individual prices in a table
             if (section.items && section.items.length > 0) {
-              content += `
-                <table class="items-table">
-                  <thead>
-                    <tr>
-                      <th style="width: 60%;">Item</th>
-                      <th style="width: 20%; text-align: center;">Quantity</th>
-                      <th style="width: 20%; text-align: right;">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${section.items.map((item: any) => `
-                      <tr>
-                        <td>${item.description}</td>
-                        <td style="text-align: center;">${item.quantity || 1}${item.unit ? ' ' + item.unit : ''}</td>
-                        <td style="text-align: right;">$${(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    `).join('')}
-                    <tr class="total-row">
-                      <td colspan="2" style="text-align: right;">Section Total:</td>
-                      <td style="text-align: right;">$${(section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              `;
+              content += '<table class="items-table"><thead><tr>';
+              content += '<th style="width: 50%;">Item</th>';
+              content += '<th style="width: 15%; text-align: center;">Quantity</th>';
+              content += '<th style="width: 17.5%; text-align: right;">Unit Price</th>';
+              content += '<th style="width: 17.5%; text-align: right;">Total Price</th>';
+              content += '</tr></thead><tbody>';
+              
+              section.items.forEach((item: any) => {
+                const qty = item.quantity || 1;
+                const unitPrice = item.price || 0;
+                const totalPrice = qty * unitPrice;
+                content += '<tr>';
+                content += '<td>' + item.description + '</td>';
+                content += '<td style="text-align: center;">' + qty + (item.unit ? ' ' + item.unit : '') + '</td>';
+                content += '<td style="text-align: right;">$' + unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '<td style="text-align: right;">$' + totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                content += '</tr>';
+              });
+              
+              content += '<tr class="total-row">';
+              content += '<td colspan="3" style="text-align: right; font-weight: bold;">Section Total:</td>';
+              content += '<td style="text-align: right; font-weight: bold;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+              content += '</tr>';
+              content += '</tbody></table>';
             }
             
             if (section.description) {
-              content += `<div class="section-content">${section.description}</div>`;
+              content += '<div class="section-content">' + section.description + '</div>';
             }
           } else {
             // CUSTOMER VERSION: Only show section name (with optional price) and description
             // Do NOT show sub-items
             if (showSectionPrices && section.price) {
               // Show section name with price on the right
-              content += `
-                <div class="section-title">
-                  <span>${section.name}</span>
-                  <span class="section-price">$${section.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                </div>
-              `;
+              content += '<div class="section-title">';
+              content += '<span>' + section.name + '</span>';
+              content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+              content += '</div>';
             } else {
               // Show section name only
-              content += `<div class="section-title" style="display: block;">${section.name}</div>`;
+              content += '<div class="section-title" style="display: block;">' + section.name + '</div>';
             }
             
             if (section.description) {
-              content += `<div class="section-content">${section.description}</div>`;
+              content += '<div class="section-content">' + section.description + '</div>';
             }
           }
           
           return content;
         }).join('')}
         
-        <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
-        
-        ${showLineItems ? `
-          <table style="margin-top: 15px;">
-            <tr>
-              <td style="text-align: right;"><strong>Materials & Subcontractors:</strong></td>
-              <td style="text-align: right; width: 150px;">$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            ${totals.labor > 0 ? `
+        ${showInternalDetails ? `
+          <!-- Office View - Summary Only (No Payment Terms) -->
+          <div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border: 2px solid #333; border-radius: 8px;">
+            <h3 style="margin: 0 0 15px 0; font-size: 14pt;">Proposal Summary - Office View</h3>
+            <table style="width: 100%;">
+              ${totals.materials > 0 ? `
+                <tr>
+                  <td style="text-align: right; padding: 5px;"><strong>Materials & Subcontractors:</strong></td>
+                  <td style="text-align: right; width: 150px; padding: 5px;">$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ` : ''}
+              ${totals.labor > 0 ? `
+                <tr>
+                  <td style="text-align: right; padding: 5px;"><strong>Labor:</strong></td>
+                  <td style="text-align: right; padding: 5px;">$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ` : ''}
               <tr>
-                <td style="text-align: right;"><strong>Labor:</strong></td>
-                <td style="text-align: right;">$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right; padding: 5px;"><strong>Subtotal:</strong></td>
+                <td style="text-align: right; padding: 5px;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
               </tr>
-            ` : ''}
-            <tr>
-              <td style="text-align: right;"><strong>Subtotal:</strong></td>
-              <td style="text-align: right;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
-              <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
-              <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
-            </tr>
-          </table>
+              <tr>
+                <td style="text-align: right; padding: 5px;"><strong>Sales Tax (7%):</strong></td>
+                <td style="text-align: right; padding: 5px;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr style="border-top: 2px solid #333;">
+                <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 12pt;">GRAND TOTAL:</strong></td>
+                <td style="text-align: right; padding: 10px 5px 5px 5px;"><strong style="font-size: 14pt;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+              </tr>
+            </table>
+          </div>
         ` : `
-          <p style="text-align: center; font-size: 16pt; font-weight: bold; margin: 20px 0;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-        `}
-        
-        <div class="footer">
-          <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
+          <!-- Customer Version - Full Footer with Payment Terms -->
+          <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
           
-          <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
+          ${showLineItems ? `
+            <table style="margin-top: 15px;">
+              <tr>
+                <td style="text-align: right;"><strong>Materials & Subcontractors:</strong></td>
+                <td style="text-align: right; width: 150px;">$${totals.materials.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              ${totals.labor > 0 ? `
+                <tr>
+                  <td style="text-align: right;"><strong>Labor:</strong></td>
+                  <td style="text-align: right;">$${totals.labor.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td style="text-align: right;"><strong>Subtotal:</strong></td>
+                <td style="text-align: right;">$${totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="text-align: right;"><strong>Sales Tax (7%):</strong></td>
+                <td style="text-align: right;">$${totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="text-align: right; padding-top: 10px;"><strong>GRAND TOTAL:</strong></td>
+                <td style="text-align: right; padding-top: 10px; font-size: 14pt;"><strong>$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></td>
+              </tr>
+            </table>
+          ` : `
+            <p style="text-align: center; font-size: 16pt; font-weight: bold; margin: 20px 0;">$${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+          `}
           
-          <div class="signature-section">
-            <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
-            <p style="margin-bottom: 20px;">The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.</p>
+          <div class="footer">
+            <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
             
-            <div style="display: flex; justify-content: space-between; margin-top: 40px;">
-              <div>
-                <p>Authorized Signature</p>
-                <div class="signature-line"></div>
-              </div>
-              <div>
-                <p>Date of Acceptance</p>
-                <div class="signature-line"></div>
+            <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
+            
+            <div class="signature-section">
+              <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
+              <p style="margin-bottom: 20px;">The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.</p>
+              
+              <div style="display: flex; justify-content: space-between; margin-top: 40px;">
+                <div>
+                  <p>Authorized Signature</p>
+                  <div class="signature-line"></div>
+                </div>
+                <div>
+                  <p>Date of Acceptance</p>
+                  <div class="signature-line"></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        `}
       </body>
     </html>
   `;
