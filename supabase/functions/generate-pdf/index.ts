@@ -151,17 +151,6 @@ function generateJobHoursHTML(data: any): string {
         color: #2d5f3f;
       }
       
-      .manual-badge {
-        display: inline-block;
-        background: #fbbf24;
-        color: #78350f;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: 600;
-        margin-left: 8px;
-      }
-      
       .notes-row {
         background: #f9fafb;
       }
@@ -228,24 +217,28 @@ function generateJobHoursHTML(data: any): string {
               </tr>
             </thead>
             <tbody>
-              ${user.entries.map((entry: any) => `
-                <tr>
-                  <td class="date-cell">${entry.date}</td>
-                  <td class="component-cell">
-                    ${entry.component}
-                    ${entry.isManual ? '<span class="manual-badge">MANUAL</span>' : ''}
-                  </td>
-                  <td class="time-cell">${entry.startTime}</td>
-                  <td class="time-cell">${entry.endTime}</td>
-                  <td>${entry.crewCount}</td>
-                  <td class="hours-cell">${entry.hours}</td>
-                </tr>
-                ${entry.notes ? `
-                  <tr class="notes-row">
-                    <td colspan="6" class="notes-cell">Note: ${entry.notes}</td>
+              ${user.entries.map((entry: any) => {
+                // Filter out system-generated notes like "manual entry"
+                const hasUserNote = entry.notes && 
+                  entry.notes.toLowerCase().trim() !== 'manual entry' && 
+                  entry.notes.trim() !== '';
+                
+                return `
+                  <tr>
+                    <td class="date-cell">${entry.date}</td>
+                    <td class="component-cell">${entry.component}</td>
+                    <td class="time-cell">${entry.startTime}</td>
+                    <td class="time-cell">${entry.endTime}</td>
+                    <td>${entry.crewCount}</td>
+                    <td class="hours-cell">${entry.hours}</td>
                   </tr>
-                ` : ''}
-              `).join('')}
+                  ${hasUserNote ? `
+                    <tr class="notes-row">
+                      <td colspan="6" class="notes-cell">Note: ${entry.notes}</td>
+                    </tr>
+                  ` : ''}
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
