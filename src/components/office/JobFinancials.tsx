@@ -997,7 +997,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Export dialog state
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [showLineItems, setShowLineItems] = useState(true);
+  const [showLineItems, setShowLineItems] = useState(false); // Default to false - no row pricing by default
   const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
   const [exporting, setExporting] = useState(false);
   
@@ -2380,7 +2380,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           grandTotal: proposalGrandTotal,
         },
         showLineItems: isOfficeView ? true : showLineItems,
-        showSectionPrices: !isOfficeView,
+        showSectionPrices: isOfficeView ? false : showLineItems, // Customer version: controlled by checkbox, Office view: always false
         showInternalDetails: isOfficeView,
       });
 
