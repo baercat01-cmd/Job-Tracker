@@ -129,6 +129,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [newSku, setNewSku] = useState('');
   const [newQuantity, setNewQuantity] = useState('1');
   const [newLength, setNewLength] = useState('');
+  const [newColor, setNewColor] = useState('');
   const [newCostPerUnit, setNewCostPerUnit] = useState('');
   const [newMarkup, setNewMarkup] = useState('35');
   const [newNotes, setNewNotes] = useState('');
@@ -744,6 +745,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setNewMaterialName(catalogItem.material_name);
     setNewSku(catalogItem.sku || '');
     setNewLength(catalogItem.part_length || '');
+    setNewColor(''); // Color not in catalog, user can enter manually
     setNewCostPerUnit(cost.toString());
     setAddToCategory(catalogItem.category || addToCategory);
     
@@ -773,6 +775,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     setNewSku('');
     setNewQuantity('1');
     setNewLength('');
+    setNewColor('');
     setNewCostPerUnit('');
     setNewMarkup('35');
     setNewNotes('');
@@ -930,6 +933,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
           material_name: newMaterialName.trim(),
           quantity,
           length: newLength.trim() || null,
+          color: newColor.trim() || null,
           cost_per_unit: costPerUnit,
           markup_percent: markup / 100,
           price_per_unit: pricePerUnit,
@@ -1171,6 +1175,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Length</th>
+                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Color</th>
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Cost/Unit</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Markup %</th>
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Price/Unit</th>
@@ -1402,6 +1407,29 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           className="text-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
                                         >
                                           {item.length || '-'}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="p-1 border-r whitespace-nowrap">
+                                      {isEditingThisCell('color') ? (
+                                        <Input
+                                          value={cellValue}
+                                          onChange={(e) => setCellValue(e.target.value)}
+                                          onBlur={() => saveCellEdit(item)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveCellEdit(item);
+                                            if (e.key === 'Escape') cancelCellEdit();
+                                          }}
+                                          autoFocus
+                                          className="h-8 text-sm text-center"
+                                        />
+                                      ) : (
+                                        <div
+                                          onClick={() => startCellEdit(item.id, 'color', item.color)}
+                                          className="text-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                        >
+                                          {item.color || '-'}
                                         </div>
                                       )}
                                     </td>
@@ -1748,6 +1776,18 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="add-color">Color</Label>
+                <Input
+                  id="add-color"
+                  value={newColor}
+                  onChange={(e) => setNewColor(e.target.value)}
+                  placeholder="e.g., Red, Blue, White..."
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="add-cost">Cost/Unit ($)</Label>
                 <Input
