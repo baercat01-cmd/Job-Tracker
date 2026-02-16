@@ -230,12 +230,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           usage,
           status,
           cost_per_unit,
-          sheets:material_sheets(
+          sheets:material_sheets!inner(
             sheet_name,
             workbook_id,
-            material_workbooks(
+            workbooks:material_workbooks!inner(
               job_id,
-              jobs(
+              jobs:jobs!inner(
                 id,
                 name,
                 client_name
@@ -268,28 +268,36 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         // Group unbundled materials by job
         const unbundledByJob = new Map<string, any[]>();
         trulyUnbundled.forEach((material: any) => {
-          // Handle nested workbook/job data - might be array or object
-          const workbook = Array.isArray(material.sheets?.material_workbooks) 
-            ? material.sheets.material_workbooks[0] 
-            : material.sheets?.material_workbooks;
+          // Extract nested data - Supabase always returns arrays for joins
+          const sheet = Array.isArray(material.sheets) ? material.sheets[0] : material.sheets;
+          const workbook = Array.isArray(sheet?.workbooks) ? sheet.workbooks[0] : sheet?.workbooks;
           const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
           const jobId = job?.id;
+          
+          console.log('Processing unbundled material:', {
+            materialId: material.id,
+            materialName: material.material_name,
+            sheet: sheet?.sheet_name,
+            jobId,
+            jobName: job?.name
+          });
           
           if (jobId) {
             if (!unbundledByJob.has(jobId)) {
               unbundledByJob.set(jobId, []);
             }
             unbundledByJob.get(jobId)!.push(material);
+          } else {
+            console.warn('Material has no job:', material.id, material.material_name);
           }
         });
         
         // Create virtual packages for unbundled materials
         const virtualPackages: MaterialBundle[] = Array.from(unbundledByJob.entries()).map(([jobId, materials]) => {
           const firstMaterial = materials[0];
-          // Handle nested workbook/job data - might be array or object
-          const workbook = Array.isArray(firstMaterial.sheets?.material_workbooks) 
-            ? firstMaterial.sheets.material_workbooks[0] 
-            : firstMaterial.sheets?.material_workbooks;
+          // Extract nested data - Supabase always returns arrays for joins
+          const sheet = Array.isArray(firstMaterial.sheets) ? firstMaterial.sheets[0] : firstMaterial.sheets;
+          const workbook = Array.isArray(sheet?.workbooks) ? sheet.workbooks[0] : sheet?.workbooks;
           const job = Array.isArray(workbook?.jobs) ? workbook.jobs[0] : workbook?.jobs;
           
           return {
@@ -302,17 +310,20 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               name: job?.name || 'Unknown Job',
               client_name: job?.client_name || '',
             },
-            bundle_items: materials.map(material => ({
-              id: `virtual-${material.id}`,
-              bundle_id: `unbundled-${jobId}`,
-              material_item_id: material.id,
-              material_items: {
-                ...material,
-                sheets: {
-                  sheet_name: material.sheets?.sheet_name || 'Unknown Sheet'
+            bundle_items: materials.map(material => {
+              const matSheet = Array.isArray(material.sheets) ? material.sheets[0] : material.sheets;
+              return {
+                id: `virtual-${material.id}`,
+                bundle_id: `unbundled-${jobId}`,
+                material_item_id: material.id,
+                material_items: {
+                  ...material,
+                  sheets: {
+                    sheet_name: matSheet?.sheet_name || 'Unknown Sheet'
+                  },
                 },
-              },
-            })),
+              };
+            }),
           };
         });
         
