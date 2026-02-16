@@ -1,7 +1,7 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import BuildingEstimator3D from '@/components/office/BuildingEstimator3D';
 
-export default function BuildingEstimatorPage() {
+export function BuildingEstimatorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
