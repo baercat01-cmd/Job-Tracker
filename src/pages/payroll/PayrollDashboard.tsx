@@ -27,12 +27,14 @@ import {
   DollarSign,
   Edit,
   Trash2,
-  CalendarDays
+  CalendarDays,
+  Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
+import { format } from 'date-fns';
 
 // ⚠️ CRITICAL: ALL TIMES MUST DISPLAY IN EASTERN TIME (EST/EDT)
 // This ensures payroll times match when employees actually clocked in/out
@@ -102,10 +104,18 @@ export function PayrollDashboard() {
     minutes: '0',
     notes: '',
   });
-  const [activeTab, setActiveTab] = useState<'time-entries' | 'time-off'>('time-entries');
+  const [activeTab, setActiveTab] = useState<'time-entries' | 'time-off' | 'job-hours'>('time-entries');
+  
+  // Job hours state
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
+  const [jobHoursData, setJobHoursData] = useState<any[]>([]);
+  const [loadingJobHours, setLoadingJobHours] = useState(false);
+  const [exportingJobHours, setExportingJobHours] = useState(false);
 
   useEffect(() => {
     generatePeriodOptions();
+    loadJobs();
   }, [periodType]);
 
   useEffect(() => {
@@ -117,6 +127,146 @@ export function PayrollDashboard() {
       loadPeriodData();
     }
   }, [selectedPeriod, customStartDate, customEndDate]);
+
+  useEffect(() => {
+    if (selectedJobId) {
+      loadJobHours();
+    }
+  }, [selectedJobId]);
+
+  async function loadJobs() {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, name, client_name, address')
+        .order('name');
+
+      if (error) throw error;
+      setJobs(data || []);
+    } catch (error: any) {
+      console.error('Error loading jobs:', error);
+    }
+  }
+
+  async function loadJobHours() {
+    if (!selectedJobId) return;
+
+    setLoadingJobHours(true);
+    try {
+      const { data: timeEntries, error } = await supabase
+        .from('time_entries')
+        .select(`
+          *,
+          components(name),
+          user_profiles(username, email)
+        `)
+        .eq('job_id', selectedJobId)
+        .eq('is_active', false)
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+
+      // Group by user
+      const userMap = new Map<string, any>();
+      
+      (timeEntries || []).forEach(entry => {
+        const userId = entry.user_id;
+        const userName = entry.user_profiles?.username || entry.user_profiles?.email || 'Unknown User';
+        
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            userId,
+            userName,
+            totalHours: 0,
+            entries: [],
+          });
+        }
+        
+        const userData = userMap.get(userId)!;
+        userData.totalHours += entry.total_hours || 0;
+        userData.entries.push({
+          date: format(new Date(entry.start_time), 'MMM d, yyyy'),
+          component: entry.components?.name || 'Clock In/Out',
+          startTime: format(new Date(entry.start_time), 'h:mm a'),
+          endTime: entry.end_time ? format(new Date(entry.end_time), 'h:mm a') : '-',
+          hours: (entry.total_hours || 0).toFixed(2),
+          crewCount: entry.crew_count || 1,
+          notes: entry.notes || '',
+          isManual: entry.is_manual,
+        });
+      });
+
+      const users = Array.from(userMap.values()).sort((a, b) => 
+        a.userName.localeCompare(b.userName)
+      );
+
+      setJobHoursData(users);
+    } catch (error: any) {
+      console.error('Error loading job hours:', error);
+      toast.error('Failed to load job hours');
+    } finally {
+      setLoadingJobHours(false);
+    }
+  }
+
+  async function printJobHours() {
+    if (!selectedJobId || jobHoursData.length === 0) {
+      toast.error('No job hours to print');
+      return;
+    }
+
+    setExportingJobHours(true);
+
+    try {
+      const job = jobs.find(j => j.id === selectedJobId);
+      if (!job) {
+        toast.error('Job not found');
+        return;
+      }
+
+      const totalHours = jobHoursData.reduce((sum, user) => sum + user.totalHours, 0);
+
+      const pdfData = {
+        title: 'Job Hours Report',
+        jobName: job.name,
+        clientName: job.client_name,
+        address: job.address,
+        totalHours: totalHours.toFixed(2),
+        users: jobHoursData,
+      };
+
+      const { data, error } = await supabase.functions.invoke('generate-pdf', {
+        body: {
+          type: 'job-hours',
+          data: pdfData,
+        },
+      });
+
+      if (error) {
+        if (error instanceof FunctionsHttpError) {
+          const errorText = await error.context.text();
+          throw new Error(errorText || error.message);
+        }
+        throw error;
+      }
+
+      // Open HTML in new window with print dialog
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(data);
+        printWindow.document.close();
+      } else {
+        toast.error('Please allow popups to print');
+      }
+
+      toast.success('Print dialog opened');
+    } catch (error: any) {
+      console.error('Print error:', error);
+      toast.error(error.message || 'Failed to generate print preview');
+    } finally {
+      setExportingJobHours(false);
+    }
+  }
 
   function generatePeriodOptions() {
     const periods: { value: string; label: string }[] = [];
@@ -675,8 +825,8 @@ export function PayrollDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
         {/* Tab Navigation */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'time-entries' | 'time-off')} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'time-entries' | 'time-off' | 'job-hours')} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3">
             <TabsTrigger value="time-entries" className="flex items-center gap-2">
               <Clock className="w-4 h-4" />
               Time Entries
@@ -684,6 +834,10 @@ export function PayrollDashboard() {
             <TabsTrigger value="time-off" className="flex items-center gap-2">
               <CalendarDays className="w-4 h-4" />
               Time Off Calendar
+            </TabsTrigger>
+            <TabsTrigger value="job-hours" className="flex items-center gap-2">
+              <Briefcase className="w-4 h-4" />
+              Job Hours
             </TabsTrigger>
           </TabsList>
 
@@ -998,6 +1152,170 @@ export function PayrollDashboard() {
             <div className="max-w-4xl mx-auto">
               <UnavailableCalendar userId={profile?.id || ''} />
             </div>
+          </TabsContent>
+
+          <TabsContent value="job-hours" className="space-y-6 mt-6">
+            {/* Job Selection */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Briefcase className="w-5 h-5 text-primary" />
+                  Job Hours Report
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <Label htmlFor="job-select">Select Job</Label>
+                    <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                      <SelectTrigger id="job-select">
+                        <SelectValue placeholder="Choose a job..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {jobs.map(job => (
+                          <SelectItem key={job.id} value={job.id}>
+                            {job.name} - {job.client_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={printJobHours}
+                    disabled={!selectedJobId || exportingJobHours || jobHoursData.length === 0}
+                    className="gradient-primary"
+                  >
+                    {exportingJobHours ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Preparing...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" />
+                        Print Job Hours
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Job Hours Display */}
+            {selectedJobId && (
+              <>
+                {loadingJobHours ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading job hours...</p>
+                    </CardContent>
+                  </Card>
+                ) : jobHoursData.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        No time entries found for this job
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Total Employees</p>
+                              <p className="text-3xl font-bold">{jobHoursData.length}</p>
+                            </div>
+                            <Users className="w-10 h-10 text-green-600" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Total Hours</p>
+                              <p className="text-3xl font-bold">
+                                {jobHoursData.reduce((sum, user) => sum + user.totalHours, 0).toFixed(2)}
+                              </p>
+                            </div>
+                            <Clock className="w-10 h-10 text-blue-600" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Total Entries</p>
+                              <p className="text-3xl font-bold">
+                                {jobHoursData.reduce((sum, user) => sum + user.entries.length, 0)}
+                              </p>
+                            </div>
+                            <Calendar className="w-10 h-10 text-purple-600" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Employee Hours List */}
+                    <div className="space-y-4">
+                      {jobHoursData.map(user => (
+                        <Card key={user.userId}>
+                          <CardHeader>
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-xl font-bold">{user.userName}</CardTitle>
+                              <div className="text-right">
+                                <p className="text-3xl font-bold text-primary">{user.totalHours.toFixed(2)}h</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {user.entries.length} {user.entries.length === 1 ? 'entry' : 'entries'}
+                                </p>
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b bg-muted/20">
+                                    <th className="text-left p-2 font-semibold">Date</th>
+                                    <th className="text-left p-2 font-semibold">Component</th>
+                                    <th className="text-left p-2 font-semibold w-20">Start</th>
+                                    <th className="text-left p-2 font-semibold w-20">End</th>
+                                    <th className="text-right p-2 font-semibold w-20">Hours</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {user.entries.map((entry: any, idx: number) => (
+                                    <tr key={idx} className="border-b hover:bg-muted/20">
+                                      <td className="p-2">{entry.date}</td>
+                                      <td className="p-2">
+                                        {entry.component}
+                                        {entry.isManual && (
+                                          <Badge variant="outline" className="ml-2 text-xs">Manual</Badge>
+                                        )}
+                                      </td>
+                                      <td className="p-2 font-mono text-xs">{entry.startTime}</td>
+                                      <td className="p-2 font-mono text-xs">{entry.endTime}</td>
+                                      <td className="p-2 text-right font-bold text-primary">{entry.hours}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </main>
