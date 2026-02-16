@@ -190,35 +190,54 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
         for (const [category, categoryRows] of categories) {
           for (const row of categoryRows) {
-            const item = {
-              sheet_id: newSheet.id,
-              category,
-              usage: String(row['Usage'] || row['usage'] || '').trim() || null,
-              sku: String(row['Sku'] || row['sku'] || row['SKU'] || '').trim() || null,
-              material_name: String(row['Material'] || row['material'] || '').trim(),
-              quantity: parseNumericValue(row['Qty'] || row['qty'] || row['Quantity']) || 0,
-              length: String(row['Length'] || row['length'] || '').trim() || null,
-              color: String(row['Color'] || row['color'] || '').trim() || null,
-              cost_per_unit: parseNumericValue(row['Cost per unit'] || row['cost_per_unit']),
-              markup_percent: parsePercentValue(row['CF.Mark Up'] || row['CF. Mark Up'] || row['Markup']),
-              price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
-              extended_cost: parseNumericValue(row['Extended cost'] || row['extended_cost']),
-              extended_price: parseNumericValue(row['Extended price'] || row['extended_price']),
-              taxable: true,
-              notes: null,
-              order_index: itemIndex++,
-            };
+            try {
+              // Ensure category is a valid string
+              const cleanCategory = String(category || 'Uncategorized').trim();
+              
+              const item = {
+                sheet_id: newSheet.id,
+                category: cleanCategory,
+                usage: String(row['Usage'] || row['usage'] || '').trim() || null,
+                sku: String(row['Sku'] || row['sku'] || row['SKU'] || '').trim() || null,
+                material_name: String(row['Material'] || row['material'] || '').trim(),
+                quantity: parseNumericValue(row['Qty'] || row['qty'] || row['Quantity']) || 0,
+                length: String(row['Length'] || row['length'] || '').trim() || null,
+                color: String(row['Color'] || row['color'] || '').trim() || null,
+                cost_per_unit: parseNumericValue(row['Cost per unit'] || row['cost_per_unit']),
+                markup_percent: parsePercentValue(row['CF.Mark Up'] || row['CF. Mark Up'] || row['Markup']),
+                price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
+                extended_cost: parseNumericValue(row['Extended cost'] || row['extended_cost']),
+                extended_price: parseNumericValue(row['Extended price'] || row['extended_price']),
+                taxable: true,
+                notes: null,
+                order_index: itemIndex++,
+              };
 
-            const { error: itemError } = await supabase
-              .from('material_items')
-              .insert(item);
+              const { error: itemError } = await supabase
+                .from('material_items')
+                .insert(item);
 
-            if (itemError) {
-              console.error('Error inserting item:', itemError, item);
-              throw itemError;
+              if (itemError) {
+                console.error('Error inserting item:', {
+                  error: itemError,
+                  item,
+                  sheet: sheet.name,
+                  category: cleanCategory,
+                  row: row.originalIndex,
+                });
+                throw new Error(
+                  `Failed to insert item in sheet "${sheet.name}", category "${cleanCategory}": ${itemError.message}`
+                );
+              }
+
+              totalItems++;
+            } catch (itemError: any) {
+              console.error('Error processing item:', itemError);
+              // Continue to next item instead of failing entire upload
+              toast.error(`Skipped item in "${sheet.name}" - ${itemError.message}`, {
+                duration: 5000,
+              });
             }
-
-            totalItems++;
           }
         }
       }
