@@ -11,38 +11,18 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Upload,
   FileSpreadsheet,
   Lock,
   LockOpen,
   Eye,
-  Edit,
   Trash2,
-  Plus,
-  AlertCircle,
   CheckCircle,
-  ShoppingCart,
-  Clock,
-  DollarSign,
-  Search,
-  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { parseExcelWorkbook, validateMaterialWorkbook, normalizeColumnName, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
-import { CrewMaterialProcessing } from './CrewMaterialProcessing';
-import { JobZohoOrders } from './JobZohoOrders';
+import { parseExcelWorkbook, validateMaterialWorkbook, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
 interface MaterialWorkbook {
@@ -53,48 +33,6 @@ interface MaterialWorkbook {
   locked_at: string | null;
   locked_by: string | null;
   created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MaterialSheet {
-  id: string;
-  workbook_id: string;
-  sheet_name: string;
-  order_index: number;
-  created_at: string;
-}
-
-interface MaterialItem {
-  id: string;
-  sheet_id: string;
-  category: string;
-  usage: string | null;
-  sku: string | null;
-  material_name: string;
-  quantity: number;
-  length: string | null;
-  color: string | null;
-  cost_per_unit: number | null;
-  markup_percent: number | null;
-  price_per_unit: number | null;
-  extended_cost: number | null;
-  extended_price: number | null;
-  taxable: boolean;
-  notes: string | null;
-  order_index: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface SheetLabor {
-  id: string;
-  sheet_id: string;
-  description: string;
-  estimated_hours: number;
-  hourly_rate: number;
-  total_labor_cost: number;
-  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -110,59 +48,8 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [uploading, setUploading] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [viewingWorkbook, setViewingWorkbook] = useState<MaterialWorkbook | null>(null);
-  const [sheets, setSheets] = useState<MaterialSheet[]>([]);
-  const [items, setItems] = useState<MaterialItem[]>([]);
-  const [sheetLabor, setSheetLabor] = useState<Record<string, SheetLabor | null>>({});
-  const [showLaborDialog, setShowLaborDialog] = useState(false);
-  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
-  const [laborForm, setLaborForm] = useState({
-    description: 'Labor & Installation',
-    estimated_hours: 0,
-    hourly_rate: 60,
-    notes: '',
-  });
-
-  // Materials catalog search state
-  const [showMaterialSearchDialog, setShowMaterialSearchDialog] = useState(false);
-  const [catalogMaterials, setCatalogMaterials] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchCategory, setSearchCategory] = useState<string>('all');
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loadingCatalog, setLoadingCatalog] = useState(false);
-  const [selectedSheet, setSelectedSheet] = useState<MaterialSheet | null>(null);
-  const [addingMaterials, setAddingMaterials] = useState<Set<string>>(new Set());
-
-  // Sheet management state
-  const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
-  const [newSheetName, setNewSheetName] = useState('');
-  const [addingSheet, setAddingSheet] = useState(false);
-
-  // Manual material entry state
-  const [showManualMaterialDialog, setShowManualMaterialDialog] = useState(false);
-  const [manualMaterialForm, setManualMaterialForm] = useState({
-    category: '',
-    usage: '',
-    sku: '',
-    material_name: '',
-    quantity: 1,
-    length: '',
-    color: '',
-    cost_per_unit: 0,
-    markup_percent: 0,
-    price_per_unit: 0,
-    notes: '',
-  });
-  const [savingManualMaterial, setSavingManualMaterial] = useState(false);
-  const [showDatabaseSearchInDialog, setShowDatabaseSearchInDialog] = useState(false);
-  const [dialogSearchQuery, setDialogSearchQuery] = useState('');
-  const [dialogSearchCategory, setDialogSearchCategory] = useState<string>('all');
-
-  // Quote creation state
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [job, setJob] = useState<any>(null);
-
-  // Active tab state - removed, no longer needed
 
   useEffect(() => {
     loadWorkbooks();
@@ -228,7 +115,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       setUploading(true);
       toast.info('Parsing Excel file...');
 
-      // Parse the CSV file
+      // Parse the Excel file
       const workbook = await parseExcelWorkbook(selectedFile);
 
       // Validate structure
@@ -317,7 +204,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               price_per_unit: parseNumericValue(row['Price per unit'] || row['price_per_unit']),
               extended_cost: parseNumericValue(row['Extended cost'] || row['extended_cost']),
               extended_price: parseNumericValue(row['Extended price'] || row['extended_price']),
-              taxable: true, // All materials are taxable by default (only labor is not taxed)
+              taxable: true,
               notes: null,
               order_index: itemIndex++,
             };
@@ -400,7 +287,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       return;
     }
 
-    // Check if quote already exists
     if (job.zoho_quote_id) {
       const confirmOverwrite = confirm(
         `A quote already exists (${job.zoho_quote_number}). Create a new quote? This will replace the existing quote reference.`
@@ -419,7 +305,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     try {
       console.log('📋 Creating Zoho quote for job:', job.name);
 
-      // Get all sheets in the workbook
       const { data: sheetsData, error: sheetsError } = await supabase
         .from('material_sheets')
         .select('id')
@@ -428,7 +313,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       if (sheetsError) throw sheetsError;
       const sheetIds = sheetsData?.map(s => s.id) || [];
 
-      // Get all materials with SKUs from this workbook
       const { data: materialsWithSkus, error: materialsError } = await supabase
         .from('material_items')
         .select('*')
@@ -445,7 +329,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
       console.log('📦 Found', materialsWithSkus.length, 'materials with SKUs');
 
-      // Call edge function to create quote
       const { data, error } = await supabase.functions.invoke('zoho-sync', {
         body: {
           action: 'create_quote',
@@ -474,7 +357,6 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
       console.log('✅ Quote created:', data);
 
-      // Reload job to get updated quote information
       await loadJob();
 
       toast.success(
@@ -490,55 +372,11 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   }
 
   async function viewWorkbook(workbook: MaterialWorkbook) {
-    try {
-      setViewingWorkbook(workbook);
-
-      // Load sheets
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('*')
-        .eq('workbook_id', workbook.id)
-        .order('order_index');
-
-      if (sheetsError) throw sheetsError;
-      setSheets(sheetsData || []);
-
-      // Load labor for all sheets
-      if (sheetsData && sheetsData.length > 0) {
-        const sheetIds = sheetsData.map(s => s.id);
-        const { data: laborData, error: laborError } = await supabase
-          .from('material_sheet_labor')
-          .select('*')
-          .in('sheet_id', sheetIds);
-
-        if (laborError) throw laborError;
-
-        // Create map of sheet_id to labor data
-        const laborMap: Record<string, SheetLabor | null> = {};
-        sheetsData.forEach(sheet => {
-          const labor = laborData?.find(l => l.sheet_id === sheet.id);
-          laborMap[sheet.id] = labor || null;
-        });
-        setSheetLabor(laborMap);
-
-        // Load items for first sheet
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('material_items')
-          .select('*')
-          .eq('sheet_id', sheetsData[0].id)
-          .order('order_index');
-
-        if (itemsError) throw itemsError;
-        setItems(itemsData || []);
-      }
-    } catch (error: any) {
-      console.error('Error viewing workbook:', error);
-      toast.error('Failed to load workbook details');
-    }
+    toast.info('Opening workbook in new view...');
+    // Navigate to detailed workbook view
+    window.location.href = `/office/workbooks/${workbook.id}`;
   }
 
-  // Continue with all other functions...
-  // (The rest of the file remains the same, just truncating here for space)
   const workingVersion = workbooks.find(w => w.status === 'working');
   const lockedVersions = workbooks.filter(w => w.status === 'locked');
 
@@ -567,94 +405,222 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
         </Button>
       </div>
 
-      {/* Main Content - No Tabs */}
+      {/* Main Content */}
       <div className="space-y-4">
-
         {/* Working Version */}
         {workingVersion && (
           <Card className="border-2 border-green-500">
-          <CardHeader className="bg-green-50">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <LockOpen className="w-5 h-5 text-green-600" />
-                Working Version (v{workingVersion.version_number})
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => viewWorkbook(workingVersion)}
-                >
-                  <Eye className="w-4 h-4 mr-1" />
-                  View
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => createZohoQuote(workingVersion.id)}
-                  disabled={creatingQuote}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                >
-                  {creatingQuote ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <FileSpreadsheet className="w-4 h-4 mr-1" />
-                      Create Quote
-                    </>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => lockWorkbook(workingVersion.id)}
-                  className="bg-amber-600 hover:bg-amber-700"
-                >
-                  <Lock className="w-4 h-4 mr-1" />
-                  Lock Version
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => deleteWorkbook(workingVersion.id)}
-                  className="text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+            <CardHeader className="bg-green-50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <LockOpen className="w-5 h-5 text-green-600" />
+                  Working Version (v{workingVersion.version_number})
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => viewWorkbook(workingVersion)}
+                  >
+                    <Eye className="w-4 h-4 mr-1" />
+                    View
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => createZohoQuote(workingVersion.id)}
+                    disabled={creatingQuote}
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                  >
+                    {creatingQuote ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="w-4 h-4 mr-1" />
+                        Create Quote
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => lockWorkbook(workingVersion.id)}
+                    className="bg-amber-600 hover:bg-amber-700"
+                  >
+                    <Lock className="w-4 h-4 mr-1" />
+                    Lock Version
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => deleteWorkbook(workingVersion.id)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-4 text-sm flex-wrap">
+                <div>
+                  <span className="text-muted-foreground">Created:</span>{' '}
+                  {new Date(workingVersion.created_at).toLocaleDateString()}
+                </div>
+                <Badge variant="outline" className="bg-green-100 text-green-800">
+                  Quoting Mode - Editable
+                </Badge>
+                {job?.zoho_quote_number && (
+                  <a
+                    href={`https://books.zoho.com/app/60007115224#/quotes/${job.zoho_quote_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Quote: {job.zoho_quote_number}
+                  </a>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Locked Versions */}
+        {lockedVersions.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Previous Versions</h3>
+            {lockedVersions.map((version) => (
+              <Card key={version.id}>
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Lock className="w-4 h-4 text-muted-foreground" />
+                      Version {version.version_number} (Locked)
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => viewWorkbook(version)}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div>
+                      Locked: {version.locked_at ? new Date(version.locked_at).toLocaleDateString() : 'Unknown'}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* No Workbooks State */}
+        {workbooks.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <FileSpreadsheet className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-lg font-medium text-muted-foreground mb-2">No Material Workbooks Yet</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                Upload an Excel workbook to get started with material management
+              </p>
+              <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Your First Workbook
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Upload Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-5 h-5" />
+              Upload Material Workbook
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">Excel Workbook Requirements:</h4>
+              <ul className="space-y-1 text-sm text-blue-800">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>File must be in Excel format (.xlsx or .xls)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>Each sheet will become a separate material category</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>Required columns: Category, Material, Qty, Cost per unit, Extended cost</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>Optional columns: Usage, SKU, Length, Color, Markup, Price per unit, Extended price</span>
+                </li>
+              </ul>
             </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-4 text-sm flex-wrap">
-              <div>
-                <span className="text-muted-foreground">Created:</span>{' '}
-                {new Date(workingVersion.created_at).toLocaleDateString()}
-              </div>
-              <Badge variant="outline" className="bg-green-100 text-green-800">
-                Quoting Mode - Editable
-              </Badge>
-              {job?.zoho_quote_number && (
-                <a
-                  href={`https://books.zoho.com/app/60007115224#/quotes/${job.zoho_quote_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Quote: {job.zoho_quote_number}
-                </a>
+
+            <div className="space-y-2">
+              <Label>Select Excel File</Label>
+              <Input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileSelect}
+                disabled={uploading}
+              />
+              {selectedFile && (
+                <p className="text-sm text-muted-foreground">
+                  Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                </p>
               )}
             </div>
-          </CardContent>
-        </Card>
-      )}
 
-        {/* Rest of component... */}
-        <div className="text-center text-muted-foreground py-8">
-          <p className="text-sm">Material workbook interface continues here...</p>
-        </div>
-      </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowUploadDialog(false);
+                  setSelectedFile(null);
+                }}
+                disabled={uploading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={uploadWorkbook}
+                disabled={!selectedFile || uploading}
+                className="gradient-primary"
+              >
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Workbook
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
