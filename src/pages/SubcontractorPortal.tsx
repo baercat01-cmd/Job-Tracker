@@ -41,7 +41,7 @@ interface JobAccess {
   notes: string | null;
 }
 
-export default function SubcontractorPortal() {
+export function SubcontractorPortal() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<PortalUser | null>(null);

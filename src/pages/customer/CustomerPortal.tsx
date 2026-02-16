@@ -48,7 +48,7 @@ interface JobSummary {
   scheduleEventCount: number;
 }
 
-export default function CustomerPortal() {
+export function CustomerPortal() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
