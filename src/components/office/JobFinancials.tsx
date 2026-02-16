@@ -1032,22 +1032,46 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function loadQuoteData() {
     try {
-      // Find quote associated with this job
-      const { data: quoteData, error: quoteError } = await supabase
+      let quoteData = null;
+      
+      const { data: directMatch, error: directError } = await supabase
         .from('quotes')
         .select('*')
         .eq('job_id', job.id)
         .maybeSingle();
 
-      if (quoteError && quoteError.code !== 'PGRST116') {
-        console.error('Error loading quote:', quoteError);
-        return;
+      if (directError && directError.code !== 'PGRST116') {
+        console.error('Error loading quote by job_id:', directError);
+      }
+
+      if (directMatch) {
+        quoteData = directMatch;
+      } else {
+        const { data: fallbackMatches, error: fallbackError } = await supabase
+          .from('quotes')
+          .select('*')
+          .eq('customer_name', job.client_name)
+          .eq('customer_address', job.address)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!fallbackError && fallbackMatches && fallbackMatches.length > 0) {
+          quoteData = fallbackMatches[0];
+          
+          const { error: updateError } = await supabase
+            .from('quotes')
+            .update({ job_id: job.id })
+            .eq('id', quoteData.id);
+            
+          if (updateError) {
+            console.error('Error linking quote to job:', updateError);
+          }
+        }
       }
 
       if (quoteData) {
         setQuote(quoteData);
         
-        // Load proposal versions for this quote
         const { data: versionsData, error: versionsError } = await supabase
           .from('proposal_versions')
           .select('*')
@@ -2847,7 +2871,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   {proposalVersions.length === 0 ? (
                     <Button
                       size="sm"
-                      onClick={initializeVersions}
+                      onClick={initializeVersioning}
                       disabled={initializingVersions}
                       className="bg-blue-600 hover:bg-blue-700"
                     >
