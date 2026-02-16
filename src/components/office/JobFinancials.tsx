@@ -2260,8 +2260,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setExporting(true);
     
     try {
-      // Get proposal number from job or generate one
-      const proposalNumber = job.id.split('-')[0].toUpperCase();
+      // Get proposal number from quote if available, otherwise use job ID
+      const proposalNumber = quote?.proposal_number || job.id.split('-')[0].toUpperCase();
       
       // Format proposal sections
       const sections = allItems.map((item, index) => {

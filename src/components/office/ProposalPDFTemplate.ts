@@ -198,7 +198,7 @@ export function generateProposalHTML(data: {
       <body>
         <div class="header-row">
           <div class="logo-section">
-            <img src="https://cdn-ai.onspace.ai/onspace/files/QwJSFWnThkgN7aV5mZzKdg/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" class="company-logo" />
+            <img src="https://cdn-ai.onspace.ai/onspace/files/4ZzeFr2RKnB7oAxZwNpsZR/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" class="company-logo" />
             <div class="company-address">27608-A CR 36</div>
             <div class="company-address">Goshen, IN 46526</div>
             <div class="company-contact">Phone: 574-862-4448</div>
