@@ -79,6 +79,7 @@ interface CustomRowLineItem {
   order_index: number;
   created_at: string;
   updated_at: string;
+  taxable: boolean;
 }
 
 interface LaborPricing {
@@ -645,6 +646,9 @@ function SortableRow({ item, ...props }: any) {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
+                            <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
+                              {lineItem.taxable ? 'Material' : 'Labor'}
+                            </Badge>
                             <p className="text-xs font-bold text-slate-900">
                               ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </p>
@@ -913,6 +917,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     quantity: '1',
     unit_cost: '0',
     notes: '',
+    taxable: true,
   });
   
   // Individual row markups state
@@ -1997,6 +2002,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         quantity: lineItem.quantity.toString(),
         unit_cost: lineItem.unit_cost.toString(),
         notes: lineItem.notes || '',
+        taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
       });
     } else {
       setEditingLineItem(null);
@@ -2005,6 +2011,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         quantity: '1',
         unit_cost: '0',
         notes: '',
+        taxable: true,
       });
     }
     
@@ -2028,6 +2035,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       unit_cost: cost,
       total_cost: totalCost,
       notes: lineItemForm.notes || null,
+      taxable: lineItemForm.taxable,
       order_index: editingLineItem 
         ? editingLineItem.order_index 
         : (customRowLineItems[lineItemParentRowId]?.length || 0),
@@ -3262,6 +3270,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
                 rows={2}
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="lineitem-taxable"
+                checked={lineItemForm.taxable}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <Label htmlFor="lineitem-taxable" className="cursor-pointer">
+                Taxable (Material)
+              </Label>
+              <p className="text-xs text-muted-foreground ml-2">
+                {lineItemForm.taxable ? 'Will be categorized as Material' : 'Will be categorized as Labor'}
+              </p>
             </div>
 
             <div className="flex justify-end gap-2">
