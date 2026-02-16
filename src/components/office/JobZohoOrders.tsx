@@ -14,6 +14,7 @@ interface MaterialWithOrder {
   category: string;
   cost_per_unit: number | null;
   price_per_unit: number | null;
+  color: string | null;
   zoho_sales_order_id: string | null;
   zoho_sales_order_number: string | null;
   zoho_purchase_order_id: string | null;
@@ -103,6 +104,7 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
           category,
           cost_per_unit,
           price_per_unit,
+          color,
           zoho_sales_order_id,
           zoho_sales_order_number,
           zoho_purchase_order_id,
@@ -253,6 +255,7 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
             <tr>
               <th className="text-left px-4 py-3 font-semibold text-sm">#</th>
               <th className="text-left px-4 py-3 font-semibold text-sm">Item & Description</th>
+              <th className="text-left px-4 py-3 font-semibold text-sm">Color</th>
               <th className="text-right px-4 py-3 font-semibold text-sm">Qty</th>
               <th className="text-right px-4 py-3 font-semibold text-sm">Cost</th>
               <th className="text-right px-4 py-3 font-semibold text-sm">Markup %</th>
@@ -273,6 +276,13 @@ export function JobZohoOrders({ jobId }: JobZohoOrdersProps) {
                   <td className="px-4 py-3">
                     <div className="font-medium text-sm text-slate-900">{material.material_name}</div>
                     <div className="text-xs text-slate-600 mt-0.5">{material.sheets.sheet_name}</div>
+                  </td>
+                  <td className="px-4 py-3 text-left text-sm">
+                    {material.color ? (
+                      <span className="text-slate-700">{material.color}</span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-sm">
                     {material.quantity}

@@ -152,7 +152,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       
       console.log('🔍 Loading packages with materials that need shop processing...');
       
-      // Get ALL packages that contain materials with pull_from_shop or ready_for_job status
+      // Get ALL packages that contain materials with pull_from_shop, ready_for_job, or at_job status
       const { data, error } = await supabase
         .from('material_bundles')
         .select(`
@@ -205,11 +205,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         })),
       }));
       
-      // Filter to only include packages that have materials with pull_from_shop or ready_for_job status
+      // Filter to only include packages that have materials with pull_from_shop, ready_for_job, or at_job status
       const packagesWithShopMaterials = transformedPackages.filter(pkg => 
         pkg.bundle_items.some(item => 
           item.material_items.status === 'pull_from_shop' || 
-          item.material_items.status === 'ready_for_job'
+          item.material_items.status === 'ready_for_job' ||
+          item.material_items.status === 'at_job'
         )
       );
       
@@ -308,6 +309,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         return 'bg-purple-100 text-purple-800 border-purple-300';
       case 'ready_for_job':
         return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      case 'at_job':
+        return 'bg-teal-100 text-teal-800 border-teal-300';
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
     }
@@ -317,6 +320,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     switch (status) {
       case 'pull_from_shop': return 'Pull from Shop';
       case 'ready_for_job': return 'Ready for Job';
+      case 'at_job': return 'At Job';
       default: return status;
     }
   }
@@ -342,8 +346,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     )
   );
   const readyForJobPackages = filteredPackages.filter(pkg => 
-    pkg.bundle_items.every(item => 
-      item.material_items.status === 'ready_for_job'
+    pkg.bundle_items.some(item => 
+      item.material_items.status === 'ready_for_job' ||
+      item.material_items.status === 'at_job'
+    ) && !pkg.bundle_items.some(item => 
+      item.material_items.status === 'pull_from_shop'
     )
   );
 
@@ -569,6 +576,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             const readyItems = pkg.bundle_items.filter(
               item => item.material_items.status === 'ready_for_job'
             );
+            const atJobItems = pkg.bundle_items.filter(
+              item => item.material_items.status === 'at_job'
+            );
             const pullItems = pkg.bundle_items.filter(
               item => item.material_items.status === 'pull_from_shop'
             );
@@ -604,9 +614,16 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Badge variant="outline" className="font-semibold bg-emerald-50 text-emerald-700">
-                            {readyItems.length} ready
-                          </Badge>
+                          {atJobItems.length > 0 && (
+                            <Badge variant="outline" className="font-semibold bg-teal-50 text-teal-700">
+                              {atJobItems.length} at job
+                            </Badge>
+                          )}
+                          {readyItems.length > 0 && (
+                            <Badge variant="outline" className="font-semibold bg-emerald-50 text-emerald-700">
+                              {readyItems.length} ready
+                            </Badge>
+                          )}
                           {pullItems.length > 0 && (
                             <Badge variant="outline" className="font-semibold bg-purple-50 text-purple-700">
                               {pullItems.length} to pull
@@ -618,6 +635,55 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <CardContent className="p-0">
+                      {/* At Job Materials */}
+                      {atJobItems.length > 0 && (
+                        <div>
+                          <div className="bg-teal-50 px-4 py-2 border-b">
+                            <h4 className="font-semibold text-teal-900 text-sm">
+                              ✓ At Job ({atJobItems.length})
+                            </h4>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full">
+                              <thead className="bg-muted/50 border-b">
+                                <tr>
+                                  <th className="text-left p-3 font-semibold">Sheet</th>
+                                  <th className="text-left p-3 font-semibold">Category</th>
+                                  <th className="text-left p-3 font-semibold">Material</th>
+                                  <th className="text-left p-3 font-semibold">Usage</th>
+                                  <th className="text-center p-3 font-semibold">Qty</th>
+                                  <th className="text-center p-3 font-semibold">Length</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {atJobItems.map((item) => (
+                                  <tr key={item.id} className="border-b bg-teal-50/30">
+                                    <td className="p-3">
+                                      <Badge variant="outline" className="bg-blue-50">
+                                        {item.material_items.sheets.sheet_name}
+                                      </Badge>
+                                    </td>
+                                    <td className="p-3">
+                                      <Badge variant="outline">{item.material_items.category}</Badge>
+                                    </td>
+                                    <td className="p-3 font-medium">{item.material_items.material_name}</td>
+                                    <td className="p-3 text-sm text-muted-foreground">
+                                      {item.material_items.usage || '-'}
+                                    </td>
+                                    <td className="p-3 text-center font-semibold">
+                                      {item.material_items.quantity}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {item.material_items.length || '-'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Ready Materials */}
                       {readyItems.length > 0 && (
                         <div>
@@ -758,7 +824,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                 : 'No packages to process'}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Packages with materials that have "Pull from Shop" or "Ready for Job" status will appear here
+              Packages with materials that have "Pull from Shop", "Ready for Job", or "At Job" status will appear here
             </p>
           </CardContent>
         </Card>
