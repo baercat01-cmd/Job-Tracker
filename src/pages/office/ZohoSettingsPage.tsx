@@ -3,7 +3,7 @@ import { ZohoDataManagement } from '@/components/office/ZohoDataManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, Database } from 'lucide-react';
 
-export function ZohoSettingsPage() {
+export default function ZohoSettingsPage() {
   return (
     <div className="container mx-auto py-6 px-4">
       <div className="mb-6">
