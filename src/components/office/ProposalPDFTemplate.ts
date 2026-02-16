@@ -50,24 +50,10 @@ export function generateProposalHTML(data: {
           
           .logo-section { flex: 1; }
           
-          .logo-oval { 
-            border: 3px solid #1a5f3a; 
-            border-radius: 50%; 
-            width: 200px; 
-            height: 90px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            margin-bottom: 8px;
-          }
-          
-          .logo-text { 
-            font-size: 24pt; 
-            font-weight: bold; 
-            color: #1a5f3a; 
-            line-height: 1.1; 
-            text-align: center; 
+          .company-logo { 
+            width: 192px; 
+            height: auto; 
+            margin-bottom: 10px; 
           }
           
           .company-address { font-size: 11pt; margin-bottom: 3px; }
@@ -166,10 +152,7 @@ export function generateProposalHTML(data: {
       <body>
         <div class="header-row">
           <div class="logo-section">
-            <div class="logo-oval">
-              <div class="logo-text">MARTIN</div>
-              <div class="logo-text">BUILDER</div>
-            </div>
+            <img src="https://cdn-ai.onspace.ai/onspace/files/QwJSFWnThkgN7aV5mZzKdg/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" class="company-logo" />
             <div class="company-address">27608-A CR 36</div>
             <div class="company-address">Goshen, IN 46526</div>
             <div class="company-contact">Phone: 574-862-4448</div>
