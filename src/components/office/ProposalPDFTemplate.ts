@@ -116,7 +116,6 @@ export function generateProposalHTML(data: {
             border: 2px solid #000; 
             padding: 0;
             margin: 15px 0; 
-            border-radius: 4px;
           }
           
           .section-title { 
@@ -266,15 +265,15 @@ export function generateProposalHTML(data: {
           We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
         </p>
         
-        <div class="intro-box" style="margin-top: 20px;">
-          <div class="box-header">Building Information & Work to be Completed</div>
-          <div style="padding: 15px 10px;">
-            <strong>Project:</strong> ${job.name}<br/>
-            <strong>Location:</strong> ${job.address}<br/>
-            <strong>Customer:</strong> ${job.client_name}
-          </div>
-          
-          <div style="border-top: 1px solid #ddd; margin-top: 15px; padding: 15px 10px 10px 10px;">
+        <div style="margin: 15px 0; padding: 10px 0;">
+          <strong>Project:</strong> ${job.name}<br/>
+          <strong>Location:</strong> ${job.address}<br/>
+          <strong>Customer:</strong> ${job.client_name}
+        </div>
+        
+        <div class="intro-box" style="margin-top: 10px;">
+          <div class="box-header">Work to be Completed</div>
+          <div style="padding: 15px 10px 10px 10px;">
             ${sections.map((section: any) => {
               let content = '';
               
