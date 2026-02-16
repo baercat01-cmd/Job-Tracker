@@ -61,11 +61,13 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
   const [jobBudgets, setJobBudgets] = useState<Record<string, any>>({});
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [budgetJobId, setBudgetJobId] = useState<string | null>(null);
+  const [jobQuotes, setJobQuotes] = useState<Record<string, any>>({});
 
   useEffect(() => {
     loadJobs();
     loadCrewOrderCounts();
     loadJobBudgets();
+    loadJobQuotes();
 
     // Subscribe to material changes to update crew order counts in real-time
     const materialsChannel = supabase
@@ -320,6 +322,26 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       setJobBudgets(budgetsMap);
     } catch (error: any) {
       console.error('Error loading job budgets:', error);
+    }
+  }
+
+  async function loadJobQuotes() {
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('*')
+        .not('job_id', 'is', null);
+
+      if (error) throw error;
+
+      const quotesMap: Record<string, any> = {};
+      (data || []).forEach(quote => {
+        quotesMap[quote.job_id] = quote;
+      });
+
+      setJobQuotes(quotesMap);
+    } catch (error: any) {
+      console.error('Error loading job quotes:', error);
     }
   }
 
@@ -686,8 +708,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
                                     <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : job.description && job.description.includes('Quote #') ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : jobQuotes[job.id] ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
+                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
+                                    </span>
                                   ) : null}
                                   {job.name}
                                 </CardTitle>
@@ -957,8 +981,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
                                     <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : job.description && job.description.includes('Quote #') ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : jobQuotes[job.id] ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
+                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
+                                    </span>
                                   ) : null}
                                   {job.name}
                                 </CardTitle>
@@ -1179,8 +1205,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
                                     <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : job.description && job.description.includes('Quote #') ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : jobQuotes[job.id] ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
+                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
+                                    </span>
                                   ) : null}
                                   {job.name}
                                 </CardTitle>
@@ -1393,8 +1421,10 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 <CardTitle className="text-base leading-tight flex-1">
                                   {job.job_number ? (
                                     <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : job.description && job.description.includes('Quote #') ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">{job.description}</span>
+                                  ) : jobQuotes[job.id] ? (
+                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
+                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
+                                    </span>
                                   ) : null}
                                   {job.name}
                                 </CardTitle>
