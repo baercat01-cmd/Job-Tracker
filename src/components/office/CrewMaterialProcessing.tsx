@@ -297,7 +297,26 @@ export function CrewMaterialProcessing({ jobId }: CrewMaterialProcessingProps) {
 
       if (deleteError) throw deleteError;
 
-      toast.success('Material moved to workbook');
+      // Dismiss any notifications related to this material request
+      try {
+        // Find and delete material_request notifications for this job/material
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .delete()
+          .eq('job_id', jobId)
+          .eq('type', 'material_request');
+
+        if (notifError) {
+          console.error('Error dismissing notifications:', notifError);
+          // Don't fail the whole operation
+        } else {
+          console.log('Dismissed material request notifications');
+        }
+      } catch (notifError) {
+        console.error('Failed to dismiss notifications:', notifError);
+      }
+
+      toast.success(`Material moved to ${sheets.find(s => s.id === targetSheet)?.sheet_name || 'workbook'}`);
       setShowMoveDialog(false);
       loadCrewMaterials();
     } catch (error: any) {
