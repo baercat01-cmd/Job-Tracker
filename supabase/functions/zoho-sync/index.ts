@@ -230,21 +230,31 @@ serve(async (req) => {
         if (!orderType || orderType === 'both' || orderType === 'sales_order') {
           console.log('📋 Creating Sales Order...');
           
-          // First, find or create customer
-          const customerId = await findOrCreateCustomer(accessToken, settings.countywide_org_id, jobName);
+          // Use "Martin Builder" as the customer (not the job name)
+          const customerId = await findOrCreateCustomer(accessToken, settings.countywide_org_id, 'Martin Builder');
           console.log('✅ Customer ID:', customerId);
+          
+          // Ensure all items exist in Zoho as sellable items
+          const lineItems = [];
+          for (const item of materialItems) {
+            const itemId = await ensurePurchasableItem(
+              accessToken,
+              settings.countywide_org_id,
+              item
+            );
+            
+            lineItems.push({
+              item_id: itemId,
+              quantity: item.quantity,
+              rate: item.price_per_unit || item.cost_per_unit || 0,
+            });
+          }
           
           const salesOrderData = {
             customer_id: customerId,
-            reference_number: `Job: ${jobName}`,
+            reference_number: jobName, // Use job name as reference
             notes: notes || `Materials for ${jobName}`,
-            line_items: materialItems.map((item: any) => ({
-              item_id: item.sku || undefined,
-              name: item.material_name,
-              description: item.usage || item.category || '',
-              quantity: item.quantity,
-              rate: item.price_per_unit || item.cost_per_unit || 0,
-            })),
+            line_items: lineItems,
           };
 
           const salesOrderResponse = await fetch(
@@ -282,17 +292,27 @@ serve(async (req) => {
           const vendorId = await findOrCreateVendor(accessToken, settings.countywide_org_id, 'Material Supplier');
           console.log('✅ Vendor ID:', vendorId);
           
+          // Ensure all items exist in Zoho as purchasable items
+          const lineItems = [];
+          for (const item of materialItems) {
+            const itemId = await ensurePurchasableItem(
+              accessToken,
+              settings.countywide_org_id,
+              item
+            );
+            
+            lineItems.push({
+              item_id: itemId,
+              quantity: item.quantity,
+              rate: item.cost_per_unit || item.price_per_unit || 0,
+            });
+          }
+          
           const purchaseOrderData = {
             vendor_id: vendorId,
             reference_number: `Job: ${jobName}`,
             notes: notes || `Materials for ${jobName}`,
-            line_items: materialItems.map((item: any) => ({
-              item_id: item.sku || undefined,
-              name: item.material_name,
-              description: item.usage || item.category || '',
-              quantity: item.quantity,
-              rate: item.cost_per_unit || item.price_per_unit || 0,
-            })),
+            line_items: lineItems,
           };
 
           const purchaseOrderResponse = await fetch(
@@ -724,4 +744,114 @@ async function findOrCreateVendor(accessToken: string, orgId: string, vendorName
   const createData = await createResponse.json();
   console.log('✅ Created new vendor:', createData.contact?.contact_id);
   return createData.contact.contact_id;
+}
+
+async function ensurePurchasableItem(
+  accessToken: string,
+  orgId: string,
+  materialItem: any
+): Promise<string> {
+  const itemName = materialItem.material_name;
+  const sku = materialItem.sku || `MAT-${Date.now()}`;
+  
+  console.log('🔍 Ensuring purchasable item exists:', itemName);
+  
+  // Check if item already exists by SKU or name
+  const searchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&search_text=${encodeURIComponent(itemName)}`;
+  
+  const searchResponse = await fetch(searchUrl, {
+    headers: {
+      'Authorization': `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (searchResponse.ok) {
+    const searchData = await searchResponse.json();
+    if (searchData.items && searchData.items.length > 0) {
+      // Find exact match by name
+      const exactMatch = searchData.items.find(
+        (item: any) => item.name.toLowerCase() === itemName.toLowerCase()
+      );
+      
+      if (exactMatch) {
+        console.log('✅ Found existing item:', exactMatch.item_id);
+        
+        // Update item to ensure it's purchasable and sellable
+        await updateItemPurchasable(accessToken, orgId, exactMatch.item_id, materialItem);
+        
+        return exactMatch.item_id;
+      }
+    }
+  }
+
+  // Item doesn't exist, create new one as both purchasable and sellable
+  console.log('📝 Creating new purchasable item:', itemName);
+  
+  const itemData = {
+    name: itemName,
+    sku: sku,
+    description: materialItem.usage || materialItem.category || '',
+    rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
+    purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
+    // CRITICAL: Mark as both purchasable and sellable
+    is_taxable: materialItem.taxable !== false,
+    tax_id: '', // Empty for now, can be configured later
+    item_type: 'sales_and_purchases', // This makes it both purchasable and sellable
+  };
+  
+  const createResponse = await fetch(
+    `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(itemData),
+    }
+  );
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    console.error('❌ Failed to create item:', errorText);
+    throw new Error(`Failed to create item "${itemName}": ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  console.log('✅ Created new purchasable item:', createData.item?.item_id);
+  return createData.item.item_id;
+}
+
+async function updateItemPurchasable(
+  accessToken: string,
+  orgId: string,
+  itemId: string,
+  materialItem: any
+): Promise<void> {
+  console.log('🔄 Updating item to be purchasable:', itemId);
+  
+  const updateData = {
+    purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
+    item_type: 'sales_and_purchases', // Ensure it's both purchasable and sellable
+  };
+  
+  const updateResponse = await fetch(
+    `https://www.zohoapis.com/books/v3/items/${itemId}?organization_id=${orgId}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData),
+    }
+  );
+
+  if (!updateResponse.ok) {
+    const errorText = await updateResponse.text();
+    console.warn('⚠️ Failed to update item purchasable flag:', errorText);
+    // Don't throw - item exists, just might not be updated
+  } else {
+    console.log('✅ Item updated to be purchasable');
+  }
 }
