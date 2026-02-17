@@ -111,8 +111,9 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
           name,
           description,
           bundle_items:material_bundle_items (
+            id,
             material_item_id,
-            material_items!inner (
+            material_items (
               id,
               sheet_id,
               material_name,
@@ -129,20 +130,36 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
       if (bundlesError) throw bundlesError;
 
       console.log(`📦 Loaded ${bundlesData?.length || 0} bundles`);
+      console.log('📦 Bundle data sample:', bundlesData?.[0]);
 
       // Filter and transform bundles to only include materials with the target status
       const packagesWithStatusMaterials: MaterialBundle[] = (bundlesData || [])
         .map((bundle: any) => {
+          console.log(`🔍 Processing bundle "${bundle.name}":`, {
+            bundleItems: bundle.bundle_items?.length || 0,
+            sampleItem: bundle.bundle_items?.[0]
+          });
+
           // Filter items to only those with the target status
           const statusItems = (bundle.bundle_items || [])
-            .filter((item: any) => 
-              item.material_items && 
-              item.material_items.status === status
-            )
+            .filter((item: any) => {
+              const hasMaterial = item && item.material_items;
+              const hasTargetStatus = hasMaterial && item.material_items.status === status;
+              
+              if (!hasMaterial) {
+                console.log('⚠️ Bundle item missing material_items:', item);
+              } else if (!hasTargetStatus) {
+                console.log(`⏭️ Material "${item.material_items.material_name}" has status "${item.material_items.status}" (looking for "${status}")`);
+              }
+              
+              return hasTargetStatus;
+            })
             .map((item: any) => ({
               ...item.material_items,
               _sheet_name: sheetMap.get(item.material_items.sheet_id) || 'Unknown Sheet',
             }));
+
+          console.log(`✅ Bundle "${bundle.name}" has ${statusItems.length} materials with status "${status}"`);
 
           if (statusItems.length === 0) return null;
 
