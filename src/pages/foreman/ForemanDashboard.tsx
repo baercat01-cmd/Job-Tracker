@@ -647,6 +647,24 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <NotificationBell
+              jobId={selectedJob?.id}
+              onNotificationClick={(notification) => {
+                console.log('Crew notification clicked:', notification);
+                
+                // Navigate based on notification type
+                if (notification.type === 'document_revision') {
+                  setActiveTab('documents');
+                  setDocumentTab('documents');
+                } else if (notification.type === 'material_request' || notification.type === 'material_status') {
+                  setActiveTab('materials');
+                }
+                toast.info('Navigating to ' + notification.type);
+              }}
+              onViewAll={() => {
+                toast.info('View all notifications');
+              }}
+            />
             <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
               <LogOut className="w-4 h-4" />
             </Button>

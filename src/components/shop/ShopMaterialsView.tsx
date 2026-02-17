@@ -202,6 +202,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
       
       console.log(`📦 SHOP VIEW: Loaded ${allBundles?.length || 0} total bundles from database`);
+      console.log('📦 SHOP VIEW: Looking for materials with status: pull_from_shop OR ready_for_job');
       
       if (!allBundles || allBundles.length === 0) {
         console.log('❌ SHOP VIEW: No bundles found in database');
@@ -268,13 +269,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         }
         
         const shopMaterials = pkg.bundle_items.filter(item => 
-          item && item.material_items && item.material_items.status === 'pull_from_shop'
+          item && item.material_items && (item.material_items.status === 'pull_from_shop' || item.material_items.status === 'ready_for_job')
         );
         
         const hasShopMaterials = shopMaterials.length > 0;
         
         if (hasShopMaterials) {
-          console.log(`✅ SHOP VIEW: Package "${pkg.name}" (Job: ${pkg.jobs?.name}) has ${shopMaterials.length} materials to pull:`, 
+          console.log(`✅ SHOP VIEW: Package "${pkg.name}" (Job: ${pkg.jobs?.name}) has ${shopMaterials.length} materials to process:`,   
             shopMaterials.map(item => ({
               id: item.material_items.id,
               material: item.material_items.material_name,
@@ -309,13 +310,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     }
   }
 
-  async function updateMaterialStatus(materialId: string, bundleId: string, newStatus: 'ready_for_job' | 'at_job') {
+  async function updateMaterialStatus(materialId: string, bundleId: string, currentStatus: string, newStatus: 'ready_for_job' | 'at_job') {
     if (processingMaterials.has(materialId)) return;
     
     setProcessingMaterials(prev => new Set(prev).add(materialId));
 
     try {
-      console.log(`🔄 Updating material ${materialId} to ${newStatus}`);
+      console.log(`🔄 Updating material ${materialId} from ${currentStatus} to ${newStatus}`);
       
       // Update material status
       const { error: materialError } = await supabase
@@ -578,19 +579,41 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             </div>
                                           </div>
                                           
-                                          <Button
-                                            size="sm"
-                                            onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
-                                            disabled={processingMaterials.has(item.material_items.id)}
-                                            className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
-                                            title="Mark as Ready"
-                                          >
-                                            {processingMaterials.has(item.material_items.id) ? (
-                                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            ) : (
-                                              <CheckCircle2 className="w-5 h-5" />
+                                          <div className="flex gap-2 flex-shrink-0">
+                                            {/* Mark as Ready for Job */}
+                                            {item.material_items.status === 'pull_from_shop' && (
+                                              <Button
+                                                size="sm"
+                                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'ready_for_job')}
+                                                disabled={processingMaterials.has(item.material_items.id)}
+                                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                                title="Mark as Ready for Job"
+                                              >
+                                                {processingMaterials.has(item.material_items.id) ? (
+                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                  <CheckCircle2 className="w-5 h-5" />
+                                                )}
+                                              </Button>
                                             )}
-                                          </Button>
+                                            
+                                            {/* Mark as At Job */}
+                                            {item.material_items.status === 'ready_for_job' && (
+                                              <Button
+                                                size="sm"
+                                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'at_job')}
+                                                disabled={processingMaterials.has(item.material_items.id)}
+                                                className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"
+                                                title="Mark as At Job"
+                                              >
+                                                {processingMaterials.has(item.material_items.id) ? (
+                                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                  <Truck className="w-5 h-5" />
+                                                )}
+                                              </Button>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
                                     ))}
