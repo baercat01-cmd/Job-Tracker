@@ -27,6 +27,7 @@ interface MaterialItem {
   material_name: string;
   quantity: number;
   length: string | null;
+  color: string | null;
   usage: string | null;
   status: string;
   cost_per_unit: number | null;
@@ -155,7 +156,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       // Only get material items with 'pull_from_shop' status
       const { data: shopMaterials, error: materialsError } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit')
+        .select('id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit')
         .eq('status', 'pull_from_shop');
       
       if (materialsError) {
@@ -243,6 +244,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               material_name,
               quantity,
               length,
+              color,
               usage,
               status,
               cost_per_unit,
@@ -338,6 +340,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           material_name,
           quantity,
           length,
+          color,
           usage,
           status,
           cost_per_unit,
@@ -744,11 +747,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                         <table className="w-full">
                           <thead className="bg-muted/50 border-b">
                             <tr>
-                              <th className="text-left p-3 font-semibold">Sheet</th>
-                              <th className="text-left p-3 font-semibold">Category</th>
                               <th className="text-left p-3 font-semibold">Material</th>
-                              <th className="text-left p-3 font-semibold">Usage</th>
                               <th className="text-center p-3 font-semibold">Qty</th>
+                              <th className="text-center p-3 font-semibold">Color</th>
                               <th className="text-center p-3 font-semibold">Length</th>
                               <th className="text-center p-3 font-semibold">Action</th>
                             </tr>
@@ -756,20 +757,18 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                           <tbody>
                             {pullFromShopItems.map((item) => (
                               <tr key={item.id} className="border-b hover:bg-muted/30 transition-colors">
-                                <td className="p-3">
-                                  <Badge variant="outline" className="bg-blue-50">
-                                    {item.material_items.sheets.sheet_name}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">
-                                  <Badge variant="outline">{item.material_items.category}</Badge>
-                                </td>
                                 <td className="p-3 font-medium">{item.material_items.material_name}</td>
-                                <td className="p-3 text-sm text-muted-foreground">
-                                  {item.material_items.usage || '-'}
-                                </td>
                                 <td className="p-3 text-center font-semibold">
                                   {item.material_items.quantity}
+                                </td>
+                                <td className="p-3 text-center">
+                                  {item.material_items.color ? (
+                                    <Badge variant="outline" className="bg-blue-50">
+                                      {item.material_items.color}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
                                 </td>
                                 <td className="p-3 text-center">
                                   {item.material_items.length || '-'}
