@@ -158,77 +158,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading packages with materials that need to be pulled from shop...');
+      console.log('🔍 SHOP VIEW: Loading packages with materials that need to be pulled from shop...');
       
-      // Only get material items with 'pull_from_shop' status
-      const { data: shopMaterials, error: materialsError } = await supabase
-        .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, color, usage, status, cost_per_unit')
-        .eq('status', 'pull_from_shop');
-      
-      if (materialsError) {
-        console.error('❌ Error loading shop materials:', materialsError);
-        throw materialsError;
-      }
-      
-      console.log(`📋 Found ${shopMaterials?.length || 0} materials with shop statuses`);
-      
-      if (!shopMaterials || shopMaterials.length === 0) {
-        console.log('❌ No materials found with shop statuses');
-        setPackages([]);
-        return;
-      }
-      
-      // Get the material item IDs
-      const materialIds = shopMaterials.map(m => m.id);
-      
-      // Get bundles that contain these materials
-      const { data, error } = await supabase
-        .from('material_bundle_items')
-        .select(`
-          bundle_id,
-          material_bundles!inner(
-            id,
-            job_id,
-            name,
-            description,
-            status,
-            jobs!inner(
-              name,
-              client_name
-            )
-          )
-        `)
-        .in('material_item_id', materialIds);
-
-      if (error) {
-        console.error('❌ Error loading bundles:', error);
-        throw error;
-      }
-      
-      console.log(`📦 Found ${data?.length || 0} bundle items`);
-      
-      // Get unique bundles
-      const uniqueBundles = new Map();
-      (data || []).forEach((item: any) => {
-        const bundle = item.material_bundles;
-        if (bundle && !uniqueBundles.has(bundle.id)) {
-          uniqueBundles.set(bundle.id, bundle);
-        }
-      });
-      
-      console.log(`📦 Found ${uniqueBundles.size} unique bundles with shop materials`);
-      
-      // Now load full bundle data with all their items
-      const bundleIds = Array.from(uniqueBundles.keys());
-      
-      if (bundleIds.length === 0) {
-        console.log('❌ No bundles found');
-        setPackages([]);
-        return;
-      }
-      
-      const { data: fullBundles, error: bundlesError } = await supabase
+      // Simplified approach: Just load all bundles with their materials and filter in memory
+      const { data: allBundles, error: bundlesError } = await supabase
         .from('material_bundles')
         .select(`
           id,
@@ -236,15 +169,16 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           name,
           description,
           status,
-          jobs!inner(
+          jobs (
+            id,
             name,
             client_name
           ),
-          bundle_items:material_bundle_items(
+          bundle_items:material_bundle_items (
             id,
             bundle_id,
             material_item_id,
-            material_items!inner(
+            material_items (
               id,
               sheet_id,
               category,
@@ -259,19 +193,26 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             )
           )
         `)
-        .in('id', bundleIds)
         .order('name');
       
       if (bundlesError) {
-        console.error('❌ Error loading full bundle data:', bundlesError);
+        console.error('❌ Error loading bundles:', bundlesError);
+        toast.error('Failed to load packages: ' + bundlesError.message);
         throw bundlesError;
       }
       
-      console.log(`📦 Loaded ${fullBundles?.length || 0} full bundles`);
-      console.log('👤 Current user:', userId);
+      console.log(`📦 SHOP VIEW: Loaded ${allBundles?.length || 0} total bundles from database`);
+      
+      if (!allBundles || allBundles.length === 0) {
+        console.log('❌ SHOP VIEW: No bundles found in database');
+        setPackages([]);
+        return;
+      }
+      
+      console.log('📦 SHOP VIEW: Sample bundle structure:', allBundles[0]);
       
       // Transform Supabase response to match our interface with better error handling
-      const transformedPackages: MaterialBundle[] = (fullBundles || []).map((pkg: SupabaseBundleResponse) => {
+      const transformedPackages: MaterialBundle[] = (allBundles || []).map((pkg: any) => {
         // Safely access nested arrays
         const job = Array.isArray(pkg.jobs) && pkg.jobs.length > 0 ? pkg.jobs[0] : { name: 'Unknown Job', client_name: '' };
         
@@ -305,42 +246,44 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         };
       });
       
-      console.log('🔄 Transformed packages:', transformedPackages);
+      console.log('🔄 SHOP VIEW: Transformed', transformedPackages.length, 'packages');
+      console.log('🔄 SHOP VIEW: Sample transformed package:', transformedPackages[0]);
       
       // Filter to only include packages that have materials with 'pull_from_shop' status
       const packagesWithShopMaterials = transformedPackages.filter(pkg => {
-        const hasShopMaterials = pkg.bundle_items.some(item => 
-          item.material_items.status === 'pull_from_shop'
+        if (!pkg.bundle_items || pkg.bundle_items.length === 0) {
+          console.log(`⚠️ SHOP VIEW: Package "${pkg.name}" has NO bundle_items`);
+          return false;
+        }
+        
+        const shopMaterials = pkg.bundle_items.filter(item => 
+          item && item.material_items && item.material_items.status === 'pull_from_shop'
         );
         
+        const hasShopMaterials = shopMaterials.length > 0;
+        
         if (hasShopMaterials) {
-          console.log(`✅ Package "${pkg.name}" (Job: ${pkg.jobs.name}) has materials to pull:`, 
-            pkg.bundle_items.filter(item => 
-              item.material_items.status === 'pull_from_shop'
-            ).map(item => ({
+          console.log(`✅ SHOP VIEW: Package "${pkg.name}" (Job: ${pkg.jobs?.name}) has ${shopMaterials.length} materials to pull:`, 
+            shopMaterials.map(item => ({
+              id: item.material_items.id,
               material: item.material_items.material_name,
-              status: item.material_items.status
+              status: item.material_items.status,
+              qty: item.material_items.quantity
             }))
           );
+        } else {
+          console.log(`⏭️ SHOP VIEW: Package "${pkg.name}" has NO pull_from_shop materials`);
         }
         
         return hasShopMaterials;
       });
       
-      console.log(`✅ Found ${packagesWithShopMaterials.length} packages with materials to pull`);
+      console.log(`✅ SHOP VIEW: Found ${packagesWithShopMaterials.length} packages with materials to pull`);
       
       if (packagesWithShopMaterials.length === 0) {
-        console.warn('⚠️ NO PACKAGES WITH PULL FROM SHOP MATERIALS FOUND!');
-        console.warn('⚠️ This might indicate all materials have been processed or there are no materials needing shop processing');
-      }
-      console.log('📦 Packages with pull from shop materials:', packagesWithShopMaterials);
-      
-      // Only show packages - don't create virtual packages for unbundled materials
-      console.log(`✅ FINAL: Setting ${packagesWithShopMaterials.length} packages`);
-      
-      if (packagesWithShopMaterials.length === 0) {
-        console.error('❌ NO PACKAGES TO DISPLAY! This is a problem.');
-        toast.error('No materials found. Please contact office if materials should be visible.');
+        console.warn('⚠️ SHOP VIEW: NO PACKAGES WITH PULL FROM SHOP MATERIALS FOUND!');
+        console.warn('⚠️ Total packages checked:', transformedPackages.length);
+        console.warn('⚠️ This might mean all materials have been processed or none have pull_from_shop status');
       }
       
       setPackages(packagesWithShopMaterials);
