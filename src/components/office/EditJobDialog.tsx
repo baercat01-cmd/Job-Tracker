@@ -255,7 +255,6 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
               placeholder="Project details, scope, etc."
-              disabled={loading}
             />
           </div>
 
@@ -267,7 +266,6 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
               placeholder="Internal notes, special instructions, etc."
-              disabled={loading}
             />
           </div>
 
