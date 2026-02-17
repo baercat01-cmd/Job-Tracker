@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { 
   FileText, 
   DollarSign, 
@@ -19,11 +22,20 @@ import {
   Building2,
   FileSpreadsheet,
   ChevronRight,
-  Briefcase
+  Briefcase,
+  Send,
+  MessageSquare,
+  Inbox
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Job {
   id: string;
@@ -56,8 +68,7 @@ export default function CustomerPortal() {
   const [loading, setLoading] = useState(true);
   const [validToken, setValidToken] = useState(false);
   const [customerInfo, setCustomerInfo] = useState<any>(null);
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  const [jobData, setJobData] = useState<any>(null);
 
   useEffect(() => {
     if (token) {
@@ -102,8 +113,8 @@ export default function CustomerPortal() {
         .update({ last_accessed_at: new Date().toISOString() })
         .eq('id', accessData.id);
 
-      // Load all jobs for this customer
-      await loadCustomerJobs(accessData.customer_identifier);
+      // Load data for the customer (all their jobs)
+      await loadCustomerData(accessData.customer_identifier);
     } catch (error: any) {
       console.error('Error validating token:', error);
       toast.error('Failed to load portal data');
@@ -111,10 +122,9 @@ export default function CustomerPortal() {
     }
   }
 
-  async function loadCustomerJobs(customerIdentifier: string) {
+  async function loadCustomerData(customerIdentifier: string) {
     try {
       // Find all jobs for this customer (by client_name matching customer_name)
-      // You might want to use customer_email to match instead, depending on your data structure
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
@@ -123,56 +133,84 @@ export default function CustomerPortal() {
 
       if (jobsError) throw jobsError;
 
-      // Load summary data for each job
-      const jobSummaries = await Promise.all(
-        (jobsData || []).map(async (job) => {
-          // Load proposal data
-          const proposalData = await loadProposalData(job.id);
-          
-          // Load payments
-          const { data: paymentsData } = await supabase
-            .from('customer_payments')
-            .select('amount')
-            .eq('job_id', job.id);
-          
-          const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-          
-          // Load photo count
-          const { data: photosData } = await supabase
-            .from('photos')
-            .select('id')
-            .eq('job_id', job.id);
-          
-          // Load document count
-          const { data: documentsData } = await supabase
-            .from('job_documents')
-            .select('id')
-            .eq('job_id', job.id)
-            .eq('visible_to_crew', true);
-          
-          // Load schedule event count
-          const { data: scheduleData } = await supabase
-            .from('calendar_events')
-            .select('id')
-            .eq('job_id', job.id);
+      if (!jobsData || jobsData.length === 0) {
+        toast.error('No projects found for your account');
+        setLoading(false);
+        return;
+      }
 
-          return {
-            job,
-            totalAmount: proposalData.totals.grandTotal,
-            totalPaid,
-            balance: proposalData.totals.grandTotal - totalPaid,
-            photoCount: photosData?.length || 0,
-            documentCount: documentsData?.length || 0,
-            scheduleEventCount: scheduleData?.length || 0,
-          };
-        })
-      );
+      // Use the FIRST job for this customer (most recent or main job)
+      const job = jobsData[0];
 
-      setJobs(jobSummaries);
+      // Load quote for this job
+      const { data: quoteData } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', job.id)
+        .maybeSingle();
+
+      // Load payments
+      const { data: paymentsData } = await supabase
+        .from('customer_payments')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('payment_date', { ascending: false });
+
+      // Load documents
+      const { data: documentsData } = await supabase
+        .from('job_documents')
+        .select(`
+          *,
+          job_document_revisions(*)
+        `)
+        .eq('job_id', job.id)
+        .eq('visible_to_crew', true);
+
+      // Load photos
+      const { data: photosData } = await supabase
+        .from('photos')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      // Load schedule events
+      const { data: scheduleData } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('event_date', { ascending: true });
+
+      // Load emails for this job
+      const { data: emailsData } = await supabase
+        .from('job_emails')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('email_date', { ascending: false })
+        .limit(100);
+
+      // Load proposal data
+      const proposalData = await loadProposalData(job.id);
+
+      const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+
+      setJobData({
+        job,
+        quote: quoteData,
+        payments: paymentsData || [],
+        documents: documentsData || [],
+        photos: photosData || [],
+        scheduleEvents: scheduleData || [],
+        emails: emailsData || [],
+        proposalData,
+        totalPaid,
+        balance: proposalData.totals.grandTotal - totalPaid,
+      });
+
       setLoading(false);
     } catch (error: any) {
-      console.error('Error loading customer jobs:', error);
-      toast.error('Failed to load your projects');
+      console.error('Error loading customer data:', error);
+      toast.error('Failed to load your project');
       setLoading(false);
     }
   }
@@ -270,202 +308,69 @@ export default function CustomerPortal() {
     );
   }
 
-  // If a job is selected, show job detail view (existing view)
-  if (selectedJob) {
-    return <JobDetailView job={selectedJob} onBack={() => setSelectedJob(null)} />;
+  if (!jobData) {
+    return null; // Still loading
   }
 
-  // Job list view
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Your Projects</h1>
-              <p className="text-blue-100 mt-1">Welcome back, {customerInfo.customer_name}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <PWAInstallButton />
-              <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
-                Customer Portal
-              </Badge>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {jobs.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Briefcase className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h2 className="text-xl font-semibold mb-2">No Projects Found</h2>
-              <p className="text-muted-foreground">
-                We couldn't find any projects associated with your account. Please contact your project manager for assistance.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-4">All Projects ({jobs.length})</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {jobs.map((jobSummary) => {
-                const { job, totalAmount, totalPaid, balance, photoCount, documentCount, scheduleEventCount } = jobSummary;
-                
-                return (
-                  <Card 
-                    key={job.id} 
-                    className="hover:shadow-lg transition-shadow cursor-pointer border-2"
-                    onClick={() => setSelectedJob(jobSummary)}
-                  >
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-blue-600" />
-                            {job.name}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            <MapPin className="w-3 h-3 inline mr-1" />
-                            {job.address}
-                          </p>
-                        </div>
-                        <Badge variant={job.status === 'active' ? 'default' : 'secondary'}>
-                          {job.status}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Financial Summary */}
-                      <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg">
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Total</p>
-                          <p className="font-bold text-sm">${totalAmount.toLocaleString()}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Paid</p>
-                          <p className="font-bold text-sm text-green-600">${totalPaid.toLocaleString()}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">Balance</p>
-                          <p className="font-bold text-sm text-amber-600">${balance.toLocaleString()}</p>
-                        </div>
-                      </div>
-
-                      {/* Quick Stats */}
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Image className="w-4 h-4" />
-                          <span>{photoCount} photos</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <FileText className="w-4 h-4" />
-                          <span>{documentCount} docs</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          <span>{scheduleEventCount} events</span>
-                        </div>
-                      </div>
-
-                      {/* View Details Button */}
-                      <Button variant="outline" className="w-full" onClick={() => setSelectedJob(jobSummary)}>
-                        View Details
-                        <ChevronRight className="w-4 h-4 ml-2" />
-                      </Button>
-
-                      {/* Date Info */}
-                      {job.projected_start_date && (
-                        <p className="text-xs text-muted-foreground text-center">
-                          Started: {new Date(job.projected_start_date).toLocaleDateString()}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // Show job detail view directly
+  return <JobDetailView jobData={jobData} customerInfo={customerInfo} />;
 }
 
-// Job Detail View Component (existing single-job view)
-function JobDetailView({ job: jobSummary, onBack }: { job: JobSummary; onBack: () => void }) {
-  const { job } = jobSummary;
-  const [loading, setLoading] = useState(true);
-  const [portalData, setPortalData] = useState<any>(null);
+// Job Detail View Component
+function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: any }) {
+  const { job, quote, payments, documents, photos, scheduleEvents, emails, proposalData, totalPaid, balance } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
 
-  useEffect(() => {
-    loadJobData();
-  }, [job.id]);
+  async function sendEmailToJob() {
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      toast.error('Please enter both subject and message');
+      return;
+    }
 
-  async function loadJobData() {
+    setSendingEmail(true);
+
     try {
-      // Load quote
-      const { data: quoteData } = await supabase
-        .from('quotes')
+      // Create email record in job_emails table
+      const { error } = await supabase
+        .from('job_emails')
+        .insert({
+          job_id: job.id,
+          message_id: `customer-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          subject: emailSubject,
+          from_email: customerInfo.customer_email || '',
+          from_name: customerInfo.customer_name,
+          to_emails: ['office@company.com'], // This would be your office email
+          body_text: emailBody,
+          email_date: new Date().toISOString(),
+          direction: 'received',
+          is_read: false,
+        });
+
+      if (error) throw error;
+
+      toast.success('Message sent to project team');
+      setShowEmailDialog(false);
+      setEmailSubject('');
+      setEmailBody('');
+
+      // Reload emails to show the new one
+      const { data: updatedEmails } = await supabase
+        .from('job_emails')
         .select('*')
         .eq('job_id', job.id)
-        .maybeSingle();
+        .order('email_date', { ascending: false })
+        .limit(100);
 
-      // Load payments
-      const { data: paymentsData } = await supabase
-        .from('customer_payments')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('payment_date', { ascending: false });
-
-      // Load documents
-      const { data: documentsData } = await supabase
-        .from('job_documents')
-        .select(`
-          *,
-          job_document_revisions(*)
-        `)
-        .eq('job_id', job.id)
-        .eq('visible_to_crew', true);
-
-      // Load photos
-      const { data: photosData } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      // Load schedule events
-      const { data: scheduleData } = await supabase
-        .from('calendar_events')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('event_date', { ascending: true });
-
-      // Load proposal data
-      const proposalData = await loadProposalData(job.id);
-
-      setPortalData({
-        job,
-        quote: quoteData,
-        payments: paymentsData || [],
-        documents: documentsData || [],
-        photos: photosData || [],
-        scheduleEvents: scheduleData || [],
-        proposalData,
-      });
-
-      setLoading(false);
+      jobData.emails = updatedEmails || [];
     } catch (error: any) {
-      console.error('Error loading job data:', error);
-      toast.error('Failed to load project details');
-      setLoading(false);
+      console.error('Error sending email:', error);
+      toast.error('Failed to send message');
+    } finally {
+      setSendingEmail(false);
     }
   }
 
@@ -530,20 +435,7 @@ function JobDetailView({ job: jobSummary, onBack }: { job: JobSummary; onBack: (
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-lg text-slate-600">Loading project details...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const { payments, documents, photos, scheduleEvents, proposalData } = portalData;
-  const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount.toString()), 0);
-  const balance = proposalData.totals.grandTotal - totalPaid;
+  const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -551,18 +443,25 @@ function JobDetailView({ job: jobSummary, onBack }: { job: JobSummary; onBack: (
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={onBack} className="text-white hover:bg-white/10">
-                ← Back to Projects
-              </Button>
-              <div>
+            <div>
+              <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-bold">{job.name}</h1>
-                <p className="text-blue-100 mt-1">{job.client_name}</p>
+                <Badge variant="outline" className="bg-white/10 text-white border-white/30">
+                  #{proposalNumber}
+                </Badge>
               </div>
+              <p className="text-blue-100 mt-1">{job.client_name}</p>
+              <p className="text-blue-200 text-sm mt-1">
+                <MapPin className="w-4 h-4 inline mr-1" />
+                {job.address}
+              </p>
             </div>
-            <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
-              Project Details
-            </Badge>
+            <div className="flex items-center gap-3">
+              <PWAInstallButton />
+              <Badge variant="outline" className="bg-white/10 text-white border-white/30 px-4 py-2">
+                Customer Portal
+              </Badge>
+            </div>
           </div>
         </div>
       </div>
@@ -570,13 +469,22 @@ function JobDetailView({ job: jobSummary, onBack }: { job: JobSummary; onBack: (
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6 mb-6">
+          <TabsList className="grid w-full grid-cols-7 mb-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="proposal">Proposal</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="schedule">Schedule</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
             <TabsTrigger value="photos">Photos</TabsTrigger>
+            <TabsTrigger value="emails">
+              <Mail className="w-4 h-4 mr-2" />
+              Messages
+              {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -901,8 +809,145 @@ function JobDetailView({ job: jobSummary, onBack }: { job: JobSummary; onBack: (
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Emails Tab */}
+          <TabsContent value="emails">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Project Messages
+                </CardTitle>
+                <Button onClick={() => setShowEmailDialog(true)}>
+                  <Send className="w-4 h-4 mr-2" />
+                  New Message
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {emails.length > 0 ? (
+                  <div className="space-y-4">
+                    {emails.map((email: any) => (
+                      <div 
+                        key={email.id} 
+                        className={`border rounded-lg p-4 ${
+                          email.direction === 'sent' && !email.is_read ? 'bg-blue-50 border-blue-200' : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={email.direction === 'sent' ? 'default' : 'secondary'}>
+                                {email.direction === 'sent' ? (
+                                  <>
+                                    <Inbox className="w-3 h-3 mr-1" />
+                                    From Team
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-3 h-3 mr-1" />
+                                    You
+                                  </>
+                                )}
+                              </Badge>
+                              {email.direction === 'sent' && !email.is_read && (
+                                <Badge variant="destructive">New</Badge>
+                              )}
+                            </div>
+                            <h3 className="font-bold text-lg mt-2">{email.subject}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {email.from_name || email.from_email} • {new Date(email.email_date).toLocaleDateString()} at {new Date(email.email_date).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          {email.body_html ? (
+                            <div 
+                              className="prose prose-sm max-w-none"
+                              dangerouslySetInnerHTML={{ __html: email.body_html }}
+                            />
+                          ) : (
+                            <p className="whitespace-pre-wrap text-sm">{email.body_text}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <MessageSquare className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground mb-4">No messages yet</p>
+                    <Button onClick={() => setShowEmailDialog(true)}>
+                      <Send className="w-4 h-4 mr-2" />
+                      Send Your First Message
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+
+      {/* Send Email Dialog */}
+      <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" />
+              Send Message to Project Team
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="e.g., Question about project schedule"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email-body">Message</Label>
+              <Textarea
+                id="email-body"
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                placeholder="Type your message here..."
+                rows={8}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button 
+                onClick={sendEmailToJob} 
+                disabled={sendingEmail}
+                className="flex-1"
+              >
+                {sendingEmail ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Send Message
+                  </>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowEmailDialog(false)}
+                disabled={sendingEmail}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

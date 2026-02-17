@@ -167,7 +167,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       const { data, error } = await supabase
         .from('customer_portal_access')
         .insert([{
-          job_id: null,
+          job_id: job.id, // Link to the specific job
           customer_identifier: customerEmail,
           access_token: token,
           customer_name: customerName,
@@ -189,12 +189,11 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
       if (error) throw error;
 
-      toast.success('Customer portal link created successfully');
+      toast.success(`Customer portal link created for ${job.name}`);
       
-      // FUTURE ENHANCEMENT: Link email to Thunderbird/email system here
-      // This would integrate with the job_emails table to show relevant communications
-      // in the customer portal based on the customer_email
-      console.log('💡 Portal created for:', customerEmail, '- Email integration ready for implementation');
+      // Email integration is now active - customers can send/receive emails through the portal
+      // All emails are stored in job_emails table and linked to this job
+      console.log('✅ Portal created for:', customerEmail, 'Job:', job.id, '- Email integration enabled');
       
       setShowCreateDialog(false);
       resetForm();
