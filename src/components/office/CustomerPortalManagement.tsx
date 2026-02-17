@@ -78,7 +78,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   async function loadCustomerInfo() {
     try {
-      // Try to get customer info from contacts table first
+      console.log('🔍 Loading customer info for job:', job.id);
+      
+      // Priority 1: Try to get customer info from contacts table
       const { data: contactData } = await supabase
         .from('contacts')
         .select('*')
@@ -86,21 +88,48 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .eq('category', 'Customer')
         .maybeSingle();
 
-      if (contactData) {
-        // Found customer contact - use this data
+      if (contactData && contactData.email) {
+        // Found customer contact with email - use this data
         setCustomerName(contactData.name);
-        setCustomerEmail(contactData.email || '');
+        setCustomerEmail(contactData.email);
         setCustomerPhone(contactData.phone || '');
-        console.log('✅ Loaded customer info from contacts table:', contactData.name);
-      } else {
-        // Fallback to job data
-        setCustomerName(job.client_name || '');
-        console.log('ℹ️ Using customer info from job data:', job.client_name);
+        console.log('✅ Loaded customer info from contacts table:', contactData.name, contactData.email);
+        return;
+      }
+      
+      // Priority 2: Try to get customer info from quote
+      const { data: quoteData } = await supabase
+        .from('quotes')
+        .select('customer_name, customer_email, customer_phone')
+        .eq('job_id', job.id)
+        .maybeSingle();
+      
+      if (quoteData && quoteData.customer_email) {
+        // Found quote with customer email - use this data
+        setCustomerName(quoteData.customer_name || job.client_name || '');
+        setCustomerEmail(quoteData.customer_email);
+        setCustomerPhone(quoteData.customer_phone || '');
+        console.log('✅ Loaded customer info from quote:', quoteData.customer_name, quoteData.customer_email);
+        return;
+      }
+      
+      // Priority 3: Fallback to job data (name only, no email/phone)
+      setCustomerName(job.client_name || '');
+      setCustomerEmail(''); // No email found - user will need to enter it
+      setCustomerPhone(''); // No phone found
+      console.log('⚠️ Using customer name from job data only (no email/phone):', job.client_name);
+      
+      // Show helpful message to user
+      if (!quoteData && !contactData) {
+        toast.info('Please enter customer email and phone - not found in quote or contacts', { duration: 5000 });
       }
     } catch (error: any) {
-      console.error('Error loading customer info:', error);
+      console.error('❌ Error loading customer info:', error);
       // Fallback to job data on error
       setCustomerName(job.client_name || '');
+      setCustomerEmail('');
+      setCustomerPhone('');
+      toast.error('Could not load customer information. Please enter manually.');
     }
   }
 
