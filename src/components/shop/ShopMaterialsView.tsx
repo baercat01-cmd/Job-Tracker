@@ -191,30 +191,69 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
 
       console.log(`📦 Found ${data?.length || 0} total packages`);
+      console.log('📦 Raw data:', data);
       
-      // Transform Supabase response to match our interface
-      const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => ({
-        ...pkg,
-        jobs: pkg.jobs[0], // Take first element from array
-        bundle_items: pkg.bundle_items.map(item => ({
-          ...item,
-          material_items: {
-            ...item.material_items[0], // Take first element from array
-            sheets: item.material_items[0].sheets[0], // Take first element from array
-          },
-        })),
-      }));
+      // Transform Supabase response to match our interface with better error handling
+      const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => {
+        // Safely access nested arrays
+        const job = Array.isArray(pkg.jobs) && pkg.jobs.length > 0 ? pkg.jobs[0] : { name: 'Unknown Job', client_name: '' };
+        
+        const bundleItems = (pkg.bundle_items || []).map(item => {
+          const materialItem = Array.isArray(item.material_items) && item.material_items.length > 0 
+            ? item.material_items[0] 
+            : null;
+          
+          if (!materialItem) {
+            console.warn('⚠️ Bundle item missing material_items:', item);
+            return null;
+          }
+          
+          const sheet = Array.isArray(materialItem.sheets) && materialItem.sheets.length > 0
+            ? materialItem.sheets[0]
+            : { sheet_name: 'Unknown Sheet' };
+          
+          return {
+            ...item,
+            material_items: {
+              ...materialItem,
+              sheets: sheet,
+            },
+          };
+        }).filter(Boolean); // Remove null items
+        
+        return {
+          ...pkg,
+          jobs: job,
+          bundle_items: bundleItems as any,
+        };
+      });
+      
+      console.log('🔄 Transformed packages:', transformedPackages);
       
       // Filter to only include packages that have materials with pull_from_shop, ready_for_job, or at_job status
-      const packagesWithShopMaterials = transformedPackages.filter(pkg => 
-        pkg.bundle_items.some(item => 
+      const packagesWithShopMaterials = transformedPackages.filter(pkg => {
+        const hasShopMaterials = pkg.bundle_items.some(item => 
           item.material_items.status === 'pull_from_shop' || 
           item.material_items.status === 'ready_for_job' ||
           item.material_items.status === 'at_job'
-        )
-      );
+        );
+        
+        if (hasShopMaterials) {
+          console.log(`✅ Package "${pkg.name}" (Job: ${pkg.jobs.name}) has shop materials:`, 
+            pkg.bundle_items.filter(item => 
+              ['pull_from_shop', 'ready_for_job', 'at_job'].includes(item.material_items.status)
+            ).map(item => ({
+              material: item.material_items.material_name,
+              status: item.material_items.status
+            }))
+          );
+        }
+        
+        return hasShopMaterials;
+      });
       
       console.log(`✅ Found ${packagesWithShopMaterials.length} packages with shop materials`);
+      console.log('📦 Packages with shop materials:', packagesWithShopMaterials);
       
       // ALSO load unbundled materials that have pull_from_shop, ready_for_job, or at_job status
       // These are materials that haven't been added to a bundle yet
