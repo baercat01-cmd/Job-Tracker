@@ -64,6 +64,9 @@ export interface Job {
   is_internal?: boolean; // For internal jobs like Shop that don't show as cards
   projected_start_date?: string | null; // When job becomes visible to field crew
   projected_end_date?: string | null; // Projected completion date
+  quote_number?: string | null; // Quote number from quotes table
+  customer_email?: string | null;
+  customer_phone?: string | null;
 }
 
 export interface JobAssignment {

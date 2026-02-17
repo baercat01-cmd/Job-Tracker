@@ -117,7 +117,6 @@ export function ShopDashboard() {
         <ShopClockIn
           userId={profile?.id || ''}
           shopJob={shopJob}
-          onClose={() => setShowClockDialog(false)}
         />
       )}
     </div>

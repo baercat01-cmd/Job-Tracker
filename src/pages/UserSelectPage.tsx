@@ -131,8 +131,6 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                         <Shield className="w-6 h-6 text-primary" />
                       ) : user.role === 'payroll' ? (
                         <DollarSign className="w-6 h-6 text-primary" />
-                      ) : user.role === 'foreman' ? (
-                        <Users className="w-6 h-6 text-primary" />
                       ) : user.role === 'shop' ? (
                         <Package className="w-6 h-6 text-primary" />
                       ) : (
@@ -142,11 +140,11 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-lg">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'} Member
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : user.role === 'shop' ? 'Shop' : 'Crew'} Member
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'}
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                   </div>
                 </Button>

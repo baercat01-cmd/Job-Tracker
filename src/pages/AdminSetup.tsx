@@ -191,8 +191,6 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                         <Shield className="w-6 h-6 text-primary" />
                       ) : user.role === 'payroll' ? (
                         <DollarSign className="w-6 h-6 text-primary" />
-                      ) : user.role === 'foreman' ? (
-                        <Users className="w-6 h-6 text-primary" />
                       ) : user.role === 'shop' ? (
                         <Package className="w-6 h-6 text-primary" />
                       ) : (
@@ -202,11 +200,11 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="flex-1">
                       <p className="font-semibold">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : user.role} Member
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : user.role} Member
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'}
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                     <div className="flex gap-2">
                       <Button
@@ -263,7 +261,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <Label htmlFor="role">Role *</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'crew' | 'foreman' | 'shop' | 'office' | 'payroll') =>
+                onValueChange={(value: 'crew' | 'shop' | 'office' | 'payroll') =>
                   setFormData({ ...formData, role: value })
                 }
               >
@@ -275,12 +273,6 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="flex items-center gap-2">
                       <Briefcase className="w-4 h-4" />
                       <span>Crew (Field User)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="foreman">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      <span>Foreman</span>
                     </div>
                   </SelectItem>
                   <SelectItem value="shop">
@@ -306,8 +298,6 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <p className="text-xs text-muted-foreground">
                 {formData.role === 'crew'
                   ? 'Crew users can track time, upload photos, and create daily logs'
-                  : formData.role === 'foreman'
-                  ? 'Foreman users can manage assigned jobs, view crew work, and approve time entries'
                   : formData.role === 'shop'
                   ? 'Shop users can process materials, manage packages, and prepare items for job sites'
                   : formData.role === 'payroll'
