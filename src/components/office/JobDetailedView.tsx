@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, Upload } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -399,8 +399,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [emailStats, setEmailStats] = useState({ total: 0, customer: 0, vendor: 0, subcontractor: 0, unread: 0 });
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [uploadingToWorkDrive, setUploadingToWorkDrive] = useState(false);
-  const [workDriveUploadProgress, setWorkDriveUploadProgress] = useState<string>('');
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -672,90 +670,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       .eq('id', notification.id);
 
     loadNotifications();
-  }
-
-  async function handleWorkDrivePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
-    }
-
-    // Check file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image must be smaller than 10MB');
-      return;
-    }
-
-    setUploadingToWorkDrive(true);
-    setWorkDriveUploadProgress('Reading image...');
-
-    try {
-      // Convert file to base64
-      const reader = new FileReader();
-      
-      reader.onload = async (e) => {
-        try {
-          const base64Data = e.target?.result as string;
-          
-          setWorkDriveUploadProgress('Uploading to WorkDrive...');
-
-          // Upload to WorkDrive via Edge Function
-          const { data, error } = await supabase.functions.invoke('workdrive-operations', {
-            body: {
-              action: 'upload_file',
-              jobId: job.id,
-              fileName: file.name,
-              fileData: base64Data,
-              fileType: file.type,
-            },
-          });
-
-          if (error) {
-            let errorMessage = error.message;
-            if (error instanceof FunctionsHttpError) {
-              try {
-                const statusCode = error.context?.status ?? 500;
-                const textContent = await error.context?.text();
-                errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-              } catch {
-                errorMessage = error.message || 'Failed to read response';
-              }
-            }
-            throw new Error(errorMessage);
-          }
-
-          console.log('WorkDrive upload success:', data);
-          toast.success('Photo uploaded to WorkDrive!');
-          setWorkDriveUploadProgress('');
-          
-          // Reset file input
-          event.target.value = '';
-        } catch (uploadError: any) {
-          console.error('WorkDrive upload error:', uploadError);
-          toast.error('Failed to upload to WorkDrive: ' + uploadError.message);
-          setWorkDriveUploadProgress('');
-        } finally {
-          setUploadingToWorkDrive(false);
-        }
-      };
-
-      reader.onerror = () => {
-        toast.error('Failed to read image file');
-        setUploadingToWorkDrive(false);
-        setWorkDriveUploadProgress('');
-      };
-
-      reader.readAsDataURL(file);
-    } catch (error: any) {
-      console.error('Error preparing upload:', error);
-      toast.error('Failed to prepare image: ' + error.message);
-      setUploadingToWorkDrive(false);
-      setWorkDriveUploadProgress('');
-    }
   }
 
   async function loadComponentWork() {
@@ -1374,42 +1288,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         {/* Add spacer to prevent content from hiding under fixed header */}
         {/* Total height: 64px (main tabs) */}
         <div className="h-16" />
-
-        {/* Floating WorkDrive Camera Button - Fixed Position, Always Visible */}
-        {job.workdrive_folder_id && (
-          <div className="fixed bottom-6 right-6 z-40">
-            <input
-              type="file"
-              id="workdrive-camera-input"
-              accept="image/*"
-              capture="environment"
-              onChange={handleWorkDrivePhotoUpload}
-              className="hidden"
-              disabled={uploadingToWorkDrive}
-            />
-            <label htmlFor="workdrive-camera-input">
-              <Button
-                size="lg"
-                disabled={uploadingToWorkDrive}
-                className="h-16 w-16 rounded-full shadow-2xl bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 cursor-pointer"
-                asChild
-              >
-                <div className="flex items-center justify-center">
-                  {uploadingToWorkDrive ? (
-                    <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Camera className="w-8 h-8 text-white" />
-                  )}
-                </div>
-              </Button>
-            </label>
-            {uploadingToWorkDrive && workDriveUploadProgress && (
-              <div className="absolute bottom-full right-0 mb-2 bg-black/80 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap">
-                {workDriveUploadProgress}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="w-full">

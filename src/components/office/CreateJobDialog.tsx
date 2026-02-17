@@ -107,12 +107,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         throw new Error(error.message || 'Failed to create job');
       }
 
-      // Create WorkDrive folders in background (don't block job creation)
-      createWorkDriveFolders(job.id, formData.name.trim()).catch(err => {
-        console.error('WorkDrive folder creation failed:', err);
-        // Don't show error to user - job was created successfully
-      });
-
       // Restore scroll position AFTER updates but BEFORE toast
       requestAnimationFrame(() => {
         window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
@@ -144,27 +138,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       toast.error(error.message || 'Failed to create job');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function createWorkDriveFolders(jobId: string, jobName: string) {
-    try {
-      const { data, error } = await supabase.functions.invoke('workdrive-operations', {
-        body: {
-          action: 'create_job_folders',
-          jobId,
-          jobName,
-        },
-      });
-
-      if (error) {
-        console.error('WorkDrive folder creation error:', error);
-        return;
-      }
-
-      console.log('WorkDrive folders created:', data);
-    } catch (error) {
-      console.error('WorkDrive folder creation failed:', error);
     }
   }
 
