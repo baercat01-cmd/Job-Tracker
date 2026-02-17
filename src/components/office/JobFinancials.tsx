@@ -1294,50 +1294,55 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (quote) return;
     
     try {
-      // Re-check materials/rows state at this point (after they're loaded)
-      const { data: workbookData, error: workbookError } = await supabase
+      console.log('🔍 Checking if auto-create quote is needed for job:', job.id);
+      
+      // Check 1: Materials in workbook
+      const { data: workbookData } = await supabase
         .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
         .eq('status', 'working')
         .maybeSingle();
-
-      if (workbookError) throw workbookError;
       
       let hasMaterials = false;
       if (workbookData) {
-        const { data: itemsCount } = await supabase
-          .from('material_items')
-          .select('id', { count: 'exact', head: true })
-          .in('sheet_id', 
-            await supabase
-              .from('material_sheets')
-              .select('id')
-              .eq('workbook_id', workbookData.id)
-              .then(r => r.data?.map(s => s.id) || [])
-          );
-        hasMaterials = (itemsCount?.length || 0) > 0;
+        const { data: sheetsData } = await supabase
+          .from('material_sheets')
+          .select('id')
+          .eq('workbook_id', workbookData.id);
+        
+        if (sheetsData && sheetsData.length > 0) {
+          const { count } = await supabase
+            .from('material_items')
+            .select('*', { count: 'exact', head: true })
+            .in('sheet_id', sheetsData.map(s => s.id));
+          hasMaterials = (count || 0) > 0;
+          console.log(`📦 Found ${count || 0} material items`);
+        }
       }
       
-      const { data: customRowsData } = await supabase
+      // Check 2: Custom financial rows
+      const { count: rowsCount } = await supabase
         .from('custom_financial_rows')
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .eq('job_id', job.id);
-      const hasCustomRows = (customRowsData?.length || 0) > 0;
+      const hasCustomRows = (rowsCount || 0) > 0;
+      console.log(`📋 Found ${rowsCount || 0} custom rows`);
       
-      const { data: subsData } = await supabase
+      // Check 3: Subcontractor estimates
+      const { count: subsCount } = await supabase
         .from('subcontractor_estimates')
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .eq('job_id', job.id);
-      const hasSubcontractors = (subsData?.length || 0) > 0;
+      const hasSubcontractors = (subsCount || 0) > 0;
+      console.log(`👷 Found ${subsCount || 0} subcontractor estimates`);
       
       if (!hasMaterials && !hasCustomRows && !hasSubcontractors) {
-        // No data yet, don't create quote
-        console.log('No materials/rows yet - skipping auto-create quote');
+        console.log('❌ No data found - skipping auto-create');
         return;
       }
 
-      console.log('Materials/rows found but no quote - auto-creating quote...');
+      console.log('✅ Data found! Auto-creating quote...');
 
       // Auto-create quote for this job
       const { data: newQuote, error: createError } = await supabase
@@ -1356,7 +1361,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .single();
 
       if (createError) {
-        console.error('Error auto-creating quote:', createError);
+        console.error('❌ Error auto-creating quote:', createError);
+        toast.error('Failed to create proposal number. Click "Generate Proposal Number" button.');
         return;
       }
 
@@ -1366,7 +1372,41 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       
       toast.success(`Proposal #${newQuote.proposal_number} created automatically`);
     } catch (error: any) {
-      console.error('Error in checkAndAutoCreateQuote:', error);
+      console.error('❌ Error in checkAndAutoCreateQuote:', error);
+    }
+  }
+
+  async function manuallyCreateQuote() {
+    if (quote) {
+      toast.info('Proposal number already exists');
+      return;
+    }
+
+    try {
+      const { data: newQuote, error: createError } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          customer_name: job.client_name,
+          customer_address: job.address,
+          project_name: job.name,
+          status: 'draft',
+          width: 0,
+          length: 0,
+          created_by: profile?.id,
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      setQuote(newQuote);
+      setProposalVersions([]);
+      
+      toast.success(`Proposal #${newQuote.proposal_number} created!`);
+    } catch (error: any) {
+      console.error('Error creating quote:', error);
+      toast.error('Failed to create proposal number');
     }
   }
 
@@ -2893,7 +2933,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           {activeTab === 'proposal' && (
             <div className="flex gap-2">
               {/* Versioning Buttons - Show if quote exists */}
-              {quote && (
+              {quote ? (
                 <>
                   {proposalVersions.length === 0 ? (
                     <Button
@@ -2950,6 +2990,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </>
                   )}
                 </>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={manuallyCreateQuote}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold"
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Generate Proposal Number
+                </Button>
               )}
               <div className="h-6 w-px bg-border" />
               <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
