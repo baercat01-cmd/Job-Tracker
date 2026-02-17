@@ -49,8 +49,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [selectedLink, setSelectedLink] = useState<CustomerPortalLink | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  // Form state
-  const [customerName, setCustomerName] = useState(job.client_name || '');
+  // Form state - Start empty, will be populated from job/contacts
+  const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
@@ -73,7 +73,36 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
   useEffect(() => {
     loadPortalLinks();
+    loadCustomerInfo();
   }, [job.id]);
+
+  async function loadCustomerInfo() {
+    try {
+      // Try to get customer info from contacts table first
+      const { data: contactData } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('job_id', job.id)
+        .eq('category', 'Customer')
+        .maybeSingle();
+
+      if (contactData) {
+        // Found customer contact - use this data
+        setCustomerName(contactData.name);
+        setCustomerEmail(contactData.email || '');
+        setCustomerPhone(contactData.phone || '');
+        console.log('✅ Loaded customer info from contacts table:', contactData.name);
+      } else {
+        // Fallback to job data
+        setCustomerName(job.client_name || '');
+        console.log('ℹ️ Using customer info from job data:', job.client_name);
+      }
+    } catch (error: any) {
+      console.error('Error loading customer info:', error);
+      // Fallback to job data on error
+      setCustomerName(job.client_name || '');
+    }
+  }
 
   async function loadPortalLinks() {
     try {
@@ -161,6 +190,12 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       if (error) throw error;
 
       toast.success('Customer portal link created successfully');
+      
+      // FUTURE ENHANCEMENT: Link email to Thunderbird/email system here
+      // This would integrate with the job_emails table to show relevant communications
+      // in the customer portal based on the customer_email
+      console.log('💡 Portal created for:', customerEmail, '- Email integration ready for implementation');
+      
       setShowCreateDialog(false);
       resetForm();
       await loadPortalLinks();
@@ -203,7 +238,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   }
 
   function resetForm() {
-    setCustomerName(job.client_name || '');
+    // Reload customer info from job/contacts
+    loadCustomerInfo();
     setCustomerEmail('');
     setCustomerPhone('');
     setExpiresInDays('');
@@ -441,7 +477,10 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             Create shareable links for customers to view their projects with customizable visibility settings.
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)}>
+        <Button onClick={() => {
+          loadCustomerInfo(); // Reload customer info when opening dialog
+          setShowCreateDialog(true);
+        }}>
           <Plus className="w-4 h-4 mr-2" />
           Create Portal Link
         </Button>
@@ -670,6 +709,17 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             <DialogTitle>Create Customer Portal Link</DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
+            {/* Pre-populated Notice */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <Building2 className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Pre-populated from Job</p>
+                  <p className="text-xs text-blue-700">Customer information has been automatically filled from job details and contacts. Edit as needed.</p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Customer Name *</Label>
@@ -678,6 +728,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="John Doe"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  From job: {job.client_name}
+                </p>
               </div>
 
               <div>
@@ -689,7 +742,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   placeholder="customer@example.com"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Used as unique identifier
+                  Used as unique identifier & for email integration
                 </p>
               </div>
 
@@ -701,6 +754,9 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="(555) 123-4567"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Contact number for portal notifications
+                </p>
               </div>
 
               <div>
