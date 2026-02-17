@@ -1,5 +1,7 @@
-const CACHE_NAME = 'martin-os-v4-offline-first';
-const RUNTIME_CACHE = 'martin-os-runtime-v4';
+// VERSION - INCREMENT THIS TO FORCE UPDATES
+const VERSION = 'v5.0.0';
+const CACHE_NAME = `martin-os-${VERSION}`;
+const RUNTIME_CACHE = `martin-os-runtime-${VERSION}`;
 
 // Assets to cache immediately
 const CORE_ASSETS = [
@@ -9,33 +11,52 @@ const CORE_ASSETS = [
   '/martin-logo.png'
 ];
 
-// Install event - cache core assets
+// Install event - cache core assets and skip waiting
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log(`[SW ${VERSION}] Installing new service worker...`);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[SW] Caching core assets');
+        console.log(`[SW ${VERSION}] Caching core assets`);
         return cache.addAll(CORE_ASSETS);
       })
-      .then(() => self.skipWaiting())
+      .then(() => {
+        console.log(`[SW ${VERSION}] Skip waiting - activating immediately`);
+        return self.skipWaiting();
+      })
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and take control immediately
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log(`[SW ${VERSION}] Activating service worker...`);
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== RUNTIME_CACHE)
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name);
-            return caches.delete(name);
-          })
-      );
-    }).then(() => self.clients.claim())
+    Promise.all([
+      // Delete old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME && name !== RUNTIME_CACHE)
+            .map((name) => {
+              console.log(`[SW ${VERSION}] Deleting old cache:`, name);
+              return caches.delete(name);
+            })
+        );
+      }),
+      // Take control of all clients immediately
+      self.clients.claim()
+    ]).then(() => {
+      console.log(`[SW ${VERSION}] Activated and claimed all clients`);
+      // Notify all clients about the update
+      return self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ 
+            type: 'SW_UPDATED', 
+            version: VERSION 
+          });
+        });
+      });
+    })
   );
 });
 
@@ -50,26 +71,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For navigation requests (HTML pages)
+  // For navigation requests (HTML pages) - NETWORK FIRST to get updates immediately
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match(request)
-        .then((cachedResponse) => {
-          if (cachedResponse) {
-            // Return cached version immediately
-            return cachedResponse;
-          }
-          // Fetch from network and cache it
-          return fetch(request).then((response) => {
-            return caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, response.clone());
-              return response;
-            });
+      fetch(request)
+        .then((response) => {
+          // Cache the new version
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache);
           });
+          return response;
         })
         .catch(() => {
-          // If offline and no cache, return offline page
-          return caches.match('/index.html');
+          // If network fails, try cache (offline fallback)
+          return caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            return caches.match('/index.html');
+          });
         })
     );
     return;
@@ -172,4 +193,4 @@ self.addEventListener('message', (event) => {
   }
 });
 
-console.log('[SW] Service Worker loaded and ready!');
+console.log(`[SW ${VERSION}] Service Worker loaded and ready!`);

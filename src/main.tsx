@@ -9,35 +9,93 @@ import { initializeOfflineManager } from './lib/offline-manager';
 import './lib/error-handler';
 import './lib/stress-test';
 
-console.log('🚀 FieldTrack Pro v2.0.5 (PWA) - Starting...');
+const APP_VERSION = '2.0.6';
+console.log(`🚀 FieldTrack Pro v${APP_VERSION} (PWA) - Starting...`);
 console.log('📱 Offline support enabled');
 
-// Register Service Worker for PWA functionality
+// Register Service Worker for PWA functionality with auto-update
 if ('serviceWorker' in navigator) {
+  let updateBanner: HTMLElement | null = null;
+
+  // Create update banner (hidden by default)
+  function showUpdateBanner() {
+    if (updateBanner) return; // Already showing
+
+    updateBanner = document.createElement('div');
+    updateBanner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: white;
+      padding: 16px;
+      text-align: center;
+      z-index: 99999;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    `;
+    updateBanner.innerHTML = `
+      <div style="max-width: 600px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
+        <span style="font-weight: 600; font-size: 15px;">🎉 New version available!</span>
+        <button onclick="window.location.reload()" style="
+          background: white;
+          color: #16a34a;
+          border: none;
+          padding: 8px 24px;
+          border-radius: 6px;
+          font-weight: 600;
+          cursor: pointer;
+          font-size: 14px;
+          transition: transform 0.2s;
+        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+          Refresh Now
+        </button>
+      </div>
+    `;
+    document.body.prepend(updateBanner);
+  }
+
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('✅ Service Worker registered successfully:', registration.scope);
-        console.log('🎯 PWA Mode: App can be installed and works offline');
+        console.log('✅ Service Worker registered:', registration.scope);
+        console.log('🎯 PWA Mode: Auto-updates enabled');
         
-        // Check for updates every 60 seconds
+        // Check for updates every 30 seconds (more frequent)
         setInterval(() => {
+          console.log('🔍 Checking for updates...');
           registration.update();
-        }, 60000);
+        }, 30000);
+        
+        // Also check for updates when page becomes visible
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            console.log('📱 Page visible - checking for updates');
+            registration.update();
+          }
+        });
         
         // Handle service worker updates
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
+          console.log('🔄 Update found! Installing new version...');
+          
           if (newWorker) {
             newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New service worker available, notify user
-                console.log('🔄 New version available! Prompting user to update.');
-                if (confirm('A new version of FieldTrack is available. Reload to update?')) {
-                  newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  window.location.reload();
+              if (newWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  // New SW installed, show update banner
+                  console.log('✅ New version ready! Showing update banner.');
+                  showUpdateBanner();
+                } else {
+                  // First install
+                  console.log('✅ App installed and ready!');
                 }
+              }
+              if (newWorker.state === 'activated') {
+                console.log('✅ New version activated!');
               }
             });
           }
@@ -50,9 +108,21 @@ if ('serviceWorker' in navigator) {
   
   // Listen for messages from service worker
   navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SW_UPDATED') {
+      console.log('📣 Service Worker updated to:', event.data.version);
+      showUpdateBanner();
+    }
     if (event.data && event.data.type === 'SYNC_OFFLINE_DATA') {
       console.log('📡 Background sync triggered');
-      // Trigger offline data sync here if needed
+    }
+  });
+  
+  // Handle controller change (new SW took over)
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('🔄 Controller changed - new SW active');
+    // Reload the page to get the latest version
+    if (!window.location.pathname.includes('login')) {
+      window.location.reload();
     }
   });
 }
