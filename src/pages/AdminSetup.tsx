@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase, DollarSign } from 'lucide-react';
+import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase, DollarSign, Users, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserProfile } from '@/types';
 
@@ -191,6 +191,10 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                         <Shield className="w-6 h-6 text-primary" />
                       ) : user.role === 'payroll' ? (
                         <DollarSign className="w-6 h-6 text-primary" />
+                      ) : user.role === 'foreman' ? (
+                        <Users className="w-6 h-6 text-primary" />
+                      ) : user.role === 'shop' ? (
+                        <Package className="w-6 h-6 text-primary" />
                       ) : (
                         <Briefcase className="w-6 h-6 text-primary" />
                       )}
@@ -198,11 +202,11 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="flex-1">
                       <p className="font-semibold">{user.username || 'Unnamed User'}</p>
                       <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role} Member
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : user.role} Member
                       </p>
                     </div>
                     <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : 'Crew'}
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'foreman' ? 'Foreman' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                     <div className="flex gap-2">
                       <Button
@@ -259,7 +263,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <Label htmlFor="role">Role *</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'crew' | 'office' | 'payroll') =>
+                onValueChange={(value: 'crew' | 'foreman' | 'shop' | 'office' | 'payroll') =>
                   setFormData({ ...formData, role: value })
                 }
               >
@@ -271,6 +275,18 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="flex items-center gap-2">
                       <Briefcase className="w-4 h-4" />
                       <span>Crew (Field User)</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="foreman">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      <span>Foreman</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="shop">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4" />
+                      <span>Shop</span>
                     </div>
                   </SelectItem>
                   <SelectItem value="office">
@@ -290,6 +306,10 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <p className="text-xs text-muted-foreground">
                 {formData.role === 'crew'
                   ? 'Crew users can track time, upload photos, and create daily logs'
+                  : formData.role === 'foreman'
+                  ? 'Foreman users can manage assigned jobs, view crew work, and approve time entries'
+                  : formData.role === 'shop'
+                  ? 'Shop users can process materials, manage packages, and prepare items for job sites'
                   : formData.role === 'payroll'
                   ? 'Payroll users can view and export time entries for payroll processing'
                   : 'Office users have full access to manage jobs, users, and view all data'}
