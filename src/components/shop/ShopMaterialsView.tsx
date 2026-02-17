@@ -335,182 +335,24 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
       console.log('📦 Packages with pull from shop materials:', packagesWithShopMaterials);
       
-      // ALSO load unbundled materials that have 'pull_from_shop' status
-      // These are materials that haven't been added to a bundle yet
-      // Use a simpler approach: load materials with sheets, then fetch workbook/job data separately
-      const { data: unbundledMaterials, error: unbundledError } = await supabase
-        .from('material_items')
-        .select(`
-          id,
-          sheet_id,
-          category,
-          material_name,
-          quantity,
-          length,
-          color,
-          usage,
-          status,
-          cost_per_unit,
-          material_sheets!inner(
-            sheet_name,
-            workbook_id
-          )
-        `)
-        .eq('status', 'pull_from_shop')
-        .order('material_name');
-
-      if (unbundledError) {
-        console.error('❌ Error loading unbundled materials:', unbundledError);
-      } else {
-        console.log(`📋 Found ${unbundledMaterials?.length || 0} total materials with pull from shop status`);
-        
-        // Get IDs of materials that are already in bundles
-        const bundledMaterialIds = new Set(
-          packagesWithShopMaterials.flatMap(pkg => 
-            pkg.bundle_items.map(item => item.material_items.id)
-          )
-        );
-        
-        // Filter out materials that are already in bundles
-        const trulyUnbundled = (unbundledMaterials || []).filter(
-          (material: any) => !bundledMaterialIds.has(material.id)
-        );
-        
-        console.log(`🔓 Found ${trulyUnbundled.length} unbundled materials to pull from shop`);
-        
-        // Get unique workbook IDs
-        const workbookIds = [...new Set(
-          trulyUnbundled
-            .map((m: any) => {
-              const sheet = Array.isArray(m.material_sheets) ? m.material_sheets[0] : m.material_sheets;
-              return sheet?.workbook_id;
-            })
-            .filter(Boolean)
-        )];
-        
-        console.log(`🔍 Loading ${workbookIds.length} workbooks for unbundled materials...`);
-        
-        // Fetch workbook and job data
-        const { data: workbooks, error: workbooksError } = await supabase
-          .from('material_workbooks')
-          .select(`
-            id,
-            job_id,
-            jobs!inner(
-              id,
-              name,
-              client_name
-            )
-          `)
-          .in('id', workbookIds);
-        
-        if (workbooksError) {
-          console.error('❌ Error loading workbooks:', workbooksError);
-        } else {
-          console.log(`✅ Loaded ${workbooks?.length || 0} workbooks with job data`);
-          
-          // Create a map of workbook_id -> job data
-          const workbookJobMap = new Map(
-            (workbooks || []).map((wb: any) => {
-              const job = Array.isArray(wb.jobs) ? wb.jobs[0] : wb.jobs;
-              return [wb.id, job];
-            })
-          );
-          
-          // Group unbundled materials by job
-          const unbundledByJob = new Map<string, any[]>();
-          trulyUnbundled.forEach((material: any) => {
-            const sheet = Array.isArray(material.material_sheets) ? material.material_sheets[0] : material.material_sheets;
-            if (!sheet) {
-              console.warn('⚠️ Material has no sheet:', material.id, material.material_name);
-              return;
-            }
-            
-            const job = workbookJobMap.get(sheet.workbook_id);
-            if (!job) {
-              console.warn('⚠️ Sheet has no job:', sheet.sheet_name, sheet.workbook_id);
-              return;
-            }
-            
-            const jobId = job.id;
-            
-            console.log('✅ Processed unbundled material:', {
-              materialId: material.id,
-              materialName: material.material_name,
-              sheet: sheet.sheet_name,
-              jobId,
-              jobName: job.name
-            });
-            
-            if (!unbundledByJob.has(jobId)) {
-              unbundledByJob.set(jobId, []);
-            }
-            unbundledByJob.get(jobId)!.push({
-              ...material,
-              sheets: sheet,
-              job: job
-            });
-          });
-          
-          // Create virtual packages for unbundled materials
-          const virtualPackages: MaterialBundle[] = Array.from(unbundledByJob.entries()).map(([jobId, materials]) => {
-            const firstMaterial = materials[0];
-            
-            return {
-              id: `unbundled-${jobId}`,
-              job_id: jobId,
-              name: `Unbundled Materials`,
-              description: 'Materials not yet assigned to a package',
-              status: 'not_ordered',
-              jobs: {
-                name: firstMaterial.job?.name || 'Unknown Job',
-                client_name: firstMaterial.job?.client_name || '',
-              },
-              bundle_items: materials.map(material => ({
-                id: `virtual-${material.id}`,
-                bundle_id: `unbundled-${jobId}`,
-                material_item_id: material.id,
-                material_items: {
-                  id: material.id,
-                  sheet_id: material.sheet_id,
-                  category: material.category,
-                  material_name: material.material_name,
-                  quantity: material.quantity,
-                  length: material.length,
-                  usage: material.usage,
-                  status: material.status,
-                  cost_per_unit: material.cost_per_unit,
-                  sheets: {
-                    sheet_name: material.sheets?.sheet_name || 'Unknown Sheet'
-                  },
-                },
-              })),
-            };
-          });
-          
-          console.log(`📦 Created ${virtualPackages.length} virtual packages for unbundled materials`);
-          
-          // Combine bundled and unbundled packages
-          const finalPackages = [...packagesWithShopMaterials, ...virtualPackages];
-          console.log(`✅ FINAL: Setting ${finalPackages.length} total packages (${packagesWithShopMaterials.length} bundled + ${virtualPackages.length} unbundled)`);
-          
-          if (finalPackages.length === 0) {
-            console.error('❌ NO PACKAGES TO DISPLAY! This is a problem.');
-            toast.error('No materials found. Please contact office if materials should be visible.');
-          }
-          
-          setPackages(finalPackages);
-          
-          // Auto-expand all jobs and packages so shop users can see materials immediately
-          const allPackageIds = new Set(finalPackages.map(pkg => pkg.id));
-          
-          // Also expand job-level cards
-          const jobIds = [...new Set(finalPackages.map(pkg => pkg.job_id))];
-          jobIds.forEach(jobId => allPackageIds.add(`job-${jobId}`));
-          
-          setExpandedPackages(allPackageIds);
-        }
+      // Only show packages - don't create virtual packages for unbundled materials
+      console.log(`✅ FINAL: Setting ${packagesWithShopMaterials.length} packages`);
+      
+      if (packagesWithShopMaterials.length === 0) {
+        console.error('❌ NO PACKAGES TO DISPLAY! This is a problem.');
+        toast.error('No materials found. Please contact office if materials should be visible.');
       }
+      
+      setPackages(packagesWithShopMaterials);
+      
+      // Auto-expand all jobs and packages so shop users can see materials immediately
+      const allPackageIds = new Set(packagesWithShopMaterials.map(pkg => pkg.id));
+      
+      // Also expand job-level cards
+      const jobIds = [...new Set(packagesWithShopMaterials.map(pkg => pkg.job_id))];
+      jobIds.forEach(jobId => allPackageIds.add(`job-${jobId}`));
+      
+      setExpandedPackages(allPackageIds);
     } catch (error: any) {
       console.error('❌ Error loading packages:', error);
       toast.error('Failed to load packages. Check console for details.');
