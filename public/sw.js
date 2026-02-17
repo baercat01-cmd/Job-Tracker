@@ -1,14 +1,21 @@
 // VERSION - INCREMENT THIS TO FORCE UPDATES
-const VERSION = 'v5.0.0';
+const VERSION = 'v6.0.0';
 const CACHE_NAME = `martin-os-${VERSION}`;
 const RUNTIME_CACHE = `martin-os-runtime-${VERSION}`;
 
-// Assets to cache immediately
+// Essential assets to cache immediately (minimal for faster install)
 const CORE_ASSETS = [
-  '/',
   '/index.html',
-  '/manifest.json',
-  '/martin-logo.png'
+  '/manifest.json'
+];
+
+// Assets that should NOT be cached
+const CACHE_BLACKLIST = [
+  '/hot',
+  '/@vite',
+  '/@fs',
+  '/node_modules',
+  '/sw.js'
 ];
 
 // Install event - cache core assets and skip waiting
@@ -18,11 +25,21 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log(`[SW ${VERSION}] Caching core assets`);
-        return cache.addAll(CORE_ASSETS);
+        // Cache core assets with error handling
+        return Promise.all(
+          CORE_ASSETS.map((url) => {
+            return cache.add(url).catch((err) => {
+              console.warn(`[SW ${VERSION}] Failed to cache ${url}:`, err);
+            });
+          })
+        );
       })
       .then(() => {
         console.log(`[SW ${VERSION}] Skip waiting - activating immediately`);
         return self.skipWaiting();
+      })
+      .catch((error) => {
+        console.error(`[SW ${VERSION}] Install failed:`, error);
       })
   );
 });
@@ -60,37 +77,67 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Helper function to check if URL should be cached
+function shouldCache(url) {
+  // Don't cache blacklisted paths
+  for (const blacklisted of CACHE_BLACKLIST) {
+    if (url.pathname.includes(blacklisted)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Fetch event - Offline-First strategy
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip cross-origin requests (except for specific CDNs)
+  // Skip cross-origin requests
   if (url.origin !== location.origin) {
-    // Only cache specific external resources if needed
     return;
   }
 
-  // For navigation requests (HTML pages) - NETWORK FIRST to get updates immediately
+  // Skip blacklisted paths
+  if (!shouldCache(url)) {
+    return;
+  }
+
+  // For navigation requests (HTML pages) - CACHE FIRST for offline support
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Cache the new version
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-          return response;
-        })
-        .catch(() => {
-          // If network fails, try cache (offline fallback)
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            return caches.match('/index.html');
-          });
+      caches.match(request)
+        .then((cachedResponse) => {
+          if (cachedResponse) {
+            console.log(`[SW ${VERSION}] Serving cached navigation:`, url.pathname);
+            // Update cache in background
+            fetch(request)
+              .then((response) => {
+                if (response && response.status === 200) {
+                  caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(request, response.clone());
+                  });
+                }
+              })
+              .catch(() => {});
+            return cachedResponse;
+          }
+          
+          // Not in cache, fetch from network
+          return fetch(request)
+            .then((response) => {
+              if (response && response.status === 200) {
+                const responseToCache = response.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                  cache.put(request, responseToCache);
+                });
+              }
+              return response;
+            })
+            .catch(() => {
+              // If both cache and network fail, return fallback
+              return caches.match('/index.html');
+            });
         })
     );
     return;
@@ -134,29 +181,51 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For static assets (JS, CSS, images) - Cache First
+  // For static assets (JS, CSS, images, fonts) - CACHE FIRST for offline support
   event.respondWith(
     caches.match(request)
       .then((cachedResponse) => {
         if (cachedResponse) {
+          console.log(`[SW ${VERSION}] Serving cached asset:`, url.pathname);
+          // Update cache in background for non-critical assets
+          if (!url.pathname.endsWith('.js') && !url.pathname.endsWith('.css')) {
+            fetch(request)
+              .then((response) => {
+                if (response && response.status === 200) {
+                  caches.open(RUNTIME_CACHE).then((cache) => {
+                    cache.put(request, response.clone());
+                  });
+                }
+              })
+              .catch(() => {});
+          }
           return cachedResponse;
         }
+        
         // Not in cache, fetch from network and cache it
-        return fetch(request).then((response) => {
-          // Only cache successful responses
-          if (response.status === 200) {
-            const responseToCache = response.clone();
-            caches.open(RUNTIME_CACHE).then((cache) => {
-              cache.put(request, responseToCache);
+        console.log(`[SW ${VERSION}] Fetching and caching:`, url.pathname);
+        return fetch(request)
+          .then((response) => {
+            // Only cache successful responses
+            if (response && response.status === 200) {
+              const responseToCache = response.clone();
+              caches.open(RUNTIME_CACHE).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            }
+            return response;
+          })
+          .catch((error) => {
+            console.error(`[SW ${VERSION}] Failed to fetch:`, request.url, error);
+            // Return a basic offline response
+            return new Response('Offline - Asset not cached', {
+              status: 503,
+              statusText: 'Service Unavailable',
+              headers: new Headers({
+                'Content-Type': 'text/plain',
+              }),
             });
-          }
-          return response;
-        });
-      })
-      .catch(() => {
-        // If both cache and network fail, return a fallback
-        console.error('[SW] Failed to fetch:', request.url);
-        return new Response('Offline', { status: 503 });
+          });
       })
   );
 });

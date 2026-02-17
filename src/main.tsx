@@ -9,9 +9,34 @@ import { initializeOfflineManager } from './lib/offline-manager';
 import './lib/error-handler';
 import './lib/stress-test';
 
-const APP_VERSION = '2.0.6';
+const APP_VERSION = '2.0.7';
 console.log(`🚀 FieldTrack Pro v${APP_VERSION} (PWA) - Starting...`);
 console.log('📱 Offline support enabled');
+
+// Preload critical assets into cache for offline use
+if ('serviceWorker' in navigator && 'caches' in window) {
+  window.addEventListener('load', () => {
+    // Get all script and stylesheet elements
+    const scripts = Array.from(document.querySelectorAll('script[src]'));
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+    
+    const urlsToCache = [
+      ...scripts.map((s: any) => s.src),
+      ...styles.map((s: any) => s.href)
+    ].filter((url) => url && url.startsWith(window.location.origin));
+
+    if (urlsToCache.length > 0) {
+      caches.open('martin-os-runtime-v6.0.0').then((cache) => {
+        console.log('📦 Preloading assets for offline:', urlsToCache.length);
+        urlsToCache.forEach((url) => {
+          cache.add(url).catch((err) => {
+            console.warn('Failed to cache:', url, err);
+          });
+        });
+      });
+    }
+  });
+}
 
 // Register Service Worker for PWA functionality with auto-update
 if ('serviceWorker' in navigator) {
