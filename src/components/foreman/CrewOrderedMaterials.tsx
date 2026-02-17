@@ -104,22 +104,21 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
         return;
       }
 
-      // Get material items that were ordered (either by crew OR by office for this job)
-      // Materials ordered by crew: have requested_by field
-      // Materials ordered by office: have zoho_sales_order_id or zoho_purchase_order_id
+      // Get material items that were requested by CREW MEMBERS ONLY
+      // These are materials that crew submitted to the office for ordering
       const { data: materialsData, error: materialsError } = await supabase
         .from('material_items')
         .select('*')
         .in('sheet_id', sheetIds)
-        .or('requested_by.not.is.null,zoho_sales_order_id.not.is.null,zoho_purchase_order_id.not.is.null,ordered_by.not.is.null')
+        .not('requested_by', 'is', null) // Only crew-requested materials
         .order('order_requested_at', { ascending: false });
 
       if (materialsError) throw materialsError;
 
-      // Get unique user IDs to fetch their names (both requested_by and ordered_by)
+      // Get unique user IDs to fetch their names
       const userIds = [...new Set(
         (materialsData || [])
-          .flatMap(m => [m.requested_by, m.ordered_by])
+          .map(m => m.requested_by)
           .filter(Boolean)
       )];
 
@@ -133,19 +132,9 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
 
       // Transform materials with user names and sheet names
       const transformedMaterials = (materialsData || []).map((item: any) => {
-        // Determine who ordered it
-        let orderedBy = 'Unknown';
-        if (item.requested_by) {
-          orderedBy = userMap.get(item.requested_by) || 'Crew Member';
-        } else if (item.ordered_by) {
-          orderedBy = userMap.get(item.ordered_by) || 'Office User';
-        } else if (item.zoho_sales_order_id || item.zoho_purchase_order_id) {
-          orderedBy = 'Office';
-        }
-
         return {
           ...item,
-          _requester_name: orderedBy,
+          _requester_name: userMap.get(item.requested_by) || 'Crew Member',
           _sheet_name: sheetMap.get(item.sheet_id) || 'Unknown Sheet',
         };
       });
@@ -196,10 +185,10 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
         <CardContent className="py-12 text-center">
           <ShoppingCart className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
           <p className="text-lg font-medium text-muted-foreground">
-            No materials ordered yet
+            No material requests submitted yet
           </p>
           <p className="text-sm text-muted-foreground mt-2">
-            Materials ordered by crew or office will appear here
+            Material requests submitted by crew members will appear here
           </p>
         </CardContent>
       </Card>
@@ -290,7 +279,7 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
 
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <User className="w-3 h-3" />
-                              <span>Ordered by: <strong>{item._requester_name}</strong></span>
+                              <span>Requested by: <strong>{item._requester_name}</strong></span>
                               {item.order_requested_at && (
                                 <span>on {new Date(item.order_requested_at).toLocaleDateString()}</span>
                               )}

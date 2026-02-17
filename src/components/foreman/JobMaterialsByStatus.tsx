@@ -207,8 +207,8 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
 
       setPackages(packagesWithStatusMaterials);
 
-      // Auto-expand all packages
-      setExpandedPackages(new Set(packagesWithStatusMaterials.map(p => p.id)));
+      // Start with all packages collapsed
+      setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading materials:', error);
     } finally {
