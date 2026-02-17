@@ -1032,6 +1032,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return () => clearInterval(pollInterval);
   }, [job.id]);
 
+  // Auto-create quote whenever materials data changes (if no quote exists)
+  useEffect(() => {
+    // Only auto-create if:
+    // 1. No quote exists yet
+    // 2. Materials data has been loaded (not empty initial state)
+    // 3. There are actual materials/rows/subcontractors
+    if (!quote && !loading && (
+      materialsBreakdown.sheetBreakdowns.length > 0 ||
+      customRows.length > 0 ||
+      subcontractorEstimates.length > 0
+    )) {
+      console.log('🔄 Materials detected, auto-creating quote...');
+      checkAndAutoCreateQuote();
+    }
+  }, [materialsBreakdown, customRows, subcontractorEstimates, quote, loading]);
+
   async function loadQuoteData() {
     try {
       let quoteData = null;
@@ -1458,11 +1474,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         loadMaterialsData(),
         loadSubcontractorEstimates(),
       ]);
-      
-      // After loading data, check if we need to auto-create a quote
-      if (!silent) {
-        await checkAndAutoCreateQuote();
-      }
     } catch (error) {
       console.error('Error loading financial data:', error);
       if (!silent) {
