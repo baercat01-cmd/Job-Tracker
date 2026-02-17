@@ -1014,11 +1014,18 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return 999999;
   }
 
-  const filteredCatalogMaterials = catalogMaterials.filter(m => {
+  // Only show materials if:
+  // 1. A specific category is selected (not "All"), OR
+  // 2. User is searching in the "All" category
+  const shouldShowMaterials = catalogCategory !== null || (catalogCategory === null && catalogSearch.trim() !== '');
+  
+  const filteredCatalogMaterials = shouldShowMaterials ? catalogMaterials.filter(m => {
+    // Filter by category if a specific one is selected
     if (catalogCategory && cleanCatalogCategory(m.category) !== catalogCategory) {
       return false;
     }
     
+    // Filter by search term if provided
     if (catalogSearch) {
       const term = catalogSearch.toLowerCase();
       return (
@@ -1033,7 +1040,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     const lengthA = parseLengthForSorting(a.part_length);
     const lengthB = parseLengthForSorting(b.part_length);
     return lengthA - lengthB;
-  });
+  }) : [];
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
@@ -1102,27 +1109,47 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       {/* Rest of content with padding */}
       <div className="space-y-3 sm:space-y-4 px-2 sm:px-4 pb-20">
 
-        {catalogSearch && catalogLoading ? (
+        {/* Show loading state */}
+        {shouldShowMaterials && catalogLoading ? (
           <Card>
             <CardContent className="py-12 text-center">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-sm sm:text-base text-muted-foreground">Loading catalog...</p>
             </CardContent>
           </Card>
-        ) : catalogSearch && filteredCatalogMaterials.length === 0 ? (
+        ) : !shouldShowMaterials && catalogCategory === null ? (
+          /* Show prompt when "All" is selected but no search */
+          <Card className="border-2 border-blue-200 bg-blue-50 w-full max-w-full overflow-x-hidden">
+            <CardContent className="py-12 text-center">
+              <Search className="w-16 h-16 mx-auto mb-4 text-blue-700 opacity-50" />
+              <p className="text-lg font-semibold text-blue-900 mb-2">Search Materials</p>
+              <p className="text-sm text-blue-700">
+                Use the search bar above to find materials from the catalog
+              </p>
+              <p className="text-xs text-blue-600 mt-3">
+                Or select a specific category to browse
+              </p>
+            </CardContent>
+          </Card>
+        ) : shouldShowMaterials && filteredCatalogMaterials.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-sm sm:text-base">No materials found matching "{catalogSearch}"</p>
+              <p className="text-sm sm:text-base">
+                {catalogSearch 
+                  ? `No materials found matching "${catalogSearch}"` 
+                  : `No materials in category "${catalogCategory}"`
+                }
+              </p>
             </CardContent>
           </Card>
-        ) : catalogSearch ? (
+        ) : shouldShowMaterials ? (
           <Card className="overflow-hidden w-full max-w-full">
             <CardHeader className="pb-2 px-3 sm:px-6">
               <CardTitle className="text-sm sm:text-base flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4" />
-                  Results ({filteredCatalogMaterials.length})
+                  {catalogSearch ? <Search className="w-4 h-4" /> : <Package className="w-4 h-4" />}
+                  {catalogSearch ? `Search Results (${filteredCatalogMaterials.length})` : `${catalogCategory} (${filteredCatalogMaterials.length})`}
                 </div>
                 <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Sorted by length</span>
               </CardTitle>
