@@ -112,6 +112,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     name: '',
     quote_number: '',
     client_name: '',
+    customer_email: '',
+    customer_phone: '',
     address: '',
     description: '',
     notes: '',
@@ -164,8 +166,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       if (formData.client_name.trim()) {
         await createOrUpdateContact({
           name: formData.client_name.trim(),
-          email: null,
-          phone: null,
+          email: formData.customer_email.trim() || null,
+          phone: formData.customer_phone.trim() || null,
           category: 'customer',
           job_id: null,
           created_by: profile.id
@@ -180,6 +182,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           name: formData.name.trim(),
           quote_number: formData.quote_number.trim() || null, // Will be auto-generated if null
           client_name: formData.client_name.trim(),
+          customer_email: formData.customer_email.trim() || null,
+          customer_phone: formData.customer_phone.trim() || null,
           address: formData.address.trim(),
           description: formData.description.trim() || null,
           notes: formData.notes.trim() || null,
@@ -219,6 +223,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         name: '',
         quote_number: '',
         client_name: '',
+        customer_email: '',
+        customer_phone: '',
         address: '',
         description: '',
         notes: '',
@@ -244,6 +250,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         name: '',
         quote_number: '',
         client_name: '',
+        customer_email: '',
+        customer_phone: '',
         address: '',
         description: '',
         notes: '',
@@ -326,28 +334,52 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
             </p>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="client_name">Client Name</Label>
+            <Input
+              id="client_name"
+              value={formData.client_name}
+              onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
+              placeholder="John Smith"
+              disabled={loading}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="client_name">Client Name</Label>
+              <Label htmlFor="customer_email">Customer Email</Label>
               <Input
-                id="client_name"
-                value={formData.client_name}
-                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                placeholder="John Smith"
+                id="customer_email"
+                type="email"
+                value={formData.customer_email}
+                onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
+                placeholder="customer@example.com"
                 disabled={loading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="address">Job Address *</Label>
+              <Label htmlFor="customer_phone">Customer Phone</Label>
               <Input
-                id="address"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="123 Main St, City, State"
-                required
+                id="customer_phone"
+                type="tel"
+                value={formData.customer_phone}
+                onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                placeholder="(555) 123-4567"
                 disabled={loading}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="address">Job Address *</Label>
+            <Input
+              id="address"
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              placeholder="123 Main St, City, State"
+              required
+              disabled={loading}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

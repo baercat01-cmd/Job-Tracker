@@ -753,6 +753,8 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
         .insert({
           name: formData.project_name,
           client_name: formData.customer_name,
+          customer_email: formData.customer_email || null,
+          customer_phone: formData.customer_phone || null,
           address: formData.customer_address || '',
           description: `Building: ${formData.width}' × ${formData.length}'\n${formData.site_notes || ''}`,
           status: 'active',
