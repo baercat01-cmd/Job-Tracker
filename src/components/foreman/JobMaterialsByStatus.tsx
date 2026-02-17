@@ -330,12 +330,13 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                           key={item.id} 
                           className="bg-white border rounded-lg hover:bg-muted/30 transition-colors"
                         >
-                          <div 
-                            className="p-3 cursor-pointer"
-                            onClick={() => toggleMaterial(item.id)}
-                          >
+                          <div className="p-3">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
+                              {/* Left side - clickable area for expand/collapse */}
+                              <div 
+                                className="flex-1 min-w-0 cursor-pointer"
+                                onClick={() => toggleMaterial(item.id)}
+                              >
                                 <h4 className="font-semibold text-sm leading-tight mb-2">
                                   {item.material_name}
                                 </h4>
@@ -371,43 +372,39 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                 )}
                               </div>
 
-                              {/* Action Button */}
-                              {status === 'pull_from_shop' && (
-                                <Button
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateMaterialStatus(item.id, 'ready_for_job');
-                                  }}
-                                  disabled={processingMaterials.has(item.id)}
-                                  className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
-                                  title="Mark as Ready for Job"
-                                >
-                                  {processingMaterials.has(item.id) ? (
-                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    <CheckCircle2 className="w-5 h-5" />
-                                  )}
-                                </Button>
-                              )}
-                              {status === 'ready_for_job' && (
-                                <Button
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateMaterialStatus(item.id, 'at_job');
-                                  }}
-                                  disabled={processingMaterials.has(item.id)}
-                                  className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0 flex-shrink-0"
-                                  title="Mark as At Job"
-                                >
-                                  {processingMaterials.has(item.id) ? (
-                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    <Truck className="w-5 h-5" />
-                                  )}
-                                </Button>
-                              )}
+                              {/* Right side - Action Button (NOT clickable for expand) */}
+                              <div className="flex-shrink-0">
+                                {status === 'pull_from_shop' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => updateMaterialStatus(item.id, 'ready_for_job')}
+                                    disabled={processingMaterials.has(item.id)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
+                                    title="Mark as Ready for Job"
+                                  >
+                                    {processingMaterials.has(item.id) ? (
+                                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="w-5 h-5" />
+                                    )}
+                                  </Button>
+                                )}
+                                {status === 'ready_for_job' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => updateMaterialStatus(item.id, 'at_job')}
+                                    disabled={processingMaterials.has(item.id)}
+                                    className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"
+                                    title="Mark as At Job"
+                                  >
+                                    {processingMaterials.has(item.id) ? (
+                                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <Truck className="w-5 h-5" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
