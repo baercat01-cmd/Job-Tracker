@@ -377,7 +377,10 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                 {status === 'pull_from_shop' && (
                                   <Button
                                     size="sm"
-                                    onClick={() => updateMaterialStatus(item.id, 'ready_for_job')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateMaterialStatus(item.id, 'ready_for_job');
+                                    }}
                                     disabled={processingMaterials.has(item.id)}
                                     className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
                                     title="Mark as Ready for Job"
@@ -392,7 +395,10 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                 {status === 'ready_for_job' && (
                                   <Button
                                     size="sm"
-                                    onClick={() => updateMaterialStatus(item.id, 'at_job')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateMaterialStatus(item.id, 'at_job');
+                                    }}
                                     disabled={processingMaterials.has(item.id)}
                                     className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"
                                     title="Mark as At Job"
