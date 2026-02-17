@@ -63,26 +63,18 @@ export function ShopDashboard() {
       <div className="min-h-screen bg-muted/30">
         {/* Header */}
         <header className="bg-card border-b shadow-sm">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <img 
-                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-                alt="Martin Builder" 
-                className="h-10 w-auto"
-              />
-              <div className="border-l pl-4">
-                <h1 className="text-lg font-bold text-foreground">FieldTrack Pro</h1>
-                <p className="text-xs text-muted-foreground">Shop Dashboard</p>
+          <div className="container mx-auto px-2 py-1 flex items-center justify-between">
+            <img 
+              src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+              alt="Martin Builder" 
+              className="h-6 w-auto"
+            />
+            <div className="flex items-center gap-2">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-medium">{profile?.username || profile?.email}</p>
               </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium">{profile?.username || profile?.email}</p>
-                <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
+              <Button variant="outline" size="sm" onClick={handleSignOut} className="h-7 w-7 p-0">
+                <LogOut className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
@@ -103,26 +95,18 @@ export function ShopDashboard() {
     <div className="min-h-screen bg-muted/30">
       {/* Header */}
       <header className="bg-card border-b shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img 
-              src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
-              alt="Martin Builder" 
-              className="h-10 w-auto"
-            />
-            <div className="border-l pl-4">
-              <h1 className="text-lg font-bold text-foreground">FieldTrack Pro</h1>
-              <p className="text-xs text-muted-foreground">Shop Dashboard</p>
+        <div className="container mx-auto px-2 py-1 flex items-center justify-between">
+          <img 
+            src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+            alt="Martin Builder" 
+            className="h-6 w-auto"
+          />
+          <div className="flex items-center gap-2">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-medium">{profile?.username || profile?.email}</p>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{profile?.username || profile?.email}</p>
-              <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+            <Button variant="outline" size="sm" onClick={handleSignOut} className="h-7 w-7 p-0">
+              <LogOut className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
