@@ -282,33 +282,61 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         prev.map(m => m.id === materialId ? { ...m, status: newStatus } : m)
       );
 
+      let updateSuccess = false;
+
       // Try updating in material_items table first (new system)
-      const { error: itemError } = await supabase
+      const { data: itemData, error: itemError } = await supabase
         .from('material_items')
         .update({
           status: newStatus,
           updated_at: new Date().toISOString()
         })
-        .eq('id', materialId);
+        .eq('id', materialId)
+        .select();
 
-      if (itemError) {
-        // If not found in material_items, try old materials table
-        const { error: materialError } = await supabase
+      if (itemData && itemData.length > 0) {
+        // Successfully updated in material_items
+        updateSuccess = true;
+        console.log('Updated material_items status to:', newStatus);
+      } else if (!itemError || itemError.code === 'PGRST116') {
+        // Item not found in material_items (PGRST116 = no rows returned)
+        // Try old materials table
+        const { data: materialData, error: materialError } = await supabase
           .from('materials')
           .update({
             status: newStatus,
             updated_at: new Date().toISOString()
           })
-          .eq('id', materialId);
+          .eq('id', materialId)
+          .select();
 
-        if (materialError) throw materialError;
+        if (materialError) {
+          console.error('Error updating materials table:', materialError);
+          throw new Error(`Failed to update status: ${materialError.message}`);
+        }
+
+        if (materialData && materialData.length > 0) {
+          updateSuccess = true;
+          console.log('Updated materials status to:', newStatus);
+        } else {
+          throw new Error('Material not found in either table');
+        }
+      } else {
+        // Real error from material_items update
+        console.error('Error updating material_items:', itemError);
+        throw new Error(`Failed to update status: ${itemError.message}`);
       }
 
-      toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
-      await loadFieldRequests();
+      if (updateSuccess) {
+        toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
+        await loadFieldRequests();
+      } else {
+        throw new Error('Status update failed - no rows affected');
+      }
     } catch (error: any) {
       console.error('Error updating material status:', error);
-      toast.error('Failed to update status');
+      toast.error(error.message || 'Failed to update status');
+      // Reload to revert optimistic update
       loadFieldRequests();
     }
   }
