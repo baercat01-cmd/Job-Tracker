@@ -155,22 +155,86 @@ serve(async (req) => {
           if (!error) vendorsSynced++;
         }
 
-        // Sync materials to materials_catalog
+        // Sync materials to materials_catalog with proper UPDATE logic
         let itemsSynced = 0;
+        let itemsUpdated = 0;
+        let itemsInserted = 0;
+        
         for (const item of items) {
-          const { error } = await supabase
-            .from('materials_catalog')
-            .upsert({
-              sku: item.item_id || item.sku,
-              material_name: item.name,
-              category: item.item_type || 'General',
-              unit_price: parseFloat(item.rate || '0'),
-              purchase_cost: parseFloat(item.purchase_rate || '0'),
-              raw_metadata: item, // Store full Zoho data
-            }, { onConflict: 'sku' });
+          const sku = item.item_id || item.sku;
+          const materialData = {
+            sku: sku,
+            material_name: item.name,
+            category: item.item_type || 'General',
+            unit_price: parseFloat(item.rate || '0'),
+            purchase_cost: parseFloat(item.purchase_rate || '0'),
+            part_length: item.unit || null,
+            raw_metadata: item, // Store full Zoho data
+            updated_at: new Date().toISOString(),
+          };
 
-          if (!error) itemsSynced++;
+          // Check if material exists
+          const { data: existing, error: checkError } = await supabase
+            .from('materials_catalog')
+            .select('sku, unit_price, purchase_cost')
+            .eq('sku', sku)
+            .maybeSingle();
+
+          if (checkError && checkError.code !== 'PGRST116') {
+            console.error(`❌ Error checking material ${sku}:`, checkError);
+            continue;
+          }
+
+          if (existing) {
+            // Material exists - UPDATE only if prices changed
+            const priceChanged = 
+              existing.unit_price !== materialData.unit_price ||
+              existing.purchase_cost !== materialData.purchase_cost;
+            
+            if (priceChanged) {
+              const { error: updateError } = await supabase
+                .from('materials_catalog')
+                .update({
+                  material_name: materialData.material_name,
+                  category: materialData.category,
+                  unit_price: materialData.unit_price,
+                  purchase_cost: materialData.purchase_cost,
+                  part_length: materialData.part_length,
+                  raw_metadata: materialData.raw_metadata,
+                  updated_at: materialData.updated_at,
+                })
+                .eq('sku', sku);
+
+              if (!updateError) {
+                itemsUpdated++;
+                console.log(`✅ Updated material ${sku} with new prices`);
+              } else {
+                console.error(`❌ Failed to update material ${sku}:`, updateError);
+              }
+            } else {
+              console.log(`⏭️ Material ${sku} unchanged - skipping`);
+            }
+            itemsSynced++;
+          } else {
+            // Material doesn't exist - INSERT new
+            const { error: insertError } = await supabase
+              .from('materials_catalog')
+              .insert({
+                ...materialData,
+                created_at: new Date().toISOString(),
+              });
+
+            if (!insertError) {
+              itemsInserted++;
+              itemsSynced++;
+              console.log(`✅ Inserted new material ${sku}`);
+            } else {
+              console.error(`❌ Failed to insert material ${sku}:`, insertError);
+            }
+          }
         }
+
+        console.log(`📊 Sync Summary: ${itemsInserted} inserted, ${itemsUpdated} updated, ${itemsSynced} total processed`);
 
         // Update sync status
         await supabase
@@ -184,9 +248,11 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             success: true,
-            message: `Synced ${vendorsSynced} vendors and ${itemsSynced} materials from Zoho Books`,
+            message: `Synced ${vendorsSynced} vendors and ${itemsSynced} materials from Zoho Books (${itemsInserted} new, ${itemsUpdated} updated)`,
             vendorsSynced,
             itemsSynced,
+            itemsInserted,
+            itemsUpdated,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );

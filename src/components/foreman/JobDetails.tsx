@@ -26,6 +26,11 @@ interface JobDetailsProps {
 export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetailsProps) {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState(defaultTab);
+
+  // Update active tab when defaultTab changes (for navigation from status tags)
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
