@@ -152,8 +152,75 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       
       console.log('🔍 Loading packages with materials that need shop processing...');
       
-      // Get ALL packages that contain materials with pull_from_shop, ready_for_job, or at_job status
+      // First, get all material items with the required statuses
+      const { data: shopMaterials, error: materialsError } = await supabase
+        .from('material_items')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit')
+        .in('status', ['pull_from_shop', 'ready_for_job', 'at_job']);
+      
+      if (materialsError) {
+        console.error('❌ Error loading shop materials:', materialsError);
+        throw materialsError;
+      }
+      
+      console.log(`📋 Found ${shopMaterials?.length || 0} materials with shop statuses`);
+      
+      if (!shopMaterials || shopMaterials.length === 0) {
+        console.log('❌ No materials found with shop statuses');
+        setPackages([]);
+        return;
+      }
+      
+      // Get the material item IDs
+      const materialIds = shopMaterials.map(m => m.id);
+      
+      // Get bundles that contain these materials
       const { data, error } = await supabase
+        .from('material_bundle_items')
+        .select(`
+          bundle_id,
+          material_bundles!inner(
+            id,
+            job_id,
+            name,
+            description,
+            status,
+            jobs!inner(
+              name,
+              client_name
+            )
+          )
+        `)
+        .in('material_item_id', materialIds);
+
+      if (error) {
+        console.error('❌ Error loading bundles:', error);
+        throw error;
+      }
+      
+      console.log(`📦 Found ${data?.length || 0} bundle items`);
+      
+      // Get unique bundles
+      const uniqueBundles = new Map();
+      (data || []).forEach((item: any) => {
+        const bundle = item.material_bundles;
+        if (bundle && !uniqueBundles.has(bundle.id)) {
+          uniqueBundles.set(bundle.id, bundle);
+        }
+      });
+      
+      console.log(`📦 Found ${uniqueBundles.size} unique bundles with shop materials`);
+      
+      // Now load full bundle data with all their items
+      const bundleIds = Array.from(uniqueBundles.keys());
+      
+      if (bundleIds.length === 0) {
+        console.log('❌ No bundles found');
+        setPackages([]);
+        return;
+      }
+      
+      const { data: fullBundles, error: bundlesError } = await supabase
         .from('material_bundles')
         .select(`
           id,
@@ -183,19 +250,19 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             )
           )
         `)
+        .in('id', bundleIds)
         .order('name');
-
-      if (error) {
-        console.error('❌ Error loading packages:', error);
-        throw error;
+      
+      if (bundlesError) {
+        console.error('❌ Error loading full bundle data:', bundlesError);
+        throw bundlesError;
       }
-
-      console.log(`📦 Found ${data?.length || 0} total packages`);
-      console.log('📦 Raw data sample:', data?.slice(0, 2));
+      
+      console.log(`📦 Loaded ${fullBundles?.length || 0} full bundles`);
       console.log('👤 Current user:', userId);
       
       // Transform Supabase response to match our interface with better error handling
-      const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => {
+      const transformedPackages: MaterialBundle[] = (fullBundles || []).map((pkg: SupabaseBundleResponse) => {
         // Safely access nested arrays
         const job = Array.isArray(pkg.jobs) && pkg.jobs.length > 0 ? pkg.jobs[0] : { name: 'Unknown Job', client_name: '' };
         
