@@ -742,58 +742,57 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                     </CardHeader>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <table className="w-full table-fixed">
-                          <thead className="bg-muted/50 border-b">
-                            <tr>
-                              <th className="text-left p-3 font-semibold w-full">Material</th>
-                              <th className="text-center p-3 font-semibold whitespace-nowrap">Qty</th>
-                              <th className="text-center p-3 font-semibold whitespace-nowrap">Color</th>
-                              <th className="text-center p-3 font-semibold whitespace-nowrap">Length</th>
-                              <th className="text-center p-3 font-semibold w-12"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pullFromShopItems.map((item) => (
-                              <tr key={item.id} className="border-b hover:bg-muted/30 transition-colors">
-                                <td className="p-3 font-medium break-words">{item.material_items.material_name}</td>
-                                <td className="p-3 text-center font-semibold whitespace-nowrap">
-                                  {item.material_items.quantity}
-                                </td>
-                                <td className="p-3 text-center whitespace-nowrap">
-                                  {item.material_items.color ? (
-                                    <Badge variant="outline" className="bg-blue-50">
-                                      {item.material_items.color}
-                                    </Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground">-</span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center whitespace-nowrap">
-                                  {item.material_items.length || '-'}
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex justify-center">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
-                                      disabled={processingMaterials.has(item.material_items.id)}
-                                      className="bg-emerald-600 hover:bg-emerald-700 h-8 w-8 p-0"
-                                      title="Mark as Ready"
-                                    >
-                                      {processingMaterials.has(item.material_items.id) ? (
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                      ) : (
-                                        <CheckCircle2 className="w-4 h-4" />
-                                      )}
-                                    </Button>
+                    <CardContent className="p-2 sm:p-4">
+                      <div className="space-y-2">
+                        {pullFromShopItems.map((item) => (
+                          <div 
+                            key={item.id} 
+                            className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-sm leading-tight mb-2">
+                                  {item.material_items.material_name}
+                                </h4>
+                                
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">Qty:</span>
+                                    <p className="font-semibold text-base">{item.material_items.quantity}</p>
                                   </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Color:</span>
+                                    <p className="font-medium">
+                                      {item.material_items.color || '-'}
+                                    </p>
+                                  </div>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Length:</span>
+                                    <p className="font-medium">
+                                      {item.material_items.length || '-'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <Button
+                                size="sm"
+                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
+                                disabled={processingMaterials.has(item.material_items.id)}
+                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
+                                title="Mark as Ready"
+                              >
+                                {processingMaterials.has(item.material_items.id) ? (
+                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-5 h-5" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </CardContent>
                   </CollapsibleContent>
