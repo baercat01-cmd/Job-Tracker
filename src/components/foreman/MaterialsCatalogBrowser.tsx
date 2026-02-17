@@ -390,8 +390,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     }
 
     const qty = typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 0;
-    if (qty <= 0) {
-      toast.error('Quantity must be greater than 0');
+    if (qty < 0.01) {
+      toast.error('Quantity must be at least 0.01');
       return;
     }
 
@@ -434,7 +434,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   function updateVariantQuantity(sku: string, quantity: number) {
     const newSelection = new Map(selectedVariants);
-    if (quantity > 0) {
+    if (quantity >= 0.01) {
       newSelection.set(sku, quantity);
     } else {
       newSelection.delete(sku);
@@ -1447,9 +1447,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                 <Input
                   id="custom-quantity"
                   type="number"
-                  min="1"
+                  min="0.01"
+                  step="0.01"
                   value={customMaterialQuantity}
-                  onChange={(e) => setCustomMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                  onChange={(e) => setCustomMaterialQuantity(e.target.value === '' ? '' : Math.max(0.01, parseFloat(e.target.value) || 0.01))}
                   placeholder="1"
                   className="h-10"
                 />
@@ -1460,9 +1461,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   id="custom-length"
                   value={customMaterialLength}
                   onChange={(e) => setCustomMaterialLength(e.target.value)}
-                  placeholder="e.g., 12'"
+                  placeholder="e.g., 12' or leave blank if not applicable"
                   className="h-10"
                 />
+                <p className="text-xs text-muted-foreground">Only enter if this material has a specific length</p>
               </div>
             </div>
 
@@ -1589,8 +1591,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                           <Input
                             type="number"
                             min="0"
+                            step="0.01"
                             value={selectedVariants.get(variant.sku) || 0}
-                            onChange={(e) => updateVariantQuantity(variant.sku, parseInt(e.target.value) || 0)}
+                            onChange={(e) => updateVariantQuantity(variant.sku, parseFloat(e.target.value) || 0)}
                             className="w-20 h-9 text-center"
                             placeholder="0"
                           />
@@ -1646,9 +1649,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                         <Label className="text-xs">Qty</Label>
                         <Input
                           type="number"
-                          min="1"
+                          min="0.01"
+                          step="0.01"
                           value={addMaterialQuantity}
-                          onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                          onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(0.01, parseFloat(e.target.value) || 0.01))}
                           placeholder="1"
                           className="h-9"
                         />
@@ -1709,9 +1713,10 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   <Label>Quantity *</Label>
                   <Input
                     type="number"
-                    min="1"
+                    min="0.01"
+                    step="0.01"
                     value={addMaterialQuantity}
-                    onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(1, parseFloat(e.target.value) || 1))}
+                    onChange={(e) => setAddMaterialQuantity(e.target.value === '' ? '' : Math.max(0.01, parseFloat(e.target.value) || 0.01))}
                     placeholder="1"
                     className="h-10"
                   />
