@@ -210,11 +210,6 @@ export function MaterialsByBundle({ job }: MaterialsByBundleProps) {
                           <Package className="w-4 h-4 text-emerald-600" />
                           {bundle.name}
                         </CardTitle>
-                        {bundle.description && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {bundle.description}
-                          </p>
-                        )}
                       </div>
                     </div>
                     <Badge variant="outline" className="font-semibold bg-white text-xs">

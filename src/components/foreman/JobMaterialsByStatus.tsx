@@ -311,11 +311,6 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                           <Package className="w-4 h-4 text-purple-600" />
                           {pkg.name}
                         </CardTitle>
-                        {pkg.description && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {pkg.description}
-                          </p>
-                        )}
                       </div>
                     </div>
                     <Badge variant="outline" className="font-semibold bg-white text-xs">

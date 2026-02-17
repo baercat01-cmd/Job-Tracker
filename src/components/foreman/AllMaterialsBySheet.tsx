@@ -130,8 +130,8 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
 
       setSheets(transformedSheets);
 
-      // Auto-expand all sheets
-      setExpandedSheets(new Set(transformedSheets.map(s => s.id)));
+      // Start with all sheets collapsed
+      setExpandedSheets(new Set());
     } catch (error: any) {
       console.error('❌ Error loading materials:', error);
     } finally {
@@ -198,11 +198,6 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
                             </Badge>
                           )}
                         </CardTitle>
-                        {sheet.description && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {sheet.description}
-                          </p>
-                        )}
                       </div>
                     </div>
                     <Badge variant="outline" className="font-semibold bg-white text-xs">
