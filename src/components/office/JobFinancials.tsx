@@ -2691,7 +2691,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const baseCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
       : r.total_cost;
-    return sum + (baseCost * (1 + r.markup_percent / 100));
+    // Use the row's selling_price directly if it was pre-calculated, otherwise calculate with markup
+    const rowPrice = r.selling_price || (baseCost * (1 + r.markup_percent / 100));
+    return sum + rowPrice;
   }, 0);
   
   const proposalMaterialsPrice = materialSheetsPrice + customMaterialsPrice;
@@ -2756,7 +2758,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const baseCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
       : r.total_cost;
-    return sum + (baseCost * (1 + r.markup_percent / 100));
+    // Use the row's selling_price directly if it was pre-calculated, otherwise calculate with markup
+    const rowPrice = r.selling_price || (baseCost * (1 + r.markup_percent / 100));
+    return sum + rowPrice;
   }, 0);
   
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customLaborPrice + proposalSubcontractorNonTaxablePrice;
