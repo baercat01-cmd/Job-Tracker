@@ -169,7 +169,8 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     try {
       setLoadingRequests(true);
       
-      const { data, error } = await supabase
+      // Load from old materials table (legacy)
+      const { data: oldMaterials, error: oldError } = await supabase
         .from('materials')
         .select(`
           id,
@@ -187,22 +188,86 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         .in('import_source', ['field_catalog', 'field_custom'])
         .order('order_requested_at', { ascending: false });
 
-      if (error) throw error;
+      if (oldError) throw oldError;
 
-      const requests: FieldRequestMaterial[] = (data || []).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        quantity: m.quantity,
-        length: m.length,
-        status: m.status,
-        notes: m.notes,
-        ordered_by: m.ordered_by,
-        order_requested_at: m.order_requested_at,
-        use_case: m.use_case,
-        category_name: m.materials_categories?.name || 'Unknown',
-      }));
+      // Load from new material_items table (workbook system)
+      // Get workbook for this job
+      const { data: workbookData } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working')
+        .maybeSingle();
 
-      setFieldRequests(requests);
+      let newMaterials: any[] = [];
+      if (workbookData) {
+        // Get "Field Requests" sheet
+        const { data: sheetData } = await supabase
+          .from('material_sheets')
+          .select('id, sheet_name')
+          .eq('workbook_id', workbookData.id)
+          .eq('sheet_name', 'Field Requests')
+          .maybeSingle();
+
+        if (sheetData) {
+          // Get material items from this sheet
+          const { data: itemsData } = await supabase
+            .from('material_items')
+            .select('*')
+            .eq('sheet_id', sheetData.id)
+            .order('created_at', { ascending: false });
+
+          newMaterials = (itemsData || []).map((item: any) => ({
+            id: item.id,
+            name: item.material_name,
+            quantity: item.quantity,
+            length: item.length,
+            status: item.status,
+            notes: item.notes,
+            ordered_by: null, // Not tracked in new system
+            order_requested_at: item.created_at,
+            use_case: item.usage,
+            materials_categories: { name: item.category || 'Field Requests' },
+          }));
+        }
+      }
+
+      // Combine old and new materials
+      const allMaterials = [
+        ...(oldMaterials || []).map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          quantity: m.quantity,
+          length: m.length,
+          status: m.status,
+          notes: m.notes,
+          ordered_by: m.ordered_by,
+          order_requested_at: m.order_requested_at,
+          use_case: m.use_case,
+          category_name: m.materials_categories?.name || 'Unknown',
+        })),
+        ...newMaterials.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          quantity: m.quantity,
+          length: m.length,
+          status: m.status,
+          notes: m.notes,
+          ordered_by: m.ordered_by,
+          order_requested_at: m.order_requested_at,
+          use_case: m.use_case,
+          category_name: m.materials_categories?.name || 'Unknown',
+        })),
+      ];
+
+      // Sort by order_requested_at (most recent first)
+      allMaterials.sort((a, b) => {
+        const dateA = new Date(a.order_requested_at || 0).getTime();
+        const dateB = new Date(b.order_requested_at || 0).getTime();
+        return dateB - dateA;
+      });
+
+      setFieldRequests(allMaterials);
     } catch (error: any) {
       console.error('Error loading field requests:', error);
     } finally {
@@ -212,20 +277,34 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
   async function updateMaterialStatus(materialId: string, newStatus: FieldRequestMaterial['status']) {
     try {
+      // Optimistically update UI
       setFieldRequests(prev =>
         prev.map(m => m.id === materialId ? { ...m, status: newStatus } : m)
       );
 
-      const { error } = await supabase
-        .from('materials')
+      // Try updating in material_items table first (new system)
+      const { error: itemError } = await supabase
+        .from('material_items')
         .update({
           status: newStatus,
           updated_at: new Date().toISOString()
         })
         .eq('id', materialId);
 
-      if (error) throw error;
+      if (itemError) {
+        // If not found in material_items, try old materials table
+        const { error: materialError } = await supabase
+          .from('materials')
+          .update({
+            status: newStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', materialId);
 
+        if (materialError) throw materialError;
+      }
+
+      toast.success(`Status updated to ${getStatusLabel(newStatus)}`);
       await loadFieldRequests();
     } catch (error: any) {
       console.error('Error updating material status:', error);
