@@ -131,13 +131,51 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
 
       console.log(`📦 Loaded ${bundlesData?.length || 0} bundles`);
       console.log('📦 Bundle data sample:', bundlesData?.[0]);
+      
+      // Transform Supabase response properly (handles both array and object responses)
+      const transformedBundles = (bundlesData || []).map((bundle: any) => {
+        console.log(`🔧 Processing bundle "${bundle.name}":`, {
+          bundleId: bundle.id,
+          bundleItemsType: typeof bundle.bundle_items,
+          bundleItemsIsArray: Array.isArray(bundle.bundle_items),
+          bundleItemsCount: bundle.bundle_items?.length || 0
+        });
+        
+        // Transform bundle items and handle Supabase nested response
+        const bundleItems = (bundle.bundle_items || []).map((item: any) => {
+          const materialItem = item.material_items;
+          
+          if (!materialItem) {
+            console.warn('⚠️ Bundle item missing material_items:', item);
+            return null;
+          }
+          
+          // Handle sheets which might be array or object
+          const sheet = Array.isArray(materialItem.sheets) 
+            ? materialItem.sheets[0] 
+            : materialItem.sheets || { sheet_name: 'Unknown Sheet' };
+          
+          return {
+            ...item,
+            material_items: {
+              ...materialItem,
+              sheets: sheet,
+              _sheet_name: sheet.sheet_name || sheetMap.get(materialItem.sheet_id) || 'Unknown Sheet',
+            },
+          };
+        }).filter(Boolean);
+        
+        return {
+          ...bundle,
+          bundle_items: bundleItems,
+        };
+      });
 
       // Filter and transform bundles to only include materials with the target status
-      const packagesWithStatusMaterials: MaterialBundle[] = (bundlesData || [])
+      const packagesWithStatusMaterials: MaterialBundle[] = transformedBundles
         .map((bundle: any) => {
-          console.log(`🔍 Processing bundle "${bundle.name}":`, {
-            bundleItems: bundle.bundle_items?.length || 0,
-            sampleItem: bundle.bundle_items?.[0]
+          console.log(`🔍 Filtering bundle "${bundle.name}":`, {
+            bundleItems: bundle.bundle_items?.length || 0
           });
 
           // Filter items to only those with the target status
@@ -156,7 +194,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
             })
             .map((item: any) => ({
               ...item.material_items,
-              _sheet_name: sheetMap.get(item.material_items.sheet_id) || 'Unknown Sheet',
+              _sheet_name: item.material_items._sheet_name,
             }));
 
           console.log(`✅ Bundle "${bundle.name}" has ${statusItems.length} materials with status "${status}"`);
