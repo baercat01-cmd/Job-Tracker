@@ -1306,6 +1306,21 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
                         <MapPin className="w-4 h-4" />
                         {job.address}
                       </p>
+                      {((job as any).customer_email || (job as any).customer_phone) && (
+                        <div className="flex gap-4 text-sm text-muted-foreground mt-2">
+                          {(job as any).customer_email && (
+                            <p className="flex items-center gap-2">
+                              <Mail className="w-4 h-4" />
+                              {(job as any).customer_email}
+                            </p>
+                          )}
+                          {(job as any).customer_phone && (
+                            <p className="flex items-center gap-2">
+                              📞 {(job as any).customer_phone}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {job.description && (
                         <p className="text-muted-foreground">{job.description}</p>
                       )}

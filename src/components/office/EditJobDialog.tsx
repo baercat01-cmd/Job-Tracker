@@ -112,6 +112,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
   const [formData, setFormData] = useState({
     name: '',
     client_name: '',
+    customer_email: '',
+    customer_phone: '',
     address: '',
     description: '',
     notes: '',
@@ -127,6 +129,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
       setFormData({
         name: job.name || '',
         client_name: job.client_name || '',
+        customer_email: (job as any).customer_email || '',
+        customer_phone: (job as any).customer_phone || '',
         address: job.address || '',
         description: job.description || '',
         notes: job.notes || '',
@@ -168,6 +172,8 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
         .update({
           name: formData.name.trim(),
           client_name: formData.client_name.trim(),
+          customer_email: formData.customer_email.trim() || null,
+          customer_phone: formData.customer_phone.trim() || null,
           address: formData.address.trim(),
           description: formData.description.trim() || null,
           notes: formData.notes.trim() || null,
@@ -185,12 +191,12 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
         throw new Error(error.message || 'Failed to update job');
       }
 
-      // Auto-update contact if customer name changed
-      if (formData.client_name.trim() && formData.client_name !== job.client_name) {
+      // Auto-update contact with email/phone
+      if (formData.client_name.trim()) {
         await createOrUpdateContact({
           name: formData.client_name.trim(),
-          email: null,
-          phone: null,
+          email: formData.customer_email.trim() || null,
+          phone: formData.customer_phone.trim() || null,
           category: 'customer',
           job_id: job.id,
           created_by: profile.id
@@ -245,17 +251,43 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="edit-client">Client Name</Label>
+            <Input
+              id="edit-client"
+              value={formData.client_name}
+              onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
+              placeholder="John Smith"
+              disabled={loading}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-client">Client Name</Label>
+              <Label htmlFor="edit-email">Customer Email</Label>
               <Input
-                id="edit-client"
-                value={formData.client_name}
-                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                placeholder="John Smith"
+                id="edit-email"
+                type="email"
+                value={formData.customer_email}
+                onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
+                placeholder="customer@example.com"
                 disabled={loading}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Customer Phone</Label>
+              <Input
+                id="edit-phone"
+                type="tel"
+                value={formData.customer_phone}
+                onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                placeholder="(555) 123-4567"
+                disabled={loading}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="edit-job-number">Job Number</Label>
               <Input

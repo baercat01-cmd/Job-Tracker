@@ -171,75 +171,148 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   }
 
   async function createPortalLink() {
-    if (!customerName) {
-      toast.error('Please enter customer name');
+    // Validate customer name
+    if (!customerName || customerName.trim() === '') {
+      toast.error('❌ Customer name is required');
       return;
     }
 
-    if (!customerEmail) {
-      toast.error('Please enter customer email (used as unique identifier)');
+    // Validate customer email (REQUIRED for portal access)
+    if (!customerEmail || customerEmail.trim() === '') {
+      toast.error(
+        '❌ Customer email is required\n\nEmail is used for:\n• Unique portal identification\n• Email communications\n• Account recovery\n\nPlease enter customer email or add it to the quote first.',
+        { duration: 8000 }
+      );
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(customerEmail.trim())) {
+      toast.error('❌ Please enter a valid email address');
       return;
     }
 
     // Check if a portal link already exists for this customer + job combination
-    const customerJobCombo = `${customerEmail}|${job.id}`;
-    if (existingCustomerLinks.includes(customerJobCombo)) {
-      toast.error('A portal link already exists for this customer on this job.');
+    const customerJobCombo = `${customerEmail.trim().toLowerCase()}|${job.id}`;
+    if (existingCustomerLinks.map(link => link.toLowerCase()).includes(customerJobCombo)) {
+      toast.error(
+        '❌ A portal link already exists for this customer on this job.\n\nPlease use the existing link or deactivate it first.',
+        { duration: 6000 }
+      );
       return;
     }
 
+    console.log('🔷 Creating portal link...');
+    console.log('  Customer:', customerName);
+    console.log('  Email:', customerEmail);
+    console.log('  Job:', job.name, `(${job.id})`);
+
     try {
       const token = generateAccessToken();
+      console.log('  Generated token:', token);
       
       let expiresAt = null;
-      if (expiresInDays) {
+      if (expiresInDays && expiresInDays.trim() !== '') {
         const days = parseInt(expiresInDays);
+        if (isNaN(days) || days <= 0) {
+          toast.error('❌ Please enter a valid number of days for expiration');
+          return;
+        }
         const expireDate = new Date();
         expireDate.setDate(expireDate.getDate() + days);
         expiresAt = expireDate.toISOString();
+        console.log('  Expires:', expiresAt);
+      } else {
+        console.log('  No expiration (permanent link)');
       }
+
+      const portalData = {
+        job_id: job.id,
+        customer_identifier: customerEmail.trim().toLowerCase(),
+        access_token: token,
+        customer_name: customerName.trim(),
+        customer_email: customerEmail.trim(),
+        customer_phone: customerPhone?.trim() || null,
+        is_active: true,
+        expires_at: expiresAt,
+        created_by: profile?.id,
+        show_proposal: showProposal,
+        show_payments: showPayments,
+        show_schedule: showSchedule,
+        show_documents: showDocuments,
+        show_photos: showPhotos,
+        show_financial_summary: showFinancialSummary,
+        custom_message: customMessage?.trim() || null,
+      };
+
+      console.log('  Portal data:', JSON.stringify(portalData, null, 2));
 
       const { data, error } = await supabase
         .from('customer_portal_access')
-        .insert([{
-          job_id: job.id, // Link to the specific job
-          customer_identifier: customerEmail,
-          access_token: token,
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: customerPhone || null,
-          is_active: true,
-          expires_at: expiresAt,
-          created_by: profile?.id,
-          show_proposal: showProposal,
-          show_payments: showPayments,
-          show_schedule: showSchedule,
-          show_documents: showDocuments,
-          show_photos: showPhotos,
-          show_financial_summary: showFinancialSummary,
-          custom_message: customMessage || null,
-        }])
+        .insert([portalData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database error:', error);
+        console.error('  Error code:', error.code);
+        console.error('  Error message:', error.message);
+        console.error('  Error details:', error.details);
+        console.error('  Error hint:', error.hint);
+        
+        // Provide specific error messages based on error code
+        if (error.code === '23505') {
+          // Unique constraint violation
+          toast.error(
+            '❌ Duplicate portal link\n\nA portal link already exists for this customer on this job. Please check existing links or use a different email.',
+            { duration: 8000 }
+          );
+        } else if (error.code === '23503') {
+          // Foreign key violation
+          toast.error(
+            '❌ Invalid job or user reference\n\nPlease refresh the page and try again.',
+            { duration: 6000 }
+          );
+        } else if (error.code === '42501') {
+          // Permission denied
+          toast.error(
+            '❌ Permission denied\n\nYou do not have permission to create portal links. Please contact your administrator.',
+            { duration: 6000 }
+          );
+        } else {
+          toast.error(
+            `❌ Database error: ${error.message}\n\nError code: ${error.code || 'unknown'}`,
+            { duration: 8000 }
+          );
+        }
+        return;
+      }
 
-      toast.success(`Customer portal link created for ${job.name}`);
+      console.log('✅ Portal link created successfully:', data);
+      toast.success(`✅ Customer portal link created for ${job.name}`, { duration: 3000 });
       
-      // Email integration is now active - customers can send/receive emails through the portal
-      // All emails are stored in job_emails table and linked to this job
-      console.log('✅ Portal created for:', customerEmail, 'Job:', job.id, '- Email integration enabled');
+      // Email integration is now active
+      console.log('📧 Email integration enabled for:', customerEmail, 'Job:', job.id);
       
       setShowCreateDialog(false);
       resetForm();
       await loadPortalLinks();
 
       const portalUrl = `${window.location.origin}/customer-portal?token=${token}`;
-      navigator.clipboard.writeText(portalUrl);
-      toast.success('Link copied to clipboard!');
+      await navigator.clipboard.writeText(portalUrl);
+      toast.success('🔗 Portal link copied to clipboard!', { duration: 3000 });
+      
+      console.log('🔗 Portal URL:', portalUrl);
     } catch (error: any) {
-      console.error('Error creating portal link:', error);
-      toast.error('Failed to create portal link');
+      console.error('❌ Unexpected error creating portal link:', error);
+      console.error('  Error type:', error.constructor.name);
+      console.error('  Error stack:', error.stack);
+      
+      toast.error(
+        `❌ Failed to create portal link\n\nError: ${error.message || 'Unknown error'}\n\nPlease try again or contact support.`,
+        { duration: 10000 }
+      );
     }
   }
 
@@ -753,11 +826,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Customer Name *</Label>
+                <Label htmlFor="customer-name">Customer Name *</Label>
                 <Input
+                  id="customer-name"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="John Doe"
+                  required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   From job: {job.client_name}
@@ -765,16 +840,29 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               </div>
 
               <div>
-                <Label>Customer Email *</Label>
+                <Label htmlFor="customer-email">Customer Email *</Label>
                 <Input
+                  id="customer-email"
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   placeholder="customer@example.com"
+                  required
+                  className={!customerEmail ? 'border-yellow-500 bg-yellow-50' : ''}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Used as unique identifier & for email integration
-                </p>
+                {!customerEmail ? (
+                  <div className="flex items-start gap-2 mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded text-xs text-yellow-900">
+                    <span>⚠️</span>
+                    <div>
+                      <p className="font-semibold">Email Required</p>
+                      <p>Email is needed for portal access and communications. Please enter customer email or add it to the quote first.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-green-700 mt-1 flex items-center gap-1">
+                    <span>✓</span> Email will be used for portal access & communications
+                  </p>
+                )}
               </div>
 
               <div>
