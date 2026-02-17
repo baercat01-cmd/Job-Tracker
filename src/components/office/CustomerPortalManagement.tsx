@@ -143,8 +143,11 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
 
       if (error) throw error;
       
-      const customerIds = (data || []).map(link => link.customer_identifier).filter(Boolean);
-      setExistingCustomerLinks(customerIds);
+      // Build list of customer+job combinations that already have links
+      const existingCombos = (data || [])
+        .filter(link => link.customer_identifier && link.job_id)
+        .map(link => `${link.customer_identifier}|${link.job_id}`);
+      setExistingCustomerLinks(existingCombos);
       
       const jobCustomerLinks = (data || []).filter(link => 
         link.customer_name === job.client_name || link.job_id === job.id
@@ -178,8 +181,10 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       return;
     }
 
-    if (existingCustomerLinks.includes(customerEmail)) {
-      toast.error('A portal link already exists for this customer email. Each customer can only have one active link.');
+    // Check if a portal link already exists for this customer + job combination
+    const customerJobCombo = `${customerEmail}|${job.id}`;
+    if (existingCustomerLinks.includes(customerJobCombo)) {
+      toast.error('A portal link already exists for this customer on this job.');
       return;
     }
 
