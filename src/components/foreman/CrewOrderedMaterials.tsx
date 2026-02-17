@@ -133,8 +133,8 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
 
       setMaterials(transformedMaterials);
 
-      // Auto-expand all sections
-      setExpandedSections(new Set(['all']));
+      // Start with all sections collapsed
+      setExpandedSections(new Set());
     } catch (error: any) {
       console.error('❌ Error loading crew-ordered materials:', error);
     } finally {
