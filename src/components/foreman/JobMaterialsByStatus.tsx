@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, CheckCircle2, Truck } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Job } from '@/types';
 
 interface MaterialItem {
@@ -38,6 +40,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
+  const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMaterials();
@@ -175,6 +178,40 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
     setExpandedPackages(newSet);
   }
 
+  async function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
+    if (processingMaterials.has(materialId)) return;
+    
+    setProcessingMaterials(prev => new Set(prev).add(materialId));
+
+    try {
+      console.log(`🔄 Updating material ${materialId} to ${newStatus}`);
+      
+      // Update material status
+      const { error: materialError } = await supabase
+        .from('material_items')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', materialId);
+
+      if (materialError) throw materialError;
+
+      toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
+
+      loadMaterials();
+    } catch (error: any) {
+      console.error('Error updating material:', error);
+      toast.error('Failed to update material status');
+    } finally {
+      setProcessingMaterials(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(materialId);
+        return newSet;
+      });
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -240,36 +277,70 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                         key={item.id} 
                         className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
                       >
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-sm leading-tight mb-2">
-                            {item.material_name}
-                          </h4>
-                          
-                          <div className="grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                              <span className="text-muted-foreground">Qty:</span>
-                              <p className="font-semibold text-base">{item.quantity}</p>
-                            </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-sm leading-tight mb-2">
+                              {item.material_name}
+                            </h4>
                             
-                            <div>
-                              <span className="text-muted-foreground">Color:</span>
-                              <p className="font-medium">
-                                {item.color || '-'}
-                              </p>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div>
+                                <span className="text-muted-foreground">Qty:</span>
+                                <p className="font-semibold text-base">{item.quantity}</p>
+                              </div>
+                              
+                              <div>
+                                <span className="text-muted-foreground">Color:</span>
+                                <p className="font-medium">
+                                  {item.color || '-'}
+                                </p>
+                              </div>
+                              
+                              <div>
+                                <span className="text-muted-foreground">Length:</span>
+                                <p className="font-medium">
+                                  {item.length || '-'}
+                                </p>
+                              </div>
                             </div>
-                            
-                            <div>
-                              <span className="text-muted-foreground">Length:</span>
-                              <p className="font-medium">
-                                {item.length || '-'}
+
+                            {item.usage && (
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {item.usage}
                               </p>
-                            </div>
+                            )}
                           </div>
 
-                          {item.usage && (
-                            <p className="text-xs text-muted-foreground mt-2">
-                              {item.usage}
-                            </p>
+                          {/* Action Button */}
+                          {status === 'pull_from_shop' && (
+                            <Button
+                              size="sm"
+                              onClick={() => updateMaterialStatus(item.id, 'ready_for_job')}
+                              disabled={processingMaterials.has(item.id)}
+                              className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
+                              title="Mark as Ready for Job"
+                            >
+                              {processingMaterials.has(item.id) ? (
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-5 h-5" />
+                              )}
+                            </Button>
+                          )}
+                          {status === 'ready_for_job' && (
+                            <Button
+                              size="sm"
+                              onClick={() => updateMaterialStatus(item.id, 'at_job')}
+                              disabled={processingMaterials.has(item.id)}
+                              className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0 flex-shrink-0"
+                              title="Mark as At Job"
+                            >
+                              {processingMaterials.has(item.id) ? (
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <Truck className="w-5 h-5" />
+                              )}
+                            </Button>
                           )}
                         </div>
                       </div>
