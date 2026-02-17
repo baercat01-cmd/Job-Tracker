@@ -49,6 +49,7 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
   const [sheets, setSheets] = useState<MaterialSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSheets, setExpandedSheets] = useState<Set<string>>(new Set());
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMaterials();
@@ -149,6 +150,16 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
     setExpandedSheets(newSet);
   }
 
+  function toggleMaterial(materialId: string) {
+    const newSet = new Set(expandedMaterials);
+    if (newSet.has(materialId)) {
+      newSet.delete(materialId);
+    } else {
+      newSet.add(materialId);
+    }
+    setExpandedMaterials(newSet);
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -200,9 +211,6 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
                         </CardTitle>
                       </div>
                     </div>
-                    <Badge variant="outline" className="font-semibold bg-white text-xs">
-                      {sheet.items.length} {sheet.items.length === 1 ? 'item' : 'items'}
-                    </Badge>
                   </div>
                 </CardHeader>
               </CollapsibleTrigger>

@@ -45,6 +45,7 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadCrewOrders();
@@ -152,6 +153,16 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
     setExpandedSections(newSet);
   }
 
+  function toggleMaterial(materialId: string) {
+    const newSet = new Set(expandedMaterials);
+    if (newSet.has(materialId)) {
+      newSet.delete(materialId);
+    } else {
+      newSet.add(materialId);
+    }
+    setExpandedMaterials(newSet);
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -197,83 +208,90 @@ export function CrewOrderedMaterials({ job }: CrewOrderedMaterialsProps) {
                     Crew Ordered Materials
                   </CardTitle>
                 </div>
-                <Badge variant="outline" className="font-semibold bg-white text-xs">
-                  {materials.length} {materials.length === 1 ? 'item' : 'items'}
-                </Badge>
               </div>
             </CardHeader>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="p-2 sm:p-3">
               <div className="space-y-2">
-                {materials.map((item) => (
-                  <div 
-                    key={item.id} 
-                    className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-sm leading-tight mb-2">
-                          {item.material_name}
-                        </h4>
-                        
-                        <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-                          <div>
-                            <span className="text-muted-foreground">Qty:</span>
-                            <p className="font-semibold text-base">{item.quantity}</p>
-                          </div>
-                          
-                          <div>
-                            <span className="text-muted-foreground">Color:</span>
-                            <p className="font-medium">
-                              {item.color || '-'}
-                            </p>
-                          </div>
-                          
-                          <div>
-                            <span className="text-muted-foreground">Length:</span>
-                            <p className="font-medium">
-                              {item.length || '-'}
-                            </p>
+                {materials.map((item) => {
+                  const isMaterialExpanded = expandedMaterials.has(item.id);
+
+                  return (
+                    <div 
+                      key={item.id} 
+                      className="bg-white border rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => toggleMaterial(item.id)}
+                    >
+                      <div className="p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-sm leading-tight mb-2">
+                              {item.material_name}
+                            </h4>
+                            
+                            <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                              <div>
+                                <span className="text-muted-foreground">Qty:</span>
+                                <p className="font-semibold text-base">{item.quantity}</p>
+                              </div>
+                              
+                              <div>
+                                <span className="text-muted-foreground">Color:</span>
+                                <p className="font-medium">
+                                  {item.color || '-'}
+                                </p>
+                              </div>
+                              
+                              <div>
+                                <span className="text-muted-foreground">Length:</span>
+                                <p className="font-medium">
+                                  {item.length || '-'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              <Badge
+                                variant="outline"
+                                className={getStatusConfig(item.status).bgClass}
+                              >
+                                {getStatusConfig(item.status).label}
+                              </Badge>
+                              {item._sheet_name && (
+                                <Badge variant="outline" className="text-xs">
+                                  {item._sheet_name}
+                                </Badge>
+                              )}
+                              {item.date_needed_by && (
+                                <Badge variant="outline" className="text-xs">
+                                  Needed by: {new Date(item.date_needed_by).toLocaleDateString()}
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <User className="w-3 h-3" />
+                              <span>Ordered by: <strong>{item._requester_name}</strong></span>
+                              {item.order_requested_at && (
+                                <span>on {new Date(item.order_requested_at).toLocaleDateString()}</span>
+                              )}
+                            </div>
+
+                            {isMaterialExpanded && item.usage && (
+                              <div className="mt-2 pt-2 border-t">
+                                <p className="text-xs text-muted-foreground font-medium">Usage:</p>
+                                <p className="text-xs text-foreground mt-1">
+                                  {item.usage}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-2 flex-wrap mb-2">
-                          <Badge
-                            variant="outline"
-                            className={getStatusConfig(item.status).bgClass}
-                          >
-                            {getStatusConfig(item.status).label}
-                          </Badge>
-                          {item._sheet_name && (
-                            <Badge variant="outline" className="text-xs">
-                              {item._sheet_name}
-                            </Badge>
-                          )}
-                          {item.date_needed_by && (
-                            <Badge variant="outline" className="text-xs">
-                              Needed by: {new Date(item.date_needed_by).toLocaleDateString()}
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <User className="w-3 h-3" />
-                          <span>Ordered by: <strong>{item._requester_name}</strong></span>
-                          {item.order_requested_at && (
-                            <span>on {new Date(item.order_requested_at).toLocaleDateString()}</span>
-                          )}
-                        </div>
-
-                        {item.usage && (
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {item.usage}
-                          </p>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </CollapsibleContent>

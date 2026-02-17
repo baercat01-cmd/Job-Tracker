@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
+  CollapsibleTrigger, // This was the missing comma
 } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight, Package, CheckCircle2, Truck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -41,6 +42,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
   const [loading, setLoading] = useState(true);
   const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set());
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMaterials();
@@ -151,51 +153,42 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
           }
           
           // Handle sheets which might be array or object
-          const sheet = Array.isArray(materialItem.sheets) 
-            ? materialItem.sheets[0] 
-            : materialItem.sheets || { sheet_name: 'Unknown Sheet' };
+          // NOTE: The original code had a potential issue here if 'sheets' wasn't directly on materialItem or if sheetMap wasn't used correctly for sheet_name.
+          // Correcting to ensure sheet_name is retrieved from sheetMap if available, or a fallback.
+          const sheetName = sheetMap.get(materialItem.sheet_id) || 'Unknown Sheet';
           
           return {
-            ...item,
-            material_items: {
-              ...materialItem,
-              sheets: sheet,
-              _sheet_name: sheet.sheet_name || sheetMap.get(materialItem.sheet_id) || 'Unknown Sheet',
-            },
+            ...materialItem, // Spreading materialItem directly to match MaterialItem interface
+            _sheet_name: sheetName,
           };
-        }).filter(Boolean);
+        }).filter(Boolean); // Filter out any nulls if material_items was missing
         
         return {
-          ...bundle,
-          bundle_items: bundleItems,
+          id: bundle.id,
+          name: bundle.name,
+          description: bundle.description,
+          items: bundleItems, // Use the filtered and transformed items
         };
       });
 
       // Filter and transform bundles to only include materials with the target status
       const packagesWithStatusMaterials: MaterialBundle[] = transformedBundles
-        .map((bundle: any) => {
+        .map((bundle: MaterialBundle) => { // Type bundle as MaterialBundle for better type safety
           console.log(`🔍 Filtering bundle "${bundle.name}":`, {
-            bundleItems: bundle.bundle_items?.length || 0
+            bundleItems: bundle.items?.length || 0
           });
 
           // Filter items to only those with the target status
-          const statusItems = (bundle.bundle_items || [])
-            .filter((item: any) => {
-              const hasMaterial = item && item.material_items;
-              const hasTargetStatus = hasMaterial && item.material_items.status === status;
+          const statusItems = (bundle.items || [])
+            .filter((item: MaterialItem) => { // Type item as MaterialItem
+              const hasTargetStatus = item.status === status;
               
-              if (!hasMaterial) {
-                console.log('⚠️ Bundle item missing material_items:', item);
-              } else if (!hasTargetStatus) {
-                console.log(`⏭️ Material "${item.material_items.material_name}" has status "${item.material_items.status}" (looking for "${status}")`);
+              if (!hasTargetStatus) {
+                console.log(`⏭️ Material "${item.material_name}" has status "${item.status}" (looking for "${status}")`);
               }
               
               return hasTargetStatus;
-            })
-            .map((item: any) => ({
-              ...item.material_items,
-              _sheet_name: item.material_items._sheet_name,
-            }));
+            });
 
           console.log(`✅ Bundle "${bundle.name}" has ${statusItems.length} materials with status "${status}"`);
 
@@ -231,6 +224,16 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
       newSet.add(packageId);
     }
     setExpandedPackages(newSet);
+  }
+
+  function toggleMaterial(materialId: string) {
+    const newSet = new Set(expandedMaterials);
+    if (newSet.has(materialId)) {
+      newSet.delete(materialId);
+    } else {
+      newSet.add(materialId);
+    }
+    setExpandedMaterials(newSet);
   }
 
   async function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
@@ -313,88 +316,103 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                         </CardTitle>
                       </div>
                     </div>
-                    <Badge variant="outline" className="font-semibold bg-white text-xs">
-                      {pkg.items.length} {pkg.items.length === 1 ? 'item' : 'items'}
-                    </Badge>
                   </div>
                 </CardHeader>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <CardContent className="p-2 sm:p-3">
                   <div className="space-y-2">
-                    {pkg.items.map((item) => (
-                      <div 
-                        key={item.id} 
-                        className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-sm leading-tight mb-2">
-                              {item.material_name}
-                            </h4>
-                            
-                            <div className="grid grid-cols-3 gap-2 text-xs">
-                              <div>
-                                <span className="text-muted-foreground">Qty:</span>
-                                <p className="font-semibold text-base">{item.quantity}</p>
+                    {pkg.items.map((item) => {
+                      const isMaterialExpanded = expandedMaterials.has(item.id);
+
+                      return (
+                        <div 
+                          key={item.id} 
+                          className="bg-white border rounded-lg hover:bg-muted/30 transition-colors"
+                        >
+                          <div 
+                            className="p-3 cursor-pointer"
+                            onClick={() => toggleMaterial(item.id)}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-sm leading-tight mb-2">
+                                  {item.material_name}
+                                </h4>
+                                
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">Qty:</span>
+                                    <p className="font-semibold text-base">{item.quantity}</p>
+                                  </div>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Color:</span>
+                                    <p className="font-medium">
+                                      {item.color || '-'}
+                                    </p>
+                                  </div>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Length:</span>
+                                    <p className="font-medium">
+                                      {item.length || '-'}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {isMaterialExpanded && item.usage && (
+                                  <div className="mt-2 pt-2 border-t">
+                                    <p className="text-xs text-muted-foreground font-medium">Usage:</p>
+                                    <p className="text-xs text-foreground mt-1">
+                                      {item.usage}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                              
-                              <div>
-                                <span className="text-muted-foreground">Color:</span>
-                                <p className="font-medium">
-                                  {item.color || '-'}
-                                </p>
-                              </div>
-                              
-                              <div>
-                                <span className="text-muted-foreground">Length:</span>
-                                <p className="font-medium">
-                                  {item.length || '-'}
-                                </p>
-                              </div>
+
+                              {/* Action Button */}
+                              {status === 'pull_from_shop' && (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateMaterialStatus(item.id, 'ready_for_job');
+                                  }}
+                                  disabled={processingMaterials.has(item.id)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
+                                  title="Mark as Ready for Job"
+                                >
+                                  {processingMaterials.has(item.id) ? (
+                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-5 h-5" />
+                                  )}
+                                </Button>
+                              )}
+                              {status === 'ready_for_job' && (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateMaterialStatus(item.id, 'at_job');
+                                  }}
+                                  disabled={processingMaterials.has(item.id)}
+                                  className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0 flex-shrink-0"
+                                  title="Mark as At Job"
+                                >
+                                  {processingMaterials.has(item.id) ? (
+                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <Truck className="w-5 h-5" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
-
-                            {item.usage && (
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {item.usage}
-                              </p>
-                            )}
                           </div>
-
-                          {/* Action Button */}
-                          {status === 'pull_from_shop' && (
-                            <Button
-                              size="sm"
-                              onClick={() => updateMaterialStatus(item.id, 'ready_for_job')}
-                              disabled={processingMaterials.has(item.id)}
-                              className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
-                              title="Mark as Ready for Job"
-                            >
-                              {processingMaterials.has(item.id) ? (
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="w-5 h-5" />
-                              )}
-                            </Button>
-                          )}
-                          {status === 'ready_for_job' && (
-                            <Button
-                              size="sm"
-                              onClick={() => updateMaterialStatus(item.id, 'at_job')}
-                              disabled={processingMaterials.has(item.id)}
-                              className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0 flex-shrink-0"
-                              title="Mark as At Job"
-                            >
-                              {processingMaterials.has(item.id) ? (
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <Truck className="w-5 h-5" />
-                              )}
-                            </Button>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </CollapsibleContent>

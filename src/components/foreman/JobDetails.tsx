@@ -293,7 +293,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 gap-1 mb-6">
+        <TabsList className="grid w-full grid-cols-5 gap-1 mb-6">
           <TabsTrigger value="pull_from_shop" className="flex items-center gap-1 text-xs sm:text-sm">
             <Package className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden lg:inline">Pull Shop</span>
@@ -339,11 +339,6 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="documents" className="flex items-center gap-1 text-xs sm:text-sm">
-            <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Docs</span>
-            <span className="sm:hidden">Docs</span>
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pull_from_shop">
@@ -364,10 +359,6 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
 
         <TabsContent value="crew_orders">
           <CrewOrderedMaterials job={job} />
-        </TabsContent>
-
-        <TabsContent value="documents">
-          {profile?.id && <DocumentsView job={job} userId={profile.id} />}
         </TabsContent>
       </Tabs>
     </div>

@@ -50,6 +50,7 @@ export function MaterialsByBundle({ job }: MaterialsByBundleProps) {
   const [bundles, setBundles] = useState<MaterialBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadBundles();
@@ -163,6 +164,16 @@ export function MaterialsByBundle({ job }: MaterialsByBundleProps) {
     setExpandedBundles(newSet);
   }
 
+  function toggleMaterial(materialId: string) {
+    const newSet = new Set(expandedMaterials);
+    if (newSet.has(materialId)) {
+      newSet.delete(materialId);
+    } else {
+      newSet.add(materialId);
+    }
+    setExpandedMaterials(newSet);
+  }
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -212,75 +223,82 @@ export function MaterialsByBundle({ job }: MaterialsByBundleProps) {
                         </CardTitle>
                       </div>
                     </div>
-                    <Badge variant="outline" className="font-semibold bg-white text-xs">
-                      {bundle.items.length} {bundle.items.length === 1 ? 'item' : 'items'}
-                    </Badge>
                   </div>
                 </CardHeader>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <CardContent className="p-2 sm:p-3">
                   <div className="space-y-2">
-                    {bundle.items.map((item) => (
-                      <div 
-                        key={item.id} 
-                        className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-sm leading-tight mb-2">
-                              {item.material_name}
-                            </h4>
-                            
-                            <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-                              <div>
-                                <span className="text-muted-foreground">Qty:</span>
-                                <p className="font-semibold text-base">{item.quantity}</p>
-                              </div>
-                              
-                              <div>
-                                <span className="text-muted-foreground">Color:</span>
-                                <p className="font-medium">
-                                  {item.color || '-'}
-                                </p>
-                              </div>
-                              
-                              <div>
-                                <span className="text-muted-foreground">Length:</span>
-                                <p className="font-medium">
-                                  {item.length || '-'}
-                                </p>
+                    {bundle.items.map((item) => {
+                      const isMaterialExpanded = expandedMaterials.has(item.id);
+
+                      return (
+                        <div 
+                          key={item.id} 
+                          className="bg-white border rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+                          onClick={() => toggleMaterial(item.id)}
+                        >
+                          <div className="p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-sm leading-tight mb-2">
+                                  {item.material_name}
+                                </h4>
+                                
+                                <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                                  <div>
+                                    <span className="text-muted-foreground">Qty:</span>
+                                    <p className="font-semibold text-base">{item.quantity}</p>
+                                  </div>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Color:</span>
+                                    <p className="font-medium">
+                                      {item.color || '-'}
+                                    </p>
+                                  </div>
+                                  
+                                  <div>
+                                    <span className="text-muted-foreground">Length:</span>
+                                    <p className="font-medium">
+                                      {item.length || '-'}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge
+                                    variant="outline"
+                                    className={getStatusConfig(item.status).bgClass}
+                                  >
+                                    {getStatusConfig(item.status).label}
+                                  </Badge>
+                                  {item._sheet_name && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {item._sheet_name}
+                                    </Badge>
+                                  )}
+                                  {item.sku && (
+                                    <Badge variant="outline" className="text-xs">
+                                      SKU: {item.sku}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {isMaterialExpanded && item.usage && (
+                                  <div className="mt-2 pt-2 border-t">
+                                    <p className="text-xs text-muted-foreground font-medium">Usage:</p>
+                                    <p className="text-xs text-foreground mt-1">
+                                      {item.usage}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             </div>
-
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge
-                                variant="outline"
-                                className={getStatusConfig(item.status).bgClass}
-                              >
-                                {getStatusConfig(item.status).label}
-                              </Badge>
-                              {item._sheet_name && (
-                                <Badge variant="outline" className="text-xs">
-                                  {item._sheet_name}
-                                </Badge>
-                              )}
-                              {item.sku && (
-                                <Badge variant="outline" className="text-xs">
-                                  SKU: {item.sku}
-                                </Badge>
-                              )}
-                            </div>
-
-                            {item.usage && (
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {item.usage}
-                              </p>
-                            )}
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </CollapsibleContent>
