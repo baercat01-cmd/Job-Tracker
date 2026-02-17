@@ -150,13 +150,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     try {
       setLoading(true);
       
-      console.log('🔍 Loading packages with materials that need shop processing...');
+      console.log('🔍 Loading packages with materials that need to be pulled from shop...');
       
-      // First, get all material items with the required statuses
+      // Only get material items with 'pull_from_shop' status
       const { data: shopMaterials, error: materialsError } = await supabase
         .from('material_items')
         .select('id, sheet_id, category, material_name, quantity, length, usage, status, cost_per_unit')
-        .in('status', ['pull_from_shop', 'ready_for_job', 'at_job']);
+        .eq('status', 'pull_from_shop');
       
       if (materialsError) {
         console.error('❌ Error loading shop materials:', materialsError);
@@ -298,18 +298,16 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       
       console.log('🔄 Transformed packages:', transformedPackages);
       
-      // Filter to only include packages that have materials with pull_from_shop, ready_for_job, or at_job status
+      // Filter to only include packages that have materials with 'pull_from_shop' status
       const packagesWithShopMaterials = transformedPackages.filter(pkg => {
         const hasShopMaterials = pkg.bundle_items.some(item => 
-          item.material_items.status === 'pull_from_shop' || 
-          item.material_items.status === 'ready_for_job' ||
-          item.material_items.status === 'at_job'
+          item.material_items.status === 'pull_from_shop'
         );
         
         if (hasShopMaterials) {
-          console.log(`✅ Package "${pkg.name}" (Job: ${pkg.jobs.name}) has shop materials:`, 
+          console.log(`✅ Package "${pkg.name}" (Job: ${pkg.jobs.name}) has materials to pull:`, 
             pkg.bundle_items.filter(item => 
-              ['pull_from_shop', 'ready_for_job', 'at_job'].includes(item.material_items.status)
+              item.material_items.status === 'pull_from_shop'
             ).map(item => ({
               material: item.material_items.material_name,
               status: item.material_items.status
@@ -320,15 +318,15 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         return hasShopMaterials;
       });
       
-      console.log(`✅ Found ${packagesWithShopMaterials.length} packages with shop materials`);
+      console.log(`✅ Found ${packagesWithShopMaterials.length} packages with materials to pull`);
       
       if (packagesWithShopMaterials.length === 0) {
-        console.warn('⚠️ NO PACKAGES WITH SHOP MATERIALS FOUND!');
-        console.warn('⚠️ This might indicate a data transformation issue or all materials have different statuses');
+        console.warn('⚠️ NO PACKAGES WITH PULL FROM SHOP MATERIALS FOUND!');
+        console.warn('⚠️ This might indicate all materials have been processed or there are no materials needing shop processing');
       }
-      console.log('📦 Packages with shop materials:', packagesWithShopMaterials);
+      console.log('📦 Packages with pull from shop materials:', packagesWithShopMaterials);
       
-      // ALSO load unbundled materials that have pull_from_shop, ready_for_job, or at_job status
+      // ALSO load unbundled materials that have 'pull_from_shop' status
       // These are materials that haven't been added to a bundle yet
       // Use a simpler approach: load materials with sheets, then fetch workbook/job data separately
       const { data: unbundledMaterials, error: unbundledError } = await supabase
@@ -348,13 +346,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             workbook_id
           )
         `)
-        .in('status', ['pull_from_shop', 'ready_for_job', 'at_job'])
+        .eq('status', 'pull_from_shop')
         .order('material_name');
 
       if (unbundledError) {
         console.error('❌ Error loading unbundled materials:', unbundledError);
       } else {
-        console.log(`📋 Found ${unbundledMaterials?.length || 0} total materials with shop statuses`);
+        console.log(`📋 Found ${unbundledMaterials?.length || 0} total materials with pull from shop status`);
         
         // Get IDs of materials that are already in bundles
         const bundledMaterialIds = new Set(
@@ -368,7 +366,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           (material: any) => !bundledMaterialIds.has(material.id)
         );
         
-        console.log(`🔓 Found ${trulyUnbundled.length} unbundled materials needing shop processing`);
+        console.log(`🔓 Found ${trulyUnbundled.length} unbundled materials to pull from shop`);
         
         // Get unique workbook IDs
         const workbookIds = [...new Set(
@@ -617,20 +615,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
     return matchesSearch && matchesJob;
   });
 
-  // Group packages by whether they have any pull_from_shop materials or are fully ready
-  const pullFromShopPackages = filteredPackages.filter(pkg => 
-    pkg.bundle_items.some(item => 
-      item.material_items.status === 'pull_from_shop'
-    )
-  );
-  const readyForJobPackages = filteredPackages.filter(pkg => 
-    pkg.bundle_items.some(item => 
-      item.material_items.status === 'ready_for_job' ||
-      item.material_items.status === 'at_job'
-    ) && !pkg.bundle_items.some(item => 
-      item.material_items.status === 'pull_from_shop'
-    )
-  );
+  // All packages should have pull_from_shop materials since that's all we load
+  const pullFromShopPackages = filteredPackages;
 
   if (loading) {
     return (
@@ -656,14 +642,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                 Process material packages and prepare them for job sites
               </p>
             </div>
-            <div className="flex gap-3">
-              <Badge variant="outline" className="text-lg px-4 py-2 bg-purple-50">
-                Pull from Shop: {pullFromShopPackages.length}
-              </Badge>
-              <Badge variant="outline" className="text-lg px-4 py-2 bg-emerald-50">
-                Ready for Job: {readyForJobPackages.length}
-              </Badge>
-            </div>
+            <Badge variant="outline" className="text-lg px-4 py-2 bg-purple-50">
+              Packages to Process: {pullFromShopPackages.length}
+            </Badge>
           </div>
         </CardHeader>
       </Card>
@@ -711,17 +692,9 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         </CardContent>
       </Card>
 
-      {/* Pull from Shop Section */}
+      {/* Material Packages */}
       {pullFromShopPackages.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-purple-200" />
-            <h3 className="text-lg font-bold text-purple-700 flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              Pull from Shop ({pullFromShopPackages.length})
-            </h3>
-            <div className="h-px flex-1 bg-purple-200" />
-          </div>
 
           {pullFromShopPackages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
@@ -846,292 +819,6 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         </div>
       )}
 
-      {/* Ready for Job Section */}
-      {readyForJobPackages.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-emerald-200" />
-            <h3 className="text-lg font-bold text-emerald-700 flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5" />
-              Ready for Job ({readyForJobPackages.length})
-            </h3>
-            <div className="h-px flex-1 bg-emerald-200" />
-          </div>
-
-          {readyForJobPackages.map(pkg => {
-            const isExpanded = expandedPackages.has(pkg.id);
-            const readyItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'ready_for_job'
-            );
-            const atJobItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'at_job'
-            );
-            const pullItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'pull_from_shop'
-            );
-            
-            return (
-              <Card key={pkg.id} className="border-2 border-emerald-200">
-                <Collapsible open={isExpanded} onOpenChange={() => togglePackageExpanded(pkg.id)}>
-                  <CollapsibleTrigger asChild>
-                    <CardHeader className="cursor-pointer bg-gradient-to-r from-emerald-50 to-emerald-100/50 hover:from-emerald-100 hover:to-emerald-200/50 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-emerald-600" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5 text-emerald-600" />
-                          )}
-                          <div>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                              <Package className="w-5 h-5 text-emerald-600" />
-                              {pkg.name}
-                              <Badge className={`text-xs ${getStatusColor(pkg.status)}`}>
-                                {getStatusLabel(pkg.status)}
-                              </Badge>
-                            </CardTitle>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Job: {pkg.jobs.name} • Client: {pkg.jobs.client_name}
-                            </p>
-                            {pkg.description && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {pkg.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          {atJobItems.length > 0 && (
-                            <Badge variant="outline" className="font-semibold bg-teal-50 text-teal-700">
-                              {atJobItems.length} at job
-                            </Badge>
-                          )}
-                          {readyItems.length > 0 && (
-                            <Badge variant="outline" className="font-semibold bg-emerald-50 text-emerald-700">
-                              {readyItems.length} ready
-                            </Badge>
-                          )}
-                          {pullItems.length > 0 && (
-                            <Badge variant="outline" className="font-semibold bg-purple-50 text-purple-700">
-                              {pullItems.length} to pull
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent className="p-0">
-                      {/* At Job Materials */}
-                      {atJobItems.length > 0 && (
-                        <div>
-                          <div className="bg-teal-50 px-4 py-2 border-b">
-                            <h4 className="font-semibold text-teal-900 text-sm">
-                              ✓ At Job ({atJobItems.length})
-                            </h4>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead className="bg-muted/50 border-b">
-                                <tr>
-                                  <th className="text-left p-3 font-semibold">Sheet</th>
-                                  <th className="text-left p-3 font-semibold">Category</th>
-                                  <th className="text-left p-3 font-semibold">Material</th>
-                                  <th className="text-left p-3 font-semibold">Usage</th>
-                                  <th className="text-center p-3 font-semibold">Qty</th>
-                                  <th className="text-center p-3 font-semibold">Length</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {atJobItems.map((item) => (
-                                  <tr key={item.id} className="border-b bg-teal-50/30">
-                                    <td className="p-3">
-                                      <Badge variant="outline" className="bg-blue-50">
-                                        {item.material_items.sheets.sheet_name}
-                                      </Badge>
-                                    </td>
-                                    <td className="p-3">
-                                      <Badge variant="outline">{item.material_items.category}</Badge>
-                                    </td>
-                                    <td className="p-3 font-medium">{item.material_items.material_name}</td>
-                                    <td className="p-3 text-sm text-muted-foreground">
-                                      {item.material_items.usage || '-'}
-                                    </td>
-                                    <td className="p-3 text-center font-semibold">
-                                      {item.material_items.quantity}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {item.material_items.length || '-'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Ready Materials */}
-                      {readyItems.length > 0 && (
-                        <div>
-                          <div className="bg-emerald-50 px-4 py-2 border-b">
-                            <h4 className="font-semibold text-emerald-900 text-sm">
-                              ✓ Ready for Job ({readyItems.length})
-                            </h4>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead className="bg-muted/50 border-b">
-                                <tr>
-                                  <th className="text-left p-3 font-semibold">Sheet</th>
-                                  <th className="text-left p-3 font-semibold">Category</th>
-                                  <th className="text-left p-3 font-semibold">Material</th>
-                                  <th className="text-left p-3 font-semibold">Usage</th>
-                                  <th className="text-center p-3 font-semibold">Qty</th>
-                                  <th className="text-center p-3 font-semibold">Length</th>
-                                  <th className="text-center p-3 font-semibold">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {readyItems.map((item) => (
-                                  <tr key={item.id} className="border-b bg-emerald-50/30 hover:bg-emerald-100/50 transition-colors">
-                                    <td className="p-3">
-                                      <Badge variant="outline" className="bg-blue-50">
-                                        {item.material_items.sheets.sheet_name}
-                                      </Badge>
-                                    </td>
-                                    <td className="p-3">
-                                      <Badge variant="outline">{item.material_items.category}</Badge>
-                                    </td>
-                                    <td className="p-3 font-medium">{item.material_items.material_name}</td>
-                                    <td className="p-3 text-sm text-muted-foreground">
-                                      {item.material_items.usage || '-'}
-                                    </td>
-                                    <td className="p-3 text-center font-semibold">
-                                      {item.material_items.quantity}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {item.material_items.length || '-'}
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex justify-center">
-                                        <Button
-                                          size="sm"
-                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
-                                          disabled={processingMaterials.has(item.material_items.id)}
-                                          className="bg-teal-600 hover:bg-teal-700"
-                                        >
-                                          {processingMaterials.has(item.material_items.id) ? (
-                                            <>
-                                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                              ...
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Truck className="w-4 h-4 mr-2" />
-                                              At Job
-                                            </>
-                                          )}
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Still Need to Pull */}
-                      {pullItems.length > 0 && (
-                        <div>
-                          <div className="bg-purple-50 px-4 py-2 border-b">
-                            <h4 className="font-semibold text-purple-900 text-sm">
-                              Still Need to Pull ({pullItems.length})
-                            </h4>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead className="bg-muted/50 border-b">
-                                <tr>
-                                  <th className="text-left p-3 font-semibold">Sheet</th>
-                                  <th className="text-left p-3 font-semibold">Category</th>
-                                  <th className="text-left p-3 font-semibold">Material</th>
-                                  <th className="text-left p-3 font-semibold">Usage</th>
-                                  <th className="text-center p-3 font-semibold">Qty</th>
-                                  <th className="text-center p-3 font-semibold">Length</th>
-                                  <th className="text-center p-3 font-semibold">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {pullItems.map((item) => (
-                                  <tr key={item.id} className="border-b hover:bg-muted/30 transition-colors">
-                                    <td className="p-3">
-                                      <Badge variant="outline" className="bg-blue-50">
-                                        {item.material_items.sheets.sheet_name}
-                                      </Badge>
-                                    </td>
-                                    <td className="p-3">
-                                      <Badge variant="outline">{item.material_items.category}</Badge>
-                                    </td>
-                                    <td className="p-3 font-medium">{item.material_items.material_name}</td>
-                                    <td className="p-3 text-sm text-muted-foreground">
-                                      {item.material_items.usage || '-'}
-                                    </td>
-                                    <td className="p-3 text-center font-semibold">
-                                      {item.material_items.quantity}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      {item.material_items.length || '-'}
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex justify-center gap-2">
-                                        <Button
-                                          size="sm"
-                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
-                                          disabled={processingMaterials.has(item.material_items.id)}
-                                          className="bg-emerald-600 hover:bg-emerald-700"
-                                        >
-                                          {processingMaterials.has(item.material_items.id) ? (
-                                            <>
-                                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                              ...
-                                            </>
-                                          ) : (
-                                            <>
-                                              <CheckCircle2 className="w-4 h-4 mr-2" />
-                                              Ready
-                                            </>
-                                          )}
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
-                                          disabled={processingMaterials.has(item.material_items.id)}
-                                          className="bg-teal-600 hover:bg-teal-700"
-                                        >
-                                          <Truck className="w-4 h-4 mr-2" />
-                                          At Job
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
       {/* Empty State */}
       {filteredPackages.length === 0 && (
         <Card>
@@ -1143,7 +830,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                 : 'No packages to process'}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Packages with materials that have "Pull from Shop", "Ready for Job", or "At Job" status will appear here
+              Packages with materials that have "Pull from Shop" status will appear here
             </p>
           </CardContent>
         </Card>
