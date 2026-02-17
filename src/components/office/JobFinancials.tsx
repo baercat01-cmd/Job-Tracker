@@ -2698,6 +2698,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Get all custom rows that are NOT linked to sheets (standalone rows)
   const standaloneCustomRows = customRows.filter(r => !(r as any).sheet_id);
   
+  // Filter custom rows by category for subcontractor rows
+  const customSubcontractorRows = standaloneCustomRows.filter(r => r.category === 'subcontractor');
+  
   // Calculate totals from standalone custom rows, splitting by taxable/non-taxable
   let customRowsTaxableTotal = 0;
   let customRowsNonTaxableTotal = 0;
