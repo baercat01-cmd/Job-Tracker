@@ -2690,10 +2690,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const lineItems = customRowLineItems[r.id] || [];
     const linkedSubs = linkedSubcontractors[r.id] || [];
     
-    // Calculate base cost from line items OR row total
-    const baseLineCost = lineItems.length > 0 
-      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-      : r.total_cost;
+    // Calculate base cost - sum of ALL line items if they exist, otherwise use row total
+    let baseLineCost;
+    if (lineItems.length > 0) {
+      // Sum ALL line items (the row total is sum of its sub-rows)
+      baseLineCost = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+    } else {
+      baseLineCost = r.total_cost;
+    }
     
     // Add linked subcontractors (taxable portion only)
     const linkedSubsTaxableTotal = linkedSubs.reduce((subSum: number, sub: any) => {
@@ -2774,10 +2778,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const lineItems = customRowLineItems[r.id] || [];
     const linkedSubs = linkedSubcontractors[r.id] || [];
     
-    // Calculate base cost from line items OR row total
-    const baseLineCost = lineItems.length > 0 
-      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-      : r.total_cost;
+    // Calculate base cost - sum of ALL line items if they exist, otherwise use row total
+    let baseLineCost;
+    if (lineItems.length > 0) {
+      // Sum ALL line items (the row total is sum of its sub-rows)
+      baseLineCost = lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+    } else {
+      baseLineCost = r.total_cost;
+    }
     
     // Add linked subcontractors (non-taxable portion only for labor rows)
     const linkedSubsNonTaxableTotal = linkedSubs.reduce((subSum: number, sub: any) => {
