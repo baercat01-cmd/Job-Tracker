@@ -191,7 +191,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       }
 
       console.log(`📦 Found ${data?.length || 0} total packages`);
-      console.log('📦 Raw data:', data);
+      console.log('📦 Raw data sample:', data?.slice(0, 2));
+      console.log('👤 Current user:', userId);
       
       // Transform Supabase response to match our interface with better error handling
       const transformedPackages: MaterialBundle[] = (data || []).map((pkg: SupabaseBundleResponse) => {
@@ -253,6 +254,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       });
       
       console.log(`✅ Found ${packagesWithShopMaterials.length} packages with shop materials`);
+      
+      if (packagesWithShopMaterials.length === 0) {
+        console.warn('⚠️ NO PACKAGES WITH SHOP MATERIALS FOUND!');
+        console.warn('⚠️ This might indicate a data transformation issue or all materials have different statuses');
+      }
       console.log('📦 Packages with shop materials:', packagesWithShopMaterials);
       
       // ALSO load unbundled materials that have pull_from_shop, ready_for_job, or at_job status
@@ -410,12 +416,20 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           console.log(`📦 Created ${virtualPackages.length} virtual packages for unbundled materials`);
           
           // Combine bundled and unbundled packages
-          setPackages([...packagesWithShopMaterials, ...virtualPackages]);
+          const finalPackages = [...packagesWithShopMaterials, ...virtualPackages];
+          console.log(`✅ FINAL: Setting ${finalPackages.length} total packages (${packagesWithShopMaterials.length} bundled + ${virtualPackages.length} unbundled)`);
+          
+          if (finalPackages.length === 0) {
+            console.error('❌ NO PACKAGES TO DISPLAY! This is a problem.');
+            toast.error('No materials found. Please contact office if materials should be visible.');
+          }
+          
+          setPackages(finalPackages);
         }
       }
     } catch (error: any) {
-      console.error('Error loading packages:', error);
-      toast.error('Failed to load packages');
+      console.error('❌ Error loading packages:', error);
+      toast.error('Failed to load packages. Check console for details.');
     } finally {
       setLoading(false);
     }
