@@ -16,6 +16,89 @@ import { toast } from 'sonner';
 import { Building2 } from 'lucide-react';
 import type { Job } from '@/types';
 
+// Helper function to create or update contact
+async function createOrUpdateContact(contactInfo: {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  category: string;
+  job_id: string | null;
+  created_by: string;
+}) {
+  try {
+    // Build search query dynamically based on available data
+    const searchConditions = [];
+    if (contactInfo.name) {
+      searchConditions.push(`name.ilike.${contactInfo.name}`);
+    }
+    if (contactInfo.email) {
+      searchConditions.push(`email.eq.${contactInfo.email}`);
+    }
+    if (contactInfo.phone) {
+      searchConditions.push(`phone.eq.${contactInfo.phone}`);
+    }
+    
+    if (searchConditions.length === 0) {
+      console.log('⚠️ No search criteria for contact');
+      return null;
+    }
+    
+    const { data: existingContacts } = await supabase
+      .from('contacts')
+      .select('*')
+      .or(searchConditions.join(','))
+      .eq('category', contactInfo.category)
+      .limit(1);
+
+    if (existingContacts && existingContacts.length > 0) {
+      console.log('✅ Contact already exists:', existingContacts[0].name);
+      
+      // Update contact with job_id if not set
+      if (!existingContacts[0].job_id && contactInfo.job_id) {
+        await supabase
+          .from('contacts')
+          .update({ job_id: contactInfo.job_id })
+          .eq('id', existingContacts[0].id);
+        console.log('✅ Linked contact to job');
+      }
+      
+      return existingContacts[0];
+    }
+
+    // Only create contact if we have email (required field)
+    if (!contactInfo.email) {
+      console.log('⚠️ Cannot create contact without email (required field)');
+      return null;
+    }
+
+    // Create new contact
+    const { data: newContact, error } = await supabase
+      .from('contacts')
+      .insert({
+        name: contactInfo.name,
+        email: contactInfo.email,
+        phone: contactInfo.phone,
+        category: contactInfo.category,
+        job_id: contactInfo.job_id,
+        is_active: true,
+        created_by: contactInfo.created_by,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating contact:', error);
+      return null;
+    }
+
+    console.log('✅ Created new contact:', newContact.name);
+    return newContact;
+  } catch (error) {
+    console.error('Error in createOrUpdateContact:', error);
+    return null;
+  }
+}
+
 interface EditJobDialogProps {
   open: boolean;
   job: Job | null;
@@ -100,6 +183,18 @@ export function EditJobDialog({ open, job, onClose, onSuccess }: EditJobDialogPr
       if (error) {
         console.error('Job update error:', error);
         throw new Error(error.message || 'Failed to update job');
+      }
+
+      // Auto-update contact if customer name changed
+      if (formData.client_name.trim() && formData.client_name !== job.client_name) {
+        await createOrUpdateContact({
+          name: formData.client_name.trim(),
+          email: null,
+          phone: null,
+          category: 'customer',
+          job_id: job.id,
+          created_by: profile.id
+        });
       }
 
       // Restore scroll position AFTER updates but BEFORE toast
