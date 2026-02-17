@@ -2688,11 +2688,28 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   const customMaterialsPrice = customMaterialRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
-    const baseCost = lineItems.length > 0 
+    const linkedSubs = linkedSubcontractors[r.id] || [];
+    
+    // Calculate base cost from line items OR row total
+    const baseLineCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
       : r.total_cost;
-    // Use the row's selling_price directly if it was pre-calculated, otherwise calculate with markup
-    const rowPrice = r.selling_price || (baseCost * (1 + r.markup_percent / 100));
+    
+    // Add linked subcontractors (taxable portion only)
+    const linkedSubsTaxableTotal = linkedSubs.reduce((subSum: number, sub: any) => {
+      const subLineItems = subcontractorLineItems[sub.id] || [];
+      const taxableTotal = subLineItems
+        .filter((item: any) => !item.excluded && item.taxable)
+        .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+      const estMarkup = sub.markup_percent || 0;
+      return subSum + (taxableTotal * (1 + estMarkup / 100));
+    }, 0);
+    
+    // Total base cost = line items + linked taxable subcontractors
+    const baseCost = baseLineCost + linkedSubsTaxableTotal;
+    
+    // Apply row markup to get final price
+    const rowPrice = baseCost * (1 + r.markup_percent / 100);
     return sum + rowPrice;
   }, 0);
   
@@ -2755,11 +2772,28 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   const customLaborPrice = customLaborRows.reduce((sum, r) => {
     const lineItems = customRowLineItems[r.id] || [];
-    const baseCost = lineItems.length > 0 
+    const linkedSubs = linkedSubcontractors[r.id] || [];
+    
+    // Calculate base cost from line items OR row total
+    const baseLineCost = lineItems.length > 0 
       ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
       : r.total_cost;
-    // Use the row's selling_price directly if it was pre-calculated, otherwise calculate with markup
-    const rowPrice = r.selling_price || (baseCost * (1 + r.markup_percent / 100));
+    
+    // Add linked subcontractors (non-taxable portion only for labor rows)
+    const linkedSubsNonTaxableTotal = linkedSubs.reduce((subSum: number, sub: any) => {
+      const subLineItems = subcontractorLineItems[sub.id] || [];
+      const nonTaxableTotal = subLineItems
+        .filter((item: any) => !item.excluded && !item.taxable)
+        .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
+      const estMarkup = sub.markup_percent || 0;
+      return subSum + (nonTaxableTotal * (1 + estMarkup / 100));
+    }, 0);
+    
+    // Total base cost = line items + linked non-taxable subcontractors
+    const baseCost = baseLineCost + linkedSubsNonTaxableTotal;
+    
+    // Apply row markup to get final price
+    const rowPrice = baseCost * (1 + r.markup_percent / 100);
     return sum + rowPrice;
   }, 0);
   
