@@ -1133,7 +1133,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           console.log('No proposal versions found');
         }
       } else {
-        console.log('No quote found for job:', job.name);
+        // No quote found - will check after data loads
+        console.log('No quote found for job - will check after loading data');
         setQuote(null);
         setProposalVersions([]);
       }
@@ -1288,6 +1289,87 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function checkAndAutoCreateQuote() {
+    // Only run if we don't have a quote yet
+    if (quote) return;
+    
+    try {
+      // Re-check materials/rows state at this point (after they're loaded)
+      const { data: workbookData, error: workbookError } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working')
+        .maybeSingle();
+
+      if (workbookError) throw workbookError;
+      
+      let hasMaterials = false;
+      if (workbookData) {
+        const { data: itemsCount } = await supabase
+          .from('material_items')
+          .select('id', { count: 'exact', head: true })
+          .in('sheet_id', 
+            await supabase
+              .from('material_sheets')
+              .select('id')
+              .eq('workbook_id', workbookData.id)
+              .then(r => r.data?.map(s => s.id) || [])
+          );
+        hasMaterials = (itemsCount?.length || 0) > 0;
+      }
+      
+      const { data: customRowsData } = await supabase
+        .from('custom_financial_rows')
+        .select('id', { count: 'exact', head: true })
+        .eq('job_id', job.id);
+      const hasCustomRows = (customRowsData?.length || 0) > 0;
+      
+      const { data: subsData } = await supabase
+        .from('subcontractor_estimates')
+        .select('id', { count: 'exact', head: true })
+        .eq('job_id', job.id);
+      const hasSubcontractors = (subsData?.length || 0) > 0;
+      
+      if (!hasMaterials && !hasCustomRows && !hasSubcontractors) {
+        // No data yet, don't create quote
+        console.log('No materials/rows yet - skipping auto-create quote');
+        return;
+      }
+
+      console.log('Materials/rows found but no quote - auto-creating quote...');
+
+      // Auto-create quote for this job
+      const { data: newQuote, error: createError } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          customer_name: job.client_name,
+          customer_address: job.address,
+          project_name: job.name,
+          status: 'draft',
+          width: 0,
+          length: 0,
+          created_by: profile?.id,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Error auto-creating quote:', createError);
+        return;
+      }
+
+      console.log('✅ Auto-created quote:', newQuote.proposal_number);
+      setQuote(newQuote);
+      setProposalVersions([]);
+      
+      toast.success(`Proposal #${newQuote.proposal_number} created automatically`);
+    } catch (error: any) {
+      console.error('Error in checkAndAutoCreateQuote:', error);
+    }
+  }
+
   async function loadData(silent = false) {
     // Only show loading spinner on initial load, not during polling
     if (!silent) {
@@ -1301,6 +1383,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         loadMaterialsData(),
         loadSubcontractorEstimates(),
       ]);
+      
+      // After loading data, check if we need to auto-create a quote
+      if (!silent) {
+        await checkAndAutoCreateQuote();
+      }
     } catch (error) {
       console.error('Error loading financial data:', error);
       if (!silent) {
