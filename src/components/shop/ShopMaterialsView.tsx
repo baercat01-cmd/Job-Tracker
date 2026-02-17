@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck } from 'lucide-react';
+import { Search, X, CheckCircle2, Package, ChevronDown, ChevronRight, Truck, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface MaterialItem {
@@ -86,6 +86,13 @@ interface SupabaseBundleResponse {
       }>;
     }>;
   }>;
+}
+
+interface JobGroup {
+  jobId: string;
+  jobName: string;
+  clientName: string;
+  packages: MaterialBundle[];
 }
 
 interface ShopMaterialsViewProps {
@@ -494,8 +501,13 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           
           setPackages(finalPackages);
           
-          // Auto-expand all packages so shop users can see materials immediately
+          // Auto-expand all jobs and packages so shop users can see materials immediately
           const allPackageIds = new Set(finalPackages.map(pkg => pkg.id));
+          
+          // Also expand job-level cards
+          const jobIds = [...new Set(finalPackages.map(pkg => pkg.job_id))];
+          jobIds.forEach(jobId => allPackageIds.add(`job-${jobId}`));
+          
           setExpandedPackages(allPackageIds);
         }
       }
@@ -625,6 +637,23 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   // All packages should have pull_from_shop materials since that's all we load
   const pullFromShopPackages = filteredPackages;
 
+  // Group packages by job
+  const packagesByJob = pullFromShopPackages.reduce((acc, pkg) => {
+    const jobId = pkg.job_id;
+    if (!acc[jobId]) {
+      acc[jobId] = {
+        jobId,
+        jobName: pkg.jobs.name,
+        clientName: pkg.jobs.client_name,
+        packages: [],
+      };
+    }
+    acc[jobId].packages.push(pkg);
+    return acc;
+  }, {} as Record<string, JobGroup>);
+
+  const jobGroups = Object.values(packagesByJob);
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -650,7 +679,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
               </p>
             </div>
             <Badge variant="outline" className="text-lg px-4 py-2 bg-purple-50">
-              Packages to Process: {pullFromShopPackages.length}
+              {jobGroups.length} {jobGroups.length === 1 ? 'Job' : 'Jobs'}
             </Badge>
           </div>
         </CardHeader>
@@ -699,105 +728,151 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
         </CardContent>
       </Card>
 
-      {/* Material Packages */}
-      {pullFromShopPackages.length > 0 && (
-        <div className="space-y-3">
-
-          {pullFromShopPackages.map(pkg => {
-            const isExpanded = expandedPackages.has(pkg.id);
-            const pullFromShopItems = pkg.bundle_items.filter(
-              item => item.material_items.status === 'pull_from_shop'
+      {/* Material Packages Grouped by Job */}
+      {jobGroups.length > 0 && (
+        <div className="space-y-4">
+          {jobGroups.map(jobGroup => {
+            const isJobExpanded = expandedPackages.has(`job-${jobGroup.jobId}`);
+            const totalMaterialsInJob = jobGroup.packages.reduce(
+              (sum, pkg) => sum + pkg.bundle_items.filter(
+                item => item.material_items.status === 'pull_from_shop'
+              ).length,
+              0
             );
             
             return (
-              <Card key={pkg.id} className="border-2 border-purple-200">
-                <Collapsible open={isExpanded} onOpenChange={() => togglePackageExpanded(pkg.id)}>
+              <Card key={jobGroup.jobId} className="border-2 border-blue-200">
+                <Collapsible 
+                  open={isJobExpanded} 
+                  onOpenChange={() => togglePackageExpanded(`job-${jobGroup.jobId}`)}
+                >
                   <CollapsibleTrigger asChild>
-                    <CardHeader className="cursor-pointer bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 transition-colors">
+                    <CardHeader className="cursor-pointer bg-gradient-to-r from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50 transition-colors">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-purple-600" />
+                          {isJobExpanded ? (
+                            <ChevronDown className="w-6 h-6 text-blue-600" />
                           ) : (
-                            <ChevronRight className="w-5 h-5 text-purple-600" />
+                            <ChevronRight className="w-6 h-6 text-blue-600" />
                           )}
                           <div>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                              <Package className="w-5 h-5 text-purple-600" />
-                              {pkg.name}
-                              <Badge className={`text-xs ${getStatusColor(pkg.status)}`}>
-                                {getStatusLabel(pkg.status)}
-                              </Badge>
+                            <CardTitle className="text-xl flex items-center gap-2">
+                              <Building2 className="w-5 h-5 text-blue-600" />
+                              {jobGroup.jobName}
                             </CardTitle>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Job: {pkg.jobs.name} • Client: {pkg.jobs.client_name}
+                              Client: {jobGroup.clientName}
                             </p>
-                            {pkg.description && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {pkg.description}
-                              </p>
-                            )}
                           </div>
                         </div>
-                        <Badge variant="outline" className="font-semibold bg-white">
-                          {pullFromShopItems.length} to pull
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant="outline" className="font-semibold bg-white">
+                            {jobGroup.packages.length} {jobGroup.packages.length === 1 ? 'package' : 'packages'}
+                          </Badge>
+                          <Badge className="bg-purple-100 text-purple-800 border-purple-300">
+                            {totalMaterialsInJob} materials to pull
+                          </Badge>
+                        </div>
                       </div>
                     </CardHeader>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <CardContent className="p-2 sm:p-4">
-                      <div className="space-y-2">
-                        {pullFromShopItems.map((item) => (
-                          <div 
-                            key={item.id} 
-                            className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-semibold text-sm leading-tight mb-2">
-                                  {item.material_items.material_name}
-                                </h4>
-                                
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">Qty:</span>
-                                    <p className="font-semibold text-base">{item.material_items.quantity}</p>
+                    <CardContent className="p-2 sm:p-4 space-y-3">
+                      {jobGroup.packages.map(pkg => {
+                        const isPackageExpanded = expandedPackages.has(pkg.id);
+                        const pullFromShopItems = pkg.bundle_items.filter(
+                          item => item.material_items.status === 'pull_from_shop'
+                        );
+                        
+                        return (
+                          <Card key={pkg.id} className="border border-purple-200">
+                            <Collapsible open={isPackageExpanded} onOpenChange={() => togglePackageExpanded(pkg.id)}>
+                              <CollapsibleTrigger asChild>
+                                <CardHeader className="cursor-pointer bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 transition-colors py-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      {isPackageExpanded ? (
+                                        <ChevronDown className="w-5 h-5 text-purple-600" />
+                                      ) : (
+                                        <ChevronRight className="w-5 h-5 text-purple-600" />
+                                      )}
+                                      <div>
+                                        <CardTitle className="text-base flex items-center gap-2">
+                                          <Package className="w-4 h-4 text-purple-600" />
+                                          {pkg.name}
+                                        </CardTitle>
+                                        {pkg.description && (
+                                          <p className="text-xs text-muted-foreground mt-1">
+                                            {pkg.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <Badge variant="outline" className="font-semibold bg-white text-xs">
+                                      {pullFromShopItems.length} to pull
+                                    </Badge>
                                   </div>
-                                  
-                                  <div>
-                                    <span className="text-muted-foreground">Color:</span>
-                                    <p className="font-medium">
-                                      {item.material_items.color || '-'}
-                                    </p>
+                                </CardHeader>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <CardContent className="p-2 sm:p-3">
+                                  <div className="space-y-2">
+                                    {pullFromShopItems.map((item) => (
+                                      <div 
+                                        key={item.id} 
+                                        className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex-1 min-w-0">
+                                            <h4 className="font-semibold text-sm leading-tight mb-2">
+                                              {item.material_items.material_name}
+                                            </h4>
+                                            
+                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                              <div>
+                                                <span className="text-muted-foreground">Qty:</span>
+                                                <p className="font-semibold text-base">{item.material_items.quantity}</p>
+                                              </div>
+                                              
+                                              <div>
+                                                <span className="text-muted-foreground">Color:</span>
+                                                <p className="font-medium">
+                                                  {item.material_items.color || '-'}
+                                                </p>
+                                              </div>
+                                              
+                                              <div>
+                                                <span className="text-muted-foreground">Length:</span>
+                                                <p className="font-medium">
+                                                  {item.material_items.length || '-'}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          </div>
+                                          
+                                          <Button
+                                            size="sm"
+                                            onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
+                                            disabled={processingMaterials.has(item.material_items.id)}
+                                            className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
+                                            title="Mark as Ready"
+                                          >
+                                            {processingMaterials.has(item.material_items.id) ? (
+                                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            ) : (
+                                              <CheckCircle2 className="w-5 h-5" />
+                                            )}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                  
-                                  <div>
-                                    <span className="text-muted-foreground">Length:</span>
-                                    <p className="font-medium">
-                                      {item.material_items.length || '-'}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <Button
-                                size="sm"
-                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
-                                disabled={processingMaterials.has(item.material_items.id)}
-                                className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0 flex-shrink-0"
-                                title="Mark as Ready"
-                              >
-                                {processingMaterials.has(item.material_items.id) ? (
-                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <CheckCircle2 className="w-5 h-5" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                                </CardContent>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          </Card>
+                        );
+                      })}
                     </CardContent>
                   </CollapsibleContent>
                 </Collapsible>
@@ -808,7 +883,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       )}
 
       {/* Empty State */}
-      {filteredPackages.length === 0 && (
+      {jobGroups.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
