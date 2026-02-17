@@ -21,6 +21,84 @@ import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManage
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 
+// Helper function to create or update contact
+async function createOrUpdateContact(contactInfo: {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  category: string;
+  job_id: string | null;
+  created_by: string;
+}) {
+  try {
+    // Build search query dynamically based on available data
+    let query = supabase.from('contacts').select('*').eq('category', contactInfo.category);
+    
+    // Search by name, email, or phone (if available)
+    const searchConditions = [];
+    if (contactInfo.name && contactInfo.name !== 'Unknown') {
+      searchConditions.push(`name.ilike.${contactInfo.name}`);
+    }
+    if (contactInfo.email) {
+      searchConditions.push(`email.eq.${contactInfo.email}`);
+    }
+    if (contactInfo.phone) {
+      searchConditions.push(`phone.eq.${contactInfo.phone}`);
+    }
+    
+    if (searchConditions.length === 0) {
+      console.log('⚠️ No search criteria for contact');
+      return null;
+    }
+    
+    const { data: existingContacts } = await query.or(searchConditions.join(',')).limit(1);
+
+    if (existingContacts && existingContacts.length > 0) {
+      console.log('✅ Contact already exists:', existingContacts[0].name);
+      // Update contact with any new information
+      const updates: any = {};
+      if (contactInfo.email && !existingContacts[0].email) updates.email = contactInfo.email;
+      if (contactInfo.phone && !existingContacts[0].phone) updates.phone = contactInfo.phone;
+      
+      if (Object.keys(updates).length > 0) {
+        await supabase
+          .from('contacts')
+          .update(updates)
+          .eq('id', existingContacts[0].id);
+        console.log('✅ Updated contact with new info');
+      }
+      
+      return existingContacts[0];
+    }
+
+    // Create new contact if none exists
+    const { data: newContact, error } = await supabase
+      .from('contacts')
+      .insert({
+        name: contactInfo.name,
+        email: contactInfo.email,
+        phone: contactInfo.phone,
+        category: contactInfo.category,
+        job_id: contactInfo.job_id,
+        is_active: true,
+        created_by: contactInfo.created_by,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating contact:', error);
+      return null;
+    }
+
+    console.log('✅ Created new contact:', newContact.name);
+    return newContact;
+  } catch (error) {
+    console.error('Error in createOrUpdateContact:', error);
+    return null;
+  }
+}
+
 interface QuoteIntakeFormProps {
   quoteId?: string;
   onSuccess: () => void;
@@ -458,6 +536,18 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
       
       if (status === 'submitted' && !existingQuote?.submitted_at) {
         quoteData.submitted_at = new Date().toISOString();
+      }
+
+      // Auto-create or update contact for customer
+      if (customerName || customerEmail || customerPhone) {
+        await createOrUpdateContact({
+          name: customerName || 'Unknown',
+          email: customerEmail,
+          phone: customerPhone,
+          category: 'Customer',
+          job_id: null, // Will link if converted to job
+          created_by: profile.id
+        });
       }
 
       console.log('💾 Attempting to save quote...');
