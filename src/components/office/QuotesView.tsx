@@ -179,10 +179,10 @@ export function QuotesView() {
     }
   }
 
-  async function markQuoteAsWon(quoteId: string, e: React.MouseEvent) {
+  async function submitForEstimating(quoteId: string, e: React.MouseEvent) {
     e.stopPropagation();
     
-    if (!confirm('Send this quote to estimating? It will appear in the Jobs page under "Quoting" for office estimating.')) {
+    if (!confirm('Submit this quote for estimating? It will move to the Jobs page in the Quoting column where you can build the detailed proposal and estimate.')) {
       return;
     }
     
@@ -197,20 +197,19 @@ export function QuotesView() {
       if (quoteError) throw quoteError;
 
       // Create a snapshot version before converting
-      await createNewVersion(quoteId, 'Quote marked as won and sent to estimating');
+      await createNewVersion(quoteId, 'Quote submitted for estimating - moved to Jobs page');
 
-      // Create a new job from the quote with 'quoting' status (NO job number yet)
+      // Create a new job from the quote with 'quoting' status (will get quote number)
       const { data: newJob, error: jobError } = await supabase
         .from('jobs')
         .insert({
           name: quote.project_name || quote.customer_name || 'Untitled Job',
           client_name: quote.customer_name || '',
           address: quote.customer_address || '',
-          description: `Quote #${quote.quote_number}`,
-          status: 'quoting', // Start in quoting status for estimating
+          description: `From Quote #${quote.quote_number}${quote.project_name ? ' - ' + quote.project_name : ''}`,
+          status: 'quoting', // Start in quoting status - will auto-get quote number from trigger
           estimated_hours: 0,
           is_internal: false,
-          job_number: null, // No job number until moved to prepping/active
         })
         .select()
         .single();
@@ -230,14 +229,17 @@ export function QuotesView() {
 
       if (updateError) throw updateError;
 
-      toast.success(`Quote sent to Jobs page for estimating! (Quote #${quote.quote_number})`);
+      toast.success(
+        `✅ Quote submitted for estimating!\n\nQuote #${quote.quote_number} is now in the Jobs page (Quoting column) where you can:\n• Build detailed proposal\n• Add materials & financials\n• Create proposal versions\n• Set as contract when ready`,
+        { duration: 5000 }
+      );
       loadQuotes();
       
       // Navigate to jobs page to show the new quote
       navigate('/office?tab=jobs');
     } catch (error: any) {
-      console.error('Error converting quote to job:', error);
-      toast.error('Failed to send quote to estimating');
+      console.error('Error submitting quote for estimating:', error);
+      toast.error('Failed to submit quote for estimating');
     }
   }
 
@@ -509,11 +511,11 @@ export function QuotesView() {
               <Button
                 size="sm"
                 variant="outline"
-                className="flex-1 text-white bg-gradient-to-r from-green-700 to-green-800 hover:from-green-800 hover:to-green-900 border-2 border-green-600 font-semibold"
-                onClick={(e) => markQuoteAsWon(quote.id, e)}
+                className="flex-1 text-white bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 border-2 border-blue-600 font-semibold"
+                onClick={(e) => submitForEstimating(quote.id, e)}
               >
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Send to Estimating
+                <FileText className="w-3 h-3 mr-1" />
+                Submit for Estimating
               </Button>
               <Button
                 size="sm"
