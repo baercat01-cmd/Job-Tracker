@@ -313,23 +313,24 @@ function SortableRow({ item, ...props }: any) {
           {/* Description */}
           <div className="ml-10 mr-[280px]">
             <Textarea
-              value={sheet.sheetDescription}
+              key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
+              defaultValue={sheet.sheetDescription || ''}
               placeholder="Click to add description..."
               className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
               rows={Math.max(2, Math.ceil((sheet.sheetDescription || '').length / 120) + 1)}
-              onChange={(e) => {
-                const textarea = e.target;
-                textarea.onblur = async () => {
+              onBlur={async (e) => {
+                const newValue = e.target.value.trim();
+                if (newValue !== (sheet.sheetDescription || '')) {
                   try {
                     await supabase
                       .from('material_sheets')
-                      .update({ description: e.target.value || null })
+                      .update({ description: newValue || null })
                       .eq('id', sheet.sheetId);
                     await loadMaterialsData();
                   } catch (error) {
                     console.error('Error saving description:', error);
                   }
-                };
+                }
               }}
             />
           </div>
@@ -599,30 +600,29 @@ function SortableRow({ item, ...props }: any) {
           </div>
 
           {/* Notes */}
-          {row.notes && (
-            <div className="ml-10 mr-[280px]">
-              <Textarea
-                value={row.notes}
-                placeholder="Click to add notes..."
-                className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                rows={Math.max(2, Math.ceil((row.notes || '').length / 120) + 1)}
-                onChange={(e) => {
-                  const textarea = e.target;
-                  textarea.onblur = async () => {
-                    try {
-                      await supabase
-                        .from('custom_financial_rows')
-                        .update({ notes: e.target.value || null })
-                        .eq('id', row.id);
-                      await loadCustomRows();
-                    } catch (error) {
-                      console.error('Error saving notes:', error);
-                    }
-                  };
-                }}
-              />
-            </div>
-          )}
+          <div className="ml-10 mr-[280px]">
+            <Textarea
+              key={`row-notes-${row.id}-${row.notes}`}
+              defaultValue={row.notes || ''}
+              placeholder="Click to add notes..."
+              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(2, Math.ceil((row.notes || '').length / 120) + 1)}
+              onBlur={async (e) => {
+                const newValue = e.target.value.trim();
+                if (newValue !== (row.notes || '')) {
+                  try {
+                    await supabase
+                      .from('custom_financial_rows')
+                      .update({ notes: newValue || null })
+                      .eq('id', row.id);
+                    await loadCustomRows();
+                  } catch (error) {
+                    console.error('Error saving notes:', error);
+                  }
+                }
+              }}
+            />
+          </div>
 
           {/* Line Items & Linked Subcontractors */}
           {(lineItems.length > 0 || linkedSubs.length > 0) && (
@@ -813,23 +813,24 @@ function SortableRow({ item, ...props }: any) {
           {/* Description */}
           <div className="ml-10 mr-[280px]">
             <Textarea
-              value={est.scope_of_work || ''}
+              key={`sub-scope-${est.id}-${est.scope_of_work}`}
+              defaultValue={est.scope_of_work || ''}
               placeholder="Click to add description..."
               className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
               rows={Math.max(2, Math.ceil((est.scope_of_work || '').length / 120) + 1)}
-              onChange={(e) => {
-                const textarea = e.target;
-                textarea.onblur = async () => {
+              onBlur={async (e) => {
+                const newValue = e.target.value.trim();
+                if (newValue !== (est.scope_of_work || '')) {
                   try {
                     await supabase
                       .from('subcontractor_estimates')
-                      .update({ scope_of_work: e.target.value || null })
+                      .update({ scope_of_work: newValue || null })
                       .eq('id', est.id);
                     await loadSubcontractorEstimates();
                   } catch (error) {
                     console.error('Error saving scope of work:', error);
                   }
-                };
+                }
               }}
             />
           </div>
