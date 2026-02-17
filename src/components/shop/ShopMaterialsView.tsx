@@ -744,24 +744,24 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                   <CollapsibleContent>
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
-                        <table className="w-full">
+                        <table className="w-full table-fixed">
                           <thead className="bg-muted/50 border-b">
                             <tr>
-                              <th className="text-left p-3 font-semibold">Material</th>
-                              <th className="text-center p-3 font-semibold">Qty</th>
-                              <th className="text-center p-3 font-semibold">Color</th>
-                              <th className="text-center p-3 font-semibold">Length</th>
-                              <th className="text-center p-3 font-semibold">Action</th>
+                              <th className="text-left p-3 font-semibold w-full">Material</th>
+                              <th className="text-center p-3 font-semibold whitespace-nowrap">Qty</th>
+                              <th className="text-center p-3 font-semibold whitespace-nowrap">Color</th>
+                              <th className="text-center p-3 font-semibold whitespace-nowrap">Length</th>
+                              <th className="text-center p-3 font-semibold w-12"></th>
                             </tr>
                           </thead>
                           <tbody>
                             {pullFromShopItems.map((item) => (
                               <tr key={item.id} className="border-b hover:bg-muted/30 transition-colors">
-                                <td className="p-3 font-medium">{item.material_items.material_name}</td>
-                                <td className="p-3 text-center font-semibold">
+                                <td className="p-3 font-medium break-words">{item.material_items.material_name}</td>
+                                <td className="p-3 text-center font-semibold whitespace-nowrap">
                                   {item.material_items.quantity}
                                 </td>
-                                <td className="p-3 text-center">
+                                <td className="p-3 text-center whitespace-nowrap">
                                   {item.material_items.color ? (
                                     <Badge variant="outline" className="bg-blue-50">
                                       {item.material_items.color}
@@ -770,37 +770,23 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                     <span className="text-muted-foreground">-</span>
                                   )}
                                 </td>
-                                <td className="p-3 text-center">
+                                <td className="p-3 text-center whitespace-nowrap">
                                   {item.material_items.length || '-'}
                                 </td>
                                 <td className="p-3">
-                                  <div className="flex justify-center gap-2">
+                                  <div className="flex justify-center">
                                     <Button
                                       size="sm"
                                       onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'ready_for_job')}
                                       disabled={processingMaterials.has(item.material_items.id)}
-                                      className="bg-emerald-600 hover:bg-emerald-700"
+                                      className="bg-emerald-600 hover:bg-emerald-700 h-8 w-8 p-0"
+                                      title="Mark as Ready"
                                     >
                                       {processingMaterials.has(item.material_items.id) ? (
-                                        <>
-                                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                          ...
-                                        </>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                       ) : (
-                                        <>
-                                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                                          Ready
-                                        </>
+                                        <CheckCircle2 className="w-4 h-4" />
                                       )}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, 'at_job')}
-                                      disabled={processingMaterials.has(item.material_items.id)}
-                                      className="bg-teal-600 hover:bg-teal-700"
-                                    >
-                                      <Truck className="w-4 h-4 mr-2" />
-                                      At Job
                                     </Button>
                                   </div>
                                 </td>
