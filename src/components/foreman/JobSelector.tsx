@@ -86,17 +86,60 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
       // Load ready materials count and pull from shop count for each job
       const jobsWithMaterials = await Promise.all(
         filteredJobs.map(async (job) => {
-          const { count: readyCount } = await supabase
+          // Count from old materials table
+          const { count: readyCountOld } = await supabase
             .from('materials')
             .select('id', { count: 'exact', head: true })
             .eq('job_id', job.id)
             .eq('status', 'at_shop');
           
-          const { count: pullCount } = await supabase
+          const { count: pullCountOld } = await supabase
             .from('materials')
             .select('id', { count: 'exact', head: true })
             .eq('job_id', job.id)
             .eq('status', 'ready_to_pull');
+          
+          // Count from new material_workbooks system
+          // Get workbooks for this job
+          const { data: workbooksData } = await supabase
+            .from('material_workbooks')
+            .select('id')
+            .eq('job_id', job.id)
+            .eq('status', 'working');
+          
+          let readyCountNew = 0;
+          let pullCountNew = 0;
+          
+          if (workbooksData && workbooksData.length > 0) {
+            const workbookIds = workbooksData.map(wb => wb.id);
+            
+            // Get sheets for these workbooks
+            const { data: sheetsData } = await supabase
+              .from('material_sheets')
+              .select('id')
+              .in('workbook_id', workbookIds);
+            
+            if (sheetsData && sheetsData.length > 0) {
+              const sheetIds = sheetsData.map(s => s.id);
+              
+              // Count ready_for_job materials
+              const { count: readyNew } = await supabase
+                .from('material_items')
+                .select('id', { count: 'exact', head: true })
+                .in('sheet_id', sheetIds)
+                .eq('status', 'ready_for_job');
+              
+              // Count pull_from_shop materials
+              const { count: pullNew } = await supabase
+                .from('material_items')
+                .select('id', { count: 'exact', head: true })
+                .in('sheet_id', sheetIds)
+                .eq('status', 'pull_from_shop');
+              
+              readyCountNew = readyNew || 0;
+              pullCountNew = pullNew || 0;
+            }
+          }
           
           const totalManHours = jobManHours.get(job.id) || 0;
           const estimatedHours = job.estimated_hours || 0;
@@ -106,14 +149,18 @@ export function JobSelector({ onSelectJob, userId, userRole, onShowJobCalendar, 
           const progressPercent = Math.min(actualProgressPercent, 100);
           const isOverBudget = totalManHours > estimatedHours && estimatedHours > 0;
 
+          // Combine counts from both old and new systems
+          const totalReadyCount = (readyCountOld || 0) + readyCountNew;
+          const totalPullCount = (pullCountOld || 0) + pullCountNew;
+
           return {
             ...job,
             totalManHours,
             progressPercent,
             actualProgressPercent,
             isOverBudget,
-            ready_materials_count: readyCount || 0,
-            pull_from_shop_count: pullCount || 0,
+            ready_materials_count: totalReadyCount,
+            pull_from_shop_count: totalPullCount,
           };
         })
       );
