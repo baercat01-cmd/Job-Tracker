@@ -164,13 +164,13 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <div className="flex items-center gap-2 mb-2">
               <FileCheck className="w-4 h-4 text-blue-600" />
-              <p className="font-semibold text-blue-900">Quote Numbering System</p>
+              <p className="font-semibold text-blue-900">Numbering System</p>
             </div>
-            <p className="text-sm text-blue-800">
-              New quotes receive a <strong>Quote Number</strong> (e.g., QUOTE-2026-001). 
-              Once the proposal is set as contract and moved to <strong>Prepping</strong> or <strong>Active</strong> status, 
-              the system will automatically assign a <strong>Job Number</strong> (e.g., JOB-2026-001).
-            </p>
+            <div className="text-sm text-blue-800 space-y-1">
+              <p><strong>Quote Number:</strong> YYXXX format (e.g., 26001 for 2026, quote #1)</p>
+              <p><strong>Proposal Number:</strong> Assigned when materials/financials are added for contract versions</p>
+              <p><strong>Job Number:</strong> Auto-assigned when moved to Active/Prepping after contract signing</p>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -210,7 +210,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
               id="quote_number"
               value={formData.quote_number}
               onChange={(e) => setFormData({ ...formData, quote_number: e.target.value })}
-              placeholder="QUOTE-2026-001"
+              placeholder="26001"
               disabled={loading || autoGenerateQuoteNumber}
               className={autoGenerateQuoteNumber ? 'bg-muted' : ''}
             />
@@ -219,8 +219,8 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
                 ✓ Quote number will be auto-generated
               </p>
             )}
-            <p className="text-xs text-amber-700 font-medium mt-1">
-              💡 Job number will be assigned when moved to Active/Prepping
+            <p className="text-xs text-muted-foreground mt-1">
+              💡 Proposal & Job numbers assigned automatically later
             </p>
           </div>
 
