@@ -335,23 +335,43 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       setUploading(true);
       let successCount = 0;
       let failCount = 0;
+      const errors: string[] = [];
 
       for (const upload of pendingUploads) {
         try {
+          console.log('Uploading file:', upload.name, 'Size:', upload.file.size, 'bytes');
+          
+          // Check file size (50 MB limit)
+          if (upload.file.size > 52428800) {
+            throw new Error(`File size (${(upload.file.size / 1024 / 1024).toFixed(2)} MB) exceeds 50 MB limit`);
+          }
+
           // Upload file to storage
           const fileExt = upload.file.name.split('.').pop();
           const timestamp = Date.now();
           const fileName = `${job.id}/documents/${timestamp}_${upload.file.name}`;
 
-          const { error: uploadError } = await supabase.storage
-            .from('job-files')
-            .upload(fileName, upload.file);
+          console.log('Uploading to path:', fileName);
 
-          if (uploadError) throw uploadError;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('job-files')
+            .upload(fileName, upload.file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (uploadError) {
+            console.error('Storage upload error:', uploadError);
+            throw new Error(`Storage upload failed: ${uploadError.message}`);
+          }
+
+          console.log('Upload successful, getting public URL...');
 
           const { data: { publicUrl } } = supabase.storage
             .from('job-files')
             .getPublicUrl(fileName);
+
+          console.log('Public URL:', publicUrl);
 
           // Create document record
           const { data: docData, error: docError } = await supabase
@@ -367,7 +387,12 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
             .select()
             .single();
 
-          if (docError) throw docError;
+          if (docError) {
+            console.error('Document creation error:', docError);
+            throw new Error(`Database error: ${docError.message}`);
+          }
+
+          console.log('Document record created:', docData.id);
 
           // Create first revision (v1)
           const { error: revError } = await supabase
@@ -380,11 +405,16 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
               uploaded_by: profile?.id,
             });
 
-          if (revError) throw revError;
+          if (revError) {
+            console.error('Revision creation error:', revError);
+            throw new Error(`Revision error: ${revError.message}`);
+          }
 
+          console.log('✓ Successfully uploaded:', upload.name);
           successCount++;
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Failed to upload ${upload.name}:`, error);
+          errors.push(`${upload.name}: ${error.message || 'Unknown error'}`);
           failCount++;
         }
       }
@@ -393,7 +423,14 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
         toast.success(`Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}`);
       }
       if (failCount > 0) {
-        toast.error(`Failed to upload ${failCount} document${failCount > 1 ? 's' : ''}`);
+        toast.error(
+          `Failed to upload ${failCount} document${failCount > 1 ? 's' : ''}`,
+          { 
+            description: errors.length > 0 ? errors.slice(0, 3).join('\n') : undefined,
+            duration: 10000 
+          }
+        );
+        console.error('Upload errors:', errors);
       }
 
       if (successCount > 0) {
@@ -405,7 +442,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
       }
     } catch (error: any) {
       console.error('Bulk upload error:', error);
-      toast.error(`Upload failed: ${error.message}`);
+      toast.error(`Upload failed: ${error.message || 'Unknown error'}`, { duration: 10000 });
     } finally {
       setUploading(false);
     }
