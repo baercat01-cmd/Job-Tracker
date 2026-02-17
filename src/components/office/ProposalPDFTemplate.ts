@@ -39,7 +39,7 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 850px; 
             margin: 0 auto; 
-            padding: 20px; 
+            padding: 20px 10px; 
             font-size: 11pt; 
           }
           
@@ -242,14 +242,9 @@ export function generateProposalHTML(data: {
                 <div>${job.address}</div>
               </div>
               
-              <table class="phone-row">
-                <tr>
-                  <td style="width: 80px;"><strong>Phone</strong></td>
-                  <td>(574) 532-3653</td>
-                  <td style="width: 60px;"><strong>Fax</strong></td>
-                  <td style="width: 150px;"></td>
-                </tr>
-              </table>
+              <div style="border: 1px solid #000; padding: 8px; margin-bottom: 15px;">
+                <strong>Phone:</strong> (574) 532-3653
+              </div>
             </div>
             
             <div class="customer-right">
