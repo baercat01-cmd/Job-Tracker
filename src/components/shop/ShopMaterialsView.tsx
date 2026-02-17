@@ -105,7 +105,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterJob, setFilterJob] = useState('all');
   const [jobs, setJobs] = useState<any[]>([]);
-  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Will be populated when packages load
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Collapsed by default
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -299,14 +299,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       
       setPackages(packagesWithShopMaterials);
       
-      // Auto-expand all jobs and packages so shop users can see materials immediately
-      const allPackageIds = new Set(packagesWithShopMaterials.map(pkg => pkg.id));
-      
-      // Also expand job-level cards
-      const jobIds = [...new Set(packagesWithShopMaterials.map(pkg => pkg.job_id))];
-      jobIds.forEach(jobId => allPackageIds.add(`job-${jobId}`));
-      
-      setExpandedPackages(allPackageIds);
+      // Keep all packages collapsed by default
+      setExpandedPackages(new Set());
     } catch (error: any) {
       console.error('❌ Error loading packages:', error);
       toast.error('Failed to load packages. Check console for details.');
@@ -461,68 +455,6 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                <Package className="w-6 h-6 text-purple-600" />
-                Shop Material Packages
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Process material packages and prepare them for job sites
-              </p>
-            </div>
-            <Badge variant="outline" className="text-lg px-4 py-2 bg-purple-50">
-              {jobGroups.length} {jobGroups.length === 1 ? 'Job' : 'Jobs'}
-            </Badge>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Search & Filter */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search packages, materials, job, or client..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-9"
-              />
-              {searchTerm && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-
-            {/* Job Filter */}
-            <Select value={filterJob} onValueChange={setFilterJob}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Jobs" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Jobs</SelectItem>
-                {jobs.map(job => (
-                  <SelectItem key={job.id} value={job.id}>
-                    {job.name} - {job.client_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Material Packages Grouped by Job */}
       {jobGroups.length > 0 && (
