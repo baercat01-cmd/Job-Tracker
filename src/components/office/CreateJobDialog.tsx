@@ -166,7 +166,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           name: formData.client_name.trim(),
           email: null,
           phone: null,
-          category: 'Customer',
+          category: 'customer',
           job_id: null,
           created_by: profile.id
         });

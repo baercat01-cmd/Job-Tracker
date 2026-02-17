@@ -544,7 +544,7 @@ export function QuoteIntakeForm({ quoteId, onSuccess, onCancel }: QuoteIntakeFor
           name: customerName || 'Unknown',
           email: customerEmail,
           phone: customerPhone,
-          category: 'Customer',
+          category: 'customer',
           job_id: null, // Will link if converted to job
           created_by: profile.id
         });

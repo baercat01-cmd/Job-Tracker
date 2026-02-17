@@ -85,7 +85,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .from('contacts')
         .select('*')
         .eq('job_id', job.id)
-        .eq('category', 'Customer')
+        .eq('category', 'customer')
         .maybeSingle();
 
       if (contactData && contactData.email) {
