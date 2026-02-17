@@ -98,7 +98,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterJob, setFilterJob] = useState('all');
   const [jobs, setJobs] = useState<any[]>([]);
-  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Empty set = all collapsed by default
+  const [expandedPackages, setExpandedPackages] = useState<Set<string>>(new Set()); // Will be populated when packages load
   const [processingMaterials, setProcessingMaterials] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -493,6 +493,10 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           }
           
           setPackages(finalPackages);
+          
+          // Auto-expand all packages so shop users can see materials immediately
+          const allPackageIds = new Set(finalPackages.map(pkg => pkg.id));
+          setExpandedPackages(allPackageIds);
         }
       }
     } catch (error: any) {
