@@ -169,7 +169,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
           name,
           description,
           status,
-          jobs (
+          jobs!inner (
             id,
             name,
             client_name
@@ -178,7 +178,7 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             id,
             bundle_id,
             material_item_id,
-            material_items (
+            material_items!inner (
               id,
               sheet_id,
               category,
@@ -206,29 +206,35 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
       if (!allBundles || allBundles.length === 0) {
         console.log('❌ SHOP VIEW: No bundles found in database');
         setPackages([]);
+        setLoading(false);
         return;
       }
       
-      console.log('📦 SHOP VIEW: Sample bundle structure:', allBundles[0]);
+      console.log('📦 SHOP VIEW: Sample bundle structure:', JSON.stringify(allBundles[0], null, 2));
+      console.log('📦 SHOP VIEW: All bundles:', allBundles.map(b => ({ id: b.id, name: b.name, itemCount: b.bundle_items?.length || 0 })));
       
       // Transform Supabase response to match our interface with better error handling
       const transformedPackages: MaterialBundle[] = (allBundles || []).map((pkg: any) => {
-        // Safely access nested arrays
-        const job = Array.isArray(pkg.jobs) && pkg.jobs.length > 0 ? pkg.jobs[0] : { name: 'Unknown Job', client_name: '' };
+        console.log(`🔧 Processing bundle "${pkg.name}":`, {
+          bundleId: pkg.id,
+          jobsType: typeof pkg.jobs,
+          jobsIsArray: Array.isArray(pkg.jobs),
+          jobsValue: pkg.jobs,
+          bundleItemsCount: pkg.bundle_items?.length || 0
+        });
+        
+        // Safely access nested data - Supabase returns objects not arrays for single relations
+        const job = pkg.jobs || { name: 'Unknown Job', client_name: '' };
         
         const bundleItems = (pkg.bundle_items || []).map(item => {
-          const materialItem = Array.isArray(item.material_items) && item.material_items.length > 0 
-            ? item.material_items[0] 
-            : null;
+          const materialItem = item.material_items;
           
           if (!materialItem) {
             console.warn('⚠️ Bundle item missing material_items:', item);
             return null;
           }
           
-          const sheet = Array.isArray(materialItem.sheets) && materialItem.sheets.length > 0
-            ? materialItem.sheets[0]
-            : { sheet_name: 'Unknown Sheet' };
+          const sheet = materialItem.sheets || { sheet_name: 'Unknown Sheet' };
           
           return {
             ...item,
@@ -238,6 +244,11 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
             },
           };
         }).filter(Boolean); // Remove null items
+        
+        console.log(`✅ Transformed bundle "${pkg.name}":`, {
+          job: job.name,
+          itemCount: bundleItems.length
+        });
         
         return {
           ...pkg,
