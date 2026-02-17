@@ -709,7 +709,15 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <JobDetails
               job={selectedJob}
               onBack={handleBackToJobs}
-              defaultTab={documentTab}
+              defaultTab="documents"
+            />
+          )}
+
+          {activeTab === 'materials' && (
+            <JobDetails
+              job={selectedJob}
+              onBack={handleBackToJobs}
+              defaultTab="all_materials"
             />
           )}
 
@@ -720,15 +728,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           )}
         </div>
 
-        {/* Materials tab without padding for full screen experience */}
-        {activeTab === 'materials' && (
-          <MaterialsList
-            job={selectedJob}
-            userId={profile?.id || ''}
-            allowBundleCreation={false}
-            defaultTab={materialsDefaultTab}
-          />
-        )}
+
       </main>
 
       {/* Bottom Navigation - 5 tabs for job features */}
