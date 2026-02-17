@@ -50,6 +50,9 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [job, setJob] = useState<any>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [creatingWorkbook, setCreatingWorkbook] = useState(false);
+  const [workbookName, setWorkbookName] = useState('');
 
   useEffect(() => {
     loadWorkbooks();
@@ -103,6 +106,65 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     }
 
     setSelectedFile(file);
+  }
+
+  async function createEmptyWorkbook() {
+    if (!profile) {
+      toast.error('You must be logged in');
+      return;
+    }
+
+    try {
+      setCreatingWorkbook(true);
+
+      // Get next version number
+      const { data: latestVersion } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', jobId)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextVersion = (latestVersion?.version_number || 0) + 1;
+
+      // Create empty workbook
+      const { data: newWorkbook, error: workbookError } = await supabase
+        .from('material_workbooks')
+        .insert({
+          job_id: jobId,
+          version_number: nextVersion,
+          status: 'working',
+          created_by: profile.id,
+        })
+        .select()
+        .single();
+
+      if (workbookError) throw workbookError;
+
+      // Create an initial sheet
+      const sheetName = workbookName.trim() || 'Main Building';
+      const { error: sheetError } = await supabase
+        .from('material_sheets')
+        .insert({
+          workbook_id: newWorkbook.id,
+          sheet_name: sheetName,
+          order_index: 0,
+          is_option: false,
+        });
+
+      if (sheetError) throw sheetError;
+
+      toast.success(`Empty workbook created with sheet "${sheetName}"`);
+      setShowCreateDialog(false);
+      setWorkbookName('');
+      await loadWorkbooks();
+    } catch (error: any) {
+      console.error('Error creating workbook:', error);
+      toast.error('Failed to create workbook: ' + error.message);
+    } finally {
+      setCreatingWorkbook(false);
+    }
   }
 
   async function uploadWorkbook() {
@@ -433,10 +495,16 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
             Manage material workbooks and create Zoho Books quotes for tracking
           </p>
         </div>
-        <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
-          <Upload className="w-4 h-4 mr-2" />
-          Upload Workbook
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowCreateDialog(true)} variant="outline">
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Create Empty Workbook
+          </Button>
+          <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Workbook
+          </Button>
+        </div>
       </div>
 
       {/* Main Content */}
@@ -564,16 +632,86 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               <FileSpreadsheet className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-lg font-medium text-muted-foreground mb-2">No Material Workbooks Yet</p>
               <p className="text-sm text-muted-foreground mb-4">
-                Upload an Excel workbook to get started with material management
+                Create an empty workbook or upload an Excel file to get started
               </p>
-              <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Your First Workbook
-              </Button>
+              <div className="flex gap-2 justify-center">
+                <Button onClick={() => setShowCreateDialog(true)} variant="outline">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Create Empty Workbook
+                </Button>
+                <Button onClick={() => setShowUploadDialog(true)} className="gradient-primary">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Excel File
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
       </div>
+
+      {/* Create Empty Workbook Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5" />
+              Create Empty Material Workbook
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                Create an empty workbook and manually add sheets and materials as needed.
+                This is useful when you want to build your materials list from scratch.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Initial Sheet Name (Optional)</Label>
+              <Input
+                value={workbookName}
+                onChange={(e) => setWorkbookName(e.target.value)}
+                placeholder="e.g., Main Building (default if empty)"
+                disabled={creatingWorkbook}
+              />
+              <p className="text-xs text-muted-foreground">
+                You can add more sheets after creating the workbook
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCreateDialog(false);
+                  setWorkbookName('');
+                }}
+                disabled={creatingWorkbook}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={createEmptyWorkbook}
+                disabled={creatingWorkbook}
+                className="gradient-primary"
+              >
+                {creatingWorkbook ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Create Workbook
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
