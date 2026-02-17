@@ -311,23 +311,34 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
   }
 
   async function updateMaterialStatus(materialId: string, bundleId: string, currentStatus: string, newStatus: 'ready_for_job' | 'at_job') {
-    if (processingMaterials.has(materialId)) return;
+    console.log('🎯 SHOP updateMaterialStatus called:', { materialId, bundleId, currentStatus, newStatus, isProcessing: processingMaterials.has(materialId) });
+    
+    if (processingMaterials.has(materialId)) {
+      console.log('⚠️ SHOP Material is already being processed, skipping');
+      return;
+    }
     
     setProcessingMaterials(prev => new Set(prev).add(materialId));
 
     try {
-      console.log(`🔄 Updating material ${materialId} from ${currentStatus} to ${newStatus}`);
+      console.log(`🔄 SHOP Updating material ${materialId} from ${currentStatus} to ${newStatus}`);
       
       // Update material status
-      const { error: materialError } = await supabase
+      const { data, error: materialError } = await supabase
         .from('material_items')
         .update({ 
           status: newStatus,
           updated_at: new Date().toISOString() 
         })
-        .eq('id', materialId);
+        .eq('id', materialId)
+        .select();
 
-      if (materialError) throw materialError;
+      if (materialError) {
+        console.error('❌ SHOP Database error:', materialError);
+        throw materialError;
+      }
+
+      console.log('✅ SHOP Material updated successfully:', data);
 
       // Check if this is the first material in the package being marked as ready
       // Get all materials in the package (only for non-virtual bundles)
@@ -368,8 +379,8 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
 
       loadPackages();
     } catch (error: any) {
-      console.error('Error updating material:', error);
-      toast.error('Failed to update material status');
+      console.error('❌ SHOP Error updating material:', error);
+      toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
     } finally {
       setProcessingMaterials(prev => {
         const newSet = new Set(prev);
@@ -584,7 +595,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             {item.material_items.status === 'pull_from_shop' && (
                                               <Button
                                                 size="sm"
-                                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'ready_for_job')}
+                                                onClick={(e) => {
+                                                  console.log('🖱️ SHOP Pull from Shop button clicked');
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'ready_for_job');
+                                                }}
                                                 disabled={processingMaterials.has(item.material_items.id)}
                                                 className="bg-emerald-600 hover:bg-emerald-700 h-10 w-10 p-0"
                                                 title="Mark as Ready for Job"
@@ -601,7 +617,12 @@ export function ShopMaterialsView({ userId }: ShopMaterialsViewProps) {
                                             {item.material_items.status === 'ready_for_job' && (
                                               <Button
                                                 size="sm"
-                                                onClick={() => updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'at_job')}
+                                                onClick={(e) => {
+                                                  console.log('🖱️ SHOP Ready for Job button clicked for material:', item.material_items.id);
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  updateMaterialStatus(item.material_items.id, pkg.id, item.material_items.status, 'at_job');
+                                                }}
                                                 disabled={processingMaterials.has(item.material_items.id)}
                                                 className="bg-teal-600 hover:bg-teal-700 h-10 w-10 p-0"
                                                 title="Mark as At Job"
