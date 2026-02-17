@@ -888,12 +888,11 @@ export function ContactsManagement() {
               </div>
               <div>
                 <Label>Linked Job (Optional)</Label>
-                <Select value={jobId} onValueChange={setJobId}>
+                <Select value={jobId || undefined} onValueChange={(value) => setJobId(value || '')}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select job..." />
+                    <SelectValue placeholder="Select job (or leave blank)..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
                     {jobs.map((job) => (
                       <SelectItem key={job.id} value={job.id}>
                         {job.job_number ? `#${job.job_number} - ` : ''}{job.name}
@@ -901,6 +900,16 @@ export function ContactsManagement() {
                     ))}
                   </SelectContent>
                 </Select>
+                {jobId && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setJobId('')}
+                    className="mt-1 text-xs h-6"
+                  >
+                    Clear Selection
+                  </Button>
+                )}
               </div>
             </div>
 
