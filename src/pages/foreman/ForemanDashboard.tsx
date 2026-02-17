@@ -120,14 +120,16 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
     setActiveTab('timer'); // Default to timer tab when selecting a job
   };
 
-  const handleJobSelectForMaterials = (job: Job, defaultTab: 'all' | 'ready' | 'pull' = 'ready') => {
+  const handleJobSelectForMaterials = (job: Job) => {
     setSelectedJob(job);
     setActiveTab('materials'); // Open directly to materials tab
-    setMaterialsDefaultTab(defaultTab);
+    setDocumentTab('ready_for_job'); // Set the tab in JobDetails
   };
 
   const handleJobSelectForPullMaterials = (job: Job) => {
-    handleJobSelectForMaterials(job, 'pull');
+    setSelectedJob(job);
+    setActiveTab('materials'); // Open directly to materials tab
+    setDocumentTab('pull_from_shop'); // Set the tab in JobDetails
   };
 
   const handleBackToJobs = () => {
@@ -717,7 +719,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
             <JobDetails
               job={selectedJob}
               onBack={handleBackToJobs}
-              defaultTab="all_materials"
+              defaultTab={documentTab}
             />
           )}
 
