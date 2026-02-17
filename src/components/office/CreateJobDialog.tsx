@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Building2, FileCheck } from 'lucide-react';
 
@@ -31,7 +30,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
     address: '',
     description: '',
     notes: '',
-    status: 'quoting' as 'quoting' | 'active',
     projected_start_date: '',
     projected_end_date: '',
   });
@@ -83,6 +81,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       }
 
       // Insert job with only valid columns
+      // All new jobs start in 'quoting' status
       const { data: job, error } = await supabase
         .from('jobs')
         .insert({
@@ -94,7 +93,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           notes: formData.notes.trim() || null,
           documents: [], // Empty array for custom folders
           components: [], // Empty array for job components
-          status: formData.status,
+          status: 'quoting', // All new jobs start in quoting phase
           projected_start_date: formData.projected_start_date || null,
           projected_end_date: formData.projected_end_date || null,
           created_by: profile.id,
@@ -113,7 +112,7 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         console.log('📍 Scroll restored to:', savedScrollPosition);
       });
 
-      toast.success(`Job "${finalJobNumber}" created successfully`, {
+      toast.success(`Quote "${finalJobNumber}" created successfully`, {
         duration: 2000,
         position: 'bottom-right'
       });
@@ -126,7 +125,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         address: '',
         description: '',
         notes: '',
-        status: 'quoting',
         projected_start_date: '',
         projected_end_date: '',
       });
@@ -152,7 +150,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
         address: '',
         description: '',
         notes: '',
-        status: 'quoting',
         projected_start_date: '',
         projected_end_date: '',
       });
@@ -164,11 +161,23 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Building2 className="w-5 h-5" />
-            Create New Job
+            <FileCheck className="w-5 h-5 text-blue-600" />
+            Create New Quote
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FileCheck className="w-4 h-4 text-blue-600" />
+              <p className="font-semibold text-blue-900">New quotes start in Quoting phase</p>
+            </div>
+            <p className="text-sm text-blue-800">
+              All new jobs start as <strong>Quotes</strong> and are hidden from crew members. 
+              Once the quote is approved and converted to a job, you can move it to <strong>Active</strong> 
+              status from the Jobs board to make it visible to the field crew.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="name">Job Name *</Label>
             <Input
@@ -272,41 +281,6 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="status">Job Status *</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value: 'quoting' | 'active') =>
-                setFormData({ ...formData, status: value })
-              }
-              disabled={loading}
-            >
-              <SelectTrigger id="status" className="h-12">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="quoting">
-                  <div className="flex items-center gap-2">
-                    <FileCheck className="w-4 h-4" />
-                    <div>
-                      <p className="font-medium">Quoting</p>
-                      <p className="text-xs text-muted-foreground">Hidden from crew - office only</p>
-                    </div>
-                  </div>
-                </SelectItem>
-                <SelectItem value="active">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4" />
-                    <div>
-                      <p className="font-medium">Active</p>
-                      <p className="text-xs text-muted-foreground">Visible to crew members</p>
-                    </div>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
@@ -332,21 +306,24 @@ export function CreateJobDialog({ open, onClose, onSuccess }: CreateJobDialogPro
 
           <div className="bg-muted p-4 rounded-lg text-sm text-muted-foreground">
             <p className="font-medium mb-2">📁 Document Management</p>
-            <p>After creating the job, you can add custom document folders (Drawings, Specs, POs, etc.) and upload files to organize job documents.</p>
+            <p>After creating the quote, you can add custom document folders (Drawings, Specs, POs, etc.) and upload files to organize job documents.</p>
           </div>
 
           <div className="flex gap-2 justify-end pt-4 border-t">
             <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="gradient-primary">
+            <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                   Creating...
                 </>
               ) : (
-                'Create Job'
+                <>
+                  <FileCheck className="w-4 h-4 mr-2" />
+                  Create Quote
+                </>
               )}
             </Button>
           </div>
