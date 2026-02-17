@@ -1297,43 +1297,71 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       console.log('🔍 Checking if auto-create quote is needed for job:', job.id);
       
       // Check 1: Materials in workbook
-      const { data: workbookData } = await supabase
+      const { data: workbookData, error: workbookError } = await supabase
         .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
         .eq('status', 'working')
         .maybeSingle();
       
+      if (workbookError) {
+        console.error('❌ Error checking workbooks:', workbookError);
+        throw workbookError;
+      }
+      
       let hasMaterials = false;
       if (workbookData) {
-        const { data: sheetsData } = await supabase
+        const { data: sheetsData, error: sheetsError } = await supabase
           .from('material_sheets')
           .select('id')
           .eq('workbook_id', workbookData.id);
         
+        if (sheetsError) {
+          console.error('❌ Error checking sheets:', sheetsError);
+          throw sheetsError;
+        }
+        
         if (sheetsData && sheetsData.length > 0) {
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from('material_items')
             .select('*', { count: 'exact', head: true })
             .in('sheet_id', sheetsData.map(s => s.id));
+          
+          if (countError) {
+            console.error('❌ Error counting materials:', countError);
+            throw countError;
+          }
+          
           hasMaterials = (count || 0) > 0;
           console.log(`📦 Found ${count || 0} material items`);
         }
       }
       
       // Check 2: Custom financial rows
-      const { count: rowsCount } = await supabase
+      const { count: rowsCount, error: rowsError } = await supabase
         .from('custom_financial_rows')
         .select('*', { count: 'exact', head: true })
         .eq('job_id', job.id);
+      
+      if (rowsError) {
+        console.error('❌ Error checking custom rows:', rowsError);
+        throw rowsError;
+      }
+      
       const hasCustomRows = (rowsCount || 0) > 0;
       console.log(`📋 Found ${rowsCount || 0} custom rows`);
       
       // Check 3: Subcontractor estimates
-      const { count: subsCount } = await supabase
+      const { count: subsCount, error: subsError } = await supabase
         .from('subcontractor_estimates')
         .select('*', { count: 'exact', head: true })
         .eq('job_id', job.id);
+      
+      if (subsError) {
+        console.error('❌ Error checking subcontractors:', subsError);
+        throw subsError;
+      }
+      
       const hasSubcontractors = (subsCount || 0) > 0;
       console.log(`👷 Found ${subsCount || 0} subcontractor estimates`);
       
@@ -1362,8 +1390,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (createError) {
         console.error('❌ Error auto-creating quote:', createError);
-        toast.error('Failed to create proposal number. Click "Generate Proposal Number" button.');
-        return;
+        toast.error(
+          'Failed to auto-create proposal number. Please click the "Generate Proposal Number" button manually.',
+          { duration: 8000 }
+        );
+        throw createError;
       }
 
       console.log('✅ Auto-created quote:', newQuote.proposal_number);
@@ -1373,6 +1404,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.success(`Proposal #${newQuote.proposal_number} created automatically`);
     } catch (error: any) {
       console.error('❌ Error in checkAndAutoCreateQuote:', error);
+      toast.error(
+        'Could not auto-create proposal number. Use the "Generate Proposal Number" button to create it manually.',
+        { duration: 8000 }
+      );
     }
   }
 
@@ -2994,10 +3029,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 <Button
                   size="sm"
                   onClick={manuallyCreateQuote}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold"
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold animate-pulse"
                 >
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Generate Proposal Number
+                  Click Here to Generate Proposal Number
                 </Button>
               )}
               <div className="h-6 w-px bg-border" />
