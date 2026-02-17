@@ -23,6 +23,7 @@ interface Notification {
 }
 
 interface NotificationBellProps {
+  jobId?: string;
   onNotificationClick: (notification: Notification) => void;
   onViewAll: () => void;
 }
@@ -38,7 +39,7 @@ const TYPE_ICONS = {
   document_revision: '📄',
 };
 
-export function NotificationBell({ onNotificationClick, onViewAll }: NotificationBellProps) {
+export function NotificationBell({ jobId, onNotificationClick, onViewAll }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
@@ -99,13 +100,20 @@ export function NotificationBell({ onNotificationClick, onViewAll }: Notificatio
 
   async function loadRecentNotifications() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('notifications')
         .select(`
           *,
           jobs(name),
           user_profiles(username, email)
-        `)
+        `);
+      
+      // Filter by job if jobId is provided
+      if (jobId) {
+        query = query.eq('job_id', jobId);
+      }
+      
+      const { data, error } = await query
         .order('created_at', { ascending: false })
         .limit(10);
 
