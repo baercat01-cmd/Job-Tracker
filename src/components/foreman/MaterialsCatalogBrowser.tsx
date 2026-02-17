@@ -394,54 +394,95 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddingMaterial(true);
 
     try {
-      let categoryId: string | null = null;
+      // NEW APPROACH: Use material_workbooks system instead of old materials table
+      // 1. Get or create a working workbook for this job
+      let workbookId: string;
+      let sheetId: string;
       
-      const { data: existingCategory } = await supabase
-        .from('materials_categories')
+      const { data: existingWorkbook } = await supabase
+        .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
-        .eq('name', 'Field Requests')
-        .single();
+        .eq('status', 'working')
+        .maybeSingle();
 
-      if (existingCategory) {
-        categoryId = existingCategory.id;
+      if (existingWorkbook) {
+        workbookId = existingWorkbook.id;
       } else {
-        const { data: newCategory, error: categoryError } = await supabase
-          .from('materials_categories')
+        // Create new workbook if none exists
+        const { data: newWorkbook, error: workbookError } = await supabase
+          .from('material_workbooks')
           .insert({
             job_id: job.id,
-            name: 'Field Requests',
-            order_index: 999,
+            version_number: 1,
+            status: 'working',
             created_by: userId,
           })
           .select()
           .single();
 
-        if (categoryError) throw categoryError;
-        categoryId = newCategory.id;
+        if (workbookError) throw workbookError;
+        workbookId = newWorkbook.id;
+      }
+
+      // 2. Get or create a "Field Requests" sheet in this workbook
+      const { data: existingSheet } = await supabase
+        .from('material_sheets')
+        .select('id')
+        .eq('workbook_id', workbookId)
+        .eq('sheet_name', 'Field Requests')
+        .maybeSingle();
+
+      if (existingSheet) {
+        sheetId = existingSheet.id;
+      } else {
+        // Get max order_index for sheets in this workbook
+        const { data: sheets } = await supabase
+          .from('material_sheets')
+          .select('order_index')
+          .eq('workbook_id', workbookId)
+          .order('order_index', { ascending: false })
+          .limit(1);
+
+        const nextOrderIndex = (sheets && sheets.length > 0) ? sheets[0].order_index + 1 : 0;
+
+        const { data: newSheet, error: sheetError } = await supabase
+          .from('material_sheets')
+          .insert({
+            workbook_id: workbookId,
+            sheet_name: 'Field Requests',
+            description: 'Materials requested from the field by crew members',
+            order_index: nextOrderIndex,
+          })
+          .select()
+          .single();
+
+        if (sheetError) throw sheetError;
+        sheetId = newSheet.id;
       }
 
       if (showCustomLength) {
         const materialsToInsert = materialPieces.map(piece => ({
-          category_id: categoryId,
-          job_id: job.id,
-          name: selectedCatalogMaterial.material_name,
+          sheet_id: sheetId,
+          category: 'Field Requests',
+          sku: selectedCatalogMaterial.sku,
+          material_name: selectedCatalogMaterial.material_name,
           quantity: piece.quantity,
           length: piece.displayLength,
-          color: addMaterialColor.trim() || null,
+          cost_per_unit: piece.costPerPiece,
+          price_per_unit: piece.costPerPiece, // Can be updated later with markup
+          extended_cost: piece.costPerPiece * piece.quantity,
+          extended_price: piece.costPerPiece * piece.quantity,
+          markup_percent: 0,
+          taxable: true,
           status: 'not_ordered' as const,
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
-          created_by: userId,
-          ordered_by: userId,
-          order_requested_at: new Date().toISOString(),
-          import_source: 'field_catalog',
-          is_extra: materialIsExtra,
-          unit_cost: piece.costPerPiece,
-          total_cost: piece.costPerPiece * piece.quantity,
+          color: addMaterialColor.trim() || null,
+          order_index: 0, // Will be auto-adjusted
         }));
 
         const { error: materialError } = await supabase
-          .from('materials')
+          .from('material_items')
           .insert(materialsToInsert);
 
         if (materialError) throw materialError;
@@ -477,21 +518,22 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           const total_cost = unit_cost * quantity;
           
           materialsToInsert.push({
-            category_id: categoryId,
-            job_id: job.id,
-            name: catalogMaterial.material_name,
+            sheet_id: sheetId,
+            category: 'Field Requests',
+            sku: catalogMaterial.sku,
+            material_name: catalogMaterial.material_name,
             quantity,
             length: catalogMaterial.part_length || null,
-            color: addMaterialColor.trim() || null,
+            cost_per_unit: unit_cost,
+            price_per_unit: unit_cost, // Can be updated later with markup
+            extended_cost: total_cost,
+            extended_price: total_cost,
+            markup_percent: 0,
+            taxable: true,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
-            created_by: userId,
-            ordered_by: userId,
-            order_requested_at: new Date().toISOString(),
-            import_source: 'field_catalog',
-            is_extra: materialIsExtra,
-            unit_cost,
-            total_cost,
+            color: addMaterialColor.trim() || null,
+            order_index: 0,
           });
           
           variantDetails.push(`${quantity}x ${variant.length}`);
@@ -503,7 +545,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         }
         
         const { error: materialError } = await supabase
-          .from('materials')
+          .from('material_items')
           .insert(materialsToInsert);
 
         if (materialError) throw materialError;
@@ -529,23 +571,24 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
         const total_cost = unit_cost * qty;
 
         const { error: materialError } = await supabase
-          .from('materials')
+          .from('material_items')
           .insert({
-            category_id: categoryId,
-            job_id: job.id,
-            name: selectedCatalogMaterial.material_name,
+            sheet_id: sheetId,
+            category: 'Field Requests',
+            sku: selectedCatalogMaterial.sku,
+            material_name: selectedCatalogMaterial.material_name,
             quantity: qty,
             length: selectedCatalogMaterial.part_length || null,
-            color: addMaterialColor.trim() || null,
+            cost_per_unit: unit_cost,
+            price_per_unit: unit_cost,
+            extended_cost: total_cost,
+            extended_price: total_cost,
+            markup_percent: 0,
+            taxable: true,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
-            created_by: userId,
-            ordered_by: userId,
-            order_requested_at: new Date().toISOString(),
-            import_source: 'field_catalog',
-            is_extra: materialIsExtra,
-            unit_cost,
-            total_cost,
+            color: addMaterialColor.trim() || null,
+            order_index: 0,
           });
 
         if (materialError) throw materialError;
@@ -669,52 +712,93 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     setAddingCustomMaterial(true);
 
     try {
-      let categoryId: string | null = null;
+      // NEW APPROACH: Use material_workbooks system instead of old materials table
+      // 1. Get or create a working workbook for this job
+      let workbookId: string;
+      let sheetId: string;
       
-      const { data: existingCategory } = await supabase
-        .from('materials_categories')
+      const { data: existingWorkbook } = await supabase
+        .from('material_workbooks')
         .select('id')
         .eq('job_id', job.id)
-        .eq('name', 'Field Requests')
-        .single();
+        .eq('status', 'working')
+        .maybeSingle();
 
-      if (existingCategory) {
-        categoryId = existingCategory.id;
+      if (existingWorkbook) {
+        workbookId = existingWorkbook.id;
       } else {
-        const { data: newCategory, error: categoryError } = await supabase
-          .from('materials_categories')
+        // Create new workbook if none exists
+        const { data: newWorkbook, error: workbookError } = await supabase
+          .from('material_workbooks')
           .insert({
             job_id: job.id,
-            name: 'Field Requests',
-            order_index: 999,
+            version_number: 1,
+            status: 'working',
             created_by: userId,
           })
           .select()
           .single();
 
-        if (categoryError) throw categoryError;
-        categoryId = newCategory.id;
+        if (workbookError) throw workbookError;
+        workbookId = newWorkbook.id;
+      }
+
+      // 2. Get or create a "Field Requests" sheet in this workbook
+      const { data: existingSheet } = await supabase
+        .from('material_sheets')
+        .select('id')
+        .eq('workbook_id', workbookId)
+        .eq('sheet_name', 'Field Requests')
+        .maybeSingle();
+
+      if (existingSheet) {
+        sheetId = existingSheet.id;
+      } else {
+        // Get max order_index for sheets in this workbook
+        const { data: sheets } = await supabase
+          .from('material_sheets')
+          .select('order_index')
+          .eq('workbook_id', workbookId)
+          .order('order_index', { ascending: false })
+          .limit(1);
+
+        const nextOrderIndex = (sheets && sheets.length > 0) ? sheets[0].order_index + 1 : 0;
+
+        const { data: newSheet, error: sheetError } = await supabase
+          .from('material_sheets')
+          .insert({
+            workbook_id: workbookId,
+            sheet_name: 'Field Requests',
+            description: 'Materials requested from the field by crew members',
+            order_index: nextOrderIndex,
+          })
+          .select()
+          .single();
+
+        if (sheetError) throw sheetError;
+        sheetId = newSheet.id;
       }
 
       const qty = typeof customMaterialQuantity === 'number' ? customMaterialQuantity : 1;
 
       const { data: materialData, error: materialError } = await supabase
-        .from('materials')
+        .from('material_items')
         .insert({
-          category_id: categoryId,
-          job_id: job.id,
-          name: customMaterialName,
+          sheet_id: sheetId,
+          category: 'Custom',
+          sku: null,
+          material_name: customMaterialName,
           quantity: qty,
           length: customMaterialLength || null,
+          cost_per_unit: 0,
+          price_per_unit: 0,
+          extended_cost: 0,
+          extended_price: 0,
+          markup_percent: 0,
+          taxable: true,
           status: 'not_ordered',
           notes: customMaterialNotes || 'Custom material added from field',
-          created_by: userId,
-          ordered_by: userId,
-          order_requested_at: new Date().toISOString(),
-          import_source: 'field_custom',
-          is_extra: false,
-          unit_cost: 0,
-          total_cost: 0,
+          order_index: 0,
         })
         .select()
         .single();
@@ -739,9 +823,9 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             .getPublicUrl(filePath);
 
           const { error: photoLinkError } = await supabase
-            .from('material_photos')
+            .from('material_item_photos')
             .insert({
-              material_id: materialData.id,
+              material_item_id: materialData.id,
               photo_url: urlData.publicUrl,
               uploaded_by: userId,
             });
