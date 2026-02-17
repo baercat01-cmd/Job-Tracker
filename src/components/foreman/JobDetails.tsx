@@ -5,12 +5,13 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-
-import { ArrowLeft, FileText, FolderOpen, MapPin, Package, Bell } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ArrowLeft, FileText, FolderOpen, MapPin, Package, Bell, CheckCircle, Truck } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { MaterialsList } from './MaterialsList';
 import { DocumentsView } from './DocumentsView';
+import { JobMaterialsByStatus } from './JobMaterialsByStatus';
 import type { Job, DocumentFolder } from '@/types';
 
 interface JobDetailsProps {
@@ -25,9 +26,13 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [pullFromShopCount, setPullFromShopCount] = useState(0);
+  const [readyForJobCount, setReadyForJobCount] = useState(0);
 
   useEffect(() => {
     loadNotifications();
+    loadMaterialCounts();
+    
     // Subscribe to new notifications
     const subscription = supabase
       .channel('job_notifications')
@@ -44,8 +49,20 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
       )
       .subscribe();
 
+    // Subscribe to material changes
+    const materialsChannel = supabase
+      .channel('job_materials_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'material_items' },
+        () => {
+          loadMaterialCounts();
+        }
+      )
+      .subscribe();
+
     return () => {
       subscription.unsubscribe();
+      supabase.removeChannel(materialsChannel);
     };
   }, [job.id]);
 
@@ -63,6 +80,59 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
       setUnreadCount((data || []).filter(n => !n.is_read).length);
     } catch (error) {
       console.error('Error loading notifications:', error);
+    }
+  }
+
+  async function loadMaterialCounts() {
+    try {
+      // Get workbooks for this job
+      const { data: workbooksData } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working');
+
+      const workbookIds = (workbooksData || []).map(wb => wb.id);
+
+      if (workbookIds.length === 0) {
+        setPullFromShopCount(0);
+        setReadyForJobCount(0);
+        return;
+      }
+
+      // Get sheets for these workbooks
+      const { data: sheetsData } = await supabase
+        .from('material_sheets')
+        .select('id')
+        .in('workbook_id', workbookIds);
+
+      const sheetIds = (sheetsData || []).map(s => s.id);
+
+      if (sheetIds.length === 0) {
+        setPullFromShopCount(0);
+        setReadyForJobCount(0);
+        return;
+      }
+
+      // Count materials with pull_from_shop status
+      const { data: pullData } = await supabase
+        .from('material_items')
+        .select('id')
+        .in('sheet_id', sheetIds)
+        .eq('status', 'pull_from_shop');
+
+      setPullFromShopCount(pullData?.length || 0);
+
+      // Count materials with ready_for_job status
+      const { data: readyData } = await supabase
+        .from('material_items')
+        .select('id')
+        .in('sheet_id', sheetIds)
+        .eq('status', 'ready_for_job');
+
+      setReadyForJobCount(readyData?.length || 0);
+    } catch (error) {
+      console.error('Error loading material counts:', error);
     }
   }
 
@@ -160,7 +230,50 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
         </div>
       )}
 
-      {profile?.id && <DocumentsView job={job} userId={profile.id} />}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="documents" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            <span className="hidden sm:inline">Documents</span>
+          </TabsTrigger>
+          <TabsTrigger value="pull_from_shop" className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              <span className="hidden lg:inline">Pull from Shop</span>
+              <span className="lg:hidden">Pull</span>
+            </div>
+            {pullFromShopCount > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {pullFromShopCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="ready_for_job" className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              <span className="hidden lg:inline">Ready for Job</span>
+              <span className="lg:hidden">Ready</span>
+            </div>
+            {readyForJobCount > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {readyForJobCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="documents">
+          {profile?.id && <DocumentsView job={job} userId={profile.id} />}
+        </TabsContent>
+
+        <TabsContent value="pull_from_shop">
+          <JobMaterialsByStatus job={job} status="pull_from_shop" />
+        </TabsContent>
+
+        <TabsContent value="ready_for_job">
+          <JobMaterialsByStatus job={job} status="ready_for_job" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
