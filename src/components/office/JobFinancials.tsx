@@ -1244,9 +1244,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (!profile) return;
 
     if (!confirm(
-      'Sign and lock this version?\n\n' +
+      'Set this as the contract version?\n\n' +
       'This will:\n' +
-      '• Mark this version as the signed/accepted proposal\n' +
+      '• Mark Version ' + (proposalVersions.find(v => v.id === versionId)?.version_number || '') + ' as the signed contract\n' +
       '• Lock this version permanently (cannot be edited)\n' +
       '• Create a new working version for future changes\n\n' +
       'Continue?'
@@ -2878,54 +2878,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
-            {proposalVersions.length === 0 ? (
-              // No versions yet - show initialization prompt
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-                  <div>
-                    <p className="text-sm font-semibold text-blue-900">
-                      Proposal #{quote.proposal_number || quote.quote_number}
-                    </p>
-                    <p className="text-xs text-blue-700 mt-0.5">
-                      Version tracking not initialized
-                    </p>
-                  </div>
-                  {quote.estimated_price && (
-                    <div className="text-sm text-blue-700 ml-4">
-                      Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  onClick={initializeVersioning}
-                  disabled={initializingVersions}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {initializingVersions ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Initializing...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3 h-3 mr-2" />
-                      Initialize Version Tracking
-                    </>
-                  )}
-                </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-semibold text-blue-900">
+                  Proposal #{quote.proposal_number || quote.quote_number}
+                </span>
               </div>
-            ) : (
-              // Versions exist - show full controls
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-semibold text-blue-900">
-                      Proposal #{quote.proposal_number || quote.quote_number}
-                    </span>
-                  </div>
+              {proposalVersions.length > 0 && (
+                <>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">
                       Version {quote.current_version || 1}
@@ -2933,7 +2894,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     {quote.signed_version && (
                       <Badge className="text-xs bg-emerald-600">
                         <Lock className="w-3 h-3 mr-1" />
-                        Signed v{quote.signed_version}
+                        Contract v{quote.signed_version}
                       </Badge>
                     )}
                   </div>
@@ -2942,28 +2903,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => setShowCreateVersionDialog(true)}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Plus className="w-3 h-3 mr-2" />
-                    Create New Version
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={openVersionHistoryDialog}
-                    className="border-blue-300 hover:bg-blue-100"
-                  >
-                    <History className="w-3 h-3 mr-2" />
-                    View History ({proposalVersions.length})
-                  </Button>
-                </div>
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -2981,59 +2923,55 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               {/* Versioning Buttons - Show if quote exists */}
               {quote ? (
                 <>
-                  {proposalVersions.length === 0 ? (
-                    <Button
-                      size="sm"
-                      onClick={initializeVersioning}
-                      disabled={initializingVersions}
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      {initializingVersions ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                          Initializing...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-3 h-3 mr-2" />
-                          Initialize Versioning
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() => setShowCreateVersionDialog(true)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (proposalVersions.length === 0) {
+                        // Auto-initialize on first version creation
+                        initializeVersioning();
+                      } else {
+                        setShowCreateVersionDialog(true);
+                      }
+                    }}
+                    disabled={initializingVersions}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {initializingVersions ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
                         <Plus className="w-3 h-3 mr-2" />
                         Create Version
-                      </Button>
-                      {/* Show Sign & Lock for current version only */}
-                      {!quote.signed_version && (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
-                            if (currentVersion) signAndLockVersion(currentVersion.id);
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          <Lock className="w-3 h-3 mr-2" />
-                          Sign & Lock
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={openVersionHistoryDialog}
-                        className="border-blue-300 hover:bg-blue-100"
-                      >
-                        <History className="w-3 h-3 mr-2" />
-                        History ({proposalVersions.length})
-                      </Button>
-                    </>
+                      </>
+                    )}
+                  </Button>
+                  {/* Show Sign & Lock for current version only */}
+                  {proposalVersions.length > 0 && !quote.signed_version && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
+                        if (currentVersion) signAndLockVersion(currentVersion.id);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      <Lock className="w-3 h-3 mr-2" />
+                      Set as Contract
+                    </Button>
+                  )}
+                  {proposalVersions.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={openVersionHistoryDialog}
+                      className="border-blue-300 hover:bg-blue-100"
+                    >
+                      <History className="w-3 h-3 mr-2" />
+                      History ({proposalVersions.length})
+                    </Button>
                   )}
                 </>
               ) : (
