@@ -706,13 +706,16 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number ? (
-                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : jobQuotes[job.id] ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
-                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
-                                    </span>
-                                  ) : null}
+                                  {/* Show quote number for quoting status, job number for active/prepping */}
+                                  {job.status === 'quoting' ? (
+                                    job.quote_number ? (
+                                      <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">#{ job.quote_number}</span>
+                                    ) : null
+                                  ) : (
+                                    job.job_number ? (
+                                      <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
+                                    ) : null
+                                  )}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -979,13 +982,16 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number ? (
-                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : jobQuotes[job.id] ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
-                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
-                                    </span>
-                                  ) : null}
+                                  {/* Show quote number for quoting status, job number for active/prepping */}
+                                  {job.status === 'quoting' ? (
+                                    job.quote_number ? (
+                                      <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">#{ job.quote_number}</span>
+                                    ) : null
+                                  ) : (
+                                    job.job_number ? (
+                                      <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
+                                    ) : null
+                                  )}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -1203,13 +1209,16 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number ? (
-                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : jobQuotes[job.id] ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
-                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
-                                    </span>
-                                  ) : null}
+                                  {/* Show quote number for quoting status, job number for active/prepping */}
+                                  {job.status === 'quoting' ? (
+                                    job.quote_number ? (
+                                      <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">#{ job.quote_number}</span>
+                                    ) : null
+                                  ) : (
+                                    job.job_number ? (
+                                      <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
+                                    ) : null
+                                  )}
                                   {job.name}
                                 </CardTitle>
                                 <Button
@@ -1419,13 +1428,16 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setSelectedJob(job)}>
                               <div className="flex items-center gap-1.5">
                                 <CardTitle className="text-base leading-tight flex-1">
-                                  {job.job_number ? (
-                                    <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
-                                  ) : jobQuotes[job.id] ? (
-                                    <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">
-                                      {jobQuotes[job.id].proposal_number ? `Proposal #${jobQuotes[job.id].proposal_number}` : jobQuotes[job.id].quote_number ? `Quote #${jobQuotes[job.id].quote_number}` : ''}
-                                    </span>
-                                  ) : null}
+                                  {/* Show quote number for quoting status, job number for active/prepping */}
+                                  {job.status === 'quoting' ? (
+                                    job.quote_number ? (
+                                      <span className="text-xs font-mono text-yellow-700 font-bold mr-1.5">#{ job.quote_number}</span>
+                                    ) : null
+                                  ) : (
+                                    job.job_number ? (
+                                      <span className="text-xs font-mono text-gray-600 font-bold mr-1.5">#{job.job_number}</span>
+                                    ) : null
+                                  )}
                                   {job.name}
                                 </CardTitle>
                                 <Button
