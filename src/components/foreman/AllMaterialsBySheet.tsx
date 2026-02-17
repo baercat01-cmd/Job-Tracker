@@ -217,11 +217,15 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
               <CollapsibleContent>
                 <CardContent className="p-2 sm:p-3">
                   <div className="space-y-2">
-                    {sheet.items.map((item) => (
-                      <div 
-                        key={item.id} 
-                        className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors"
-                      >
+                    {sheet.items.map((item) => {
+                      const isMaterialExpanded = expandedMaterials.has(item.id);
+
+                      return (
+                        <div 
+                          key={item.id} 
+                          className="bg-white border rounded-lg p-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                          onClick={() => toggleMaterial(item.id)}
+                        >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-sm leading-tight mb-2">
@@ -263,15 +267,19 @@ export function AllMaterialsBySheet({ job }: AllMaterialsBySheetProps) {
                               )}
                             </div>
 
-                            {item.usage && (
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {item.usage}
-                              </p>
+                            {isMaterialExpanded && item.usage && (
+                              <div className="mt-2 pt-2 border-t">
+                                <p className="text-xs text-muted-foreground font-medium">Usage:</p>
+                                <p className="text-xs text-foreground mt-1">
+                                  {item.usage}
+                                </p>
+                              </div>
                             )}
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </CollapsibleContent>
