@@ -237,10 +237,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   }
 
   function resetForm() {
-    // Reload customer info from job/contacts
-    loadCustomerInfo();
-    setCustomerEmail('');
-    setCustomerPhone('');
+    // Note: Customer name/email/phone are preserved - they'll be reloaded when dialog opens again
     setExpiresInDays('');
     setShowProposal(true);
     setShowPayments(true);
@@ -476,8 +473,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             Create shareable links for customers to view their projects with customizable visibility settings.
           </p>
         </div>
-        <Button onClick={() => {
-          loadCustomerInfo(); // Reload customer info when opening dialog
+        <Button onClick={async () => {
+          await loadCustomerInfo(); // Wait for customer info to load before opening dialog
           setShowCreateDialog(true);
         }}>
           <Plus className="w-4 h-4 mr-2" />
