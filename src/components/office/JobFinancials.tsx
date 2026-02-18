@@ -602,19 +602,19 @@ function SortableRow({ item, ...props }: any) {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => openAddDialog(row)}>
                     <Edit className="w-3 h-3 mr-2" />
-                    Edit Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Material Row
+                    Edit Description
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Labor Row
+                    <DollarSign className="w-3 h-3 mr-2" />
+                    Add Labor
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Material Row
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => deleteRow(row.id)}>
                     <Trash2 className="w-3 h-3 mr-2" />
@@ -952,6 +952,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
   const [editingLineItem, setEditingLineItem] = useState<CustomRowLineItem | null>(null);
   const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
+  const [lineItemType, setLineItemType] = useState<'material' | 'labor'>('material');
   const [lineItemForm, setLineItemForm] = useState({
     description: '',
     quantity: '1',
@@ -2282,6 +2283,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Line item functions
   function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
     setLineItemParentRowId(rowId);
+    setLineItemType(itemType || 'material');
     
     if (lineItem) {
       setEditingLineItem(lineItem);
@@ -2296,8 +2298,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setEditingLineItem(null);
       setLineItemForm({
         description: '',
-        quantity: '1',
-        unit_cost: '0',
+        quantity: itemType === 'labor' ? '1' : '1',
+        unit_cost: itemType === 'labor' ? '60' : '0',
         notes: '',
         taxable: itemType === 'material' ? true : false, // Material is taxable, labor is not
       });
@@ -3542,7 +3544,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingLineItem ? 'Edit Line Item' : 'Add Line Item'}</DialogTitle>
+            <DialogTitle>
+              {editingLineItem ? 'Edit ' : 'Add '}
+              {lineItemType === 'labor' ? 'Labor' : 'Line Item'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -3550,30 +3555,43 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Input
                 value={lineItemForm.description}
                 onChange={(e) => setLineItemForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="e.g., Concrete materials"
+                placeholder={lineItemType === 'labor' ? 'e.g., Installation labor, Finishing work' : 'e.g., Concrete materials'}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Quantity</Label>
+                <Label>{lineItemType === 'labor' ? 'Hours' : 'Quantity'}</Label>
                 <Input
                   type="number"
                   value={lineItemForm.quantity}
                   onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
                   step="0.01"
+                  placeholder={lineItemType === 'labor' ? 'e.g., 8' : ''}
                 />
               </div>
               <div>
-                <Label>Unit Cost ($)</Label>
+                <Label>{lineItemType === 'labor' ? 'Hourly Rate ($)' : 'Unit Cost ($)'}</Label>
                 <Input
                   type="number"
                   value={lineItemForm.unit_cost}
                   onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
                   step="0.01"
+                  placeholder={lineItemType === 'labor' ? '60' : ''}
                 />
               </div>
             </div>
+
+            {lineItemType === 'labor' && (
+              <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                <p className="text-sm font-semibold text-amber-900">
+                  Total Labor Cost: ${(
+                    (parseFloat(lineItemForm.quantity) || 0) * 
+                    (parseFloat(lineItemForm.unit_cost) || 0)
+                  ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
 
             <div>
               <Label>Notes (Optional)</Label>
@@ -3584,21 +3602,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="lineitem-taxable"
-                checked={lineItemForm.taxable}
-                onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <Label htmlFor="lineitem-taxable" className="cursor-pointer">
-                Material (Taxable)
-              </Label>
-              <p className="text-xs text-muted-foreground ml-2">
-                {lineItemForm.taxable ? 'Material - goes to material total' : 'Labor - goes to labor total'}
-              </p>
-            </div>
+            {lineItemType === 'material' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="lineitem-taxable"
+                  checked={lineItemForm.taxable}
+                  onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <Label htmlFor="lineitem-taxable" className="cursor-pointer">
+                  Taxable
+                </Label>
+                <p className="text-xs text-muted-foreground ml-2">
+                  {lineItemForm.taxable ? 'Will be included in taxable subtotal' : 'Tax exempt'}
+                </p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
@@ -3611,7 +3631,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </Button>
               )}
               <Button onClick={() => saveLineItem(false)}>
-                {editingLineItem ? 'Update' : 'Save'} Line Item
+                {editingLineItem ? 'Update' : 'Save'} {lineItemType === 'labor' ? 'Labor' : 'Line Item'}
               </Button>
             </div>
           </div>
