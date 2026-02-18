@@ -772,7 +772,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
   const categoryGroups = currentSheet ? groupByCategory(currentSheet.items) : [];
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-6xl mx-auto space-y-4 px-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
