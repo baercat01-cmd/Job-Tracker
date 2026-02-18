@@ -198,18 +198,14 @@ function SortableRow({ item, ...props }: any) {
       // Calculate sheet labor
       const sheetLaborTotal = sheetLabor[sheet.sheetId] ? sheetLabor[sheet.sheetId].total_labor_cost : 0;
       
-      // Calculate labor from sheet line items
-      const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
-      const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
-      
       // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
       const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
       const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
       // Final price = (materials with sheet markup) + (linked rows with their own markup)
       const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
       
-      // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
-      const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
+      // Total labor for display (sheet labor + non-taxable subcontractor)
+      const totalLaborCost = sheetLaborTotal + linkedSubsNonTaxableTotal;
 
       return (
         <Collapsible className="border rounded bg-white py-1 px-2">
@@ -281,13 +277,11 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-sm text-slate-500 mt-1">Materials</p>
-                <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-base font-bold text-slate-900">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
-                  <>
-                    <p className="text-sm text-slate-500 mt-2">Labor</p>
-                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                  </>
+                  <p className="text-xs text-amber-700 font-semibold mt-0.5">
+                    Labor: ${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
                 )}
               </div>
 
@@ -496,14 +490,9 @@ function SortableRow({ item, ...props }: any) {
 
               {linkedSubs.map((sub: any) => {
                 const lineItems = subcontractorLineItems[sub.id] || [];
-                // Separate by type (material vs labor)
-                const materialsTotal = lineItems
-                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
-                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const laborTotal = lineItems
-                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
+                const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
+                const nonTaxableTotal = lineItems.filter((item: any) => !item.excluded && !item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
+                const totalWithMarkup = (taxableTotal + nonTaxableTotal) * (1 + (sub.markup_percent || 0) / 100);
 
                 return (
                   <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -511,8 +500,8 @@ function SortableRow({ item, ...props }: any) {
                       <div className="flex-1">
                         <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                         <p className="text-xs text-slate-600">
-                          📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                          👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          Taxable: ${taxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
+                          Non-Taxable: ${nonTaxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -668,13 +657,11 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-sm text-slate-500 mt-1">Materials</p>
-                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
-                  <>
-                    <p className="text-sm text-slate-500 mt-2">Labor</p>
-                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                  </>
+                  <p className="text-xs text-amber-700 font-semibold mt-0.5">
+                    Labor: ${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
                 )}
               </div>
 
@@ -793,14 +780,9 @@ function SortableRow({ item, ...props }: any) {
 
                 {linkedSubs.map((sub: any) => {
                   const subLineItems = subcontractorLineItems[sub.id] || [];
-                  // Separate by type (material vs labor)
-                  const materialsTotal = subLineItems
-                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
-                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const laborTotal = subLineItems
-                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
+                  const taxableTotal = subLineItems.filter((item: any) => !item.excluded && item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
+                  const nonTaxableTotal = subLineItems.filter((item: any) => !item.excluded && !item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
+                  const totalWithMarkup = (taxableTotal + nonTaxableTotal) * (1 + (sub.markup_percent || 0) / 100);
 
                   return (
                     <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -808,8 +790,8 @@ function SortableRow({ item, ...props }: any) {
                         <div className="flex-1">
                           <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                           <p className="text-xs text-slate-600">
-                            📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                            👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            Taxable: ${taxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
+                            Non-Taxable: ${nonTaxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -914,8 +896,7 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-sm text-slate-500 mt-1">Total</p>
-                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
               </div>
 
               {est.pdf_url && (
@@ -2860,6 +2841,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Get all custom rows that are NOT linked to sheets (standalone rows)
   const standaloneCustomRows = customRows.filter(r => !(r as any).sheet_id);
   
+  // Filter custom rows by category for subcontractor rows
+  const customSubcontractorRows = standaloneCustomRows.filter(r => r.category === 'subcontractor');
+  
   // Calculate totals from standalone custom rows, splitting by material vs labor
   let customRowsMaterialsTotal = 0;
   let customRowsMaterialsTaxableOnly = 0;
@@ -3036,6 +3020,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     subcontractorLaborPrice += laborTotal * (1 + estMarkup / 100);
   });
   
+  // Linked subcontractors (attached to sheets/rows) - labor type items go to labor
+  const linkedSubcontractorLaborPrice = Object.values(linkedSubcontractors).flat().reduce((sum: number, sub: any) => {
+    const lineItems = subcontractorLineItems[sub.id] || [];
+    const laborTotal = lineItems
+      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
+      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
+    const estMarkup = sub.markup_percent || 0;
+    return sum + (laborTotal * (1 + estMarkup / 100));
+  }, 0);
+  
+  const customSubcontractorPrice = customSubcontractorRows.reduce((sum, r) => {
+    const lineItems = customRowLineItems[r.id] || [];
+    const baseCost = lineItems.length > 0 
+      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
+      : r.total_cost;
+    return sum + (baseCost * (1 + r.markup_percent / 100));
+  }, 0);
+  
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     const labor = sheetLabor[sheet.sheetId];
@@ -3095,16 +3097,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (labor.estimated_hours * labor.hourly_rate);
   }, 0);
   
-  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice;
+  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice + linkedSubcontractorLaborPrice;
   
   // Combine materials with subcontractor materials for display
-  const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice;
+  const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice + customSubcontractorPrice;
   
   // Calculate subtotals
-  const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice;
+  const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice + customSubcontractorPrice;
   const laborSubtotal = proposalLaborPrice;
   
-  // Tax calculated only on TAXABLE materials (includes taxable portion of custom rows already)
+  // Tax calculated only on TAXABLE materials
   const proposalTotalTax = (proposalMaterialsTaxableOnly + subcontractorMaterialsTaxableOnly) * TAX_RATE;
   
   // Grand total
