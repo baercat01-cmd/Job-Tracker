@@ -1058,7 +1058,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return lengthA - lengthB;
   }) : [];
   
-  // Convert length to feet only (no inches)
+  // Convert length to feet only (no decimals)
   function getLengthInFeet(length: string | null): string | null {
     if (!length) return null;
     
@@ -1069,16 +1069,17 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     if (feetInchMatch) {
       const feet = parseInt(feetInchMatch[1]) || 0;
       const inches = parseInt(feetInchMatch[2]) || 0;
-      const totalFeet = feet + (inches / 12);
-      return `${totalFeet.toFixed(1)}'`;
+      // Round to nearest foot
+      const totalFeet = Math.round(feet + (inches / 12));
+      return `${totalFeet}'`;
     }
     
     // Try to parse as number (assume inches) and convert to feet
     const numMatch = cleaned.match(/([\d.]+)/);
     if (numMatch) {
       const totalInches = parseFloat(numMatch[1]);
-      const feet = totalInches / 12;
-      return `${feet.toFixed(1)}'`;
+      const feet = Math.round(totalInches / 12);
+      return `${feet}'`;
     }
     
     return cleaned;
@@ -1204,20 +1205,19 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                     <button
                       key={material.sku}
                       onClick={() => openAddMaterialDialog(material)}
-                      className="flex items-center justify-between gap-3 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
+                      className="flex items-center gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
                     >
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-sm sm:text-base leading-tight break-words">
-                          {material.material_name}
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        {lengthInFeet && (
-                          <span className="text-sm sm:text-base font-semibold text-muted-foreground">
-                            {lengthInFeet}
-                          </span>
-                        )}
-                        <Plus className="w-6 h-6 sm:w-5 sm:h-5 text-primary" />
+                        <div className="flex items-baseline gap-2">
+                          <h4 className="font-medium text-sm sm:text-base leading-tight break-words">
+                            {material.material_name}
+                          </h4>
+                          {lengthInFeet && (
+                            <span className="text-sm sm:text-base font-semibold text-muted-foreground whitespace-nowrap">
+                              {lengthInFeet}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
