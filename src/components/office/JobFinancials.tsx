@@ -3032,16 +3032,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     subcontractorLaborPrice += laborTotal * (1 + estMarkup / 100);
   });
   
-  // Linked subcontractors (attached to sheets/rows) - labor type items go to labor
-  const linkedSubcontractorLaborPrice = Object.values(linkedSubcontractors).flat().reduce((sum: number, sub: any) => {
-    const lineItems = subcontractorLineItems[sub.id] || [];
-    const laborTotal = lineItems
-      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-      .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
-    const estMarkup = sub.markup_percent || 0;
-    return sum + (laborTotal * (1 + estMarkup / 100));
-  }, 0);
-  
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     const labor = sheetLabor[sheet.sheetId];
@@ -3101,7 +3091,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (labor.estimated_hours * labor.hourly_rate);
   }, 0);
   
-  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice + linkedSubcontractorLaborPrice;
+  const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice;
   
   // Combine materials with subcontractor materials for display
   const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice;
