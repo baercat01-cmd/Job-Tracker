@@ -648,7 +648,7 @@ function SortableRow({ item, ...props }: any) {
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
-                              {lineItem.taxable ? 'Material' : 'Labor'}
+                              {lineItem.taxable ? 'Material (Tax)' : 'Labor'}
                             </Badge>
                             <p className="text-xs font-bold text-slate-900">
                               ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -1956,7 +1956,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         markup_percent: markup,
         selling_price: sellingPrice,
         notes: notes || null,
-        taxable: taxable,
+        taxable: category === 'materials' ? true : false, // Materials are taxable by default, labor is not
         order_index: targetOrderIndex,
         sheet_id: linkedSheetId || null,
       };
@@ -2259,7 +2259,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         quantity: '1',
         unit_cost: '0',
         notes: '',
-        taxable: true,
+        taxable: false, // Default to labor (non-taxable)
       });
     }
     
@@ -3402,16 +3402,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="taxable"
-                checked={taxable}
-                onChange={(e) => setTaxable(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="taxable">Taxable</Label>
-            </div>
+            {/* Taxable is now automatically determined by category - materials are taxable, labor is not */}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -3480,10 +3471,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               />
               <Label htmlFor="lineitem-taxable" className="cursor-pointer">
-                Taxable (Material)
+                Material (Taxable)
               </Label>
               <p className="text-xs text-muted-foreground ml-2">
-                {lineItemForm.taxable ? 'Will be categorized as Material' : 'Will be categorized as Labor'}
+                {lineItemForm.taxable ? 'Material - goes to material total' : 'Labor - goes to labor total'}
               </p>
             </div>
 
