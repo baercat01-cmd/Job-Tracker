@@ -999,10 +999,12 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                                 <button
                                                   type="button"
                                                   className="text-blue-600 hover:text-blue-800 transition-colors"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigator.clipboard.writeText(item.material_items.sku || '');
-                                                    toast.success('SKU copied to clipboard');
+                                                  onMouseDown={(e) => {
+                                                    // Only copy on actual click, not on hover
+                                                    if (e.button === 0) {
+                                                      navigator.clipboard.writeText(item.material_items.sku || '');
+                                                      toast.success('SKU copied to clipboard');
+                                                    }
                                                   }}
                                                 >
                                                   <Info className="w-4 h-4" />
@@ -1012,7 +1014,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                                 <div className="space-y-1">
                                                   <p className="font-semibold text-xs">SKU</p>
                                                   <p className="font-mono text-sm">{item.material_items.sku}</p>
-                                                  <p className="text-xs text-muted-foreground">Click icon to copy</p>
+                                                  <p className="text-xs text-muted-foreground">Hover to view • Click to copy</p>
                                                 </div>
                                               </TooltipContent>
                                             </Tooltip>
