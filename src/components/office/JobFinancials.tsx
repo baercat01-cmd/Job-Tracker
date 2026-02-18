@@ -2841,9 +2841,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Get all custom rows that are NOT linked to sheets (standalone rows)
   const standaloneCustomRows = customRows.filter(r => !(r as any).sheet_id);
   
-  // Filter custom rows by category for subcontractor rows
-  const customSubcontractorRows = standaloneCustomRows.filter(r => r.category === 'subcontractor');
-  
   // Calculate totals from standalone custom rows, splitting by material vs labor
   let customRowsMaterialsTotal = 0;
   let customRowsMaterialsTaxableOnly = 0;
@@ -3100,13 +3097,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice + linkedSubcontractorLaborPrice;
   
   // Combine materials with subcontractor materials for display
-  const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice + customSubcontractorPrice;
+  const proposalMaterialsTotalWithSubcontractors = proposalMaterialsPrice + subcontractorMaterialsPrice;
   
   // Calculate subtotals
-  const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice + customSubcontractorPrice;
+  const materialsSubtotal = proposalMaterialsPrice + subcontractorMaterialsPrice;
   const laborSubtotal = proposalLaborPrice;
   
-  // Tax calculated only on TAXABLE materials
+  // Tax calculated only on TAXABLE materials (includes taxable portion of custom rows already)
   const proposalTotalTax = (proposalMaterialsTaxableOnly + subcontractorMaterialsTaxableOnly) * TAX_RATE;
   
   // Grand total
