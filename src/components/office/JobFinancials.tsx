@@ -3027,14 +3027,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return sum + (laborTotal * (1 + estMarkup / 100));
   }, 0);
   
-  const customSubcontractorPrice = customSubcontractorRows.reduce((sum, r) => {
-    const lineItems = customRowLineItems[r.id] || [];
-    const baseCost = lineItems.length > 0 
-      ? lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0)
-      : r.total_cost;
-    return sum + (baseCost * (1 + r.markup_percent / 100));
-  }, 0);
-  
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     const labor = sheetLabor[sheet.sheetId];
