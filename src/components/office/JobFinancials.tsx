@@ -362,26 +362,66 @@ function SortableRow({ item, ...props }: any) {
               {sheet.categories && sheet.categories.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Material Items</p>
-                  {sheet.categories.map((category: any, catIdx: number) => (
-                    <div key={catIdx} className="bg-slate-50 border border-slate-200 rounded p-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-slate-900">{category.name}</p>
-                          <p className="text-xs text-slate-600">{category.itemCount} items</p>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs">
-                          <div className="text-right">
-                            <p className="text-slate-500">Cost</p>
-                            <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  {sheet.categories.map((category: any, catIdx: number) => {
+                    const categoryKey = `${sheet.sheetId}_${category.name}`;
+                    const categoryMarkup = categoryMarkups[categoryKey] ?? (sheet.markup_percent || 10);
+                    const categoryPriceWithMarkup = category.totalCost * (1 + categoryMarkup / 100);
+                    
+                    return (
+                      <div key={catIdx} className="bg-slate-50 border border-slate-200 rounded p-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-semibold text-slate-900">{category.name}</p>
+                            <p className="text-xs text-slate-600">{category.itemCount} items</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-slate-500">Price</p>
-                            <p className="font-bold text-blue-700">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <div className="flex items-center gap-3 text-xs">
+                            <div className="text-right">
+                              <p className="text-slate-500">Cost</p>
+                              <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-500">+</span>
+                              <Input
+                                type="number"
+                                defaultValue={categoryMarkup}
+                                onBlur={async (e) => {
+                                  const newMarkup = parseFloat(e.target.value) || 0;
+                                  if (newMarkup !== categoryMarkup) {
+                                    try {
+                                      const { error: upsertError } = await supabase
+                                        .from('material_category_markups')
+                                        .upsert({
+                                          sheet_id: sheet.sheetId,
+                                          category_name: category.name,
+                                          markup_percent: newMarkup,
+                                        }, {
+                                          onConflict: 'sheet_id,category_name'
+                                        });
+                                      if (upsertError) throw upsertError;
+                                      await loadMaterialsData();
+                                      toast.success('Category markup updated');
+                                    } catch (error) {
+                                      console.error('Error updating category markup:', error);
+                                      toast.error('Failed to update markup');
+                                    }
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-14 h-5 text-xs px-1 text-center"
+                                step="1"
+                                min="0"
+                              />
+                              <span className="text-slate-500">%</span>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-slate-500">Price</p>
+                              <p className="font-bold text-blue-700">${categoryPriceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1071,6 +1111,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Individual row markups state
   const [sheetMarkups, setSheetMarkups] = useState<Record<string, number>>({});
+  const [categoryMarkups, setCategoryMarkups] = useState<Record<string, number>>({});
   
   // Labor stats
   const [totalClockInHours, setTotalClockInHours] = useState(0);
@@ -1670,6 +1711,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (JSON.stringify(sheetsData || []) !== JSON.stringify(materialSheets)) {
         setMaterialSheets(sheetsData || []);
       }
+
+      // Load category markups
+      if (sheetIds.length > 0) {
+        const { data: categoryMarkupsData, error: categoryMarkupsError } = await supabase
+          .from('material_category_markups')
+          .select('*')
+          .in('sheet_id', sheetIds);
+
+        if (!categoryMarkupsError && categoryMarkupsData) {
+          const markupsMap: Record<string, number> = {};
+          categoryMarkupsData.forEach(cm => {
+            const key = `${cm.sheet_id}_${cm.category_name}`;
+            markupsMap[key] = cm.markup_percent;
+          });
+          setCategoryMarkups(markupsMap);
+        }
+      }
       
       // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
@@ -1685,13 +1743,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           categoryMap.get(category)!.push(item);
         });
 
-        // Calculate totals per category
+        // Calculate totals per category (cost only, price will use category markups)
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
           const totalCost = items.reduce((sum, item) => {
             const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
             return sum + cost;
           }, 0);
 
+          // Price calculation is now handled in the UI with category-specific markups
           const totalPrice = items.reduce((sum, item) => {
             const price = (item.price_per_unit || 0) * (item.quantity || 0);
             return sum + price;
