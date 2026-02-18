@@ -2284,7 +2284,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setShowLineItemDialog(true);
   }
 
-  async function saveLineItem() {
+  async function saveLineItem(keepDialogOpen = false) {
     if (!lineItemParentRowId || !lineItemForm.description) {
       toast.error('Please fill in description');
       return;
@@ -2325,10 +2325,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         toast.success('Line item added');
       }
 
-      setShowLineItemDialog(false);
-      setEditingLineItem(null);
-      setLineItemParentRowId(null);
       await loadCustomRows();
+
+      if (keepDialogOpen) {
+        // Reset form for adding another item, keeping the taxable status
+        const currentTaxable = lineItemForm.taxable;
+        setLineItemForm({
+          description: '',
+          quantity: '1',
+          unit_cost: '0',
+          notes: '',
+          taxable: currentTaxable,
+        });
+        setEditingLineItem(null);
+      } else {
+        setShowLineItemDialog(false);
+        setEditingLineItem(null);
+        setLineItemParentRowId(null);
+      }
     } catch (error: any) {
       console.error('Error saving line item:', error);
       toast.error('Failed to save line item');
@@ -3516,8 +3530,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={saveLineItem}>
-                {editingLineItem ? 'Update' : 'Add'} Line Item
+              {!editingLineItem && (
+                <Button variant="outline" onClick={() => saveLineItem(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Save & Add Another
+                </Button>
+              )}
+              <Button onClick={() => saveLineItem(false)}>
+                {editingLineItem ? 'Update' : 'Save'} Line Item
               </Button>
             </div>
           </div>
