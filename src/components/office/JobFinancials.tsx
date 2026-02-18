@@ -1,28 +1,16 @@
+import { FC } from 'react';
 
-import {
-  QueryClient,
-  QueryClientProvider,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-query';
-import React, { FC, useState } from 'react';
-import { JobFinancialsTab } from './JobFinancialsTab';
-import { JobFinancialsInvoiceDetails } from './JobFinancialsInvoiceDetails';
+interface JobFinancialsProps {
+  job?: any;
+}
 
-interface JobFinancialsProps {}
-
-export const JobFinancials: FC<JobFinancialsProps> = () => {
+export const JobFinancials: FC<JobFinancialsProps> = ({ job }) => {
   return (
-    <div className='flex flex-col'>
-      <JobFinancialsTab />
-      <JobFinancialsInvoiceDetails />
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-4">Job Financials</h2>
+      <p className="text-muted-foreground">
+        Financial details for {job?.name || 'this job'} will be displayed here.
+      </p>
     </div>
   );
 };
