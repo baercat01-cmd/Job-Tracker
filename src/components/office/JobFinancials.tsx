@@ -596,9 +596,13 @@ function SortableRow({ item, ...props }: any) {
                     <Edit className="w-3 h-3 mr-2" />
                     Edit Row
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id)}>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
                     <Plus className="w-3 h-3 mr-2" />
-                    Add Line Item
+                    Add Material Row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Labor Row
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
                     <Briefcase className="w-3 h-3 mr-2" />
@@ -2254,7 +2258,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   // Line item functions
-  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem) {
+  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
     setLineItemParentRowId(rowId);
     
     if (lineItem) {
@@ -2273,7 +2277,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         quantity: '1',
         unit_cost: '0',
         notes: '',
-        taxable: false, // Default to labor (non-taxable)
+        taxable: itemType === 'material' ? true : false, // Material is taxable, labor is not
       });
     }
     
