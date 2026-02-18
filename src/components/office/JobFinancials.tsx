@@ -302,25 +302,11 @@ function SortableRow({ item, ...props }: any) {
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setCategory('materials');
-                    setTaxable(true);
-                    setLinkedSheetId(sheet.sheetId);
-                    openAddDialog(undefined, sheet.sheetId);
-                  }}>
+                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setCategory('labor');
-                    setTaxable(false);
-                    setLinkedSheetId(sheet.sheetId);
-                    resetForm();
-                    setCategory('labor');
-                    setTaxable(false);
-                    setLinkedSheetId(sheet.sheetId);
-                    setShowAddDialog(true);
-                  }}>
+                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'labor')}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Labor Row
                   </DropdownMenuItem>
@@ -1877,7 +1863,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  function openAddDialog(row?: CustomFinancialRow, sheetId?: string) {
+  function openAddDialog(row?: CustomFinancialRow, sheetId?: string, categoryType?: 'materials' | 'labor') {
     if (row) {
       setEditingRow(row);
       setCategory(row.category);
@@ -1892,8 +1878,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       resetForm();
       if (sheetId) {
         // If opening from a material sheet, pre-populate category and link
-        setCategory('materials');
-        setTaxable(true); // Materials default to taxable
+        const cat = categoryType || 'materials';
+        setCategory(cat);
+        setTaxable(cat === 'materials'); // Materials default to taxable, labor to non-taxable
         setLinkedSheetId(sheetId);
       }
     }
