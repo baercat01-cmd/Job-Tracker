@@ -204,7 +204,7 @@ function SortableRow({ item, ...props }: any) {
       
       // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
       const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
-      const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+      const sheetMarkup = sheet.markup_percent || 10;
       // Final price = (materials with sheet markup) + (linked rows with their own markup)
       const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
       
@@ -270,11 +270,23 @@ function SortableRow({ item, ...props }: any) {
                   <span>+</span>
                   <Input
                     type="number"
-                    value={sheetMarkups[sheet.sheetId] || 10}
-                    onChange={(e) => {
+                    defaultValue={sheet.markup_percent || 10}
+                    onBlur={async (e) => {
                       const newMarkup = parseFloat(e.target.value) || 0;
-                      setSheetMarkups((prev: any) => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                      if (newMarkup !== (sheet.markup_percent || 10)) {
+                        try {
+                          await supabase
+                            .from('material_sheets')
+                            .update({ markup_percent: newMarkup })
+                            .eq('id', sheet.sheetId);
+                          await loadMaterialsData();
+                        } catch (error) {
+                          console.error('Error updating markup:', error);
+                          toast.error('Failed to update markup');
+                        }
+                      }
                     }}
+                    onClick={(e) => e.stopPropagation()}
                     className="w-14 h-5 text-xs px-1 text-center"
                     step="1"
                     min="0"
@@ -1646,13 +1658,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         }
       }
 
-      // Initialize sheet markups (default 10% for materials)
-      const markupsMap: Record<string, number> = {};
-      (sheetsData || []).forEach(sheet => {
-        markupsMap[sheet.id] = 10; // Default 10% markup for materials
-      });
-      setSheetMarkups(markupsMap);
-
       // Get all items for these sheets
       const { data: itemsData, error: itemsError } = await supabase
         .from('material_items')
@@ -2626,7 +2631,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           }, 0);
           
           const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
-          const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+          const sheetMarkup = sheet.markup_percent || 10;
           const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
           
           return {
@@ -2998,7 +3003,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     // For taxable calculation, sheet materials are always taxable (from workbook)
     const sheetBaseTaxableOnly = sheet.totalPrice + linkedSubsMaterialsTaxableOnly;
     
-    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+    const sheetMarkup = sheet.markup_percent || 10;
     
     // Final = (materials with sheet markup) + (linked rows with their own markup already applied)
     materialSheetsPrice += (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsMaterialsTotal;
