@@ -1244,15 +1244,14 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                             onClick={() => openAddMaterialDialog(material)}
                             className="flex items-center gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
                           >
-                            <div className="flex-1 min-w-0">
-                              {lengthDisplay ? (
-                                <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">
-                                  {lengthDisplay}
-                                </h4>
-                              ) : (
-                                <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full text-muted-foreground">
-                                  No length specified
-                                </h4>
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">
+                                {material.material_name}
+                              </h4>
+                              {lengthDisplay && (
+                                <p className="text-xs sm:text-sm text-muted-foreground font-medium">
+                                  Length: {lengthDisplay}
+                                </p>
                               )}
                             </div>
                             <div className="flex-shrink-0 flex items-center text-primary">
