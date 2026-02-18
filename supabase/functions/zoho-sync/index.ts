@@ -301,8 +301,11 @@ serve(async (req) => {
           console.log('✅ Customer ID:', customerId);
           
           // Ensure all items exist in Zoho as sellable items
+          // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
+            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name);
+            
             const itemId = await ensurePurchasableItem(
               accessToken,
               settings.countywide_org_id,
@@ -313,6 +316,7 @@ serve(async (req) => {
               item_id: itemId,
               quantity: item.quantity,
               rate: item.price_per_unit || item.cost_per_unit || 0,
+              description: item.length ? `${item.material_name} (${item.length})` : item.material_name,
             });
           }
           
@@ -359,8 +363,11 @@ serve(async (req) => {
           console.log('✅ Vendor ID:', vendorId);
           
           // Ensure all items exist in Zoho as purchasable items
+          // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
+            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name);
+            
             const itemId = await ensurePurchasableItem(
               accessToken,
               settings.countywide_org_id,
@@ -371,6 +378,7 @@ serve(async (req) => {
               item_id: itemId,
               quantity: item.quantity,
               rate: item.cost_per_unit || item.price_per_unit || 0,
+              description: item.length ? `${item.material_name} (${item.length})` : item.material_name,
             });
           }
           
@@ -820,9 +828,35 @@ async function ensurePurchasableItem(
   const itemName = materialItem.material_name;
   const sku = materialItem.sku || `MAT-${Date.now()}`;
   
-  console.log('🔍 Ensuring purchasable item exists:', itemName);
+  console.log('🔍 Ensuring purchasable item exists - SKU:', sku, '- Name:', itemName);
   
-  // Check if item already exists by SKU or name
+  // CRITICAL: Check if item already exists by SKU first (SKU is the defining factor)
+  // Only search by SKU if we have one from the materials_catalog
+  if (materialItem.sku) {
+    const skuSearchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&sku=${encodeURIComponent(materialItem.sku)}`;
+    
+    const skuSearchResponse = await fetch(skuSearchUrl, {
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+      },
+    });
+
+    if (skuSearchResponse.ok) {
+      const skuSearchData = await skuSearchResponse.json();
+      if (skuSearchData.items && skuSearchData.items.length > 0) {
+        // Found item by SKU - this is the definitive match
+        const skuMatch = skuSearchData.items[0];
+        console.log('✅ Found existing item by SKU:', skuMatch.item_id, '- SKU:', skuMatch.sku);
+        
+        // Update item to ensure it's purchasable and sellable with latest info
+        await updateItemPurchasable(accessToken, orgId, skuMatch.item_id, materialItem);
+        
+        return skuMatch.item_id;
+      }
+    }
+  }
+  
+  // Fallback: If no SKU match, search by name
   const searchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&search_text=${encodeURIComponent(itemName)}`;
   
   const searchResponse = await fetch(searchUrl, {
@@ -840,7 +874,7 @@ async function ensurePurchasableItem(
       );
       
       if (exactMatch) {
-        console.log('✅ Found existing item:', exactMatch.item_id);
+        console.log('✅ Found existing item by name:', exactMatch.item_id);
         
         // Update item to ensure it's purchasable and sellable
         await updateItemPurchasable(accessToken, orgId, exactMatch.item_id, materialItem);
@@ -851,14 +885,15 @@ async function ensurePurchasableItem(
   }
 
   // Item doesn't exist, create new one as both purchasable and sellable
-  console.log('📝 Creating new purchasable item:', itemName);
+  console.log('📝 Creating new purchasable item - SKU:', sku, '- Name:', itemName);
   
   const itemData = {
     name: itemName,
-    sku: sku,
+    sku: sku, // SKU is the defining factor for item identification
     description: materialItem.usage || materialItem.category || '',
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
+    unit: materialItem.length || '', // Include length/unit from catalog
     // CRITICAL: Mark as both purchasable and sellable
     is_taxable: materialItem.taxable !== false,
     tax_id: '', // Empty for now, can be configured later
@@ -894,10 +929,16 @@ async function updateItemPurchasable(
   itemId: string,
   materialItem: any
 ): Promise<void> {
-  console.log('🔄 Updating item to be purchasable:', itemId);
+  console.log('🔄 Updating item to be purchasable:', itemId, '- SKU:', materialItem.sku);
   
+  // Update with ALL information from the SKU in materials_catalog
   const updateData = {
+    name: materialItem.material_name,
+    sku: materialItem.sku, // Ensure SKU is set
+    rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
+    unit: materialItem.length || '', // Include length/unit from catalog
+    description: materialItem.usage || materialItem.category || '',
     item_type: 'sales_and_purchases', // Ensure it's both purchasable and sellable
   };
   
