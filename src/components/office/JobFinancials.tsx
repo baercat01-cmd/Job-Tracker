@@ -300,7 +300,7 @@ function SortableRow({ item, ...props }: any) {
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor')}>
                     <DollarSign className="w-3 h-3 mr-2" />
                     Add Labor
                   </DropdownMenuItem>
@@ -398,6 +398,35 @@ function SortableRow({ item, ...props }: any) {
                 </div>
               )}
 
+              {/* Sheet Labor Line Items */}
+              {customRowLineItems[sheet.sheetId]?.filter((item: any) => item.taxable === false).map((laborItem: any) => (
+                <div key={laborItem.id} className="bg-amber-50 border border-amber-200 rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-slate-900">{laborItem.description}</p>
+                      <p className="text-xs text-slate-600">
+                        {laborItem.quantity}h × ${laborItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr
+                      </p>
+                      {laborItem.notes && (
+                        <p className="text-xs text-slate-500 mt-1">{laborItem.notes}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-slate-900">
+                        ${laborItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, laborItem, 'labor')}>
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(laborItem.id)}>
+                        <Trash2 className="w-3 h-3 text-red-600" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Legacy Sheet Labor (for backward compatibility) */}
               {sheetLabor[sheet.sheetId] && (
                 <div className="bg-amber-50 border border-amber-200 rounded p-2">
                   <div className="flex items-center justify-between">
@@ -648,6 +677,9 @@ function SortableRow({ item, ...props }: any) {
                       .update({ notes: newValue || null })
                       .eq('id', row.id);
                     await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
                   } catch (error) {
                     console.error('Error saving notes:', error);
                   }
@@ -1785,22 +1817,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     });
     setCustomRowLabor(laborMap);
 
-    // Load line items for custom rows
-    if (newData.length > 0) {
-      const rowIds = newData.map(r => r.id);
+    // Load line items for custom rows AND material sheets
+    const allIds = [...newData.map(r => r.id), ...materialSheets.map(s => s.id)];
+    if (allIds.length > 0) {
       const { data: lineItemsData, error: lineItemsError } = await supabase
         .from('custom_financial_row_items')
         .select('*')
-        .in('row_id', rowIds)
+        .or(`row_id.in.(${newData.map(r => r.id).join(',')}),sheet_id.in.(${materialSheets.map(s => s.id).join(',')})`)
         .order('order_index');
 
       if (!lineItemsError && lineItemsData) {
         const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
         lineItemsData.forEach(item => {
-          if (!lineItemsMap[item.row_id]) {
-            lineItemsMap[item.row_id] = [];
+          const parentId = item.row_id || item.sheet_id;
+          if (parentId) {
+            if (!lineItemsMap[parentId]) {
+              lineItemsMap[parentId] = [];
+            }
+            lineItemsMap[parentId].push(item);
           }
-          lineItemsMap[item.row_id].push(item);
         });
         setCustomRowLineItems(lineItemsMap);
       }
@@ -2033,6 +2068,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setShowAddDialog(false);
       resetForm();
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
     } catch (error: any) {
       console.error('Error saving row:', error);
       toast.error(`Failed to save row: ${error.message || 'Unknown error'}`);
@@ -2103,6 +2141,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         if (error) throw error;
         await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
       } else if (editingRowNameType === 'subcontractor') {
         const { error } = await supabase
           .from('subcontractor_estimates')
@@ -2227,6 +2268,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         toast.success('Labor added');
         setShowLaborDialog(false);
         await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
       } catch (error: any) {
         console.error('Error saving labor:', error);
         toast.error('Failed to save labor');
@@ -2265,6 +2309,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Labor deleted');
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
     } catch (error: any) {
       console.error('Error deleting labor:', error);
       toast.error('Failed to delete labor');
@@ -2283,6 +2330,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Row deleted');
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
     } catch (error: any) {
       console.error('Error deleting row:', error);
       toast.error('Failed to delete row');
@@ -2290,8 +2340,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   // Line item functions
-  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
-    setLineItemParentRowId(rowId);
+  function openLineItemDialog(parentId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
+    setLineItemParentRowId(parentId);
     setLineItemType(itemType || 'material');
     
     if (lineItem) {
@@ -2327,8 +2377,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const cost = parseFloat(lineItemForm.unit_cost) || 0;
     const totalCost = qty * cost;
 
+    // Determine if this is for a sheet or a custom row
+    const isSheet = materialSheets.some(s => s.id === lineItemParentRowId);
+    
     const itemData = {
-      row_id: lineItemParentRowId,
+      row_id: isSheet ? null : lineItemParentRowId,
+      sheet_id: isSheet ? lineItemParentRowId : null,
       description: lineItemForm.description,
       quantity: qty,
       unit_cost: cost,
@@ -2359,6 +2413,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
 
       if (keepDialogOpen) {
         // Reset form for adding another item, keeping the taxable status and appropriate defaults
@@ -2394,6 +2451,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Line item deleted');
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
     } catch (error: any) {
       console.error('Error deleting line item:', error);
       toast.error('Failed to delete line item');
@@ -2529,6 +2589,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (error) throw error;
       await loadCustomRows();
+      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
+        await loadMaterialsData();
+      }
     } catch (error: any) {
       console.error('Error updating markup:', error);
       toast.error('Failed to update markup');
@@ -2951,9 +3014,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Total subcontractor non-taxable (goes to labor section)
   const proposalSubcontractorNonTaxablePrice = subcontractorNonTaxablePrice + linkedSubcontractorNonTaxablePrice;
   
-  // Labor: sheet labor + custom row labor + custom rows non-taxable + linked rows non-taxable + non-taxable subcontractor items
+  // Labor: sheet labor + sheet labor line items + custom row labor + custom rows non-taxable + linked rows non-taxable + non-taxable subcontractor items
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     const labor = sheetLabor[sheet.sheetId];
+    
+    // Add labor from sheet line items (labor type)
+    const sheetLineItems = customRowLineItems[sheet.sheetId] || [];
+    const sheetLaborLineItems = sheetLineItems.filter((item: any) => item.taxable === false);
+    const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
     
     // Add labor from linked custom rows (NON-TAXABLE portions - labor line items)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
@@ -2998,7 +3066,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return subSum + (nonTaxableTotal * (1 + estMarkup / 100));
     }, 0);
     
-    return sum + (labor ? labor.total_labor_cost : 0) + linkedRowsNonTaxableTotal + linkedSubsNonTaxableTotal;
+    return sum + (labor ? labor.total_labor_cost : 0) + sheetLaborLineItemsTotal + linkedRowsNonTaxableTotal + linkedSubsNonTaxableTotal;
   }, 0);
   
   const totalCustomRowLaborCost = Object.values(customRowLabor).reduce((sum: number, labor: any) => {
