@@ -134,33 +134,42 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       return;
     }
     
-    // Check if all materials are already ordered
-    const unorderedMaterials = pkg.bundle_items.filter(item => 
-      !item.material_items.zoho_sales_order_id && !item.material_items.zoho_purchase_order_id
+    // Only exclude materials that have BOTH SO and PO
+    // Materials with only one type of order can still be ordered (to add the other type)
+    const orderableMaterials = pkg.bundle_items.filter(item => 
+      !item.material_items.zoho_sales_order_id || !item.material_items.zoho_purchase_order_id
     );
     
-    if (unorderedMaterials.length === 0) {
-      toast.error('All materials in this package have already been ordered in Zoho Books');
+    if (orderableMaterials.length === 0) {
+      toast.error('All materials in this package have both Sales Orders and Purchase Orders');
       return;
     }
     
-    if (unorderedMaterials.length < pkg.bundle_items.length) {
-      const orderedCount = pkg.bundle_items.length - unorderedMaterials.length;
+    if (orderableMaterials.length < pkg.bundle_items.length) {
+      const fullyOrderedCount = pkg.bundle_items.length - orderableMaterials.length;
       toast.warning(
-        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only unordered materials will be included`
+        `${fullyOrderedCount} material${fullyOrderedCount !== 1 ? 's' : ''} with both SO & PO will be excluded`
       );
     }
     
     setSelectedPackageForOrder(pkg);
-    setSelectedMaterialsForOrder(unorderedMaterials.map(item => item.material_items));
+    setSelectedMaterialsForOrder(orderableMaterials.map(item => item.material_items));
     setShowZohoOrderDialog(true);
   }
 
   function openZohoOrderDialogForMaterial(material: MaterialItem, packageName: string) {
-    // Check if material is already ordered
-    if (material.zoho_sales_order_id || material.zoho_purchase_order_id) {
-      toast.error('This material has already been ordered in Zoho Books');
+    // Only block if material has BOTH SO and PO
+    // If it only has one type, it can still be ordered to add the other type
+    if (material.zoho_sales_order_id && material.zoho_purchase_order_id) {
+      toast.error('This material already has both a Sales Order and Purchase Order');
       return;
+    }
+    
+    // Provide helpful message about what orders can be created
+    if (material.zoho_sales_order_id) {
+      toast.info('This material has a Sales Order - you can add a Purchase Order');
+    } else if (material.zoho_purchase_order_id) {
+      toast.info('This material has a Purchase Order - you can add a Sales Order');
     }
     
     setSelectedPackageForOrder({ name: packageName } as MaterialBundle);
@@ -1034,14 +1043,6 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                       </Button>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => openAddMaterialsDialog(pkg)}
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Materials
-                      </Button>
-                      <Button
-                        size="sm"
                         variant="ghost"
                         onClick={() => openEditDialog(pkg)}
                       >
@@ -1073,11 +1074,19 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                             <div className="space-y-2">
                               {pkg.bundle_items.map(item => {
                                 const hasOrders = item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id;
+                                const hasBothOrders = item.material_items.zoho_sales_order_id && item.material_items.zoho_purchase_order_id;
+                                const hasOnlySO = item.material_items.zoho_sales_order_id && !item.material_items.zoho_purchase_order_id;
+                                const hasOnlyPO = !item.material_items.zoho_sales_order_id && item.material_items.zoho_purchase_order_id;
+                                
                                 return (
                                   <div
                                     key={item.id}
                                     className={`flex items-center justify-between p-3 rounded-lg border ${
-                                      hasOrders ? 'bg-green-50 border-green-200' : 'bg-slate-50'
+                                      hasBothOrders 
+                                        ? 'bg-emerald-50 border-emerald-200' 
+                                        : hasOrders 
+                                        ? 'bg-blue-50 border-blue-200' 
+                                        : 'bg-slate-50'
                                     }`}
                                   >
                                     <div className="flex-1">
@@ -1163,15 +1172,21 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                         </div>
                                       )}
                                     </div>
-                                    {!hasOrders && (
+                                    {!hasBothOrders && (
                                       <Button
                                         size="sm"
                                         onClick={() => openZohoOrderDialogForMaterial(item.material_items, pkg.name)}
                                         className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white ml-3"
-                                        title="Order this material individually"
+                                        title={
+                                          hasOnlySO 
+                                            ? "Add Purchase Order for this material"
+                                            : hasOnlyPO
+                                            ? "Add Sales Order for this material"
+                                            : "Order this material individually"
+                                        }
                                       >
                                         <ShoppingCart className="w-4 h-4 mr-1" />
-                                        Order
+                                        {hasOnlySO ? 'Add PO' : hasOnlyPO ? 'Add SO' : 'Order'}
                                       </Button>
                                     )}
                                   </div>
