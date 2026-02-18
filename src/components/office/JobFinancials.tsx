@@ -203,11 +203,16 @@ function SortableRow({ item, ...props }: any) {
       const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
       const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
       
-      // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
-      const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
-      const sheetMarkup = sheet.markup_percent || 10;
-      // Final price = (materials with sheet markup) + (linked rows with their own markup)
-      const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
+      // Calculate total materials with category markups (NO sheet-level markup)
+      const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
+        const categoryKey = `${sheet.sheetId}_${cat.name}`;
+        const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
+        const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+        return sum + categoryPriceWithMarkup;
+      }, 0) || 0;
+      
+      // Final price = (materials with category markups) + (linked rows with their own markup) + (linked subs)
+      const sheetFinalPrice = categoryTotals + linkedRowsTotal + linkedSubsTaxableTotal;
       
       // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
@@ -266,35 +271,7 @@ function SortableRow({ item, ...props }: any) {
             {/* Pricing */}
             <div className="flex items-center gap-3 flex-shrink-0">
               <div className="text-right">
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  <span>+</span>
-                  <Input
-                    type="number"
-                    defaultValue={sheet.markup_percent || 10}
-                    onBlur={async (e) => {
-                      const newMarkup = parseFloat(e.target.value) || 0;
-                      if (newMarkup !== (sheet.markup_percent || 10)) {
-                        try {
-                          await supabase
-                            .from('material_sheets')
-                            .update({ markup_percent: newMarkup })
-                            .eq('id', sheet.sheetId);
-                          await loadMaterialsData();
-                        } catch (error) {
-                          console.error('Error updating markup:', error);
-                          toast.error('Failed to update markup');
-                        }
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-14 h-5 text-xs px-1 text-center"
-                    step="1"
-                    min="0"
-                  />
-                  <span>%</span>
-                </div>
-                <p className="text-sm text-slate-500 mt-1">Materials</p>
+                <p className="text-sm text-slate-500">Materials</p>
                 <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
                   <>
@@ -3058,16 +3035,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       linkedSubsMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
     });
     
-    // Sheet base cost = material items + linked materials from subcontractors (NOT linked rows)
-    const sheetBaseCost = sheet.totalPrice + linkedSubsMaterialsTotal;
-    // For taxable calculation, sheet materials are always taxable (from workbook)
-    const sheetBaseTaxableOnly = sheet.totalPrice + linkedSubsMaterialsTaxableOnly;
+    // Calculate category totals with individual markups (NO sheet-level markup)
+    const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
+      const categoryKey = `${sheet.sheetId}_${cat.name}`;
+      const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
+      const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+      return sum + categoryPriceWithMarkup;
+    }, 0) || 0;
     
-    const sheetMarkup = sheet.markup_percent || 10;
+    // For taxable calculation, all category materials are taxable by default
+    const categoryTaxableOnly = sheet.categories?.reduce((sum: number, cat: any) => {
+      const categoryKey = `${sheet.sheetId}_${cat.name}`;
+      const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
+      const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+      return sum + categoryPriceWithMarkup;
+    }, 0) || 0;
     
-    // Final = (materials with sheet markup) + (linked rows with their own markup already applied)
-    materialSheetsPrice += (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsMaterialsTotal;
-    materialSheetsTaxableOnly += (sheetBaseTaxableOnly * (1 + sheetMarkup / 100)) + linkedRowsMaterialsTaxableOnly;
+    // Final = (materials with category markups) + (linked rows with their own markup) + (linked subs)
+    materialSheetsPrice += categoryTotals + linkedRowsMaterialsTotal + linkedSubsMaterialsTotal;
+    materialSheetsTaxableOnly += categoryTaxableOnly + linkedRowsMaterialsTaxableOnly + linkedSubsMaterialsTaxableOnly;
   });
   
   const proposalMaterialsPrice = materialSheetsPrice + customRowsMaterialsTotal;
