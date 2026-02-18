@@ -565,10 +565,12 @@ function SortableRow({ item, ...props }: any) {
                   <span>+</span>
                   <Input
                     type="number"
-                    value={row.markup_percent || 0}
-                    onChange={(e) => {
+                    defaultValue={row.markup_percent || 0}
+                    onBlur={(e) => {
                       const newMarkup = parseFloat(e.target.value) || 0;
-                      updateCustomRowMarkup(row.id, newMarkup);
+                      if (newMarkup !== row.markup_percent) {
+                        updateCustomRowMarkup(row.id, newMarkup);
+                      }
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className="w-14 h-5 text-xs px-1 text-center"
@@ -1873,6 +1875,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (sheetId) {
         // If opening from a material sheet, pre-populate category and link
         setCategory('materials');
+        setTaxable(true); // Materials default to taxable
         setLinkedSheetId(sheetId);
       }
     }
@@ -1974,7 +1977,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         markup_percent: markup,
         selling_price: sellingPrice,
         notes: notes || null,
-        taxable: category === 'materials' ? true : false, // Materials are taxable by default, labor is not
+        taxable: taxable, // Use the taxable state from checkbox
         order_index: targetOrderIndex,
         sheet_id: linkedSheetId || null,
       };
@@ -3384,7 +3387,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             {!linkedSheetId && (
               <div>
                 <Label>Category</Label>
-                <Select value={category} onValueChange={setCategory}>
+                <Select 
+                  value={category} 
+                  onValueChange={(val) => {
+                    setCategory(val);
+                    // Auto-set taxable based on category as a helpful default
+                    if (val === 'materials') {
+                      setTaxable(true);
+                    } else if (val === 'labor') {
+                      setTaxable(false);
+                    }
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -3450,7 +3464,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            {/* Taxable is now automatically determined by category - materials are taxable, labor is not */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="row-taxable"
+                checked={taxable}
+                onChange={(e) => setTaxable(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <Label htmlFor="row-taxable" className="cursor-pointer">
+                Taxable
+              </Label>
+              <p className="text-xs text-muted-foreground ml-2">
+                {taxable 
+                  ? 'Will be included in taxable subtotal (materials)' 
+                  : 'Will be excluded from tax calculation (labor)'}
+              </p>
+            </div>
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>
