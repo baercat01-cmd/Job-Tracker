@@ -25,6 +25,7 @@ export function ZohoIntegrationSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [settings, setSettings] = useState<ZohoSettings | null>(null);
   
   // Webhook state
   const [webhookUrl, setWebhookUrl] = useState('');
