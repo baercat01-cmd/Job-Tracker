@@ -572,23 +572,30 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
       }
 
       if (showCustomLength) {
+        // For custom lengths, still use ALL catalog material info but with user-specified length
+        const catalogCostPerUnit = selectedCatalogMaterial.purchase_cost || 0;
+        const catalogUnitPrice = selectedCatalogMaterial.unit_price || 0;
+        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Field Requests';
+        
         const materialsToInsert = materialPieces.map(piece => ({
           sheet_id: sheetId,
-          category: 'Field Requests',
+          category: catalogCategory,
           sku: selectedCatalogMaterial.sku,
           material_name: selectedCatalogMaterial.material_name,
           quantity: piece.quantity,
-          length: piece.displayLength,
-          cost_per_unit: piece.costPerPiece,
-          price_per_unit: piece.costPerPiece, // Can be updated later with markup
-          extended_cost: piece.costPerPiece * piece.quantity,
-          extended_price: piece.costPerPiece * piece.quantity,
-          markup_percent: 0,
+          length: piece.displayLength, // User-specified length for custom pieces
+          cost_per_unit: catalogCostPerUnit,
+          price_per_unit: catalogUnitPrice || catalogCostPerUnit,
+          extended_cost: catalogCostPerUnit * piece.quantity,
+          extended_price: (catalogUnitPrice || catalogCostPerUnit) * piece.quantity,
+          markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
+            ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
+            : 0,
           taxable: true,
           status: 'not_ordered' as const,
           notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
           color: addMaterialColor.trim() || null,
-          order_index: 0, // Will be auto-adjusted
+          order_index: 0,
         }));
 
         const { error: materialError } = await supabase
@@ -621,24 +628,30 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
           const variant = materialVariants.find(v => v.sku === sku);
           if (!variant || quantity <= 0) continue;
           
+          // CRITICAL: Look up the exact catalog material by SKU to get ALL attached info
           const catalogMaterial = catalogMaterials.find(m => m.sku === sku);
           if (!catalogMaterial) continue;
           
-          const unit_cost = catalogMaterial.purchase_cost || 0;
-          const total_cost = unit_cost * quantity;
+          // Use ALL information from the catalog material attached to this SKU
+          const catalogCostPerUnit = catalogMaterial.purchase_cost || 0;
+          const catalogUnitPrice = catalogMaterial.unit_price || 0;
+          const catalogCategory = cleanCatalogCategory(catalogMaterial.category) || 'Field Requests';
+          const catalogLength = catalogMaterial.part_length; // Length attached to SKU in catalog
           
           materialsToInsert.push({
             sheet_id: sheetId,
-            category: 'Field Requests',
+            category: catalogCategory,
             sku: catalogMaterial.sku,
             material_name: catalogMaterial.material_name,
             quantity,
-            length: catalogMaterial.part_length || null,
-            cost_per_unit: unit_cost,
-            price_per_unit: unit_cost, // Can be updated later with markup
-            extended_cost: total_cost,
-            extended_price: total_cost,
-            markup_percent: 0,
+            length: catalogLength, // Use length from catalog attached to this SKU
+            cost_per_unit: catalogCostPerUnit,
+            price_per_unit: catalogUnitPrice || catalogCostPerUnit,
+            extended_cost: catalogCostPerUnit * quantity,
+            extended_price: (catalogUnitPrice || catalogCostPerUnit) * quantity,
+            markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
+              ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
+              : 0,
             taxable: true,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${catalogMaterial.sku})`,
@@ -646,7 +659,7 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
             order_index: 0,
           });
           
-          variantDetails.push(`${quantity}x ${variant.length}`);
+          variantDetails.push(`${quantity}x ${catalogLength || 'No length'}`);
         }
         
         if (materialsToInsert.length === 0) {
@@ -676,24 +689,29 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
         toast.success(`Added ${getTotalVariantsCount()} pieces in ${selectedVariants.size} different lengths`);
       } else {
+        // Simple quantity entry - use ALL catalog info attached to the SKU
         const qty = typeof addMaterialQuantity === 'number' ? addMaterialQuantity : 1;
-        const unit_cost = selectedCatalogMaterial.purchase_cost || 0;
-        const total_cost = unit_cost * qty;
+        const catalogCostPerUnit = selectedCatalogMaterial.purchase_cost || 0;
+        const catalogUnitPrice = selectedCatalogMaterial.unit_price || 0;
+        const catalogCategory = cleanCatalogCategory(selectedCatalogMaterial.category) || 'Field Requests';
+        const catalogLength = selectedCatalogMaterial.part_length; // Length from catalog
 
         const { error: materialError } = await supabase
           .from('material_items')
           .insert({
             sheet_id: sheetId,
-            category: 'Field Requests',
+            category: catalogCategory,
             sku: selectedCatalogMaterial.sku,
             material_name: selectedCatalogMaterial.material_name,
             quantity: qty,
-            length: selectedCatalogMaterial.part_length || null,
-            cost_per_unit: unit_cost,
-            price_per_unit: unit_cost,
-            extended_cost: total_cost,
-            extended_price: total_cost,
-            markup_percent: 0,
+            length: catalogLength, // Use length attached to SKU in catalog
+            cost_per_unit: catalogCostPerUnit,
+            price_per_unit: catalogUnitPrice || catalogCostPerUnit,
+            extended_cost: catalogCostPerUnit * qty,
+            extended_price: (catalogUnitPrice || catalogCostPerUnit) * qty,
+            markup_percent: catalogUnitPrice > 0 && catalogCostPerUnit > 0 
+              ? ((catalogUnitPrice - catalogCostPerUnit) / catalogCostPerUnit * 100) 
+              : 0,
             taxable: true,
             status: 'not_ordered',
             notes: addMaterialNotes || `Requested from field (SKU: ${selectedCatalogMaterial.sku})`,
