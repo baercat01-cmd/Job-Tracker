@@ -1149,21 +1149,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return () => clearInterval(pollInterval);
   }, [job.id]);
 
-  // Auto-create quote whenever materials data changes (if no quote exists)
+  // Auto-create quote for new jobs (run once after initial load)
   useEffect(() => {
-    // Only auto-create if:
-    // 1. No quote exists yet
-    // 2. Materials data has been loaded (not empty initial state)
-    // 3. There are actual materials/rows/subcontractors
-    if (!quote && !loading && (
-      materialsBreakdown.sheetBreakdowns.length > 0 ||
-      customRows.length > 0 ||
-      subcontractorEstimates.length > 0
-    )) {
-      console.log('🔄 Materials detected, auto-creating quote...');
-      checkAndAutoCreateQuote();
+    if (!loading && !quote) {
+      // Small delay to ensure all data is loaded
+      const timer = setTimeout(() => {
+        checkAndAutoCreateQuote();
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [materialsBreakdown, customRows, subcontractorEstimates, quote, loading]);
+  }, [loading, quote]);
+
+  // This effect has been replaced by the simpler loading-based auto-create above
 
   async function loadQuoteData() {
     try {
@@ -1427,83 +1424,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (quote) return;
     
     try {
-      console.log('🔍 Checking if auto-create quote is needed for job:', job.id);
-      
-      // Check 1: Materials in workbook
-      const { data: workbookData, error: workbookError } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
-      
-      if (workbookError) {
-        console.error('❌ Error checking workbooks:', workbookError);
-        throw workbookError;
-      }
-      
-      let hasMaterials = false;
-      if (workbookData) {
-        const { data: sheetsData, error: sheetsError } = await supabase
-          .from('material_sheets')
-          .select('id')
-          .eq('workbook_id', workbookData.id);
-        
-        if (sheetsError) {
-          console.error('❌ Error checking sheets:', sheetsError);
-          throw sheetsError;
-        }
-        
-        if (sheetsData && sheetsData.length > 0) {
-          const { count, error: countError } = await supabase
-            .from('material_items')
-            .select('*', { count: 'exact', head: true })
-            .in('sheet_id', sheetsData.map(s => s.id));
-          
-          if (countError) {
-            console.error('❌ Error counting materials:', countError);
-            throw countError;
-          }
-          
-          hasMaterials = (count || 0) > 0;
-          console.log(`📦 Found ${count || 0} material items`);
-        }
-      }
-      
-      // Check 2: Custom financial rows
-      const { count: rowsCount, error: rowsError } = await supabase
-        .from('custom_financial_rows')
-        .select('*', { count: 'exact', head: true })
-        .eq('job_id', job.id);
-      
-      if (rowsError) {
-        console.error('❌ Error checking custom rows:', rowsError);
-        throw rowsError;
-      }
-      
-      const hasCustomRows = (rowsCount || 0) > 0;
-      console.log(`📋 Found ${rowsCount || 0} custom rows`);
-      
-      // Check 3: Subcontractor estimates
-      const { count: subsCount, error: subsError } = await supabase
-        .from('subcontractor_estimates')
-        .select('*', { count: 'exact', head: true })
-        .eq('job_id', job.id);
-      
-      if (subsError) {
-        console.error('❌ Error checking subcontractors:', subsError);
-        throw subsError;
-      }
-      
-      const hasSubcontractors = (subsCount || 0) > 0;
-      console.log(`👷 Found ${subsCount || 0} subcontractor estimates`);
-      
-      if (!hasMaterials && !hasCustomRows && !hasSubcontractors) {
-        console.log('❌ No data found - skipping auto-create');
-        return;
-      }
-
-      console.log('✅ Data found! Auto-creating quote...');
+      console.log('🔍 Auto-creating quote for job:', job.id);
 
       // Auto-create quote for this job
       const { data: newQuote, error: createError } = await supabase
@@ -1537,10 +1458,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.success(`Proposal #${newQuote.proposal_number} created automatically`);
     } catch (error: any) {
       console.error('❌ Error in checkAndAutoCreateQuote:', error);
-      toast.error(
-        'Could not auto-create proposal number. Use the "Generate Proposal Number" button to create it manually.',
-        { duration: 8000 }
-      );
+      // Silent failure - user can click the manual button if needed
+      console.log('Will show manual create button instead');
     }
   }
 
