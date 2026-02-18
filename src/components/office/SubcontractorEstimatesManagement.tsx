@@ -95,6 +95,7 @@ interface LineItem {
   notes: string | null;
   order_index: number;
   excluded?: boolean;
+  markup_percent?: number;
 }
 
 interface SubcontractorEstimatesManagementProps {
@@ -119,6 +120,7 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
   const [activeTab, setActiveTab] = useState<'estimates' | 'invoices'>('estimates');
   const [editingMarkup, setEditingMarkup] = useState<SubcontractorEstimate | null>(null);
   const [markupValue, setMarkupValue] = useState('0');
+  const [editingLineItemMarkup, setEditingLineItemMarkup] = useState<{lineItemId: string, value: string} | null>(null);
 
   // Upload form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -564,6 +566,23 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
     }
   }
 
+  async function updateLineItemMarkup(lineItemId: string, markup: number) {
+    try {
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update({ markup_percent: markup })
+        .eq('id', lineItemId);
+
+      if (error) throw error;
+
+      toast.success('Line item markup updated');
+      loadEstimates();
+    } catch (error: any) {
+      console.error('Error updating line item markup:', error);
+      toast.error('Failed to update markup');
+    }
+  }
+
   async function toggleLineItemExclusion(estimateId: string, lineItemId: string, currentExcluded: boolean) {
     try {
       const { error } = await supabase
@@ -582,6 +601,16 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
   }
 
   function calculateIncludedTotal(lineItems: LineItem[]): number {
+    return lineItems
+      .filter(item => !item.excluded)
+      .reduce((sum, item) => {
+        const markup = item.markup_percent || 0;
+        const markedUpPrice = item.total_price * (1 + markup / 100);
+        return sum + markedUpPrice;
+      }, 0);
+  }
+
+  function calculateIncludedBaseTotal(lineItems: LineItem[]): number {
     return lineItems
       .filter(item => !item.excluded)
       .reduce((sum, item) => sum + item.total_price, 0);
@@ -717,11 +746,12 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
             estimates.map((estimate) => {
               const isExpanded = expandedDetails.has(estimate.id);
               const { materials, labor } = categorizeLineItems(estimate.line_items || []);
+              const hasLineItems = (estimate.line_items || []).length > 0;
               // Calculate base amount from included line items only
-              const baseAmount = calculateIncludedTotal(estimate.line_items || []);
-              const markup = estimate.markup_percent || 0;
-              const markedUpAmount = baseAmount * (1 + markup / 100);
+              const baseAmount = hasLineItems ? calculateIncludedBaseTotal(estimate.line_items || []) : (estimate.total_amount || 0);
+              const markedUpAmount = hasLineItems ? calculateIncludedTotal(estimate.line_items || []) : (baseAmount * (1 + (estimate.markup_percent || 0) / 100));
               const hasExcludedItems = (estimate.line_items || []).some(item => item.excluded);
+              const hasMarkups = hasLineItems && (estimate.line_items || []).some(item => (item.markup_percent || 0) > 0);
               const isManualEntry = !estimate.pdf_url;
 
               return (
@@ -751,10 +781,16 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                               Some items excluded
                             </Badge>
                           )}
-                          {markup > 0 && (
+                          {hasMarkups && (
                             <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
                               <Percent className="w-3 h-3 mr-1" />
-                              {markup.toFixed(1)}% markup
+                              Line markups applied
+                            </Badge>
+                          )}
+                          {!hasLineItems && (estimate.markup_percent || 0) > 0 && (
+                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                              <Percent className="w-3 h-3 mr-1" />
+                              {(estimate.markup_percent || 0).toFixed(1)}% markup
                             </Badge>
                           )}
                         </div>
@@ -766,26 +802,33 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        {(markup > 0 || hasExcludedItems) && (
+                        {!hasLineItems ? (
+                          <div className="flex items-center gap-2 text-xs text-slate-600 mb-1 justify-end">
+                            <span>Base: ${baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span>+</span>
+                            <Input
+                              type="number"
+                              value={estimate.markup_percent || 0}
+                              onChange={(e) => {
+                                const newMarkup = parseFloat(e.target.value) || 0;
+                                updateSubcontractorMarkup(estimate.id, newMarkup);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-14 h-5 text-xs px-1 text-center"
+                              step="1"
+                              min="0"
+                            />
+                            <span>%</span>
+                          </div>
+                        ) : (hasMarkups || hasExcludedItems) ? (
                           <p className="text-xs text-slate-600 mb-1">
                             {hasExcludedItems ? 'Included items: ' : 'Base: '}${baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
-                        )}
+                        ) : null}
                         <p className="text-2xl font-bold text-primary">
                           ${markedUpAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openMarkupDialog(estimate);
-                        }}
-                        title="Edit markup"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
                       {estimate.pdf_url && (
                         <Button
                           size="sm"
@@ -862,32 +905,97 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                             )}
                           </div>
                           <div className="space-y-1">
-                            {materials.map((item) => (
-                              <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded border transition-all ${
-                                item.excluded 
-                                  ? 'bg-slate-100 border-slate-300 opacity-50' 
-                                  : 'bg-blue-50/50 border-blue-100'
-                              }`}>
-                                <div className="flex items-center gap-3 flex-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={!item.excluded}
-                                    onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
-                                    className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                                    title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
-                                  />
-                                  <div className="flex-1">
-                                    <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
-                                    {item.quantity && item.unit_price && (
-                                      <p className="text-xs text-muted-foreground">
-                                        {item.quantity} × ${item.unit_price.toFixed(2)}
+                            {materials.map((item) => {
+                              const itemMarkup = item.markup_percent || 0;
+                              const markedUpPrice = item.total_price * (1 + itemMarkup / 100);
+                              const isEditingThisMarkup = editingLineItemMarkup?.lineItemId === item.id;
+                              
+                              return (
+                                <div key={item.id} className={`rounded border transition-all ${
+                                  item.excluded 
+                                    ? 'bg-slate-100 border-slate-300 opacity-50' 
+                                    : 'bg-blue-50/50 border-blue-100'
+                                }`}>
+                                  <div className="flex items-center justify-between py-2 px-3">
+                                    <div className="flex items-center gap-3 flex-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={!item.excluded}
+                                        onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
+                                        className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                                        title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
+                                      />
+                                      <div className="flex-1">
+                                        <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
+                                        {item.quantity && item.unit_price && (
+                                          <p className="text-xs text-muted-foreground">
+                                            {item.quantity} × ${item.unit_price.toFixed(2)} = ${item.total_price.toFixed(2)}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {!item.excluded && (
+                                        <div className="flex items-center gap-1">
+                                          {isEditingThisMarkup ? (
+                                            <>
+                                              <Input
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={editingLineItemMarkup.value}
+                                                onChange={(e) => setEditingLineItemMarkup({lineItemId: item.id, value: e.target.value})}
+                                                className="w-16 h-6 text-xs px-1"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    updateLineItemMarkup(item.id, parseFloat(editingLineItemMarkup.value) || 0);
+                                                    setEditingLineItemMarkup(null);
+                                                  }
+                                                  if (e.key === 'Escape') {
+                                                    setEditingLineItemMarkup(null);
+                                                  }
+                                                }}
+                                              />
+                                              <span className="text-xs">%</span>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-5 w-5 p-0"
+                                                onClick={() => {
+                                                  updateLineItemMarkup(item.id, parseFloat(editingLineItemMarkup.value) || 0);
+                                                  setEditingLineItemMarkup(null);
+                                                }}
+                                              >
+                                                <CheckCircle2 className="w-3 h-3 text-green-600" />
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span className="text-xs text-muted-foreground cursor-pointer" onClick={() => setEditingLineItemMarkup({lineItemId: item.id, value: itemMarkup.toString()})}>
+                                                +{itemMarkup.toFixed(1)}%
+                                              </span>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-5 w-5 p-0"
+                                                onClick={() => setEditingLineItemMarkup({lineItemId: item.id, value: itemMarkup.toString()})}
+                                                title="Edit markup"
+                                              >
+                                                <Edit className="w-3 h-3" />
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+                                      <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>
+                                        ${itemMarkup > 0 ? markedUpPrice.toFixed(2) : item.total_price.toFixed(2)}
                                       </p>
-                                    )}
+                                    </div>
                                   </div>
                                 </div>
-                                <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>${item.total_price.toFixed(2)}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -906,32 +1014,97 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                             )}
                           </div>
                           <div className="space-y-1">
-                            {labor.map((item) => (
-                              <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded border transition-all ${
-                                item.excluded 
-                                  ? 'bg-slate-100 border-slate-300 opacity-50' 
-                                  : 'bg-amber-50/50 border-amber-100'
-                              }`}>
-                                <div className="flex items-center gap-3 flex-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={!item.excluded}
-                                    onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
-                                    className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                                    title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
-                                  />
-                                  <div className="flex-1">
-                                    <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
-                                    {item.quantity && item.unit_price && (
-                                      <p className="text-xs text-muted-foreground">
-                                        {item.quantity} hrs × ${item.unit_price.toFixed(2)}
+                            {labor.map((item) => {
+                              const itemMarkup = item.markup_percent || 0;
+                              const markedUpPrice = item.total_price * (1 + itemMarkup / 100);
+                              const isEditingThisMarkup = editingLineItemMarkup?.lineItemId === item.id;
+                              
+                              return (
+                                <div key={item.id} className={`rounded border transition-all ${
+                                  item.excluded 
+                                    ? 'bg-slate-100 border-slate-300 opacity-50' 
+                                    : 'bg-amber-50/50 border-amber-100'
+                                }`}>
+                                  <div className="flex items-center justify-between py-2 px-3">
+                                    <div className="flex items-center gap-3 flex-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={!item.excluded}
+                                        onChange={() => toggleLineItemExclusion(estimate.id, item.id, item.excluded || false)}
+                                        className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                                        title={item.excluded ? 'Click to include this item' : 'Click to exclude this item'}
+                                      />
+                                      <div className="flex-1">
+                                        <p className={`font-medium text-sm ${item.excluded ? 'line-through' : ''}`}>{item.description}</p>
+                                        {item.quantity && item.unit_price && (
+                                          <p className="text-xs text-muted-foreground">
+                                            {item.quantity} hrs × ${item.unit_price.toFixed(2)} = ${item.total_price.toFixed(2)}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {!item.excluded && (
+                                        <div className="flex items-center gap-1">
+                                          {isEditingThisMarkup ? (
+                                            <>
+                                              <Input
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={editingLineItemMarkup.value}
+                                                onChange={(e) => setEditingLineItemMarkup({lineItemId: item.id, value: e.target.value})}
+                                                className="w-16 h-6 text-xs px-1"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    updateLineItemMarkup(item.id, parseFloat(editingLineItemMarkup.value) || 0);
+                                                    setEditingLineItemMarkup(null);
+                                                  }
+                                                  if (e.key === 'Escape') {
+                                                    setEditingLineItemMarkup(null);
+                                                  }
+                                                }}
+                                              />
+                                              <span className="text-xs">%</span>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-5 w-5 p-0"
+                                                onClick={() => {
+                                                  updateLineItemMarkup(item.id, parseFloat(editingLineItemMarkup.value) || 0);
+                                                  setEditingLineItemMarkup(null);
+                                                }}
+                                              >
+                                                <CheckCircle2 className="w-3 h-3 text-green-600" />
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span className="text-xs text-muted-foreground cursor-pointer" onClick={() => setEditingLineItemMarkup({lineItemId: item.id, value: itemMarkup.toString()})}>
+                                                +{itemMarkup.toFixed(1)}%
+                                              </span>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-5 w-5 p-0"
+                                                onClick={() => setEditingLineItemMarkup({lineItemId: item.id, value: itemMarkup.toString()})}
+                                                title="Edit markup"
+                                              >
+                                                <Edit className="w-3 h-3" />
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+                                      <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>
+                                        ${itemMarkup > 0 ? markedUpPrice.toFixed(2) : item.total_price.toFixed(2)}
                                       </p>
-                                    )}
+                                    </div>
                                   </div>
                                 </div>
-                                <p className={`font-semibold ${item.excluded ? 'line-through text-muted-foreground' : ''}`}>${item.total_price.toFixed(2)}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -956,14 +1129,16 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                             View PDF
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openMarkupDialog(estimate)}
-                        >
-                          <Percent className="w-4 h-4 mr-2" />
-                          Edit Markup
-                        </Button>
+                        {!hasLineItems && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openMarkupDialog(estimate)}
+                          >
+                            <Percent className="w-4 h-4 mr-2" />
+                            Edit Overall Markup
+                          </Button>
+                        )}
                         {invoices.some(inv => inv.estimate_id === estimate.id) && (
                           <Button
                             size="sm"
