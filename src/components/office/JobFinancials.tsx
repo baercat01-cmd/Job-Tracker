@@ -166,7 +166,7 @@ function SortableRow({ item, ...props }: any) {
       const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
       const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
       
-      // Calculate linked rows total
+      // Calculate linked rows total (with their own markup already applied)
       const linkedRowsTotal = linkedRows.reduce((rowSum: number, row: any) => {
         const lineItems = customRowLineItems[row.id] || [];
         const baseCost = lineItems.length > 0
@@ -198,10 +198,11 @@ function SortableRow({ item, ...props }: any) {
       // Calculate sheet labor
       const sheetLaborTotal = sheetLabor[sheet.sheetId] ? sheetLabor[sheet.sheetId].total_labor_cost : 0;
       
-      // Base cost includes materials + linked rows + taxable subcontractors
-      const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
+      // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
+      const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
       const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
-      const sheetFinalPrice = sheetBaseCost * (1 + sheetMarkup / 100);
+      // Final price = (materials with sheet markup) + (linked rows with their own markup)
+      const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
       
       // Total labor for display (sheet labor + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + linkedSubsNonTaxableTotal;
@@ -2804,7 +2805,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Materials: material sheets + custom material rows (TAXABLE)
   const materialSheetsPrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
-    // Calculate cost from linked custom rows (TAXABLE portions only)
+    // Calculate cost from linked custom rows (TAXABLE portions only, with their own markup)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
     const linkedRowsTaxableTotal = linkedRows.reduce((rowSum, row) => {
       const { taxable } = getCustomRowTaxableAndNonTaxable(row);
@@ -2822,10 +2823,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return sum + (taxableTotal * (1 + estMarkup / 100));
     }, 0);
     
-    // Sheet base cost = material items + linked custom rows (taxable) + linked taxable subcontractors
-    const sheetBaseCost = sheet.totalPrice + linkedRowsTaxableTotal + linkedSubsTotal;
+    // Sheet base cost = ONLY material items + linked taxable subcontractors (NOT linked rows)
+    const sheetBaseCost = sheet.totalPrice + linkedSubsTotal;
     const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
-    return sum + (sheetBaseCost * (1 + sheetMarkup / 100));
+    // Final = (materials with sheet markup) + (linked rows with their own markup already applied)
+    return sum + (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTaxableTotal;
   }, 0);
   
   const proposalMaterialsPrice = materialSheetsPrice + customRowsTaxableTotal;
