@@ -109,6 +109,7 @@ interface MaterialPackagesProps {
 export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPackagesProps) {
   const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
   const [selectedPackageForOrder, setSelectedPackageForOrder] = useState<MaterialBundle | null>(null);
+  const [selectedMaterialsForOrder, setSelectedMaterialsForOrder] = useState<MaterialItem[]>([]);
   const [packages, setPackages] = useState<MaterialBundle[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,18 +140,31 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
     );
     
     if (unorderedMaterials.length === 0) {
-      toast.error('All materials in this package have already been ordered in Zoho Books. Use "Clear Orders" button to remove order references if needed.');
+      toast.error('All materials in this package have already been ordered in Zoho Books');
       return;
     }
     
     if (unorderedMaterials.length < pkg.bundle_items.length) {
       const orderedCount = pkg.bundle_items.length - unorderedMaterials.length;
       toast.warning(
-        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only NEW unordered materials will be included in this order`
+        `${orderedCount} material${orderedCount !== 1 ? 's' : ''} already ordered - only unordered materials will be included`
       );
     }
     
     setSelectedPackageForOrder(pkg);
+    setSelectedMaterialsForOrder(unorderedMaterials.map(item => item.material_items));
+    setShowZohoOrderDialog(true);
+  }
+
+  function openZohoOrderDialogForMaterial(material: MaterialItem, packageName: string) {
+    // Check if material is already ordered
+    if (material.zoho_sales_order_id || material.zoho_purchase_order_id) {
+      toast.error('This material has already been ordered in Zoho Books');
+      return;
+    }
+    
+    setSelectedPackageForOrder({ name: packageName } as MaterialBundle);
+    setSelectedMaterialsForOrder([material]);
     setShowZohoOrderDialog(true);
   }
 
@@ -1013,10 +1027,10 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                         size="sm"
                         onClick={() => openZohoOrderDialog(pkg)}
                         className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white"
-                        title="Create Zoho Sales Order & PO"
+                        title="Create Zoho Sales Order & PO for all unordered materials"
                       >
                         <ShoppingCart className="w-4 h-4 mr-1" />
-                        Order
+                        Order All
                       </Button>
                       <Button
                         size="sm"
@@ -1149,6 +1163,17 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                         </div>
                                       )}
                                     </div>
+                                    {!hasOrders && (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => openZohoOrderDialogForMaterial(item.material_items, pkg.name)}
+                                        className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white ml-3"
+                                        title="Order this material individually"
+                                      >
+                                        <ShoppingCart className="w-4 h-4 mr-1" />
+                                        Order
+                                      </Button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1385,12 +1410,11 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
             if (!open) {
               // Reload packages after closing dialog to show updated order status
               loadPackages();
+              setSelectedMaterialsForOrder([]);
             }
           }}
           jobName={job.name}
-          materials={selectedPackageForOrder.bundle_items
-            .map(item => item.material_items)
-            .filter(m => !m.zoho_sales_order_id && !m.zoho_purchase_order_id)} // Only unordered materials
+          materials={selectedMaterialsForOrder}
           packageName={selectedPackageForOrder.name}
         />
       )}
