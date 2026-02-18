@@ -151,6 +151,7 @@ function SortableRow({ item, ...props }: any) {
     toggleSubcontractorLineItemTaxable,
     unlinkSubcontractor,
     updateSubcontractorMarkup,
+    updateCustomRowMarkup,
     deleteLineItem,
     loadMaterialsData,
     loadCustomRows,
@@ -561,7 +562,20 @@ function SortableRow({ item, ...props }: any) {
               <div className="text-right">
                 <div className="flex items-center gap-2 text-xs text-slate-600">
                   <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  <span>+{row.markup_percent}%</span>
+                  <span>+</span>
+                  <Input
+                    type="number"
+                    value={row.markup_percent || 0}
+                    onChange={(e) => {
+                      const newMarkup = parseFloat(e.target.value) || 0;
+                      updateCustomRowMarkup(row.id, newMarkup);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-14 h-5 text-xs px-1 text-center"
+                    step="1"
+                    min="0"
+                  />
+                  <span>%</span>
                 </div>
                 <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
@@ -2432,6 +2446,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function updateCustomRowMarkup(rowId: string, newMarkup: number) {
+    try {
+      const { error } = await supabase
+        .from('custom_financial_rows')
+        .update({ markup_percent: newMarkup })
+        .eq('id', rowId);
+
+      if (error) throw error;
+      await loadCustomRows();
+    } catch (error: any) {
+      console.error('Error updating markup:', error);
+      toast.error('Failed to update markup');
+    }
+  }
+
   async function handleExportPDF() {
     setExporting(true);
     
@@ -3189,6 +3218,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
                         unlinkSubcontractor={unlinkSubcontractor}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
+                        updateCustomRowMarkup={updateCustomRowMarkup}
                         deleteLineItem={deleteLineItem}
                         loadMaterialsData={loadMaterialsData}
                         loadCustomRows={loadCustomRows}
