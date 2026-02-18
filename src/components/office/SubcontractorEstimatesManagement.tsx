@@ -96,8 +96,6 @@ interface LineItem {
   order_index: number;
   excluded?: boolean;
   markup_percent?: number;
-  taxable?: boolean;
-  item_type?: 'material' | 'labor';
 }
 
 interface SubcontractorEstimatesManagementProps {
@@ -602,46 +600,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
     }
   }
 
-  async function toggleLineItemTaxable(lineItemId: string, currentTaxable: boolean) {
-    try {
-      const { error } = await supabase
-        .from('subcontractor_estimate_line_items')
-        .update({ taxable: !currentTaxable })
-        .eq('id', lineItemId);
-
-      if (error) throw error;
-
-      toast.success(currentTaxable ? 'Item marked as non-taxable' : 'Item marked as taxable');
-      loadEstimates();
-    } catch (error: any) {
-      console.error('Error toggling taxable:', error);
-      toast.error('Failed to update taxable status');
-    }
-  }
-
-  async function updateLineItemType(lineItemId: string, itemType: 'material' | 'labor') {
-    try {
-      // Labor is always non-taxable, materials can be taxable or not
-      const taxable = itemType === 'material';
-      
-      const { error } = await supabase
-        .from('subcontractor_estimate_line_items')
-        .update({ 
-          item_type: itemType,
-          taxable: taxable // Set default based on type
-        })
-        .eq('id', lineItemId);
-
-      if (error) throw error;
-
-      toast.success(`Item type changed to ${itemType}`);
-      loadEstimates();
-    } catch (error: any) {
-      console.error('Error updating item type:', error);
-      toast.error('Failed to update item type');
-    }
-  }
-
   function calculateIncludedTotal(lineItems: LineItem[]): number {
     return lineItems
       .filter(item => !item.excluded)
@@ -675,12 +633,8 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
     const labor: LineItem[] = [];
 
     lineItems.forEach(item => {
-      // Use item_type if set, otherwise fall back to description-based detection
-      if (item.item_type === 'labor' || 
-          (item.item_type === 'material' && false) || // Never use material type for labor
-          (!item.item_type && (item.description.toLowerCase().includes('labor') || 
-                               item.description.toLowerCase().includes('install') || 
-                               item.description.toLowerCase().includes('service')))) {
+      const desc = item.description.toLowerCase();
+      if (desc.includes('labor') || desc.includes('install') || desc.includes('service')) {
         labor.push(item);
       } else {
         materials.push(item);
@@ -981,34 +935,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {/* Type selector */}
-                                      <Select
-                                        value={item.item_type || 'labor'}
-                                        onValueChange={(value) => updateLineItemType(item.id, value as 'material' | 'labor')}
-                                      >
-                                        <SelectTrigger className="h-6 w-24 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="material">Material</SelectItem>
-                                          <SelectItem value="labor">Labor</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      {/* Taxable checkbox - only show if item was changed to material */}
-                                      {(item.item_type === 'material') && !item.excluded && (
-                                        <div className="flex items-center gap-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={item.taxable !== false}
-                                            onChange={() => toggleLineItemTaxable(item.id, item.taxable !== false)}
-                                            className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                                            title={item.taxable !== false ? 'Click to make non-taxable' : 'Click to make taxable'}
-                                          />
-                                          <span className="text-xs text-muted-foreground">
-                                            {item.taxable !== false ? 'Tax' : 'No Tax'}
-                                          </span>
-                                        </div>
-                                      )}
                                       {!item.excluded && (
                                         <div className="flex items-center gap-1">
                                           {isEditingThisMarkup ? (
@@ -1118,34 +1044,6 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {/* Type selector */}
-                                      <Select
-                                        value={item.item_type || 'labor'}
-                                        onValueChange={(value) => updateLineItemType(item.id, value as 'material' | 'labor')}
-                                      >
-                                        <SelectTrigger className="h-6 w-24 text-xs">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="material">Material</SelectItem>
-                                          <SelectItem value="labor">Labor</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      {/* Taxable checkbox - only show if item was changed to material */}
-                                      {(item.item_type === 'material') && !item.excluded && (
-                                        <div className="flex items-center gap-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={item.taxable !== false}
-                                            onChange={() => toggleLineItemTaxable(item.id, item.taxable !== false)}
-                                            className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                                            title={item.taxable !== false ? 'Click to make non-taxable' : 'Click to make taxable'}
-                                          />
-                                          <span className="text-xs text-muted-foreground">
-                                            {item.taxable !== false ? 'Tax' : 'No Tax'}
-                                          </span>
-                                        </div>
-                                      )}
                                       {!item.excluded && (
                                         <div className="flex items-center gap-1">
                                           {isEditingThisMarkup ? (
