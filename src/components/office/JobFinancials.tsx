@@ -296,21 +296,13 @@ function SortableRow({ item, ...props }: any) {
                     <Edit className="w-3 h-3 mr-2" />
                     Edit Description
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
-                    <DollarSign className="w-3 h-3 mr-2" />
-                    {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
-                    <Briefcase className="w-3 h-3 mr-2" />
-                    Add Subcontractor
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'labor')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Labor Row
+                  <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
+                    <Briefcase className="w-3 h-3 mr-2" />
+                    Add Subcontractor
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -604,6 +596,10 @@ function SortableRow({ item, ...props }: any) {
                     <Edit className="w-3 h-3 mr-2" />
                     Edit Description
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Material Row
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
                     <DollarSign className="w-3 h-3 mr-2" />
                     Add Labor
@@ -611,10 +607,6 @@ function SortableRow({ item, ...props }: any) {
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Material Row
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => deleteRow(row.id)}>
                     <Trash2 className="w-3 h-3 mr-2" />
