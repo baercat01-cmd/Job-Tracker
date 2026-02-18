@@ -147,11 +147,14 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
 
       setCatalogMaterials(data || []);
 
+      // Categories to exclude for crew members
+      const EXCLUDED_CATEGORIES = ['Cupola', 'Freight Income', 'Slider Door', 'Purchases'];
+      
       const cats = new Set<string>();
       (data || []).forEach((m: CatalogMaterial) => {
         if (m.category) {
           const cleaned = cleanCatalogCategory(m.category);
-          if (cleaned && !/^[\d\$,.\s]+$/.test(cleaned)) {
+          if (cleaned && !/^[\d\$,.\s]+$/.test(cleaned) && !EXCLUDED_CATEGORIES.includes(cleaned)) {
             cats.add(cleaned);
           }
         }
@@ -1019,9 +1022,18 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
   // 2. User is searching in the "All" category
   const shouldShowMaterials = catalogCategory !== null || (catalogCategory === null && catalogSearch.trim() !== '');
   
+  // Categories to exclude for crew members
+  const EXCLUDED_CATEGORIES = ['Cupola', 'Freight Income', 'Slider Door', 'Purchases'];
+  
   const filteredCatalogMaterials = shouldShowMaterials ? catalogMaterials.filter(m => {
+    // Filter out excluded categories
+    const cleanedCategory = cleanCatalogCategory(m.category);
+    if (cleanedCategory && EXCLUDED_CATEGORIES.includes(cleanedCategory)) {
+      return false;
+    }
+    
     // Filter by category if a specific one is selected
-    if (catalogCategory && cleanCatalogCategory(m.category) !== catalogCategory) {
+    if (catalogCategory && cleanedCategory !== catalogCategory) {
       return false;
     }
     
@@ -1041,6 +1053,36 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     const lengthB = parseLengthForSorting(b.part_length);
     return lengthA - lengthB;
   }) : [];
+  
+  // Group materials by base name (without length)
+  interface MaterialGroup {
+    baseName: string;
+    materials: CatalogMaterial[];
+  }
+  
+  const groupedMaterials: MaterialGroup[] = [];
+  const materialsByBaseName = new Map<string, CatalogMaterial[]>();
+  
+  filteredCatalogMaterials.forEach(material => {
+    const baseName = extractBaseMaterialName(material.material_name);
+    if (!materialsByBaseName.has(baseName)) {
+      materialsByBaseName.set(baseName, []);
+    }
+    materialsByBaseName.get(baseName)!.push(material);
+  });
+  
+  // Convert map to array and sort materials within each group
+  materialsByBaseName.forEach((materials, baseName) => {
+    materials.sort((a, b) => {
+      const lengthA = parseLengthForSorting(a.part_length);
+      const lengthB = parseLengthForSorting(b.part_length);
+      return lengthA - lengthB;
+    });
+    groupedMaterials.push({ baseName, materials });
+  });
+  
+  // Sort groups by base name
+  groupedMaterials.sort((a, b) => a.baseName.localeCompare(b.baseName));
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
@@ -1151,29 +1193,76 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   {catalogSearch ? <Search className="w-4 h-4" /> : <Package className="w-4 h-4" />}
                   {catalogSearch ? `Search Results (${filteredCatalogMaterials.length})` : `${catalogCategory} (${filteredCatalogMaterials.length})`}
                 </div>
-                <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Sorted by length</span>
+                <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Grouped by name</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-x-hidden">
               <div className="divide-y w-full max-w-full overflow-x-hidden">
-                {filteredCatalogMaterials.map(material => (
-                  <button
-                    key={material.sku}
-                    onClick={() => openAddMaterialDialog(material)}
-                    className="flex items-start gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
-                  >
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">{material.material_name}</h4>
-                      {material.part_length && (
-                        <div className="text-base sm:text-lg font-bold text-primary">
-                          {cleanMaterialValue(material.part_length)}
-                        </div>
-                      )}
+                {groupedMaterials.map((group, groupIndex) => (
+                  <div key={groupIndex} className="w-full max-w-full">
+                    {/* Group Header - Only show base name once */}
+                    <div className="bg-muted/30 px-3 sm:px-4 py-2 border-b">
+                      <h3 className="font-semibold text-sm sm:text-base text-foreground">
+                        {group.baseName}
+                      </h3>
                     </div>
-                    <div className="flex-shrink-0 flex items-center text-primary">
-                      <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
+                    {/* Materials in this group */}
+                    <div className="divide-y">
+                      {group.materials.map(material => {
+                        // Format length to feet and inches if available
+                        let lengthDisplay = null;
+                        if (material.part_length) {
+                          const cleaned = cleanMaterialValue(material.part_length);
+                          // Check if it's already in feet/inches format
+                          if (cleaned.includes("'") || cleaned.includes('"')) {
+                            lengthDisplay = cleaned;
+                          } else {
+                            // Try to parse as number and convert to feet/inches
+                            const numMatch = cleaned.match(/([\d.]+)/);
+                            if (numMatch) {
+                              const totalInches = parseFloat(numMatch[1]);
+                              const feet = Math.floor(totalInches / 12);
+                              const inches = Math.round(totalInches % 12);
+                              if (feet > 0 && inches > 0) {
+                                lengthDisplay = `${feet}' ${inches}"`;
+                              } else if (feet > 0) {
+                                lengthDisplay = `${feet}'`;
+                              } else if (inches > 0) {
+                                lengthDisplay = `${inches}"`;
+                              } else {
+                                lengthDisplay = cleaned;
+                              }
+                            } else {
+                              lengthDisplay = cleaned;
+                            }
+                          }
+                        }
+                        
+                        return (
+                          <button
+                            key={material.sku}
+                            onClick={() => openAddMaterialDialog(material)}
+                            className="flex items-center gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
+                          >
+                            <div className="flex-1 min-w-0">
+                              {lengthDisplay ? (
+                                <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">
+                                  {lengthDisplay}
+                                </h4>
+                              ) : (
+                                <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full text-muted-foreground">
+                                  No length specified
+                                </h4>
+                              )}
+                            </div>
+                            <div className="flex-shrink-0 flex items-center text-primary">
+                              <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </CardContent>

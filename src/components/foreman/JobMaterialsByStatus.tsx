@@ -237,30 +237,40 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
   }
 
   async function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
-    if (processingMaterials.has(materialId)) return;
+    console.log('🎯 CREW updateMaterialStatus called:', { materialId, newStatus, isProcessing: processingMaterials.has(materialId) });
+    
+    if (processingMaterials.has(materialId)) {
+      console.log('⚠️ CREW Material is already being processed, skipping');
+      return;
+    }
     
     setProcessingMaterials(prev => new Set(prev).add(materialId));
 
     try {
-      console.log(`🔄 Updating material ${materialId} to ${newStatus}`);
+      console.log(`🔄 CREW Updating material ${materialId} from current status to ${newStatus}`);
       
       // Update material status
-      const { error: materialError } = await supabase
+      const { data, error: materialError } = await supabase
         .from('material_items')
         .update({ 
           status: newStatus,
           updated_at: new Date().toISOString() 
         })
-        .eq('id', materialId);
+        .eq('id', materialId)
+        .select();
 
-      if (materialError) throw materialError;
+      if (materialError) {
+        console.error('❌ CREW Database error:', materialError);
+        throw materialError;
+      }
 
+      console.log('✅ CREW Material updated successfully:', data);
       toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
 
       loadMaterials();
     } catch (error: any) {
-      console.error('Error updating material:', error);
-      toast.error('Failed to update material status');
+      console.error('❌ CREW Error updating material:', error);
+      toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
     } finally {
       setProcessingMaterials(prev => {
         const newSet = new Set(prev);
@@ -378,6 +388,8 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                   <Button
                                     size="sm"
                                     onClick={(e) => {
+                                      console.log('🖱️ CREW Pull from Shop button clicked');
+                                      e.preventDefault();
                                       e.stopPropagation();
                                       updateMaterialStatus(item.id, 'ready_for_job');
                                     }}
@@ -396,6 +408,8 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                   <Button
                                     size="sm"
                                     onClick={(e) => {
+                                      console.log('🖱️ CREW Ready for Job button clicked for material:', item.id);
+                                      e.preventDefault();
                                       e.stopPropagation();
                                       updateMaterialStatus(item.id, 'at_job');
                                     }}
