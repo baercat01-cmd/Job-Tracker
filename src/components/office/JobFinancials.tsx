@@ -198,14 +198,18 @@ function SortableRow({ item, ...props }: any) {
       // Calculate sheet labor
       const sheetLaborTotal = sheetLabor[sheet.sheetId] ? sheetLabor[sheet.sheetId].total_labor_cost : 0;
       
+      // Calculate labor from sheet line items
+      const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
+      const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      
       // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
       const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
       const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
       // Final price = (materials with sheet markup) + (linked rows with their own markup)
       const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
       
-      // Total labor for display (sheet labor + non-taxable subcontractor)
-      const totalLaborCost = sheetLaborTotal + linkedSubsNonTaxableTotal;
+      // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
+      const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
 
       return (
         <Collapsible className="border rounded bg-white py-1 px-2">
