@@ -302,27 +302,9 @@ function SortableRow({ item, ...props }: any) {
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setCategory('materials');
-                    setTaxable(true);
-                    setLinkedSheetId(sheet.sheetId);
-                    openAddDialog(undefined, sheet.sheetId);
-                  }}>
+                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
-                    setCategory('labor');
-                    setTaxable(false);
-                    setLinkedSheetId(sheet.sheetId);
-                    resetForm();
-                    setCategory('labor');
-                    setTaxable(false);
-                    setLinkedSheetId(sheet.sheetId);
-                    setShowAddDialog(true);
-                  }}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Labor Row
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -583,12 +565,10 @@ function SortableRow({ item, ...props }: any) {
                   <span>+</span>
                   <Input
                     type="number"
-                    defaultValue={row.markup_percent || 0}
-                    onBlur={(e) => {
+                    value={row.markup_percent || 0}
+                    onChange={(e) => {
                       const newMarkup = parseFloat(e.target.value) || 0;
-                      if (newMarkup !== row.markup_percent) {
-                        updateCustomRowMarkup(row.id, newMarkup);
-                      }
+                      updateCustomRowMarkup(row.id, newMarkup);
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className="w-14 h-5 text-xs px-1 text-center"
@@ -616,13 +596,9 @@ function SortableRow({ item, ...props }: any) {
                     <Edit className="w-3 h-3 mr-2" />
                     Edit Row
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
+                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id)}>
                     <Plus className="w-3 h-3 mr-2" />
-                    Add Material Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Labor Row
+                    Add Line Item
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
                     <Briefcase className="w-3 h-3 mr-2" />
@@ -1893,7 +1869,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (sheetId) {
         // If opening from a material sheet, pre-populate category and link
         setCategory('materials');
-        setTaxable(true); // Materials default to taxable
         setLinkedSheetId(sheetId);
       }
     }
@@ -1995,7 +1970,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         markup_percent: markup,
         selling_price: sellingPrice,
         notes: notes || null,
-        taxable: taxable, // Use the taxable state from checkbox
+        taxable: category === 'materials' ? true : false, // Materials are taxable by default, labor is not
         order_index: targetOrderIndex,
         sheet_id: linkedSheetId || null,
       };
@@ -2279,7 +2254,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   // Line item functions
-  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
+  function openLineItemDialog(rowId: string, lineItem?: CustomRowLineItem) {
     setLineItemParentRowId(rowId);
     
     if (lineItem) {
@@ -2298,14 +2273,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         quantity: '1',
         unit_cost: '0',
         notes: '',
-        taxable: itemType === 'material' ? true : false, // Material is taxable, labor is not
+        taxable: false, // Default to labor (non-taxable)
       });
     }
     
     setShowLineItemDialog(true);
   }
 
-  async function saveLineItem(keepDialogOpen = false) {
+  async function saveLineItem() {
     if (!lineItemParentRowId || !lineItemForm.description) {
       toast.error('Please fill in description');
       return;
@@ -2346,24 +2321,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         toast.success('Line item added');
       }
 
+      setShowLineItemDialog(false);
+      setEditingLineItem(null);
+      setLineItemParentRowId(null);
       await loadCustomRows();
-
-      if (keepDialogOpen) {
-        // Reset form for adding another item, keeping the taxable status
-        const currentTaxable = lineItemForm.taxable;
-        setLineItemForm({
-          description: '',
-          quantity: '1',
-          unit_cost: '0',
-          notes: '',
-          taxable: currentTaxable,
-        });
-        setEditingLineItem(null);
-      } else {
-        setShowLineItemDialog(false);
-        setEditingLineItem(null);
-        setLineItemParentRowId(null);
-      }
     } catch (error: any) {
       console.error('Error saving line item:', error);
       toast.error('Failed to save line item');
@@ -3405,18 +3366,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             {!linkedSheetId && (
               <div>
                 <Label>Category</Label>
-                <Select 
-                  value={category} 
-                  onValueChange={(val) => {
-                    setCategory(val);
-                    // Auto-set taxable based on category as a helpful default
-                    if (val === 'materials') {
-                      setTaxable(true);
-                    } else if (val === 'labor') {
-                      setTaxable(false);
-                    }
-                  }}
-                >
+                <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -3482,23 +3432,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="row-taxable"
-                checked={taxable}
-                onChange={(e) => setTaxable(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <Label htmlFor="row-taxable" className="cursor-pointer">
-                Taxable
-              </Label>
-              <p className="text-xs text-muted-foreground ml-2">
-                {taxable 
-                  ? 'Will be included in taxable subtotal (materials)' 
-                  : 'Will be excluded from tax calculation (labor)'}
-              </p>
-            </div>
+            {/* Taxable is now automatically determined by category - materials are taxable, labor is not */}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -3578,14 +3512,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
                 Cancel
               </Button>
-              {!editingLineItem && (
-                <Button variant="outline" onClick={() => saveLineItem(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Save & Add Another
-                </Button>
-              )}
-              <Button onClick={() => saveLineItem(false)}>
-                {editingLineItem ? 'Update' : 'Save'} Line Item
+              <Button onClick={saveLineItem}>
+                {editingLineItem ? 'Update' : 'Add'} Line Item
               </Button>
             </div>
           </div>
