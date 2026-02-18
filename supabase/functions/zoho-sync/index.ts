@@ -587,6 +587,31 @@ serve(async (req) => {
       }
     }
 
+    // Handle webhook management actions
+    if (action === 'register_webhooks') {
+      const result = await registerWebhooks(supabase, requestBody);
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'unregister_webhooks') {
+      const result = await unregisterWebhooks(supabase, requestBody);
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'list_webhooks') {
+      const result = await listWebhooks(supabase);
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: 'Unknown action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -921,6 +946,208 @@ async function ensurePurchasableItem(
   const createData = await createResponse.json();
   console.log('✅ Created new purchasable item:', createData.item?.item_id);
   return createData.item.item_id;
+}
+
+async function registerWebhooks(supabase: any, requestData: any) {
+  console.log('📡 Registering Zoho Books webhooks...');
+  
+  const settings = await getSettings(supabase);
+  const accessToken = await getValidAccessToken(settings, supabase);
+  const orgType = requestData.orgType || 'countywide';
+  const orgId = orgType === 'countywide' ? settings.countywide_org_id : settings.martin_builder_org_id;
+  
+  // Get the webhook URL (should be your deployed edge function URL)
+  const webhookUrl = requestData.webhookUrl || `${supabaseUrl}/functions/v1/zoho-webhook`;
+  
+  console.log('📍 Webhook URL:', webhookUrl);
+  
+  const webhookEvents = [
+    'salesorder.deleted',
+    'salesorder.updated',
+    'purchaseorder.deleted',
+    'purchaseorder.updated',
+    'invoice.created',
+    'item.updated',
+    'item.created',
+  ];
+  
+  const registeredWebhooks = [];
+  
+  for (const eventType of webhookEvents) {
+    try {
+      const response = await fetch(
+        `https://www.zohoapis.com/books/v3/webhooks?organization_id=${orgId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            webhook_url: webhookUrl,
+            event_type: eventType,
+            is_active: true,
+          }),
+        }
+      );
+      
+      const result = await response.json();
+      
+      if (response.ok && result.code === 0) {
+        console.log(`✅ Registered webhook for: ${eventType}`);
+        registeredWebhooks.push({
+          event_type: eventType,
+          webhook_id: result.webhook.webhook_id,
+        });
+      } else {
+        console.error(`❌ Failed to register ${eventType}:`, result.message);
+      }
+    } catch (error: any) {
+      console.error(`❌ Error registering ${eventType}:`, error.message);
+    }
+  }
+  
+  return {
+    success: true,
+    message: `Registered ${registeredWebhooks.length} webhook(s)`,
+    webhooks: registeredWebhooks,
+  };
+}
+
+async function unregisterWebhooks(supabase: any, requestData: any) {
+  console.log('🗑️ Unregistering Zoho Books webhooks...');
+  
+  const settings = await getSettings(supabase);
+  const accessToken = await getValidAccessToken(settings, supabase);
+  const orgType = requestData.orgType || 'countywide';
+  const orgId = orgType === 'countywide' ? settings.countywide_org_id : settings.martin_builder_org_id;
+  
+  // First, get list of all webhooks
+  const listResponse = await fetch(
+    `https://www.zohoapis.com/books/v3/webhooks?organization_id=${orgId}`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+      },
+    }
+  );
+  
+  const listResult = await listResponse.json();
+  
+  if (!listResponse.ok || listResult.code !== 0) {
+    throw new Error(`Failed to list webhooks: ${listResult.message}`);
+  }
+  
+  const webhooks = listResult.webhooks || [];
+  const deletedWebhooks = [];
+  
+  for (const webhook of webhooks) {
+    try {
+      const deleteResponse = await fetch(
+        `https://www.zohoapis.com/books/v3/webhooks/${webhook.webhook_id}?organization_id=${orgId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`,
+          },
+        }
+      );
+      
+      const deleteResult = await deleteResponse.json();
+      
+      if (deleteResponse.ok && deleteResult.code === 0) {
+        console.log(`✅ Deleted webhook: ${webhook.event_type}`);
+        deletedWebhooks.push(webhook.webhook_id);
+      } else {
+        console.error(`❌ Failed to delete webhook ${webhook.webhook_id}:`, deleteResult.message);
+      }
+    } catch (error: any) {
+      console.error(`❌ Error deleting webhook ${webhook.webhook_id}:`, error.message);
+    }
+  }
+  
+  return {
+    success: true,
+    message: `Deleted ${deletedWebhooks.length} webhook(s)`,
+    deleted: deletedWebhooks,
+  };
+}
+
+async function listWebhooks(supabase: any) {
+  console.log('📋 Listing Zoho Books webhooks...');
+  
+  const settings = await getSettings(supabase);
+  const accessToken = await getValidAccessToken(settings, supabase);
+  
+  const webhooks: any = {
+    countywide: [],
+    martin_builder: [],
+  };
+  
+  // Get Countywide webhooks
+  if (settings.countywide_org_id) {
+    try {
+      const response = await fetch(
+        `https://www.zohoapis.com/books/v3/webhooks?organization_id=${settings.countywide_org_id}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`,
+          },
+        }
+      );
+      
+      const result = await response.json();
+      
+      if (response.ok && result.code === 0) {
+        webhooks.countywide = result.webhooks || [];
+      }
+    } catch (error: any) {
+      console.error('❌ Error listing Countywide webhooks:', error.message);
+    }
+  }
+  
+  // Get Martin Builder webhooks
+  if (settings.martin_builder_org_id) {
+    try {
+      const response = await fetch(
+        `https://www.zohoapis.com/books/v3/webhooks?organization_id=${settings.martin_builder_org_id}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`,
+          },
+        }
+      );
+      
+      const result = await response.json();
+      
+      if (response.ok && result.code === 0) {
+        webhooks.martin_builder = result.webhooks || [];
+      }
+    } catch (error: any) {
+      console.error('❌ Error listing Martin Builder webhooks:', error.message);
+    }
+  }
+  
+  return {
+    success: true,
+    webhooks,
+  };
+}
+
+async function getSettings(supabase: any): Promise<ZohoSettings> {
+  const { data: settings, error } = await supabase
+    .from('zoho_integration_settings')
+    .select('*')
+    .limit(1)
+    .maybeSingle();
+  
+  if (error) throw error;
+  if (!settings) throw new Error('Zoho integration not configured');
+  
+  return settings;
 }
 
 async function updateItemPurchasable(

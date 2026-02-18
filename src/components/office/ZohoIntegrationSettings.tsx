@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Save, RefreshCw, Settings2, CheckCircle2, AlertCircle, Loader2, Key } from 'lucide-react';
+import { Save, RefreshCw, Settings2, CheckCircle2, AlertCircle, Loader2, Key, Webhook, List, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
@@ -25,8 +25,12 @@ export function ZohoIntegrationSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [settings, setSettings] = useState<ZohoSettings | null>(null);
   
+  // Webhook state
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhooks, setWebhooks] = useState<any>(null);
+  const [webhookLoading, setWebhookLoading] = useState(false);
+
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -40,6 +44,7 @@ export function ZohoIntegrationSettings() {
 
   useEffect(() => {
     loadSettings();
+    listWebhooks();
   }, []);
 
   async function loadSettings() {
@@ -58,6 +63,10 @@ export function ZohoIntegrationSettings() {
         setClientSecret('••••••••'); // Mask for security
         setRefreshToken('••••••••'); // Mask for security
         setOrgId(data.countywide_org_id);
+        
+        // Set default webhook URL
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+        setWebhookUrl(`${supabaseUrl}/functions/v1/zoho-webhook`);
       }
     } catch (error: any) {
       console.error('Error loading Zoho settings:', error);
@@ -163,6 +172,117 @@ export function ZohoIntegrationSettings() {
       toast.error(`Sync failed: ${error.message}`);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function listWebhooks() {
+    setWebhookLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: { action: 'list_webhooks' },
+      });
+
+      if (error) {
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = error.context?.status ?? 500;
+            const textContent = await error.context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      setWebhooks(data.webhooks);
+    } catch (error: any) {
+      console.error('Error listing webhooks:', error);
+      // Don't show error on initial load - webhooks might not be configured yet
+    } finally {
+      setWebhookLoading(false);
+    }
+  }
+
+  async function registerWebhooks(orgType: 'countywide' | 'martin_builder') {
+    setWebhookLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: {
+          action: 'register_webhooks',
+          orgType,
+          webhookUrl,
+        },
+      });
+
+      if (error) {
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = error.context?.status ?? 500;
+            const textContent = await error.context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      toast.success(data.message, {
+        description: `Registered ${data.webhooks.length} webhook(s) for ${orgType === 'countywide' ? 'Countywide' : 'Martin Builder'}`,
+      });
+      
+      // Refresh webhook list
+      await listWebhooks();
+    } catch (error: any) {
+      console.error('Error registering webhooks:', error);
+      toast.error(`Failed to register webhooks: ${error.message}`);
+    } finally {
+      setWebhookLoading(false);
+    }
+  }
+
+  async function unregisterWebhooks(orgType: 'countywide' | 'martin_builder') {
+    if (!confirm(`Are you sure you want to unregister all webhooks for ${orgType === 'countywide' ? 'Countywide' : 'Martin Builder'}?`)) {
+      return;
+    }
+
+    setWebhookLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: {
+          action: 'unregister_webhooks',
+          orgType,
+        },
+      });
+
+      if (error) {
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = error.context?.status ?? 500;
+            const textContent = await error.context?.text();
+            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
+          } catch {
+            errorMessage = error.message || 'Failed to read response';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      toast.success(data.message, {
+        description: `Deleted ${data.deleted.length} webhook(s)`,
+      });
+      
+      // Refresh webhook list
+      await listWebhooks();
+    } catch (error: any) {
+      console.error('Error unregistering webhooks:', error);
+      toast.error(`Failed to unregister webhooks: ${error.message}`);
+    } finally {
+      setWebhookLoading(false);
     }
   }
 
@@ -415,6 +535,163 @@ export function ZohoIntegrationSettings() {
               <p>• Fetches all active vendors from COUNTYWIDE organization</p>
               <p>• Imports material items with pricing and details</p>
               <p>• Updates existing records based on SKU/name matching</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Webhook Configuration */}
+      {settings && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Webhook className="w-5 h-5 text-purple-600" />
+              Automatic Sync via Webhooks
+            </CardTitle>
+            <CardDescription>
+              Enable real-time sync - automatically detect changes made in Zoho Books
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Webhook URL */}
+            <div className="space-y-2">
+              <Label>Webhook URL</Label>
+              <Input
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://your-project.supabase.co/functions/v1/zoho-webhook"
+              />
+              <p className="text-xs text-muted-foreground">
+                This URL will receive notifications from Zoho Books when changes occur
+              </p>
+            </div>
+
+            {/* Webhook Status */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold">Registered Webhooks</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={listWebhooks}
+                  disabled={webhookLoading}
+                >
+                  {webhookLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <List className="w-4 h-4" />
+                  )}
+                  <span className="ml-2">Refresh</span>
+                </Button>
+              </div>
+
+              {webhooks && (
+                <div className="space-y-4">
+                  {/* Countywide Organization */}
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="font-semibold">Countywide Organization</h5>
+                        <p className="text-sm text-muted-foreground">
+                          {webhooks.countywide?.length || 0} webhook(s) registered
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => registerWebhooks('countywide')}
+                          disabled={webhookLoading}
+                        >
+                          <Webhook className="w-4 h-4 mr-2" />
+                          Register
+                        </Button>
+                        {webhooks.countywide?.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => unregisterWebhooks('countywide')}
+                            disabled={webhookLoading}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Unregister All
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {webhooks.countywide?.length > 0 && (
+                      <div className="space-y-1">
+                        {webhooks.countywide.map((webhook: any) => (
+                          <div key={webhook.webhook_id} className="flex items-center justify-between text-sm bg-green-50 border border-green-200 rounded px-3 py-2">
+                            <span className="font-mono text-xs">{webhook.event_type}</span>
+                            <Badge variant="outline" className="bg-green-100">
+                              {webhook.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Martin Builder Organization */}
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="font-semibold">Martin Builder Organization</h5>
+                        <p className="text-sm text-muted-foreground">
+                          {webhooks.martin_builder?.length || 0} webhook(s) registered
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => registerWebhooks('martin_builder')}
+                          disabled={webhookLoading}
+                        >
+                          <Webhook className="w-4 h-4 mr-2" />
+                          Register
+                        </Button>
+                        {webhooks.martin_builder?.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => unregisterWebhooks('martin_builder')}
+                            disabled={webhookLoading}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Unregister All
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {webhooks.martin_builder?.length > 0 && (
+                      <div className="space-y-1">
+                        {webhooks.martin_builder.map((webhook: any) => (
+                          <div key={webhook.webhook_id} className="flex items-center justify-between text-sm bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                            <span className="font-mono text-xs">{webhook.event_type}</span>
+                            <Badge variant="outline" className="bg-blue-100">
+                              {webhook.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* What webhooks do */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">Automatic Sync Capabilities:</h4>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>✅ <strong>Sales Order Deleted</strong> - Auto-clear references like SO #27</li>
+                <li>✅ <strong>Purchase Order Deleted</strong> - Auto-clear PO references</li>
+                <li>✅ <strong>Invoice Created</strong> - Auto-link invoices to materials</li>
+                <li>✅ <strong>Material Updates</strong> - Sync price changes from Zoho Books</li>
+                <li>✅ <strong>Order Updates</strong> - Detect status changes in real-time</li>
+              </ul>
             </div>
           </CardContent>
         </Card>
