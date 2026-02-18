@@ -300,6 +300,10 @@ function SortableRow({ item, ...props }: any) {
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                    <DollarSign className="w-3 h-3 mr-2" />
+                    Add Labor
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
@@ -461,6 +465,16 @@ function SortableRow({ item, ...props }: any) {
       const lineItems = customRowLineItems[row.id] || [];
       const linkedSubs = linkedSubcontractors[row.id] || [];
       
+      // Separate line items by type
+      const materialLineItems = lineItems.filter((item: any) => item.taxable !== false);
+      const laborLineItems = lineItems.filter((item: any) => item.taxable === false);
+      
+      // Calculate material line items total
+      const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      
+      // Calculate labor line items total
+      const laborLineItemsTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      
       // Calculate linked subcontractors - taxable (materials)
       const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
         const subLineItems = subcontractorLineItems[sub.id] || [];
@@ -486,15 +500,15 @@ function SortableRow({ item, ...props }: any) {
         ? (customRowLabor[row.id].estimated_hours * customRowLabor[row.id].hourly_rate)
         : 0;
       
-      // Base cost includes line items (or row total) + taxable subcontractors
+      // Base cost includes ONLY material line items (or row total if no line items) + taxable subcontractors
       const baseLineCost = lineItems.length > 0
-        ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
+        ? materialLineItemsTotal
         : row.total_cost;
       const baseCost = baseLineCost + linkedSubsTaxableTotal;
       const finalPrice = baseCost * (1 + row.markup_percent / 100);
       
-      // Total labor for display (custom labor + non-taxable subcontractor)
-      const totalLaborCost = customLaborTotal + linkedSubsNonTaxableTotal;
+      // Total labor for display (labor line items + custom labor + non-taxable subcontractor)
+      const totalLaborCost = laborLineItemsTotal + customLaborTotal + linkedSubsNonTaxableTotal;
 
       return (
         <Collapsible className="border rounded bg-white py-1 px-2">
@@ -652,45 +666,48 @@ function SortableRow({ item, ...props }: any) {
                       <List className="w-3 h-3" />
                       Line Items
                     </p>
-                    {lineItems.map((lineItem: any) => (
-                      <div key={lineItem.id} className="bg-slate-50 border border-slate-200 rounded p-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
-                            <p className="text-xs text-slate-600">
-                              {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </p>
-                            {lineItem.notes && (
-                              <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
-                              {lineItem.taxable ? 'Material (Tax)' : 'Labor'}
-                            </Badge>
-                            <p className="text-xs font-bold text-slate-900">
-                              ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </p>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-5 w-5 p-0"
-                              onClick={() => openLineItemDialog(row.id, lineItem)}
-                            >
-                              <Edit className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-5 w-5 p-0"
-                              onClick={() => deleteLineItem(lineItem.id)}
-                            >
-                              <Trash2 className="w-3 h-3 text-red-600" />
-                            </Button>
+                    {lineItems.map((lineItem: any) => {
+                      const isLabor = lineItem.taxable === false;
+                      return (
+                        <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
+                              <p className="text-xs text-slate-600">
+                                {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                              {lineItem.notes && (
+                                <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={isLabor ? 'secondary' : 'default'} className="text-xs h-5">
+                                {isLabor ? '👷 Labor' : '📦 Material'}
+                              </Badge>
+                              <p className="text-xs font-bold text-slate-900">
+                                ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={() => openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material')}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={() => deleteLineItem(lineItem.id)}
+                              >
+                                <Trash2 className="w-3 h-3 text-red-600" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
 
@@ -2787,23 +2804,86 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Filter custom rows by category for subcontractor rows
   const customSubcontractorRows = standaloneCustomRows.filter(r => r.category === 'subcontractor');
   
-  // Calculate totals from standalone custom rows, splitting by taxable/non-taxable
+  // Calculate totals from standalone custom rows, splitting by taxable/non-taxable (material vs labor)
   let customRowsTaxableTotal = 0;
   let customRowsNonTaxableTotal = 0;
   
   standaloneCustomRows.forEach(row => {
-    const { taxable, nonTaxable } = getCustomRowTaxableAndNonTaxable(row);
-    customRowsTaxableTotal += taxable;
-    customRowsNonTaxableTotal += nonTaxable;
+    const lineItems = customRowLineItems[row.id] || [];
+    const linkedSubs = linkedSubcontractors[row.id] || [];
+    
+    // Separate line items by type
+    const materialLineItems = lineItems.filter((item: any) => item.taxable !== false);
+    const laborLineItems = lineItems.filter((item: any) => item.taxable === false);
+    
+    // Calculate material portion (taxable)
+    let rowTaxableTotal = 0;
+    if (lineItems.length > 0) {
+      rowTaxableTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+    } else if (row.taxable) {
+      rowTaxableTotal = row.total_cost;
+    }
+    
+    // Calculate labor portion (non-taxable)
+    let rowNonTaxableTotal = 0;
+    if (lineItems.length > 0) {
+      rowNonTaxableTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+    } else if (!row.taxable) {
+      rowNonTaxableTotal = row.total_cost;
+    }
+    
+    // Add linked subcontractors
+    linkedSubs.forEach((sub: any) => {
+      const subLineItems = subcontractorLineItems[sub.id] || [];
+      const subTaxableTotal = subLineItems
+        .filter((item: any) => !item.excluded && item.taxable)
+        .reduce((sum: number, item: any) => sum + item.total_price, 0);
+      const subNonTaxableTotal = subLineItems
+        .filter((item: any) => !item.excluded && !item.taxable)
+        .reduce((sum: number, item: any) => sum + item.total_price, 0);
+      const estMarkup = sub.markup_percent || 0;
+      rowTaxableTotal += subTaxableTotal * (1 + estMarkup / 100);
+      rowNonTaxableTotal += subNonTaxableTotal * (1 + estMarkup / 100);
+    });
+    
+    // Apply row markup to both portions
+    const rowMarkup = 1 + (row.markup_percent / 100);
+    customRowsTaxableTotal += rowTaxableTotal * rowMarkup;
+    customRowsNonTaxableTotal += rowNonTaxableTotal * rowMarkup;
   });
   
   // Materials: material sheets + custom material rows (TAXABLE)
   const materialSheetsPrice = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
-    // Calculate cost from linked custom rows (TAXABLE portions only, with their own markup)
+    // Calculate cost from linked custom rows (TAXABLE portions only - materials, with their own markup)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
     const linkedRowsTaxableTotal = linkedRows.reduce((rowSum, row) => {
-      const { taxable } = getCustomRowTaxableAndNonTaxable(row);
-      return rowSum + taxable;
+      const lineItems = customRowLineItems[row.id] || [];
+      const linkedSubs = linkedSubcontractors[row.id] || [];
+      
+      // Separate line items by type
+      const materialLineItems = lineItems.filter((item: any) => item.taxable !== false);
+      
+      // Calculate material portion
+      let rowTaxableTotal = 0;
+      if (lineItems.length > 0) {
+        rowTaxableTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      } else if (row.taxable) {
+        rowTaxableTotal = row.total_cost;
+      }
+      
+      // Add linked subcontractors (taxable portion)
+      linkedSubs.forEach((sub: any) => {
+        const subLineItems = subcontractorLineItems[sub.id] || [];
+        const subTaxableTotal = subLineItems
+          .filter((item: any) => !item.excluded && item.taxable)
+          .reduce((sum: number, item: any) => sum + item.total_price, 0);
+        const estMarkup = sub.markup_percent || 0;
+        rowTaxableTotal += subTaxableTotal * (1 + estMarkup / 100);
+      });
+      
+      // Apply row markup
+      const rowMarkup = 1 + (row.markup_percent / 100);
+      return rowSum + (rowTaxableTotal * rowMarkup);
     }, 0);
     
     // Calculate linked subcontractors (taxable portion only)
@@ -2875,11 +2955,36 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
     const labor = sheetLabor[sheet.sheetId];
     
-    // Add labor from linked custom rows (NON-TAXABLE portions)
+    // Add labor from linked custom rows (NON-TAXABLE portions - labor line items)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
     const linkedRowsNonTaxableTotal = linkedRows.reduce((rowSum, row) => {
-      const { nonTaxable } = getCustomRowTaxableAndNonTaxable(row);
-      return rowSum + nonTaxable;
+      const lineItems = customRowLineItems[row.id] || [];
+      const linkedSubs = linkedSubcontractors[row.id] || [];
+      
+      // Separate line items by type
+      const laborLineItems = lineItems.filter((item: any) => item.taxable === false);
+      
+      // Calculate labor portion
+      let rowNonTaxableTotal = 0;
+      if (lineItems.length > 0) {
+        rowNonTaxableTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      } else if (!row.taxable) {
+        rowNonTaxableTotal = row.total_cost;
+      }
+      
+      // Add linked subcontractors (non-taxable portion)
+      linkedSubs.forEach((sub: any) => {
+        const subLineItems = subcontractorLineItems[sub.id] || [];
+        const subNonTaxableTotal = subLineItems
+          .filter((item: any) => !item.excluded && !item.taxable)
+          .reduce((sum: number, item: any) => sum + item.total_price, 0);
+        const estMarkup = sub.markup_percent || 0;
+        rowNonTaxableTotal += subNonTaxableTotal * (1 + estMarkup / 100);
+      });
+      
+      // Apply row markup
+      const rowMarkup = 1 + (row.markup_percent / 100);
+      return rowSum + (rowNonTaxableTotal * rowMarkup);
     }, 0);
     
     // Add labor from linked subcontractors (non-taxable portion)
