@@ -2361,12 +2361,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       await loadCustomRows();
 
       if (keepDialogOpen) {
-        // Reset form for adding another item, keeping the taxable status
+        // Reset form for adding another item, keeping the taxable status and appropriate defaults
         const currentTaxable = lineItemForm.taxable;
         setLineItemForm({
           description: '',
           quantity: '1',
-          unit_cost: '0',
+          unit_cost: lineItemType === 'labor' ? '60' : '0', // Keep $60 default for labor
           notes: '',
           taxable: currentTaxable,
         });
