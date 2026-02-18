@@ -126,6 +126,8 @@ function SortableRow({ item, ...props }: any) {
   };
 
   const {
+    sheetMarkups,
+    setSheetMarkups,
     customRowLineItems,
     sheetLabor,
     customRowLabor,
@@ -200,8 +202,11 @@ function SortableRow({ item, ...props }: any) {
       const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
       const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
       
-      // Materials final price = sum of all item prices (each with own markup) + linked rows + linked subcontractors
-      const sheetFinalPrice = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
+      // Base cost includes ONLY materials + taxable subcontractors (NOT linked rows)
+      const sheetBaseCost = sheet.totalPrice + linkedSubsTaxableTotal;
+      const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+      // Final price = (materials with sheet markup) + (linked rows with their own markup)
+      const sheetFinalPrice = (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsTotal;
       
       // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
@@ -260,6 +265,22 @@ function SortableRow({ item, ...props }: any) {
             {/* Pricing */}
             <div className="flex items-center gap-3 flex-shrink-0">
               <div className="text-right">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <span>Base: ${sheetBaseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>+</span>
+                  <Input
+                    type="number"
+                    value={sheetMarkups[sheet.sheetId] || 10}
+                    onChange={(e) => {
+                      const newMarkup = parseFloat(e.target.value) || 0;
+                      setSheetMarkups((prev: any) => ({ ...prev, [sheet.sheetId]: newMarkup }));
+                    }}
+                    className="w-14 h-5 text-xs px-1 text-center"
+                    step="1"
+                    min="0"
+                  />
+                  <span>%</span>
+                </div>
                 <p className="text-sm text-slate-500 mt-1">Materials</p>
                 <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
@@ -1036,6 +1057,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     item_type: 'material' as 'material' | 'labor',
   });
   
+  // Individual row markups state
+  const [sheetMarkups, setSheetMarkups] = useState<Record<string, number>>({});
+  
   // Labor stats
   const [totalClockInHours, setTotalClockInHours] = useState(0);
   const [estimatedHours, setEstimatedHours] = useState(job.estimated_hours || 0);
@@ -1642,7 +1666,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         setMaterialSheets(sheetsData || []);
       }
       
-      // Calculate breakdown by sheet and category (using item-level markup)
+      // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
         const sheetItems = (itemsData || []).filter(item => item.sheet_id === sheet.id);
 
@@ -1656,7 +1680,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           categoryMap.get(category)!.push(item);
         });
 
-        // Calculate totals per category (each item has its own markup)
+        // Calculate totals per category
         const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
           const totalCost = items.reduce((sum, item) => {
             const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
@@ -1664,9 +1688,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           }, 0);
 
           const totalPrice = items.reduce((sum, item) => {
-            const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
-            const markup = item.markup_percent || 10;
-            const price = cost * (1 + markup / 100);
+            const price = (item.price_per_unit || 0) * (item.quantity || 0);
             return sum + price;
           }, 0);
 
@@ -2971,10 +2993,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       linkedSubsMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
     });
     
-    // Sheet materials: already have item-level markup applied in sheet.totalPrice
-    // For taxable calculation, sheet materials from workbook are always taxable
-    materialSheetsPrice += sheet.totalPrice + linkedSubsMaterialsTotal + linkedRowsMaterialsTotal;
-    materialSheetsTaxableOnly += sheet.totalPrice + linkedSubsMaterialsTaxableOnly + linkedRowsMaterialsTaxableOnly;
+    // Sheet base cost = material items + linked materials from subcontractors (NOT linked rows)
+    const sheetBaseCost = sheet.totalPrice + linkedSubsMaterialsTotal;
+    // For taxable calculation, sheet materials are always taxable (from workbook)
+    const sheetBaseTaxableOnly = sheet.totalPrice + linkedSubsMaterialsTaxableOnly;
+    
+    const sheetMarkup = sheetMarkups[sheet.sheetId] || 10;
+    
+    // Final = (materials with sheet markup) + (linked rows with their own markup already applied)
+    materialSheetsPrice += (sheetBaseCost * (1 + sheetMarkup / 100)) + linkedRowsMaterialsTotal;
+    materialSheetsTaxableOnly += (sheetBaseTaxableOnly * (1 + sheetMarkup / 100)) + linkedRowsMaterialsTaxableOnly;
   });
   
   const proposalMaterialsPrice = materialSheetsPrice + customRowsMaterialsTotal;
@@ -3418,6 +3446,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                       <SortableRow
                         key={item.id}
                         item={item}
+                        sheetMarkups={sheetMarkups}
+                        setSheetMarkups={setSheetMarkups}
                         customRowLineItems={customRowLineItems}
                         sheetLabor={sheetLabor}
                         customRowLabor={customRowLabor}
