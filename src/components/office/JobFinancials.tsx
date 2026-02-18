@@ -149,6 +149,7 @@ function SortableRow({ item, ...props }: any) {
     deleteSheetLabor,
     toggleSubcontractorLineItem,
     toggleSubcontractorLineItemTaxable,
+    toggleSubcontractorLineItemType,
     unlinkSubcontractor,
     updateSubcontractorMarkup,
     updateCustomRowMarkup,
@@ -882,17 +883,29 @@ function SortableRow({ item, ...props }: any) {
                           {lineItem.description}
                         </p>
                         <div className="flex items-center gap-2">
-                          <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
-                            {lineItem.taxable ? 'Tax' : 'No Tax'}
+                          <Badge
+                            variant="outline"
+                            className={`text-xs h-5 cursor-pointer hover:bg-slate-100 ${lineItem.excluded ? 'opacity-50' : ''}`}
+                            onClick={() => !lineItem.excluded && toggleSubcontractorLineItemType(lineItem.id, lineItem.item_type || 'material')}
+                            title="Click to toggle between Material and Labor"
+                          >
+                            {(lineItem.item_type || 'material') === 'labor' ? '👷 Labor' : '📦 Material'}
                           </Badge>
-                          <input
-                            type="checkbox"
-                            checked={lineItem.taxable}
-                            onChange={() => toggleSubcontractorLineItemTaxable(lineItem.id, lineItem.taxable)}
-                            className="rounded border-slate-300 text-green-600 focus:ring-green-500"
-                            title="Taxable"
-                            disabled={lineItem.excluded}
-                          />
+                          {(lineItem.item_type || 'material') === 'material' && (
+                            <>
+                              <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
+                                {lineItem.taxable ? 'Tax' : 'No Tax'}
+                              </Badge>
+                              <input
+                                type="checkbox"
+                                checked={lineItem.taxable}
+                                onChange={() => toggleSubcontractorLineItemTaxable(lineItem.id, lineItem.taxable)}
+                                className="rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                title="Taxable"
+                                disabled={lineItem.excluded}
+                              />
+                            </>
+                          )}
                           <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                             ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
@@ -2405,6 +2418,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function toggleSubcontractorLineItemType(lineItemId: string, currentType: string) {
+    try {
+      const newType = currentType === 'material' ? 'labor' : 'material';
+      const updates: any = { item_type: newType };
+      
+      // Labor is always non-taxable
+      if (newType === 'labor') {
+        updates.taxable = false;
+      }
+      
+      const { error } = await supabase
+        .from('subcontractor_estimate_line_items')
+        .update(updates)
+        .eq('id', lineItemId);
+
+      if (error) throw error;
+      await loadSubcontractorEstimates();
+    } catch (error: any) {
+      console.error('Error toggling item type:', error);
+      toast.error('Failed to update item type');
+    }
+  }
+
   function openSubcontractorDialog(parentId: string, parentType: 'sheet' | 'row') {
     setSubcontractorParentId(parentId);
     setSubcontractorParentType(parentType);
@@ -2795,34 +2831,34 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalMaterialsPrice = materialSheetsPrice + customRowsTaxableTotal;
   
   // Subcontractors: only standalone estimates (not linked to sheets/rows)
-  // Taxable items go to materials, non-taxable go to labor
+  // Material type items go to materials, labor type items go to labor
   const standaloneSubcontractors = subcontractorEstimates.filter(est => !est.sheet_id && !est.row_id);
   const subcontractorTaxablePrice = standaloneSubcontractors.reduce((sum, est) => {
     const lineItems = subcontractorLineItems[est.id] || [];
-    const taxableTotal = lineItems
-      .filter((item: any) => !item.excluded && item.taxable)
+    const materialsTotal = lineItems
+      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
       .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     const estMarkup = est.markup_percent || 0;
-    return sum + (taxableTotal * (1 + estMarkup / 100));
+    return sum + (materialsTotal * (1 + estMarkup / 100));
   }, 0);
   
   const subcontractorNonTaxablePrice = standaloneSubcontractors.reduce((sum, est) => {
     const lineItems = subcontractorLineItems[est.id] || [];
-    const nonTaxableTotal = lineItems
-      .filter((item: any) => !item.excluded && !item.taxable)
+    const laborTotal = lineItems
+      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
       .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     const estMarkup = est.markup_percent || 0;
-    return sum + (nonTaxableTotal * (1 + estMarkup / 100));
+    return sum + (laborTotal * (1 + estMarkup / 100));
   }, 0);
   
-  // Linked subcontractors (attached to sheets/rows) - non-taxable portions go to labor
+  // Linked subcontractors (attached to sheets/rows) - labor type items go to labor
   const linkedSubcontractorNonTaxablePrice = Object.values(linkedSubcontractors).flat().reduce((sum: number, sub: any) => {
     const lineItems = subcontractorLineItems[sub.id] || [];
-    const nonTaxableTotal = lineItems
-      .filter((item: any) => !item.excluded && !item.taxable)
+    const laborTotal = lineItems
+      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
       .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
     const estMarkup = sub.markup_percent || 0;
-    return sum + (nonTaxableTotal * (1 + estMarkup / 100));
+    return sum + (laborTotal * (1 + estMarkup / 100));
   }, 0);
   
   const customSubcontractorPrice = customSubcontractorRows.reduce((sum, r) => {
@@ -3242,6 +3278,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         deleteSheetLabor={deleteSheetLabor}
                         toggleSubcontractorLineItem={toggleSubcontractorLineItem}
                         toggleSubcontractorLineItemTaxable={toggleSubcontractorLineItemTaxable}
+                        toggleSubcontractorLineItemType={toggleSubcontractorLineItemType}
                         unlinkSubcontractor={unlinkSubcontractor}
                         updateSubcontractorMarkup={updateSubcontractorMarkup}
                         updateCustomRowMarkup={updateCustomRowMarkup}
