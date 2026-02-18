@@ -33,7 +33,14 @@ import {
   ShoppingCart,
   FileText,
   DollarSign,
+  Info,
 } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { ZohoOrderConfirmationDialog } from './ZohoOrderConfirmationDialog';
 import type { Job } from '@/types';
@@ -47,6 +54,7 @@ interface MaterialItem {
   length: string | null;
   usage: string | null;
   cost_per_unit: number | null;
+  sku?: string | null;
   zoho_sales_order_id?: string | null;
   zoho_sales_order_number?: string | null;
   zoho_purchase_order_id?: string | null;
@@ -202,6 +210,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
               quantity,
               length,
               usage,
+              sku,
               cost_per_unit,
               price_per_unit,
               zoho_sales_order_id,
@@ -251,7 +260,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       // Get all material items
       const { data: itemsData } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, usage, cost_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
+        .select('id, sheet_id, category, material_name, quantity, length, usage, sku, cost_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
         .in('sheet_id', sheetIds)
         .order('material_name');
 
@@ -981,8 +990,34 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                     }`}
                                   >
                                     <div className="flex-1">
-                                      <div className="font-medium">
+                                      <div className="font-medium flex items-center gap-2">
                                         {item.material_items.material_name}
+                                        {item.material_items.sku && (
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button
+                                                  type="button"
+                                                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(item.material_items.sku || '');
+                                                    toast.success('SKU copied to clipboard');
+                                                  }}
+                                                >
+                                                  <Info className="w-4 h-4" />
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1">
+                                                  <p className="font-semibold text-xs">SKU</p>
+                                                  <p className="font-mono text-sm">{item.material_items.sku}</p>
+                                                  <p className="text-xs text-muted-foreground">Click icon to copy</p>
+                                                </div>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                                         <span>{item.material_items.sheets.sheet_name}</span>
