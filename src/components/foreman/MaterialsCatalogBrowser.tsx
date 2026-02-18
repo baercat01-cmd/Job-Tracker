@@ -1058,30 +1058,25 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     return lengthA - lengthB;
   }) : [];
   
-  // Convert length to feet only (no decimals)
+  // Display length as-is from database (already in feet)
   function getLengthInFeet(length: string | null): string | null {
     if (!length) return null;
     
+    // Just clean and return the value - don't convert or round
     const cleaned = cleanMaterialValue(length);
     
-    // Check if it's already in feet/inches format
-    const feetInchMatch = cleaned.match(/(\d+)\s*'\s*(\d+)?/);
-    if (feetInchMatch) {
-      const feet = parseInt(feetInchMatch[1]) || 0;
-      const inches = parseInt(feetInchMatch[2]) || 0;
-      // Round to nearest foot
-      const totalFeet = Math.round(feet + (inches / 12));
-      return `${totalFeet}'`;
+    // If it already has a foot mark, return as-is
+    if (cleaned.includes("'")) {
+      return cleaned;
     }
     
-    // Try to parse as number (assume inches) and convert to feet
-    const numMatch = cleaned.match(/([\d.]+)/);
+    // If it's just a number, add the foot mark
+    const numMatch = cleaned.match(/^[\d.]+$/);
     if (numMatch) {
-      const totalInches = parseFloat(numMatch[1]);
-      const feet = Math.round(totalInches / 12);
-      return `${feet}'`;
+      return `${cleaned}'`;
     }
     
+    // Otherwise return as-is
     return cleaned;
   }
 
