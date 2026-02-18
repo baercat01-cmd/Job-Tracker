@@ -34,6 +34,7 @@ import {
   FileText,
   DollarSign,
   Info,
+  XCircle,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -138,7 +139,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
     );
     
     if (unorderedMaterials.length === 0) {
-      toast.error('All materials in this package have already been ordered in Zoho Books. Check the "Order History" section below to view the orders.');
+      toast.error('All materials in this package have already been ordered in Zoho Books. Use "Clear Orders" button to remove order references if needed.');
       return;
     }
     
@@ -549,6 +550,81 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
     }
   }
 
+  async function clearOrderFromMaterial(materialId: string, materialName: string) {
+    if (!confirm(`Remove order reference from "${materialName}"?\n\nThis will NOT delete the order from Zoho Books, only remove the reference from this material in the app.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('material_items')
+        .update({
+          zoho_sales_order_id: null,
+          zoho_sales_order_number: null,
+          zoho_purchase_order_id: null,
+          zoho_purchase_order_number: null,
+          zoho_invoice_id: null,
+          zoho_invoice_number: null,
+          ordered_at: null,
+          ordered_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', materialId);
+
+      if (error) throw error;
+      
+      toast.success('Order reference removed from material');
+      loadPackages();
+    } catch (error: any) {
+      console.error('Error clearing order from material:', error);
+      toast.error('Failed to remove order reference');
+    }
+  }
+
+  async function clearOrdersFromPackage(pkg: MaterialBundle) {
+    const materialsWithOrders = pkg.bundle_items.filter(
+      item => item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id
+    );
+
+    if (materialsWithOrders.length === 0) {
+      toast.error('No materials in this package have orders');
+      return;
+    }
+
+    if (!confirm(
+      `Remove order references from ${materialsWithOrders.length} material${materialsWithOrders.length !== 1 ? 's' : ''} in "${pkg.name}"?\n\nThis will NOT delete orders from Zoho Books, only remove the references from materials in the app.`
+    )) {
+      return;
+    }
+
+    try {
+      const materialIds = materialsWithOrders.map(item => item.material_item_id);
+      
+      const { error } = await supabase
+        .from('material_items')
+        .update({
+          zoho_sales_order_id: null,
+          zoho_sales_order_number: null,
+          zoho_purchase_order_id: null,
+          zoho_purchase_order_number: null,
+          zoho_invoice_id: null,
+          zoho_invoice_number: null,
+          ordered_at: null,
+          ordered_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', materialIds);
+
+      if (error) throw error;
+      
+      toast.success(`Order references removed from ${materialsWithOrders.length} material${materialsWithOrders.length !== 1 ? 's' : ''}`);
+      loadPackages();
+    } catch (error: any) {
+      console.error('Error clearing orders from package:', error);
+      toast.error('Failed to remove order references');
+    }
+  }
+
   function toggleMaterialSelection(materialId: string) {
     const newSet = new Set(selectedMaterialIds);
     if (newSet.has(materialId)) {
@@ -882,6 +958,10 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
         <div className="space-y-3">
           {packages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
+            const hasAnyOrders = pkg.bundle_items.some(item => 
+              item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id
+            );
+            
             return (
               <Card key={pkg.id} className="border-2">
                 <CardHeader className="pb-3">
@@ -941,6 +1021,18 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                         <ShoppingCart className="w-4 h-4 mr-1" />
                         Order
                       </Button>
+                      {hasAnyOrders && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => clearOrdersFromPackage(pkg)}
+                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                          title="Remove order references from all materials in this package"
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Clear
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1027,7 +1119,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                         )}
                                       </div>
                                       {hasOrders && (
-                                        <div className="flex flex-wrap gap-1 mt-2">
+                                        <div className="flex flex-wrap items-center gap-1 mt-2">
                                           {item.material_items.zoho_sales_order_id && (
                                             <a
                                               href={`https://books.zoho.com/app/60007115224#/salesorders/${item.material_items.zoho_sales_order_id}`}
@@ -1057,6 +1149,18 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                                               {new Date(item.material_items.ordered_at).toLocaleDateString()}
                                             </Badge>
                                           )}
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              clearOrderFromMaterial(item.material_items.id, item.material_items.material_name);
+                                            }}
+                                            className="h-6 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                            title="Remove order reference from this material"
+                                          >
+                                            <XCircle className="w-3 h-3" />
+                                          </Button>
                                         </div>
                                       )}
                                     </div>
