@@ -958,9 +958,6 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
         <div className="space-y-3">
           {packages.map(pkg => {
             const isExpanded = expandedPackages.has(pkg.id);
-            const hasAnyOrders = pkg.bundle_items.some(item => 
-              item.material_items.zoho_sales_order_id || item.material_items.zoho_purchase_order_id
-            );
             
             return (
               <Card key={pkg.id} className="border-2">
@@ -1021,18 +1018,6 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
                         <ShoppingCart className="w-4 h-4 mr-1" />
                         Order
                       </Button>
-                      {hasAnyOrders && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => clearOrdersFromPackage(pkg)}
-                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                          title="Remove order references from all materials in this package"
-                        >
-                          <XCircle className="w-4 h-4 mr-1" />
-                          Clear
-                        </Button>
-                      )}
                       <Button
                         size="sm"
                         variant="outline"
