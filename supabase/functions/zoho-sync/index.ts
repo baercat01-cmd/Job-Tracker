@@ -853,66 +853,40 @@ async function ensurePurchasableItem(
   materialItem: any
 ): Promise<string> {
   const itemName = materialItem.material_name;
-  const sku = materialItem.sku || `MAT-${Date.now()}`;
+  const sku = materialItem.sku;
+  
+  // CRITICAL: SKU is mandatory - materials without SKU cannot be ordered
+  if (!sku || sku.trim() === '') {
+    throw new Error(`Material "${itemName}" has no SKU. Cannot create Zoho order without SKU.`);
+  }
   
   console.log('🔍 Ensuring purchasable item exists - SKU:', sku, '- Name:', itemName);
   
-  // CRITICAL: Check if item already exists by SKU first (SKU is the defining factor)
-  // Only search by SKU if we have one from the materials_catalog
-  if (materialItem.sku) {
-    const skuSearchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&sku=${encodeURIComponent(materialItem.sku)}`;
-    
-    const skuSearchResponse = await fetch(skuSearchUrl, {
-      headers: {
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
-      },
-    });
-
-    if (skuSearchResponse.ok) {
-      const skuSearchData = await skuSearchResponse.json();
-      if (skuSearchData.items && skuSearchData.items.length > 0) {
-        // Found item by SKU - this is the definitive match
-        const skuMatch = skuSearchData.items[0];
-        console.log('✅ Found existing item by SKU:', skuMatch.item_id, '- SKU:', skuMatch.sku);
-        
-        // Update item to ensure it's purchasable and sellable with latest info
-        await updateItemPurchasable(accessToken, orgId, skuMatch.item_id, materialItem);
-        
-        return skuMatch.item_id;
-      }
-    }
-  }
+  // CRITICAL: ONLY search by SKU (SKU is the defining factor)
+  const skuSearchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&sku=${encodeURIComponent(sku)}`;
   
-  // Fallback: If no SKU match, search by name
-  const searchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&search_text=${encodeURIComponent(itemName)}`;
-  
-  const searchResponse = await fetch(searchUrl, {
+  const skuSearchResponse = await fetch(skuSearchUrl, {
     headers: {
       'Authorization': `Zoho-oauthtoken ${accessToken}`,
     },
   });
 
-  if (searchResponse.ok) {
-    const searchData = await searchResponse.json();
-    if (searchData.items && searchData.items.length > 0) {
-      // Find exact match by name
-      const exactMatch = searchData.items.find(
-        (item: any) => item.name.toLowerCase() === itemName.toLowerCase()
-      );
+  if (skuSearchResponse.ok) {
+    const skuSearchData = await skuSearchResponse.json();
+    if (skuSearchData.items && skuSearchData.items.length > 0) {
+      // Found item by SKU - this is the definitive match
+      const skuMatch = skuSearchData.items[0];
+      console.log('✅ Found existing item by SKU:', skuMatch.item_id, '- SKU:', skuMatch.sku);
       
-      if (exactMatch) {
-        console.log('✅ Found existing item by name:', exactMatch.item_id);
-        
-        // Update item to ensure it's purchasable and sellable
-        await updateItemPurchasable(accessToken, orgId, exactMatch.item_id, materialItem);
-        
-        return exactMatch.item_id;
-      }
+      // Update item to ensure it's purchasable and sellable with latest info from catalog
+      await updateItemPurchasable(accessToken, orgId, skuMatch.item_id, materialItem);
+      
+      return skuMatch.item_id;
     }
   }
 
-  // Item doesn't exist, create new one as both purchasable and sellable
-  console.log('📝 Creating new purchasable item - SKU:', sku, '- Name:', itemName);
+  // Item with this SKU doesn't exist in Zoho - create new one
+  console.log('📝 Creating new item in Zoho Books - SKU:', sku, '- Name:', itemName);
   
   const itemData = {
     name: itemName,
