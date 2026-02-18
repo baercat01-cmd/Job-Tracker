@@ -302,9 +302,27 @@ function SortableRow({ item, ...props }: any) {
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId)}>
+                  <DropdownMenuItem onClick={() => {
+                    setCategory('materials');
+                    setTaxable(true);
+                    setLinkedSheetId(sheet.sheetId);
+                    openAddDialog(undefined, sheet.sheetId);
+                  }}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    setCategory('labor');
+                    setTaxable(false);
+                    setLinkedSheetId(sheet.sheetId);
+                    resetForm();
+                    setCategory('labor');
+                    setTaxable(false);
+                    setLinkedSheetId(sheet.sheetId);
+                    setShowAddDialog(true);
+                  }}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Labor Row
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
