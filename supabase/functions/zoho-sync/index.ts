@@ -304,7 +304,7 @@ serve(async (req) => {
           // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
-            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name);
+            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Length:', item.length);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -316,7 +316,8 @@ serve(async (req) => {
               item_id: itemId,
               quantity: item.quantity,
               rate: item.price_per_unit || item.cost_per_unit || 0,
-              description: item.length ? `${item.material_name} (${item.length})` : item.material_name,
+              unit: item.length || undefined, // Part length goes in unit field
+              description: item.usage || item.category || item.material_name,
             });
           }
           
@@ -366,7 +367,7 @@ serve(async (req) => {
           // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
-            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name);
+            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Length:', item.length);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -378,7 +379,8 @@ serve(async (req) => {
               item_id: itemId,
               quantity: item.quantity,
               rate: item.cost_per_unit || item.price_per_unit || 0,
-              description: item.length ? `${item.material_name} (${item.length})` : item.material_name,
+              unit: item.length || undefined, // Part length goes in unit field
+              description: item.usage || item.category || item.material_name,
             });
           }
           
