@@ -677,9 +677,7 @@ function SortableRow({ item, ...props }: any) {
                       .update({ notes: newValue || null })
                       .eq('id', row.id);
                     await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
                   } catch (error) {
                     console.error('Error saving notes:', error);
                   }
@@ -2083,9 +2081,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setShowAddDialog(false);
       resetForm();
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
     } catch (error: any) {
       console.error('Error saving row:', error);
       toast.error(`Failed to save row: ${error.message || 'Unknown error'}`);
@@ -2156,9 +2152,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
         if (error) throw error;
         await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
       } else if (editingRowNameType === 'subcontractor') {
         const { error } = await supabase
           .from('subcontractor_estimates')
@@ -2283,9 +2277,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         toast.success('Labor added');
         setShowLaborDialog(false);
         await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
       } catch (error: any) {
         console.error('Error saving labor:', error);
         toast.error('Failed to save labor');
@@ -2324,9 +2316,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Labor deleted');
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
     } catch (error: any) {
       console.error('Error deleting labor:', error);
       toast.error('Failed to delete labor');
@@ -2345,9 +2335,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Row deleted');
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
     } catch (error: any) {
       console.error('Error deleting row:', error);
       toast.error('Failed to delete row');
@@ -2431,9 +2419,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
 
       if (keepDialogOpen) {
         // Reset form for adding another item, keeping the taxable status and appropriate defaults
@@ -2470,9 +2456,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (error) throw error;
       toast.success('Line item deleted');
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
     } catch (error: any) {
       console.error('Error deleting line item:', error);
       toast.error('Failed to delete line item');
@@ -2608,9 +2592,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (error) throw error;
       await loadCustomRows();
-      if (materialSheets.some(s => s.id === lineItemParentRowId)) {
-        await loadMaterialsData();
-      }
+      await loadMaterialsData();
     } catch (error: any) {
       console.error('Error updating markup:', error);
       toast.error('Failed to update markup');

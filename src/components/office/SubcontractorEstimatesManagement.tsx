@@ -809,9 +809,19 @@ export function SubcontractorEstimatesManagement({ jobId, quoteId, onClose }: Su
                             <Input
                               type="number"
                               value={estimate.markup_percent || 0}
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 const newMarkup = parseFloat(e.target.value) || 0;
-                                updateSubcontractorMarkup(estimate.id, newMarkup);
+                                try {
+                                  const { error } = await supabase
+                                    .from('subcontractor_estimates')
+                                    .update({ markup_percent: newMarkup })
+                                    .eq('id', estimate.id);
+                                  if (error) throw error;
+                                  await loadEstimates();
+                                } catch (error: any) {
+                                  console.error('Error updating markup:', error);
+                                  toast.error('Failed to update markup');
+                                }
                               }}
                               onClick={(e) => e.stopPropagation()}
                               className="w-14 h-5 text-xs px-1 text-center"
