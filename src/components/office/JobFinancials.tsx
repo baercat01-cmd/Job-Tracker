@@ -277,11 +277,13 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-base font-bold text-slate-900">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-sm text-slate-500 mt-1">Materials</p>
+                <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
-                  <p className="text-xs text-amber-700 font-semibold mt-0.5">
-                    Labor: ${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </p>
+                  <>
+                    <p className="text-sm text-slate-500 mt-2">Labor</p>
+                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </>
                 )}
               </div>
 
@@ -662,11 +664,13 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-sm text-slate-500 mt-1">Materials</p>
+                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 {totalLaborCost > 0 && (
-                  <p className="text-xs text-amber-700 font-semibold mt-0.5">
-                    Labor: ${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </p>
+                  <>
+                    <p className="text-sm text-slate-500 mt-2">Labor</p>
+                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </>
                 )}
               </div>
 
@@ -906,7 +910,8 @@ function SortableRow({ item, ...props }: any) {
                   />
                   <span>%</span>
                 </div>
-                <p className="text-base font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                <p className="text-sm text-slate-500 mt-1">Total</p>
+                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
               </div>
 
               {est.pdf_url && (
