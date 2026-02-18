@@ -1049,40 +1049,40 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
     
     return true;
   }).sort((a, b) => {
+    // Sort by material name first, then by length
+    const nameCompare = a.material_name.localeCompare(b.material_name);
+    if (nameCompare !== 0) return nameCompare;
+    
     const lengthA = parseLengthForSorting(a.part_length);
     const lengthB = parseLengthForSorting(b.part_length);
     return lengthA - lengthB;
   }) : [];
   
-  // Group materials by base name (without length)
-  interface MaterialGroup {
-    baseName: string;
-    materials: CatalogMaterial[];
-  }
-  
-  const groupedMaterials: MaterialGroup[] = [];
-  const materialsByBaseName = new Map<string, CatalogMaterial[]>();
-  
-  filteredCatalogMaterials.forEach(material => {
-    const baseName = extractBaseMaterialName(material.material_name);
-    if (!materialsByBaseName.has(baseName)) {
-      materialsByBaseName.set(baseName, []);
+  // Convert length to feet only (no inches)
+  function getLengthInFeet(length: string | null): string | null {
+    if (!length) return null;
+    
+    const cleaned = cleanMaterialValue(length);
+    
+    // Check if it's already in feet/inches format
+    const feetInchMatch = cleaned.match(/(\d+)\s*'\s*(\d+)?/);
+    if (feetInchMatch) {
+      const feet = parseInt(feetInchMatch[1]) || 0;
+      const inches = parseInt(feetInchMatch[2]) || 0;
+      const totalFeet = feet + (inches / 12);
+      return `${totalFeet.toFixed(1)}'`;
     }
-    materialsByBaseName.get(baseName)!.push(material);
-  });
-  
-  // Convert map to array and sort materials within each group
-  materialsByBaseName.forEach((materials, baseName) => {
-    materials.sort((a, b) => {
-      const lengthA = parseLengthForSorting(a.part_length);
-      const lengthB = parseLengthForSorting(b.part_length);
-      return lengthA - lengthB;
-    });
-    groupedMaterials.push({ baseName, materials });
-  });
-  
-  // Sort groups by base name
-  groupedMaterials.sort((a, b) => a.baseName.localeCompare(b.baseName));
+    
+    // Try to parse as number (assume inches) and convert to feet
+    const numMatch = cleaned.match(/([\d.]+)/);
+    if (numMatch) {
+      const totalInches = parseFloat(numMatch[1]);
+      const feet = totalInches / 12;
+      return `${feet.toFixed(1)}'`;
+    }
+    
+    return cleaned;
+  }
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
@@ -1193,76 +1193,35 @@ export function MaterialsCatalogBrowser({ job, userId, onMaterialAdded }: Materi
                   {catalogSearch ? <Search className="w-4 h-4" /> : <Package className="w-4 h-4" />}
                   {catalogSearch ? `Search Results (${filteredCatalogMaterials.length})` : `${catalogCategory} (${filteredCatalogMaterials.length})`}
                 </div>
-                <span className="text-xs text-muted-foreground font-normal hidden sm:inline">Grouped by name</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-x-hidden">
               <div className="divide-y w-full max-w-full overflow-x-hidden">
-                {groupedMaterials.map((group, groupIndex) => (
-                  <div key={groupIndex} className="w-full max-w-full">
-                    {/* Group Header - Only show base name once */}
-                    <div className="bg-muted/30 px-3 sm:px-4 py-2 border-b">
-                      <h3 className="font-semibold text-sm sm:text-base text-foreground">
-                        {group.baseName}
-                      </h3>
-                    </div>
-                    {/* Materials in this group */}
-                    <div className="divide-y">
-                      {group.materials.map(material => {
-                        // Format length to feet and inches if available
-                        let lengthDisplay = null;
-                        if (material.part_length) {
-                          const cleaned = cleanMaterialValue(material.part_length);
-                          // Check if it's already in feet/inches format
-                          if (cleaned.includes("'") || cleaned.includes('"')) {
-                            lengthDisplay = cleaned;
-                          } else {
-                            // Try to parse as number and convert to feet/inches
-                            const numMatch = cleaned.match(/([\d.]+)/);
-                            if (numMatch) {
-                              const totalInches = parseFloat(numMatch[1]);
-                              const feet = Math.floor(totalInches / 12);
-                              const inches = Math.round(totalInches % 12);
-                              if (feet > 0 && inches > 0) {
-                                lengthDisplay = `${feet}' ${inches}"`;
-                              } else if (feet > 0) {
-                                lengthDisplay = `${feet}'`;
-                              } else if (inches > 0) {
-                                lengthDisplay = `${inches}"`;
-                              } else {
-                                lengthDisplay = cleaned;
-                              }
-                            } else {
-                              lengthDisplay = cleaned;
-                            }
-                          }
-                        }
-                        
-                        return (
-                          <button
-                            key={material.sku}
-                            onClick={() => openAddMaterialDialog(material)}
-                            className="flex items-center gap-2 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
-                          >
-                            <div className="flex-1 min-w-0 space-y-1">
-                              <h4 className="font-medium text-sm sm:text-base leading-tight break-words pr-2 w-full">
-                                {material.material_name}
-                              </h4>
-                              {lengthDisplay && (
-                                <p className="text-xs sm:text-sm text-muted-foreground font-medium">
-                                  Length: {lengthDisplay}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex-shrink-0 flex items-center text-primary">
-                              <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {filteredCatalogMaterials.map(material => {
+                  const lengthInFeet = getLengthInFeet(material.part_length);
+                  
+                  return (
+                    <button
+                      key={material.sku}
+                      onClick={() => openAddMaterialDialog(material)}
+                      className="flex items-center justify-between gap-3 p-3 sm:p-4 hover:bg-muted/50 active:bg-muted transition-colors w-full max-w-full cursor-pointer text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-sm sm:text-base leading-tight break-words">
+                          {material.material_name}
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        {lengthInFeet && (
+                          <span className="text-sm sm:text-base font-semibold text-muted-foreground">
+                            {lengthInFeet}
+                          </span>
+                        )}
+                        <Plus className="w-6 h-6 sm:w-5 sm:h-5 text-primary" />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
