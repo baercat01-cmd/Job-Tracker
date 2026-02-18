@@ -490,9 +490,14 @@ function SortableRow({ item, ...props }: any) {
 
               {linkedSubs.map((sub: any) => {
                 const lineItems = subcontractorLineItems[sub.id] || [];
-                const taxableTotal = lineItems.filter((item: any) => !item.excluded && item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const nonTaxableTotal = lineItems.filter((item: any) => !item.excluded && !item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const totalWithMarkup = (taxableTotal + nonTaxableTotal) * (1 + (sub.markup_percent || 0) / 100);
+                // Separate by type (material vs labor)
+                const materialsTotal = lineItems
+                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
+                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
+                const laborTotal = lineItems
+                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
+                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
+                const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
 
                 return (
                   <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -500,8 +505,8 @@ function SortableRow({ item, ...props }: any) {
                       <div className="flex-1">
                         <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                         <p className="text-xs text-slate-600">
-                          Taxable: ${taxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                          Non-Taxable: ${nonTaxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
+                          👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -780,9 +785,14 @@ function SortableRow({ item, ...props }: any) {
 
                 {linkedSubs.map((sub: any) => {
                   const subLineItems = subcontractorLineItems[sub.id] || [];
-                  const taxableTotal = subLineItems.filter((item: any) => !item.excluded && item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const nonTaxableTotal = subLineItems.filter((item: any) => !item.excluded && !item.taxable).reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const totalWithMarkup = (taxableTotal + nonTaxableTotal) * (1 + (sub.markup_percent || 0) / 100);
+                  // Separate by type (material vs labor)
+                  const materialsTotal = subLineItems
+                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
+                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
+                  const laborTotal = subLineItems
+                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
+                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
+                  const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
 
                   return (
                     <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -790,8 +800,8 @@ function SortableRow({ item, ...props }: any) {
                         <div className="flex-1">
                           <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                           <p className="text-xs text-slate-600">
-                            Taxable: ${taxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                            Non-Taxable: ${nonTaxableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
+                            👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
