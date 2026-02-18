@@ -296,6 +296,10 @@ function SortableRow({ item, ...props }: any) {
                     <Edit className="w-3 h-3 mr-2" />
                     Edit Description
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openLaborDialog(sheet.sheetId)}>
+                    <DollarSign className="w-3 h-3 mr-2" />
+                    {sheetLabor[sheet.sheetId] ? 'Edit Labor' : 'Add Labor'}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
                     <Briefcase className="w-3 h-3 mr-2" />
                     Add Subcontractor
@@ -303,6 +307,10 @@ function SortableRow({ item, ...props }: any) {
                   <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
                     <Plus className="w-3 h-3 mr-2" />
                     Add Material Row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'labor')}>
+                    <Plus className="w-3 h-3 mr-2" />
+                    Add Labor Row
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
