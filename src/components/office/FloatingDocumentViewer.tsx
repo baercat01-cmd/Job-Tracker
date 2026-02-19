@@ -23,6 +23,8 @@ import {
   Maximize2,
   Eye,
   Download,
+  ArrowLeft,
+  Grid3x3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -48,6 +50,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
   const [selectedDoc, setSelectedDoc] = useState<JobDocument | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'viewer'>('grid');
 
   useEffect(() => {
     if (open) {
@@ -59,8 +62,10 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
     if (selectedDocId) {
       const doc = documents.find(d => d.id === selectedDocId);
       setSelectedDoc(doc || null);
+      setViewMode('viewer');
     } else {
       setSelectedDoc(null);
+      setViewMode('grid');
     }
   }, [selectedDocId, documents]);
 
@@ -103,8 +108,21 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
 
   function downloadDocument() {
     if (selectedDoc?.latest_file_url) {
-      window.open(selectedDoc.latest_file_url, '_blank');
+      const link = document.createElement('a');
+      link.href = selectedDoc.latest_file_url;
+      link.download = selectedDoc.name;
+      link.click();
     }
+  }
+
+  function selectDocument(docId: string) {
+    setSelectedDocId(docId);
+  }
+
+  function backToGrid() {
+    setSelectedDocId('');
+    setSelectedDoc(null);
+    setViewMode('grid');
   }
 
   if (!open) return null;
@@ -150,30 +168,35 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
           </DialogHeader>
 
           <div className="flex flex-col h-[85vh]">
-            {/* Document selector */}
+            {/* Toolbar */}
             <div className="p-4 border-b bg-slate-50">
               <div className="flex items-center gap-3">
+                {viewMode === 'viewer' && (
+                  <Button
+                    onClick={backToGrid}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Documents
+                  </Button>
+                )}
                 <div className="flex-1">
-                  <Select value={selectedDocId} onValueChange={setSelectedDocId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a document to view..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {documents.map((doc) => (
-                        <SelectItem key={doc.id} value={doc.id}>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            <span>{doc.name}</span>
-                            <Badge variant="outline" className="ml-2">
-                              {doc.category}
-                            </Badge>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {viewMode === 'viewer' && selectedDoc && (
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      <span className="font-medium">{selectedDoc.name}</span>
+                      <Badge variant="outline">{selectedDoc.category}</Badge>
+                    </div>
+                  )}
+                  {viewMode === 'grid' && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Grid3x3 className="w-4 h-4" />
+                      <span>{documents.length} document{documents.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
                 </div>
-                {selectedDoc?.latest_file_url && (
+                {selectedDoc?.latest_file_url && viewMode === 'viewer' && (
                   <Button
                     onClick={downloadDocument}
                     variant="outline"
@@ -186,27 +209,81 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
               </div>
             </div>
 
-            {/* Document viewer */}
-            <div className="flex-1 bg-slate-100 overflow-auto">
-              {!selectedDoc ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">
-                      Select a document to view
-                    </p>
-                  </div>
-                </div>
-              ) : !selectedDoc.latest_file_url ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-muted-foreground">No file available</p>
+            {/* Content */}
+            <div className="flex-1 overflow-auto">
+              {viewMode === 'grid' ? (
+                <div className="p-4">
+                  {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-muted-foreground">Loading documents...</p>
+                      </div>
+                    </div>
+                  ) : documents.length === 0 ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                        <p className="text-muted-foreground">No documents available for this job</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      {documents.map((doc) => (
+                        <Card
+                          key={doc.id}
+                          className="cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-blue-400"
+                          onClick={() => selectDocument(doc.id)}
+                        >
+                          <div className="aspect-[3/4] bg-slate-100 relative overflow-hidden">
+                            {doc.latest_file_url ? (
+                              <iframe
+                                src={doc.latest_file_url}
+                                className="w-full h-full border-0 pointer-events-none"
+                                title={doc.name}
+                              />
+                            ) : (
+                              <div className="flex items-center justify-center h-full">
+                                <FileText className="w-16 h-16 text-muted-foreground opacity-30" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
+                              <div className="p-3 w-full">
+                                <p className="text-white font-semibold text-sm truncate">{doc.name}</p>
+                              </div>
+                            </div>
+                            <div className="absolute top-2 right-2">
+                              <Badge className="bg-white/90 text-slate-900 hover:bg-white">
+                                {doc.category}
+                              </Badge>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <iframe
-                  src={selectedDoc.latest_file_url}
-                  className="w-full h-full border-0"
-                  title={selectedDoc.name}
-                />
+                <div className="h-full bg-slate-100">
+                  {!selectedDoc ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                        <p className="text-muted-foreground">No document selected</p>
+                      </div>
+                    </div>
+                  ) : !selectedDoc.latest_file_url ? (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-muted-foreground">No file available</p>
+                    </div>
+                  ) : (
+                    <iframe
+                      src={selectedDoc.latest_file_url}
+                      className="w-full h-full border-0"
+                      title={selectedDoc.name}
+                    />
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -258,67 +335,124 @@ export function FloatingDocumentViewer({ jobId, open, onClose }: FloatingDocumen
           </div>
         </CardHeader>
 
-        {/* Document selector */}
+        {/* Toolbar */}
         <div className="p-4 border-b bg-slate-50 flex-shrink-0">
-          <Select value={selectedDocId} onValueChange={setSelectedDocId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select document..." />
-            </SelectTrigger>
-            <SelectContent>
-              {documents.map((doc) => (
-                <SelectItem key={doc.id} value={doc.id}>
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    <span className="truncate">{doc.name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedDoc?.latest_file_url && (
-            <Button
-              onClick={downloadDocument}
-              variant="outline"
-              size="sm"
-              className="w-full mt-2"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {viewMode === 'viewer' && (
+              <Button
+                onClick={backToGrid}
+                variant="outline"
+                size="sm"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <div className="flex-1">
+              {viewMode === 'viewer' && selectedDoc && (
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  <span className="font-medium text-sm truncate">{selectedDoc.name}</span>
+                  <Badge variant="outline" className="text-xs">{selectedDoc.category}</Badge>
+                </div>
+              )}
+              {viewMode === 'grid' && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Grid3x3 className="w-4 h-4" />
+                  <span>{documents.length} document{documents.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+            </div>
+            {selectedDoc?.latest_file_url && viewMode === 'viewer' && (
+              <Button
+                onClick={downloadDocument}
+                variant="outline"
+                size="sm"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Document viewer */}
-        <CardContent className="flex-1 p-0 overflow-auto bg-slate-100">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-muted-foreground">Loading documents...</p>
-              </div>
-            </div>
-          ) : !selectedDoc ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center p-6">
-                <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground mb-2">No document selected</p>
-                <p className="text-sm text-muted-foreground">
-                  {documents.length === 0
-                    ? 'No documents available for this job'
-                    : 'Select a document from the dropdown above'}
-                </p>
-              </div>
-            </div>
-          ) : !selectedDoc.latest_file_url ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">No file available</p>
+        {/* Content */}
+        <CardContent className="flex-1 p-0 overflow-auto">
+          {viewMode === 'grid' ? (
+            <div className="p-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-muted-foreground text-sm">Loading documents...</p>
+                  </div>
+                </div>
+              ) : documents.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground text-sm">No documents available</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {documents.map((doc) => (
+                    <Card
+                      key={doc.id}
+                      className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-blue-400 overflow-hidden"
+                      onClick={() => selectDocument(doc.id)}
+                    >
+                      <div className="flex gap-3">
+                        <div className="w-32 h-32 bg-slate-100 relative flex-shrink-0">
+                          {doc.latest_file_url ? (
+                            <iframe
+                              src={doc.latest_file_url}
+                              className="w-full h-full border-0 pointer-events-none scale-50 origin-top-left"
+                              style={{ width: '200%', height: '200%' }}
+                              title={doc.name}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full">
+                              <FileText className="w-12 h-12 text-muted-foreground opacity-30" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/10" />
+                        </div>
+                        <div className="flex-1 py-3 pr-3 min-w-0">
+                          <p className="font-semibold text-sm truncate mb-1">{doc.name}</p>
+                          <Badge variant="outline" className="text-xs mb-2">
+                            {doc.category}
+                          </Badge>
+                          <p className="text-xs text-muted-foreground">
+                            Version {doc.current_version}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
-            <iframe
-              src={selectedDoc.latest_file_url}
-              className="w-full h-full border-0"
-              title={selectedDoc.name}
-            />
+            <div className="h-full bg-slate-100">
+              {!selectedDoc ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">No document selected</p>
+                  </div>
+                </div>
+              ) : !selectedDoc.latest_file_url ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-muted-foreground">No file available</p>
+                </div>
+              ) : (
+                <iframe
+                  src={selectedDoc.latest_file_url}
+                  className="w-full h-full border-0"
+                  title={selectedDoc.name}
+                />
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
