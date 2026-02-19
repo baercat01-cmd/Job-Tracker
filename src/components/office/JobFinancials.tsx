@@ -683,11 +683,17 @@ function SortableRow({ item, ...props }: any) {
       const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
       const laborLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
       
-      // Calculate material line items total
-      const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      // Calculate material line items total WITH individual markups
+      const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent || 0;
+        return sum + (item.total_cost * (1 + itemMarkup / 100));
+      }, 0);
       
-      // Calculate labor line items total
-      const laborLineItemsTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      // Calculate labor line items total WITH individual markups
+      const laborLineItemsTotal = laborLineItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent || 0;
+        return sum + (item.total_cost * (1 + itemMarkup / 100));
+      }, 0);
       
       // Calculate linked subcontractors - taxable (materials)
       const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
@@ -714,12 +720,16 @@ function SortableRow({ item, ...props }: any) {
         ? (customRowLabor[row.id].estimated_hours * customRowLabor[row.id].hourly_rate)
         : 0;
       
-      // Base cost includes ONLY material line items (or row total if no line items) + taxable subcontractors
-      const baseLineCost = lineItems.length > 0
-        ? materialLineItemsTotal
-        : row.total_cost;
-      const baseCost = baseLineCost + linkedSubsTaxableTotal;
-      const finalPrice = baseCost * (1 + row.markup_percent / 100);
+      // When line items exist, use their marked-up totals directly (NO row-level markup)
+      // When no line items, use row total with row markup
+      const finalPrice = lineItems.length > 0
+        ? materialLineItemsTotal + linkedSubsTaxableTotal
+        : (row.total_cost + linkedSubsTaxableTotal) * (1 + row.markup_percent / 100);
+      
+      // Base cost for display (without markup)
+      const baseCost = lineItems.length > 0
+        ? lineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0) + linkedSubsTaxableTotal
+        : row.total_cost + linkedSubsTaxableTotal;
       
       // Total labor for display (labor line items + custom labor + non-taxable subcontractor)
       const totalLaborCost = laborLineItemsTotal + customLaborTotal + linkedSubsNonTaxableTotal;
@@ -856,25 +866,28 @@ function SortableRow({ item, ...props }: any) {
 
             {/* Pricing column (narrow) */}
             <div className="w-[240px] flex-shrink-0 text-right">
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
-                <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                <span>+</span>
-                <Input
-                  type="number"
-                  defaultValue={row.markup_percent || 0}
-                  onBlur={(e) => {
-                    const newMarkup = parseFloat(e.target.value) || 0;
-                    if (newMarkup !== row.markup_percent) {
-                      updateCustomRowMarkup(row.id, newMarkup);
-                    }
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-14 h-5 text-xs px-1 text-center"
-                  step="1"
-                  min="0"
-                />
-                <span>%</span>
-              </div>
+              {/* Only show row-level markup if NO line items exist */}
+              {lineItems.length === 0 && (
+                <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
+                  <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>+</span>
+                  <Input
+                    type="number"
+                    defaultValue={row.markup_percent || 0}
+                    onBlur={(e) => {
+                      const newMarkup = parseFloat(e.target.value) || 0;
+                      if (newMarkup !== row.markup_percent) {
+                        updateCustomRowMarkup(row.id, newMarkup);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-14 h-5 text-xs px-1 text-center"
+                    step="1"
+                    min="0"
+                  />
+                  <span>%</span>
+                </div>
+              )}
               <p className="text-sm text-slate-500">Materials</p>
               <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
               {totalLaborCost > 0 && (
@@ -898,6 +911,10 @@ function SortableRow({ item, ...props }: any) {
                     </p>
                     {lineItems.map((lineItem: any) => {
                       const isLabor = (lineItem as any).item_type === 'labor';
+                      const itemMarkup = lineItem.markup_percent || 0;
+                      const itemCost = lineItem.total_cost;
+                      const itemPrice = itemCost * (1 + itemMarkup / 100);
+                      
                       return (
                         <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between">
@@ -914,8 +931,36 @@ function SortableRow({ item, ...props }: any) {
                               <Badge variant={isLabor ? 'secondary' : 'default'} className="text-xs h-5">
                                 {isLabor ? '👷 Labor' : '📦 Material'}
                               </Badge>
-                              <p className="text-xs font-bold text-slate-900">
-                                ${lineItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-xs text-slate-500">+</span>
+                                <Input
+                                  type="number"
+                                  value={itemMarkup}
+                                  onChange={async (e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    try {
+                                      const { error } = await supabase
+                                        .from('custom_financial_row_items')
+                                        .update({ markup_percent: newMarkup })
+                                        .eq('id', lineItem.id);
+                                      if (error) throw error;
+                                      await loadCustomRows();
+                                      await loadMaterialsData();
+                                    } catch (error: any) {
+                                      console.error('Error updating markup:', error);
+                                      toast.error('Failed to update markup');
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-14 h-5 text-xs px-1 text-center"
+                                  step="1"
+                                  min="0"
+                                />
+                                <span className="text-xs text-slate-500">%</span>
+                              </div>
+                              <p className="text-xs font-bold text-blue-700">
+                                ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                               </p>
                               <Button
                                 size="sm"
@@ -1354,6 +1399,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     notes: '',
     taxable: true,
     item_type: 'material' as 'material' | 'labor',
+    markup_percent: '10',
   });
   
   // Individual row markups state
@@ -2676,6 +2722,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         notes: lineItem.notes || '',
         taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
         item_type: (lineItem as any).item_type || 'material',
+        markup_percent: (lineItem.markup_percent || 10).toString(),
       });
     } else {
       setEditingLineItem(null);
@@ -2686,6 +2733,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         notes: '',
         taxable: itemType === 'material' ? true : false,
         item_type: itemType,
+        markup_percent: '10',
       });
     }
     
@@ -2705,6 +2753,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     // Determine if this is for a sheet or a custom row
     const isSheet = materialSheets.some(s => s.id === lineItemParentRowId);
     
+    const markup = parseFloat(lineItemForm.markup_percent) || 0;
+    
     const itemData = {
       row_id: isSheet ? null : lineItemParentRowId,
       sheet_id: isSheet ? lineItemParentRowId : null,
@@ -2715,6 +2765,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       notes: lineItemForm.notes || null,
       taxable: lineItemForm.item_type === 'labor' ? false : lineItemForm.taxable,
       item_type: lineItemForm.item_type,
+      markup_percent: markup,
       order_index: editingLineItem 
         ? editingLineItem.order_index 
         : (customRowLineItems[lineItemParentRowId]?.length || 0),
@@ -2744,6 +2795,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (keepDialogOpen) {
         // Reset form for adding another item, keeping the taxable status and appropriate defaults
         const currentTaxable = lineItemForm.taxable;
+        const currentMarkup = lineItemForm.markup_percent;
         setLineItemForm({
           description: '',
           quantity: '1',
@@ -2751,6 +2803,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           notes: '',
           taxable: lineItemType === 'labor' ? false : currentTaxable,
           item_type: lineItemType,
+          markup_percent: currentMarkup,
         });
         setEditingLineItem(null);
       } else {
@@ -4189,16 +4242,51 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
             </div>
 
-            {lineItemType === 'labor' && (
-              <div className="bg-amber-50 border border-amber-200 rounded p-3">
-                <p className="text-sm font-semibold text-amber-900">
-                  Total Labor Cost: ${(
-                    (parseFloat(lineItemForm.quantity) || 0) * 
-                    (parseFloat(lineItemForm.unit_cost) || 0)
-                  ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </p>
+            <div>
+              <Label>Markup %</Label>
+              <Input
+                type="number"
+                value={lineItemForm.markup_percent}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
+                step="1"
+                min="0"
+                placeholder="10"
+              />
+            </div>
+
+            <div className={`border rounded p-3 ${lineItemType === 'labor' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Cost:</span>
+                  <span className="font-semibold">
+                    ${(
+                      (parseFloat(lineItemForm.quantity) || 0) * 
+                      (parseFloat(lineItemForm.unit_cost) || 0)
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Markup ({lineItemForm.markup_percent}%):</span>
+                  <span className="font-semibold">
+                    ${(
+                      (parseFloat(lineItemForm.quantity) || 0) * 
+                      (parseFloat(lineItemForm.unit_cost) || 0) *
+                      (parseFloat(lineItemForm.markup_percent) || 0) / 100
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-current">
+                  <span className="font-bold">Total Price:</span>
+                  <span className="font-bold text-blue-700">
+                    ${(
+                      (parseFloat(lineItemForm.quantity) || 0) * 
+                      (parseFloat(lineItemForm.unit_cost) || 0) *
+                      (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
-            )}
+            </div>
 
             <div>
               <Label>Notes (Optional)</Label>
