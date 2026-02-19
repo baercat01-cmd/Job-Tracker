@@ -1182,7 +1182,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       <Tabs defaultValue={initialTab} className="w-full">
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
-          <div className="flex items-center gap-4 px-4 py-2 bg-gradient-to-r from-slate-900 to-black">
+          <div className="flex items-center gap-2 px-4">
             {onBack && (
               <Button
                 variant="ghost"
@@ -1194,10 +1194,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
                 Back to Jobs
               </Button>
             )}
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-yellow-400">{job.name}</h1>
-              <p className="text-sm text-slate-400">{job.client_name}</p>
-            </div>
           </div>
           <TabsList className="grid w-full grid-cols-11 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
             <TabsTrigger 
