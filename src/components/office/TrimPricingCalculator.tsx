@@ -1197,6 +1197,16 @@ export function TrimPricingCalculator() {
     return () => clearInterval(interval);
   }, []);
   
+  // Reload saved configs every 5 seconds to catch updates from other users
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing saved configs...');
+      loadSavedConfigs();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
   // Update selected trim type when selection changes
   useEffect(() => {
     const selected = trimTypes.find(t => t.id === selectedTrimTypeId);
@@ -1602,7 +1612,8 @@ export function TrimPricingCalculator() {
         material_type_name: selectedTrimType.name,
       };
 
-      console.log('Saving config data:', configData);
+      console.log('💾 Saving config data:', configData);
+      console.log('📍 Current user session:', await supabase.auth.getSession());
       
       const { data: insertedData, error } = await supabase
         .from('trim_saved_configs')
@@ -1610,11 +1621,18 @@ export function TrimPricingCalculator() {
         .select();
 
       if (error) {
-        console.error('Insert error:', error);
+        console.error('❌ Insert error:', error);
+        console.error('Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         throw error;
       }
       
-      console.log('Successfully inserted config:', insertedData);
+      console.log('✅ Successfully inserted config:', insertedData);
+      console.log('📊 Total configs now:', (savedConfigs.length + 1));
       
       toast.success('Configuration saved successfully and is now visible to all users');
       setShowSaveDialog(false);
