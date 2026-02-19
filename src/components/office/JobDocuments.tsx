@@ -754,7 +754,7 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                 onClick={() => doc.latest_file_url && setViewingDocument({ url: doc.latest_file_url, name: doc.name })}
               >
                 {/* Document Preview Thumbnail */}
-                <div className="relative h-48 bg-slate-100 border-b">
+                <div className="relative h-32 bg-slate-100 border-b">
                   {doc.latest_file_url ? (
                     isImage ? (
                       <img
@@ -764,16 +764,16 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                       />
                     ) : isPDF ? (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
-                        <FileText className="w-20 h-20 text-red-600" />
+                        <FileText className="w-12 h-12 text-red-600" />
                       </div>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
-                        <FileText className="w-20 h-20 text-blue-600" />
+                        <FileText className="w-12 h-12 text-blue-600" />
                       </div>
                     )
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-slate-200">
-                      <FileText className="w-16 h-16 text-slate-400" />
+                      <FileText className="w-10 h-10 text-slate-400" />
                     </div>
                   )}
                   {/* Overlay with badges */}
