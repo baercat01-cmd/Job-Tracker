@@ -6,6 +6,7 @@ export function generateProposalHTML(data: {
     client_name: string;
     address: string;
     name: string;
+    customer_phone?: string;
   };
   sections: Array<{
     name: string;
@@ -136,6 +137,11 @@ export function generateProposalHTML(data: {
             color: #333;
           }
           
+          .section-wrapper {
+            page-break-inside: avoid;
+            margin-bottom: 20px;
+          }
+          
           .section-price {
             font-weight: bold;
             color: #000;
@@ -243,7 +249,7 @@ export function generateProposalHTML(data: {
               </div>
               
               <div style="border: 1px solid #000; padding: 8px; margin-bottom: 15px;">
-                <strong>Phone:</strong> (574) 532-3653
+                <strong>Phone:</strong> ${job.customer_phone || 'N/A'}
               </div>
             </div>
             
@@ -264,7 +270,7 @@ export function generateProposalHTML(data: {
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 15px 10px 10px 10px;">
             ${sections.map((section: any) => {
-              let content = '';
+              let content = '<div class="section-wrapper">';
               
               if (showInternalDetails) {
                 // OFFICE VIEW: Show section name with price, description, and all items with individual unit and total prices
@@ -329,6 +335,7 @@ export function generateProposalHTML(data: {
                 }
               }
               
+              content += '</div>'; // Close section-wrapper
               return content;
             }).join('')}
           </div>

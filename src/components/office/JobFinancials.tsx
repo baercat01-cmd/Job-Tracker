@@ -2970,6 +2970,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           client_name: job.client_name,
           address: job.address,
           name: job.name,
+          customer_phone: job.customer_phone,
         },
         sections,
         totals: {
