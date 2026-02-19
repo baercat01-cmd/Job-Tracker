@@ -83,6 +83,9 @@ interface CustomRowLineItem {
   created_at: string;
   updated_at: string;
   taxable: boolean;
+  markup_percent?: number;
+  item_type?: 'material' | 'labor';
+  sheet_id?: string;
 }
 
 interface LaborPricing {
@@ -332,14 +335,7 @@ function SortableRow({ item, ...props }: any) {
               ) : (
                 <div 
                   className="text-xs text-muted-foreground italic cursor-pointer hover:text-foreground py-1"
-                  onClick={() => {
-                    setEditingSheetId(sheet.sheetId);
-                    // Auto-focus after state update
-                    setTimeout(() => {
-                      const textarea = document.querySelector(`[key="sheet-desc-${sheet.sheetId}-"]`) as HTMLTextAreaElement;
-                      textarea?.focus();
-                    }, 0);
-                  }}
+                  onClick={() => openSheetDescDialog(sheet.sheetId, '')}
                 >
                   No description
                 </div>
