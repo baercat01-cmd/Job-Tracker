@@ -305,8 +305,8 @@ function SortableRow({ item, ...props }: any) {
                   key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
                   defaultValue={sheet.sheetDescription || ''}
                   placeholder="Click to add description..."
-                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 100))}
+                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={Math.max(2, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 120))}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (sheet.sheetDescription || '')) {
@@ -816,8 +816,8 @@ function SortableRow({ item, ...props }: any) {
                   key={`row-notes-${row.id}-${row.notes}`}
                   defaultValue={row.notes || ''}
                   placeholder="Click to add notes..."
-                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 100))}
+                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={Math.max(2, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 120))}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (row.notes || '')) {
@@ -1162,8 +1162,8 @@ function SortableRow({ item, ...props }: any) {
                   key={`sub-scope-${est.id}-${est.scope_of_work}`}
                   defaultValue={est.scope_of_work || ''}
                   placeholder="Click to add description..."
-                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 100))}
+                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={Math.max(2, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 120))}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (est.scope_of_work || '')) {
