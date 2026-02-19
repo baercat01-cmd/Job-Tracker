@@ -1253,6 +1253,8 @@ export function TrimPricingCalculator() {
   async function loadSavedConfigs() {
     try {
       console.log('🔄 Loading saved trim configurations from database...');
+      console.log('Current user:', await supabase.auth.getUser());
+      
       const { data, error } = await supabase
         .from('trim_saved_configs')
         .select('*')
@@ -1272,11 +1274,23 @@ export function TrimPricingCalculator() {
       
       console.log('✅ Loaded saved configs:', data?.length || 0);
       if (data && data.length > 0) {
-        console.log('First config sample:', data[0]);
+        console.log('📋 All configs:', data);
+        console.log('First config details:', {
+          name: data[0].name,
+          inches: data[0].inches,
+          inchesType: typeof data[0].inches,
+          bends: data[0].bends,
+          material: data[0].material_type_name,
+          createdAt: data[0].created_at
+        });
+      } else {
+        console.warn('⚠️ No saved configurations found in database');
       }
+      
       setSavedConfigs(data || []);
+      toast.success(`Loaded ${data?.length || 0} saved trim configurations`);
     } catch (error: any) {
-      console.error('Error loading saved configs:', error);
+      console.error('❌ Unexpected error loading saved configs:', error);
       toast.error(`Error: ${error.message || 'Unknown error'}`);
     }
   }
