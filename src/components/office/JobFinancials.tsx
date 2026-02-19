@@ -300,14 +300,13 @@ function SortableRow({ item, ...props }: any) {
           <div className="ml-10 flex gap-4 mt-1">
             {/* Description column (wide) */}
             <div className="flex-1">
-              {(sheet.sheetDescription || editingSheetId === sheet.sheetId) ? (
+              {sheet.sheetDescription ? (
                 <Textarea
                   key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
                   defaultValue={sheet.sheetDescription || ''}
                   placeholder="Click to add description..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={sheet.sheetDescription ? Math.max(3, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 80) + 1) : 3}
-                  onFocus={() => setEditingSheetId(sheet.sheetId)}
+                  rows={Math.max(2, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 80) + 1)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (sheet.sheetDescription || '')) {
@@ -321,15 +320,21 @@ function SortableRow({ item, ...props }: any) {
                         console.error('Error saving description:', error);
                       }
                     }
-                    setEditingSheetId(null);
                   }}
                 />
               ) : (
                 <div 
-                  className="text-xs text-muted-foreground italic cursor-pointer hover:text-foreground py-2"
-                  onClick={() => setEditingSheetId(sheet.sheetId)}
+                  className="text-xs text-muted-foreground italic cursor-pointer hover:text-foreground py-1"
+                  onClick={() => {
+                    setEditingSheetId(sheet.sheetId);
+                    // Auto-focus after state update
+                    setTimeout(() => {
+                      const textarea = document.querySelector(`[key="sheet-desc-${sheet.sheetId}-"]`) as HTMLTextAreaElement;
+                      textarea?.focus();
+                    }, 0);
+                  }}
                 >
-                  Click to add description...
+                  No description
                 </div>
               )}
             </div>
@@ -812,7 +817,7 @@ function SortableRow({ item, ...props }: any) {
                   defaultValue={row.notes || ''}
                   placeholder="Click to add notes..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(3, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 80) + 1)}
+                  rows={Math.max(2, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 80) + 1)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (row.notes || '')) {
@@ -830,7 +835,7 @@ function SortableRow({ item, ...props }: any) {
                   }}
                 />
               ) : (
-                <div className="text-xs text-muted-foreground italic py-2">
+                <div className="text-xs text-muted-foreground italic py-1">
                   No description
                 </div>
               )}
@@ -1158,7 +1163,7 @@ function SortableRow({ item, ...props }: any) {
                   defaultValue={est.scope_of_work || ''}
                   placeholder="Click to add description..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(3, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 80) + 1)}
+                  rows={Math.max(2, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 80) + 1)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (est.scope_of_work || '')) {
@@ -1175,7 +1180,7 @@ function SortableRow({ item, ...props }: any) {
                   }}
                 />
               ) : (
-                <div className="text-xs text-muted-foreground italic py-2">
+                <div className="text-xs text-muted-foreground italic py-1">
                   No description
                 </div>
               )}
