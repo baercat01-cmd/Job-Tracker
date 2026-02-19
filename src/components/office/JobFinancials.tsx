@@ -269,20 +269,7 @@ function SortableRow({ item, ...props }: any) {
               )}
             </div>
 
-            {/* Pricing */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="text-right">
-                <p className="text-sm text-slate-500">Materials</p>
-                <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                {totalLaborCost > 0 && (
-                  <>
-                    <p className="text-sm text-slate-500 mt-2">Labor</p>
-                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                  </>
-                )}
-              </div>
-
-              <DropdownMenu>
+            <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                     <MoreVertical className="w-4 h-4" />
@@ -310,42 +297,56 @@ function SortableRow({ item, ...props }: any) {
             </div>
           </div>
 
-          {/* Description - Positioned below section name */}
-          {(sheet.sheetDescription || editingSheetId === sheet.sheetId) && (
-            <div className="ml-10 mr-[280px] mt-1">
-              <Textarea
-                key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
-                defaultValue={sheet.sheetDescription || ''}
-                placeholder="Click to add description..."
-                className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                rows={sheet.sheetDescription ? Math.max(2, Math.min(8, Math.ceil(sheet.sheetDescription.length / 100))) : 2}
-                onFocus={() => setEditingSheetId(sheet.sheetId)}
-                onBlur={async (e) => {
-                  const newValue = e.target.value.trim();
-                  if (newValue !== (sheet.sheetDescription || '')) {
-                    try {
-                      await supabase
-                        .from('material_sheets')
-                        .update({ description: newValue || null })
-                        .eq('id', sheet.sheetId);
-                      await loadMaterialsData();
-                    } catch (error) {
-                      console.error('Error saving description:', error);
+          {/* Two-column layout: Description + Pricing */}
+          <div className="ml-10 flex gap-4 mt-1">
+            {/* Description column (wide) */}
+            <div className="flex-1">
+              {(sheet.sheetDescription || editingSheetId === sheet.sheetId) ? (
+                <Textarea
+                  key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
+                  defaultValue={sheet.sheetDescription || ''}
+                  placeholder="Click to add description..."
+                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={sheet.sheetDescription ? Math.max(2, Math.min(8, Math.ceil(sheet.sheetDescription.length / 100))) : 2}
+                  onFocus={() => setEditingSheetId(sheet.sheetId)}
+                  onBlur={async (e) => {
+                    const newValue = e.target.value.trim();
+                    if (newValue !== (sheet.sheetDescription || '')) {
+                      try {
+                        await supabase
+                          .from('material_sheets')
+                          .update({ description: newValue || null })
+                          .eq('id', sheet.sheetId);
+                        await loadMaterialsData();
+                      } catch (error) {
+                        console.error('Error saving description:', error);
+                      }
                     }
-                  }
-                  setEditingSheetId(null);
-                }}
-              />
+                    setEditingSheetId(null);
+                  }}
+                />
+              ) : (
+                <div 
+                  className="text-xs text-muted-foreground italic cursor-pointer hover:text-foreground py-2"
+                  onClick={() => setEditingSheetId(sheet.sheetId)}
+                >
+                  Click to add description...
+                </div>
+              )}
             </div>
-          )}
-          {!sheet.sheetDescription && editingSheetId !== sheet.sheetId && (
-            <div 
-              className="ml-10 mr-[280px] mt-1 text-xs text-muted-foreground italic cursor-pointer hover:text-foreground"
-              onClick={() => setEditingSheetId(sheet.sheetId)}
-            >
-              Click to add description...
+
+            {/* Pricing column (narrow) */}
+            <div className="w-[240px] flex-shrink-0 text-right">
+              <p className="text-sm text-slate-500">Materials</p>
+              <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              {totalLaborCost > 0 && (
+                <>
+                  <p className="text-sm text-slate-500 mt-2">Labor</p>
+                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           <CollapsibleContent>
             <div className="mt-2 ml-10 space-y-3">
@@ -771,39 +772,7 @@ function SortableRow({ item, ...props }: any) {
               )}
             </div>
 
-            {/* Pricing */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="text-right">
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  <span>+</span>
-                  <Input
-                    type="number"
-                    defaultValue={row.markup_percent || 0}
-                    onBlur={(e) => {
-                      const newMarkup = parseFloat(e.target.value) || 0;
-                      if (newMarkup !== row.markup_percent) {
-                        updateCustomRowMarkup(row.id, newMarkup);
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-14 h-5 text-xs px-1 text-center"
-                    step="1"
-                    min="0"
-                  />
-                  <span>%</span>
-                </div>
-                <p className="text-sm text-slate-500 mt-1">Materials</p>
-                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                {totalLaborCost > 0 && (
-                  <>
-                    <p className="text-sm text-slate-500 mt-2">Labor</p>
-                    <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                  </>
-                )}
-              </div>
-
-              <DropdownMenu>
+            <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                     <MoreVertical className="w-4 h-4" />
@@ -835,33 +804,71 @@ function SortableRow({ item, ...props }: any) {
             </div>
           </div>
 
-          {/* Notes - Positioned below section name */}
-          {row.notes && (
-            <div className="ml-10 mr-[280px] mt-1">
-              <Textarea
-                key={`row-notes-${row.id}-${row.notes}`}
-                defaultValue={row.notes || ''}
-                placeholder="Click to add notes..."
-                className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                rows={Math.max(2, Math.min(8, Math.ceil(row.notes.length / 100)))}
-                onBlur={async (e) => {
-                  const newValue = e.target.value.trim();
-                  if (newValue !== (row.notes || '')) {
-                    try {
-                      await supabase
-                        .from('custom_financial_rows')
-                        .update({ notes: newValue || null })
-                        .eq('id', row.id);
-                      await loadCustomRows();
-                      await loadMaterialsData();
-                    } catch (error) {
-                      console.error('Error saving notes:', error);
+          {/* Two-column layout: Description + Pricing */}
+          <div className="ml-10 flex gap-4 mt-1">
+            {/* Description column (wide) */}
+            <div className="flex-1">
+              {row.notes ? (
+                <Textarea
+                  key={`row-notes-${row.id}-${row.notes}`}
+                  defaultValue={row.notes || ''}
+                  placeholder="Click to add notes..."
+                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={Math.max(2, Math.min(8, Math.ceil(row.notes.length / 100)))}
+                  onBlur={async (e) => {
+                    const newValue = e.target.value.trim();
+                    if (newValue !== (row.notes || '')) {
+                      try {
+                        await supabase
+                          .from('custom_financial_rows')
+                          .update({ notes: newValue || null })
+                          .eq('id', row.id);
+                        await loadCustomRows();
+                        await loadMaterialsData();
+                      } catch (error) {
+                        console.error('Error saving notes:', error);
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              ) : (
+                <div className="text-xs text-muted-foreground italic py-2">
+                  No description
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Pricing column (narrow) */}
+            <div className="w-[240px] flex-shrink-0 text-right">
+              <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
+                <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span>+</span>
+                <Input
+                  type="number"
+                  defaultValue={row.markup_percent || 0}
+                  onBlur={(e) => {
+                    const newMarkup = parseFloat(e.target.value) || 0;
+                    if (newMarkup !== row.markup_percent) {
+                      updateCustomRowMarkup(row.id, newMarkup);
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-14 h-5 text-xs px-1 text-center"
+                  step="1"
+                  min="0"
+                />
+                <span>%</span>
+              </div>
+              <p className="text-sm text-slate-500">Materials</p>
+              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              {totalLaborCost > 0 && (
+                <>
+                  <p className="text-sm text-slate-500 mt-2">Labor</p>
+                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Line Items & Linked Subcontractors */}
           {(lineItems.length > 0 || linkedSubs.length > 0) && (
@@ -1131,68 +1138,73 @@ function SortableRow({ item, ...props }: any) {
               )}
             </div>
 
-            {/* Pricing */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="text-right">
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  <span>+</span>
-                  <Input
-                    type="number"
-                    value={estMarkup}
-                    onChange={(e) => {
-                      const newMarkup = parseFloat(e.target.value) || 0;
-                      updateSubcontractorMarkup(est.id, newMarkup);
-                    }}
-                    className="w-14 h-5 text-xs px-1 text-center"
-                    step="1"
-                    min="0"
-                  />
-                  <span>%</span>
-                </div>
-                <p className="text-sm text-slate-500 mt-1">Total</p>
-                <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              </div>
-
-              {est.pdf_url && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0"
-                  onClick={() => window.open(est.pdf_url, '_blank')}
-                >
-                  <Eye className="w-4 h-4 text-blue-600" />
-                </Button>
-              )}
-            </div>
+            {est.pdf_url && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => window.open(est.pdf_url, '_blank')}
+              >
+                <Eye className="w-4 h-4 text-blue-600" />
+              </Button>
+            )}
           </div>
 
-          {/* Description - Positioned below section name */}
-          {est.scope_of_work && (
-            <div className="ml-10 mr-[280px] mt-1">
-              <Textarea
-                key={`sub-scope-${est.id}-${est.scope_of_work}`}
-                defaultValue={est.scope_of_work || ''}
-                placeholder="Click to add description..."
-                className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                rows={Math.max(2, Math.min(8, Math.ceil(est.scope_of_work.length / 100)))}
-                onBlur={async (e) => {
-                  const newValue = e.target.value.trim();
-                  if (newValue !== (est.scope_of_work || '')) {
-                    try {
-                      await supabase
-                        .from('subcontractor_estimates')
-                        .update({ scope_of_work: newValue || null })
-                        .eq('id', est.id);
-                      await loadSubcontractorEstimates();
-                    } catch (error) {
-                      console.error('Error saving scope of work:', error);
+          {/* Two-column layout: Description + Pricing */}
+          <div className="ml-10 flex gap-4 mt-1">
+            {/* Description column (wide) */}
+            <div className="flex-1">
+              {est.scope_of_work ? (
+                <Textarea
+                  key={`sub-scope-${est.id}-${est.scope_of_work}`}
+                  defaultValue={est.scope_of_work || ''}
+                  placeholder="Click to add description..."
+                  className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={Math.max(2, Math.min(8, Math.ceil(est.scope_of_work.length / 100)))}
+                  onBlur={async (e) => {
+                    const newValue = e.target.value.trim();
+                    if (newValue !== (est.scope_of_work || '')) {
+                      try {
+                        await supabase
+                          .from('subcontractor_estimates')
+                          .update({ scope_of_work: newValue || null })
+                          .eq('id', est.id);
+                        await loadSubcontractorEstimates();
+                      } catch (error) {
+                        console.error('Error saving scope of work:', error);
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              ) : (
+                <div className="text-xs text-muted-foreground italic py-2">
+                  No description
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Pricing column (narrow) */}
+            <div className="w-[240px] flex-shrink-0 text-right">
+              <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
+                <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span>+</span>
+                <Input
+                  type="number"
+                  value={estMarkup}
+                  onChange={(e) => {
+                    const newMarkup = parseFloat(e.target.value) || 0;
+                    updateSubcontractorMarkup(est.id, newMarkup);
+                  }}
+                  className="w-14 h-5 text-xs px-1 text-center"
+                  step="1"
+                  min="0"
+                />
+                <span>%</span>
+              </div>
+              <p className="text-sm text-slate-500">Total</p>
+              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+            </div>
+          </div>
 
           <CollapsibleContent>
             <div className="mt-2 ml-10 space-y-1">
