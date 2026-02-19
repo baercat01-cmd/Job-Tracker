@@ -12,7 +12,7 @@ import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
-import { BuildingEstimatorPage } from '@/pages/office/BuildingEstimatorPage';
+import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
 import { ZohoSettingsPage } from '@/pages/office/ZohoSettingsPage';
 import { CustomerPortal } from '@/pages/customer/CustomerPortal';
 import { SubcontractorPortal } from '@/pages/SubcontractorPortal';
