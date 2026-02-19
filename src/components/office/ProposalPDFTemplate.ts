@@ -38,9 +38,9 @@ export function generateProposalHTML(data: {
             font-family: Arial, sans-serif; 
             line-height: 1.3; 
             color: #000; 
-            max-width: 850px; 
+            max-width: 900px; 
             margin: 0 auto; 
-            padding: 20px 10px; 
+            padding: 20px 5px; 
             font-size: 11pt; 
           }
           
