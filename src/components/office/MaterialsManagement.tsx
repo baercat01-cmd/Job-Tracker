@@ -39,6 +39,7 @@ import {
   Square,
   CheckCircle,
   ShoppingCart,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
