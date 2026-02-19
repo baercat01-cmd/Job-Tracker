@@ -270,31 +270,30 @@ function SortableRow({ item, ...props }: any) {
             </div>
 
             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                    <MoreVertical className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
-                    <Edit className="w-3 h-3 mr-2" />
-                    Edit Description
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Material Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor')}>
-                    <DollarSign className="w-3 h-3 mr-2" />
-                    Add Labor
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
-                    <Briefcase className="w-3 h-3 mr-2" />
-                    Add Subcontractor
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openSheetDescDialog(sheet.sheetId, sheet.sheetDescription)}>
+                  <Edit className="w-3 h-3 mr-2" />
+                  Edit Description
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openAddDialog(undefined, sheet.sheetId, 'materials')}>
+                  <Plus className="w-3 h-3 mr-2" />
+                  Add Material Row
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'labor')}>
+                  <DollarSign className="w-3 h-3 mr-2" />
+                  Add Labor
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
+                  <Briefcase className="w-3 h-3 mr-2" />
+                  Add Subcontractor
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Two-column layout: Description + Pricing */}
@@ -780,28 +779,27 @@ function SortableRow({ item, ...props }: any) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => openAddDialog(row)}>
-                    <Edit className="w-3 h-3 mr-2" />
-                    Edit Description
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
-                    <Plus className="w-3 h-3 mr-2" />
-                    Add Material Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
-                    <DollarSign className="w-3 h-3 mr-2" />
-                    Add Labor
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
-                    <Briefcase className="w-3 h-3 mr-2" />
-                    Add Subcontractor
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => deleteRow(row.id)}>
-                    <Trash2 className="w-3 h-3 mr-2" />
-                    Delete Row
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                  <Edit className="w-3 h-3 mr-2" />
+                  Edit Description
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
+                  <Plus className="w-3 h-3 mr-2" />
+                  Add Material Row
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
+                  <DollarSign className="w-3 h-3 mr-2" />
+                  Add Labor
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
+                  <Briefcase className="w-3 h-3 mr-2" />
+                  Add Subcontractor
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => deleteRow(row.id)}>
+                  <Trash2 className="w-3 h-3 mr-2" />
+                  Delete Row
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Two-column layout: Description + Pricing */}
