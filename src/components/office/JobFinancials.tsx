@@ -306,7 +306,7 @@ function SortableRow({ item, ...props }: any) {
                   defaultValue={sheet.sheetDescription || ''}
                   placeholder="Click to add description..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={sheet.sheetDescription ? Math.max(2, Math.min(8, Math.ceil(sheet.sheetDescription.length / 100))) : 2}
+                  rows={sheet.sheetDescription ? Math.max(3, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 80) + 1) : 3}
                   onFocus={() => setEditingSheetId(sheet.sheetId)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
@@ -812,7 +812,7 @@ function SortableRow({ item, ...props }: any) {
                   defaultValue={row.notes || ''}
                   placeholder="Click to add notes..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, Math.min(8, Math.ceil(row.notes.length / 100)))}
+                  rows={Math.max(3, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 80) + 1)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (row.notes || '')) {
@@ -1158,7 +1158,7 @@ function SortableRow({ item, ...props }: any) {
                   defaultValue={est.scope_of_work || ''}
                   placeholder="Click to add description..."
                   className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, Math.min(8, Math.ceil(est.scope_of_work.length / 100)))}
+                  rows={Math.max(3, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 80) + 1)}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (est.scope_of_work || '')) {
