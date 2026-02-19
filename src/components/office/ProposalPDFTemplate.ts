@@ -38,9 +38,9 @@ export function generateProposalHTML(data: {
             font-family: Arial, sans-serif; 
             line-height: 1.3; 
             color: #000; 
-            max-width: 900px; 
+            max-width: 920px; 
             margin: 0 auto; 
-            padding: 20px 5px; 
+            padding: 15px 2px; 
             font-size: 11pt; 
           }
           
@@ -100,18 +100,6 @@ export function generateProposalHTML(data: {
           .customer-row { display: flex; gap: 10px; }
           .customer-left { flex: 1; }
           .customer-right { width: 300px; }
-          
-          .phone-row { 
-            border: 1px solid #000; 
-            border-collapse: collapse; 
-            width: 100%; 
-            margin-bottom: 15px; 
-          }
-          
-          .phone-row td { 
-            border: 1px solid #000; 
-            padding: 8px; 
-          }
           
           .intro-box { 
             border: 2px solid #000; 
@@ -246,10 +234,7 @@ export function generateProposalHTML(data: {
                 <div class="box-header">Name / Address</div>
                 <div>${job.client_name}</div>
                 <div>${job.address}</div>
-              </div>
-              
-              <div style="border: 1px solid #000; padding: 8px; margin-bottom: 15px;">
-                <strong>Phone:</strong> ${job.customer_phone || 'N/A'}
+                <div style="margin-top: 8px;"><strong>Phone:</strong> ${job.customer_phone || 'N/A'}</div>
               </div>
             </div>
             

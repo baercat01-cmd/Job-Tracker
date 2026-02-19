@@ -310,14 +310,14 @@ function SortableRow({ item, ...props }: any) {
             </div>
           </div>
 
-          {/* Description */}
-          <div className="ml-10 mr-[280px]">
+          {/* Description - Moved closer to section name */}
+          <div className="ml-10 mr-[280px] mt-2">
             <Textarea
               key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
               defaultValue={sheet.sheetDescription || ''}
               placeholder="Click to add description..."
-              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-              rows={Math.max(2, Math.ceil((sheet.sheetDescription || '').length / 120) + 1)}
+              className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(4, Math.min(12, Math.ceil((sheet.sheetDescription || '').length / 80) + 2))}
               onBlur={async (e) => {
                 const newValue = e.target.value.trim();
                 if (newValue !== (sheet.sheetDescription || '')) {
@@ -823,14 +823,14 @@ function SortableRow({ item, ...props }: any) {
             </div>
           </div>
 
-          {/* Notes */}
-          <div className="ml-10 mr-[280px]">
+          {/* Notes - Moved closer to section name */}
+          <div className="ml-10 mr-[280px] mt-2">
             <Textarea
               key={`row-notes-${row.id}-${row.notes}`}
               defaultValue={row.notes || ''}
               placeholder="Click to add notes..."
-              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-              rows={Math.max(2, Math.ceil((row.notes || '').length / 120) + 1)}
+              className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(4, Math.min(12, Math.ceil((row.notes || '').length / 80) + 2))}
               onBlur={async (e) => {
                 const newValue = e.target.value.trim();
                 if (newValue !== (row.notes || '')) {
@@ -1153,14 +1153,14 @@ function SortableRow({ item, ...props }: any) {
             </div>
           </div>
 
-          {/* Description */}
-          <div className="ml-10 mr-[280px]">
+          {/* Description - Moved closer to section name */}
+          <div className="ml-10 mr-[280px] mt-2">
             <Textarea
               key={`sub-scope-${est.id}-${est.scope_of_work}`}
               defaultValue={est.scope_of_work || ''}
               placeholder="Click to add description..."
-              className="text-xs text-slate-600 resize-none border border-transparent hover:border-slate-200 focus:border-blue-300 p-1.5 min-h-0 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-1 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-              rows={Math.max(2, Math.ceil((est.scope_of_work || '').length / 120) + 1)}
+              className="text-xs text-slate-600 border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+              rows={Math.max(4, Math.min(12, Math.ceil((est.scope_of_work || '').length / 80) + 2))}
               onBlur={async (e) => {
                 const newValue = e.target.value.trim();
                 if (newValue !== (est.scope_of_work || '')) {
