@@ -1260,14 +1260,24 @@ export function TrimPricingCalculator() {
       
       if (error) {
         console.error('❌ Error loading saved configs:', error);
-        toast.error('Failed to load saved configurations');
+        console.error('Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
+        toast.error(`Failed to load saved configurations: ${error.message}`);
         throw error;
       }
       
       console.log('✅ Loaded saved configs:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('First config sample:', data[0]);
+      }
       setSavedConfigs(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading saved configs:', error);
+      toast.error(`Error: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -1571,18 +1581,26 @@ export function TrimPricingCalculator() {
         name: configName.trim(),
         job_id: selectedJobId || null,
         job_name: jobName,
-        inches: JSON.stringify(inches),
+        inches: inches, // Store as array directly - Postgres JSONB will handle it
         bends,
-        drawing_segments: drawing.segments.length > 0 ? JSON.stringify(drawing.segments) : null,
+        drawing_segments: drawing.segments.length > 0 ? drawing.segments : null, // Store as array
         material_type_id: selectedTrimTypeId,
         material_type_name: selectedTrimType.name,
       };
 
-      const { error } = await supabase
+      console.log('Saving config data:', configData);
+      
+      const { data: insertedData, error } = await supabase
         .from('trim_saved_configs')
-        .insert([configData]);
+        .insert([configData])
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Insert error:', error);
+        throw error;
+      }
+      
+      console.log('Successfully inserted config:', insertedData);
       
       toast.success('Configuration saved successfully and is now visible to all users');
       setShowSaveDialog(false);
@@ -1598,12 +1616,32 @@ export function TrimPricingCalculator() {
   }
 
   function loadConfiguration(config: SavedConfig) {
-    // Parse inches from database (stored as JSON)
-    const inches = typeof config.inches === 'string' 
-      ? JSON.parse(config.inches) 
-      : config.inches;
+    // Parse inches from database (stored as JSON) - with error handling
+    let inchesArray: number[];
+    try {
+      if (typeof config.inches === 'string') {
+        inchesArray = JSON.parse(config.inches);
+      } else if (Array.isArray(config.inches)) {
+        inchesArray = config.inches;
+      } else {
+        console.error('Invalid inches data in config:', config.inches);
+        toast.error('Failed to load configuration - invalid data format');
+        return;
+      }
+      
+      // Ensure it's an array
+      if (!Array.isArray(inchesArray)) {
+        console.error('Inches is not an array:', inchesArray);
+        toast.error('Failed to load configuration - data format error');
+        return;
+      }
+    } catch (error) {
+      console.error('Error parsing inches:', error);
+      toast.error('Failed to load configuration - parse error');
+      return;
+    }
     
-    const newInputs = inches.map((value: number, index: number) => ({
+    const newInputs = inchesArray.map((value: number, index: number) => ({
       id: (index + 1).toString(),
       value: value.toString(),
     }));
@@ -1659,11 +1697,29 @@ export function TrimPricingCalculator() {
       return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
     }
     
-    // Parse inches from database (stored as JSON)
-    const inches = typeof config.inches === 'string' 
-      ? JSON.parse(config.inches) 
-      : config.inches;
-    const totalInches = inches.reduce((sum: number, val: number) => sum + val, 0);
+    // Parse inches from database (stored as JSON) - with error handling
+    let inchesArray: number[];
+    try {
+      if (typeof config.inches === 'string') {
+        inchesArray = JSON.parse(config.inches);
+      } else if (Array.isArray(config.inches)) {
+        inchesArray = config.inches;
+      } else {
+        console.error('Invalid inches data:', config.inches);
+        return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
+      }
+      
+      // Ensure it's an array
+      if (!Array.isArray(inchesArray)) {
+        console.error('Inches is not an array:', inchesArray);
+        return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
+      }
+    } catch (error) {
+      console.error('Error parsing inches:', error, config.inches);
+      return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
+    }
+    
+    const totalInches = inchesArray.reduce((sum: number, val: number) => sum + val, 0);
     
     // Material cost calculation
     const sheetCost = lfCost * 10;
