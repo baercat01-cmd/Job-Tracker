@@ -145,6 +145,9 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState('');
+  
+  // Document viewer state
+  const [viewingDocument, setViewingDocument] = useState<{ url: string; name: string } | null>(null);
 
   useEffect(() => {
     loadDocuments();
@@ -735,15 +738,61 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {documents.map((doc) => {
             const isEditing = editingDocId === doc.id;
+            const fileExtension = doc.latest_file_url?.split('.').pop()?.toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+            const isPDF = fileExtension === 'pdf';
             
             return (
-              <Card key={doc.id} className={doc.visible_to_crew ? 'border-l-4 border-l-green-500' : ''}>
-                <CardHeader className="pb-3">
+              <Card 
+                key={doc.id} 
+                className={`overflow-hidden hover:shadow-lg transition-shadow cursor-pointer ${
+                  doc.visible_to_crew ? 'border-l-4 border-l-green-500' : ''
+                }`}
+                onClick={() => doc.latest_file_url && setViewingDocument({ url: doc.latest_file_url, name: doc.name })}
+              >
+                {/* Document Preview Thumbnail */}
+                <div className="relative h-48 bg-slate-100 border-b">
+                  {doc.latest_file_url ? (
+                    isImage ? (
+                      <img
+                        src={doc.latest_file_url}
+                        alt={doc.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : isPDF ? (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
+                        <FileText className="w-20 h-20 text-red-600" />
+                      </div>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
+                        <FileText className="w-20 h-20 text-blue-600" />
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-slate-200">
+                      <FileText className="w-16 h-16 text-slate-400" />
+                    </div>
+                  )}
+                  {/* Overlay with badges */}
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <Badge className="text-xs bg-primary/90 backdrop-blur-sm">
+                      v{doc.current_version}
+                    </Badge>
+                    {doc.visible_to_crew && (
+                      <Badge className="text-xs bg-green-500/90 backdrop-blur-sm text-white">
+                        <Eye className="w-3 h-3 mr-1" />
+                        Crew
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                
+                <CardHeader className="pb-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       {isEditing ? (
                         <div className="space-y-2 mb-2">
                           <Input
@@ -767,33 +816,21 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         </div>
                       ) : (
                         <>
-                          <CardTitle className="text-base mb-1">{doc.name}</CardTitle>
-                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <CardTitle className="text-sm mb-1 truncate" title={doc.name}>
+                            {doc.name}
+                          </CardTitle>
+                          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                             <Badge variant="outline" className="text-xs">
                               {doc.category}
                             </Badge>
-                            <Badge className="text-xs bg-primary/10 text-primary">
-                              v{doc.current_version}
-                            </Badge>
-                            {doc.visible_to_crew ? (
-                              <Badge className="text-xs bg-green-500 text-white">
-                                <Eye className="w-3 h-3 mr-1" />
-                                Crew Visible
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs">
-                                <EyeOff className="w-3 h-3 mr-1" />
-                                Office Only
-                              </Badge>
-                            )}
-                            <span className="text-xs">
-                              Updated {new Date(doc.updated_at).toLocaleDateString()}
+                            <span className="text-xs truncate">
+                              {new Date(doc.updated_at).toLocaleDateString()}
                             </span>
                           </div>
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {isEditing ? (
                         <>
                           <Button
@@ -814,37 +851,26 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                         </>
                       ) : (
                         <>
-                          {doc.latest_file_url && (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              asChild
-                            >
-                              <a 
-                                href={doc.latest_file_url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1"
-                              >
-                                <FileText className="w-4 h-4" />
-                                View
-                              </a>
-                            </Button>
-                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => openRevisionLog(doc.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRevisionLog(doc.id);
+                            }}
+                            title="View history"
                           >
-                            <History className="w-4 h-4 mr-1" />
-                            History
+                            <History className="w-4 h-4" />
                           </Button>
                           {isOffice && (
                             <>
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => startEditDocument(doc)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEditDocument(doc);
+                                }}
                                 title="Edit name and category"
                               >
                                 <Edit2 className="w-4 h-4" />
@@ -852,7 +878,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                               <Button
                                 variant={doc.visible_to_crew ? "default" : "outline"}
                                 size="sm"
-                                onClick={() => toggleCrewVisibility(doc.id, doc.visible_to_crew)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleCrewVisibility(doc.id, doc.visible_to_crew);
+                                }}
                                 title={doc.visible_to_crew ? "Hide from crew" : "Show to crew"}
                               >
                                 {doc.visible_to_crew ? (
@@ -864,7 +893,10 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setDeletingDoc(doc)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeletingDoc(doc);
+                                }}
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1381,6 +1413,69 @@ export function JobDocuments({ job, onUpdate }: JobDocumentsProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Document Viewer Dialog */}
+      <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
+        <DialogContent className="max-w-6xl max-h-[95vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                {viewingDocument?.name}
+              </DialogTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank')}
+              >
+                Open in New Tab
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto p-6 pt-4">
+            {viewingDocument && (() => {
+              const fileExtension = viewingDocument.url.split('.').pop()?.toLowerCase();
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+              const isPDF = fileExtension === 'pdf';
+              
+              if (isImage) {
+                return (
+                  <div className="flex items-center justify-center bg-slate-50 rounded-lg p-4">
+                    <img
+                      src={viewingDocument.url}
+                      alt={viewingDocument.name}
+                      className="max-w-full h-auto rounded shadow-lg"
+                    />
+                  </div>
+                );
+              } else if (isPDF) {
+                return (
+                  <iframe
+                    src={viewingDocument.url}
+                    className="w-full h-[70vh] rounded-lg border"
+                    title={viewingDocument.name}
+                  />
+                );
+              } else {
+                return (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-lg font-medium mb-2">Preview not available</p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      This file type cannot be previewed in the browser
+                    </p>
+                    <Button
+                      onClick={() => viewingDocument && window.open(viewingDocument.url, '_blank')}
+                    >
+                      Download File
+                    </Button>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
