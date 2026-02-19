@@ -151,6 +151,8 @@ export function TrimPricingCalculator() {
   const [lengthInput, setLengthInput] = useState('');
   const lengthInputRef = useRef<HTMLInputElement>(null);
   const [previewConfig, setPreviewConfig] = useState<SavedConfig | null>(null);
+  const [showPriceList, setShowPriceList] = useState(false);
+  const [priceListMaterialId, setPriceListMaterialId] = useState<string>('');
   const BASE_CANVAS_WIDTH = 1400;
   const BASE_CANVAS_HEIGHT = 700;
   const CANVAS_WIDTH = BASE_CANVAS_WIDTH * (scale / 80);
@@ -1187,26 +1189,6 @@ export function TrimPricingCalculator() {
     loadTrimTypes();
   }, []);
   
-  // Reload trim types every 5 seconds to catch updates from other users
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('🔄 Auto-refreshing trim types...');
-      loadTrimTypes();
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
-  
-  // Reload saved configs every 5 seconds to catch updates from other users
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('🔄 Auto-refreshing saved configs...');
-      loadSavedConfigs();
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
-  
   // Update selected trim type when selection changes
   useEffect(() => {
     const selected = trimTypes.find(t => t.id === selectedTrimTypeId);
@@ -1634,11 +1616,12 @@ export function TrimPricingCalculator() {
       console.log('✅ Successfully inserted config:', insertedData);
       console.log('📊 Total configs now:', (savedConfigs.length + 1));
       
-      toast.success('Configuration saved successfully and is now visible to all users');
+      toast.success('Configuration saved successfully');
       setShowSaveDialog(false);
       setConfigName('');
       setSelectedJobId('');
-      await loadSavedConfigs(); // Reload to show the new config
+      // Reload configs to show the new one
+      setTimeout(() => loadSavedConfigs(), 500);
     } catch (error: any) {
       console.error('Error saving configuration:', error);
       toast.error(`Failed to save configuration: ${error.message || 'Unknown error'}`);
@@ -2188,21 +2171,41 @@ export function TrimPricingCalculator() {
                 </Button>
               </div>
 
-              {/* Save/Load Buttons */}
-              <div className="flex gap-1.5 pt-1.5 border-t-2 border-green-800">
+              {/* Save/Load/Price List Buttons */}
+              <div className="space-y-1.5 pt-1.5 border-t-2 border-green-800">
+                <div className="flex gap-1.5">
+                  <Button
+                    onClick={() => setShowSaveDialog(true)}
+                    className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border border-yellow-500 h-7 text-xs"
+                  >
+                    <Save className="w-3 h-3 mr-1" />
+                    Save
+                  </Button>
+                  <Button
+                    onClick={() => setShowLoadDialog(true)}
+                    className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border border-yellow-500 h-7 text-xs"
+                  >
+                    <FolderOpen className="w-3 h-3 mr-1" />
+                    Load ({savedConfigs.length})
+                  </Button>
+                </div>
                 <Button
-                  onClick={() => setShowSaveDialog(true)}
-                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border border-yellow-500 h-7 text-xs"
+                  onClick={() => {
+                    if (trimTypes.length === 0) {
+                      toast.error('Add material types first');
+                      return;
+                    }
+                    if (savedConfigs.length === 0) {
+                      toast.error('No saved trims to price');
+                      return;
+                    }
+                    setPriceListMaterialId(selectedTrimTypeId || trimTypes[0].id);
+                    setShowPriceList(true);
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 text-yellow-400 font-bold border border-yellow-500 h-7 text-xs"
                 >
-                  <Save className="w-3 h-3 mr-1" />
-                  Save
-                </Button>
-                <Button
-                  onClick={() => setShowLoadDialog(true)}
-                  className="flex-1 bg-gradient-to-r from-green-700 to-green-800 hover:from-green-600 hover:to-green-700 text-yellow-400 font-bold border border-yellow-500 h-7 text-xs"
-                >
-                  <FolderOpen className="w-3 h-3 mr-1" />
-                  Load ({savedConfigs.length})
+                  <Calculator className="w-3 h-3 mr-1" />
+                  Price List ({savedConfigs.length} trims)
                 </Button>
               </div>
             </>
@@ -2653,6 +2656,210 @@ export function TrimPricingCalculator() {
             )}
             <Button
               onClick={() => setShowLoadDialog(false)}
+              variant="outline"
+              className="w-full border-green-700 text-yellow-400"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Price List Dialog */}
+      <Dialog open={showPriceList} onOpenChange={setShowPriceList}>
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto bg-gradient-to-br from-green-950 to-black border-4 border-yellow-500">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-500">
+              <Calculator className="w-5 h-5" />
+              Trim Price List
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Material Type Selector */}
+            <div className="bg-black/30 border-2 border-green-800 rounded-lg p-3">
+              <Label className="text-yellow-400 font-semibold mb-2 block">
+                Calculate Prices Using Material Type:
+              </Label>
+              <Select value={priceListMaterialId} onValueChange={setPriceListMaterialId}>
+                <SelectTrigger className="bg-white border-green-700">
+                  <SelectValue placeholder="Select material..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {trimTypes.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Price List Table */}
+            {priceListMaterialId && (() => {
+              const selectedMaterial = trimTypes.find(t => t.id === priceListMaterialId);
+              if (!selectedMaterial) return null;
+              
+              // Calculate prices for all configs using selected material
+              const pricedConfigs = savedConfigs.map(config => {
+                // Parse inches
+                let inchesArray: number[];
+                try {
+                  if (typeof config.inches === 'string') {
+                    inchesArray = JSON.parse(config.inches);
+                  } else if (Array.isArray(config.inches)) {
+                    inchesArray = config.inches;
+                  } else {
+                    return null;
+                  }
+                  if (!Array.isArray(inchesArray)) return null;
+                } catch {
+                  return null;
+                }
+                
+                const totalInches = inchesArray.reduce((sum: number, val: number) => sum + val, 0);
+                
+                // Calculate pricing using selected material
+                const lfCost = selectedMaterial.cost_per_lf;
+                const sheetWidth = selectedMaterial.width_inches;
+                const bendPriceVal = selectedMaterial.price_per_bend;
+                const markup = selectedMaterial.markup_percent;
+                const cutPriceVal = selectedMaterial.cut_price;
+                
+                const sheetCost = lfCost * 10;
+                const costPerInchBeforeMarkup = sheetCost / sheetWidth;
+                const materialCost = totalInches * costPerInchBeforeMarkup;
+                
+                const markupMultiplier = 1 + (markup / 100);
+                const markedUpSheetCost = sheetCost * markupMultiplier;
+                const pricePerInch = markedUpSheetCost / sheetWidth;
+                
+                const totalInchCost = totalInches * pricePerInch;
+                const totalBendCost = config.bends * bendPriceVal;
+                const totalCutCost = cutPriceVal;
+                
+                const sellingPrice = totalInchCost + totalBendCost + totalCutCost;
+                const totalCost = materialCost + totalBendCost + totalCutCost;
+                const markupAmount = sellingPrice - totalCost;
+                
+                return {
+                  config,
+                  totalInches,
+                  materialCost,
+                  markupAmount,
+                  bendCost: totalBendCost,
+                  cutCost: totalCutCost,
+                  sellingPrice
+                };
+              }).filter(Boolean);
+              
+              return (
+                <div className="bg-black/30 border-2 border-green-800 rounded-lg overflow-hidden">
+                  <div className="bg-green-900/50 p-3 border-b-2 border-green-800">
+                    <div className="text-yellow-400 font-bold">
+                      {selectedMaterial.name}
+                    </div>
+                    <div className="text-white/70 text-sm mt-1">
+                      {selectedMaterial.width_inches}" width • ${selectedMaterial.cost_per_lf}/LF • 
+                      ${selectedMaterial.price_per_bend}/bend • {selectedMaterial.markup_percent}% markup
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-green-900/30 border-b border-green-800">
+                          <th className="text-left p-2 text-yellow-400 font-semibold">Trim Name</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Total Inches</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Bends</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Material Cost</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Markup</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Bend Cost</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Cut</th>
+                          <th className="text-right p-2 text-yellow-400 font-semibold">Selling Price</th>
+                          <th className="text-center p-2 text-yellow-400 font-semibold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pricedConfigs.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="text-center py-8 text-white/50">
+                              No valid trim configurations found
+                            </td>
+                          </tr>
+                        ) : (
+                          pricedConfigs.map((item: any) => (
+                            <tr key={item.config.id} className="border-b border-green-800/30 hover:bg-green-900/20">
+                              <td className="p-2 text-white font-medium">
+                                {item.config.name}
+                                {item.config.job_name && (
+                                  <div className="text-xs text-white/50">{item.config.job_name}</div>
+                                )}
+                              </td>
+                              <td className="text-right p-2 text-white">{item.totalInches.toFixed(2)}"</td>
+                              <td className="text-right p-2 text-white">{item.config.bends}</td>
+                              <td className="text-right p-2 text-white/80">${item.materialCost.toFixed(2)}</td>
+                              <td className="text-right p-2 text-green-400">${item.markupAmount.toFixed(2)}</td>
+                              <td className="text-right p-2 text-white/80">${item.bendCost.toFixed(2)}</td>
+                              <td className="text-right p-2 text-white/80">${item.cutCost.toFixed(2)}</td>
+                              <td className="text-right p-2 text-yellow-400 font-bold">${item.sellingPrice.toFixed(2)}</td>
+                              <td className="text-center p-2">
+                                <Button
+                                  onClick={() => {
+                                    // Set the material type first
+                                    setSelectedTrimTypeId(priceListMaterialId);
+                                    // Small delay to ensure material is set
+                                    setTimeout(() => {
+                                      loadConfiguration(item.config);
+                                      setShowPriceList(false);
+                                    }, 100);
+                                  }}
+                                  size="sm"
+                                  className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-7 px-2 text-xs"
+                                >
+                                  Load
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                      {pricedConfigs.length > 0 && (
+                        <tfoot>
+                          <tr className="bg-green-900/50 font-bold border-t-2 border-green-700">
+                            <td className="p-2 text-yellow-400">TOTAL ({pricedConfigs.length} trims)</td>
+                            <td className="text-right p-2 text-white">
+                              {pricedConfigs.reduce((sum: number, item: any) => sum + item.totalInches, 0).toFixed(2)}"
+                            </td>
+                            <td className="text-right p-2 text-white">
+                              {pricedConfigs.reduce((sum: number, item: any) => sum + item.config.bends, 0)}
+                            </td>
+                            <td className="text-right p-2 text-white">
+                              ${pricedConfigs.reduce((sum: number, item: any) => sum + item.materialCost, 0).toFixed(2)}
+                            </td>
+                            <td className="text-right p-2 text-green-400">
+                              ${pricedConfigs.reduce((sum: number, item: any) => sum + item.markupAmount, 0).toFixed(2)}
+                            </td>
+                            <td className="text-right p-2 text-white">
+                              ${pricedConfigs.reduce((sum: number, item: any) => sum + item.bendCost, 0).toFixed(2)}
+                            </td>
+                            <td className="text-right p-2 text-white">
+                              ${pricedConfigs.reduce((sum: number, item: any) => sum + item.cutCost, 0).toFixed(2)}
+                            </td>
+                            <td className="text-right p-2 text-yellow-400 text-lg">
+                              ${pricedConfigs.reduce((sum: number, item: any) => sum + item.sellingPrice, 0).toFixed(2)}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <Button
+              onClick={() => setShowPriceList(false)}
               variant="outline"
               className="w-full border-green-700 text-yellow-400"
             >
