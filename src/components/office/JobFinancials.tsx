@@ -1995,6 +1995,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           return {
             name: categoryName,
             itemCount: items.length,
+            items: items.map(item => ({
+              material_name: item.material_name,
+              sku: item.sku,
+              quantity: item.quantity || 0,
+              cost_per_unit: item.cost_per_unit || 0,
+              price_per_unit: item.price_per_unit || 0,
+              extended_cost: (item.cost_per_unit || 0) * (item.quantity || 0),
+              extended_price: (item.price_per_unit || 0) * (item.quantity || 0),
+            })),
             totalCost,
             totalPrice,
             profit,
@@ -3732,28 +3741,70 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         <div className="p-4">
                           <div className="space-y-3">
                             {sheet.categories.map((category: any, catIdx: number) => (
-                              <div key={catIdx} className="flex items-center justify-between py-2 border-b last:border-0">
-                                <div>
-                                  <p className="font-semibold text-slate-900">{category.name}</p>
-                                  <p className="text-sm text-slate-600">{category.itemCount} items</p>
-                                </div>
-                                <div className="text-right">
-                                  <div className="flex gap-4 text-sm">
-                                    <div>
-                                      <p className="text-muted-foreground">Cost</p>
-                                      <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <Collapsible key={catIdx} className="border-b last:border-0">
+                                <div className="py-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <CollapsibleTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                          <ChevronDown className="w-4 h-4" />
+                                        </Button>
+                                      </CollapsibleTrigger>
+                                      <div>
+                                        <p className="font-semibold text-slate-900">{category.name}</p>
+                                        <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Price</p>
-                                      <p className="font-bold text-blue-600">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Profit</p>
-                                      <p className="font-bold text-green-600">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <div className="text-right">
+                                      <div className="flex gap-4 text-sm">
+                                        <div>
+                                          <p className="text-muted-foreground">Cost</p>
+                                          <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-muted-foreground">Price</p>
+                                          <p className="font-bold text-blue-600">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-muted-foreground">Profit</p>
+                                          <p className="font-bold text-green-600">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
+                                  <CollapsibleContent>
+                                    <div className="mt-3 ml-8 bg-slate-50 rounded p-3">
+                                      <table className="w-full text-sm">
+                                        <thead>
+                                          <tr className="border-b border-slate-300">
+                                            <th className="text-left py-2 font-semibold text-slate-700">Material</th>
+                                            <th className="text-right py-2 font-semibold text-slate-700">Qty</th>
+                                            <th className="text-right py-2 font-semibold text-slate-700">Unit Cost</th>
+                                            <th className="text-right py-2 font-semibold text-slate-700">Total Cost</th>
+                                            <th className="text-right py-2 font-semibold text-slate-700">Unit Price</th>
+                                            <th className="text-right py-2 font-semibold text-slate-700">Total Price</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {category.items?.map((item: any, itemIdx: number) => (
+                                            <tr key={itemIdx} className="border-b border-slate-200 last:border-0">
+                                              <td className="py-2 text-slate-900">
+                                                {item.material_name}
+                                                {item.sku && <span className="text-xs text-slate-500 ml-2">({item.sku})</span>}
+                                              </td>
+                                              <td className="text-right py-2 text-slate-900">{item.quantity}</td>
+                                              <td className="text-right py-2 text-slate-700">${item.cost_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                              <td className="text-right py-2 font-semibold text-slate-900">${item.extended_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                              <td className="text-right py-2 text-blue-700">${item.price_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                              <td className="text-right py-2 font-bold text-blue-700">${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </CollapsibleContent>
                                 </div>
-                              </div>
+                              </Collapsible>
                             ))}
                           </div>
                         </div>
