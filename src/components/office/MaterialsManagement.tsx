@@ -1196,6 +1196,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Cost/Unit</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Markup %</th>
                             <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Price/Unit</th>
+                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Total Price</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Status</th>
                             <th className="text-center p-3 font-bold whitespace-nowrap">Actions</th>
                           </tr>
@@ -1204,7 +1205,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={packageSelectionMode ? 11 : 10} className="p-3">
+                                <td colSpan={packageSelectionMode ? 12 : 11} className="p-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
@@ -1510,6 +1511,12 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                           {item.price_per_unit ? `$${item.price_per_unit.toFixed(2)}` : '-'}
                                         </div>
                                       )}
+                                    </td>
+
+                                    <td className="p-2 text-right border-r">
+                                      <div className="font-bold text-sm text-green-700">
+                                        {item.extended_price ? `$${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                                      </div>
                                     </td>
 
                                     <td className="p-1 border-r whitespace-nowrap">

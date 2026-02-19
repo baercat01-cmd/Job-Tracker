@@ -257,7 +257,7 @@ function SortableRow({ item, ...props }: any) {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
+                  <h3 className="text-base font-bold text-slate-900 truncate">{sheet.sheetName}</h3>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -306,8 +306,14 @@ function SortableRow({ item, ...props }: any) {
                   key={`sheet-desc-${sheet.sheetId}-${sheet.sheetDescription}`}
                   defaultValue={sheet.sheetDescription || ''}
                   placeholder="Click to add description..."
-                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (sheet.sheetDescription.match(/\n/g) || []).length + Math.ceil(sheet.sheetDescription.length / 120))}
+                  className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={(() => {
+                    const lines = sheet.sheetDescription.split('\n');
+                    const lineCount = lines.length;
+                    // Estimate wrapped lines (assume ~90 chars per line with current width)
+                    const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
+                    return Math.max(2, wrappedLines);
+                  })()}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (sheet.sheetDescription || '')) {
@@ -758,7 +764,7 @@ function SortableRow({ item, ...props }: any) {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 truncate">{row.description}</h3>
+                  <h3 className="text-base font-bold text-slate-900 truncate">{row.description}</h3>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -817,8 +823,14 @@ function SortableRow({ item, ...props }: any) {
                   key={`row-notes-${row.id}-${row.notes}`}
                   defaultValue={row.notes || ''}
                   placeholder="Click to add notes..."
-                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (row.notes.match(/\n/g) || []).length + Math.ceil(row.notes.length / 120))}
+                  className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={(() => {
+                    const lines = row.notes.split('\n');
+                    const lineCount = lines.length;
+                    // Estimate wrapped lines (assume ~90 chars per line with current width)
+                    const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
+                    return Math.max(2, wrappedLines);
+                  })()}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (row.notes || '')) {
@@ -1129,7 +1141,7 @@ function SortableRow({ item, ...props }: any) {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 truncate">{est.company_name}</h3>
+                  <h3 className="text-base font-bold text-slate-900 truncate">{est.company_name}</h3>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1163,8 +1175,14 @@ function SortableRow({ item, ...props }: any) {
                   key={`sub-scope-${est.id}-${est.scope_of_work}`}
                   defaultValue={est.scope_of_work || ''}
                   placeholder="Click to add description..."
-                  className="text-sm text-slate-800 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
-                  rows={Math.max(2, (est.scope_of_work.match(/\n/g) || []).length + Math.ceil(est.scope_of_work.length / 120))}
+                  className="text-sm text-slate-600 leading-tight border border-slate-200 hover:border-slate-300 focus:border-blue-400 p-1.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white rounded transition-colors focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-0"
+                  rows={(() => {
+                    const lines = est.scope_of_work.split('\n');
+                    const lineCount = lines.length;
+                    // Estimate wrapped lines (assume ~90 chars per line with current width)
+                    const wrappedLines = lines.reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0);
+                    return Math.max(2, wrappedLines);
+                  })()}
                   onBlur={async (e) => {
                     const newValue = e.target.value.trim();
                     if (newValue !== (est.scope_of_work || '')) {
