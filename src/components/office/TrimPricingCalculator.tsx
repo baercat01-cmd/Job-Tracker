@@ -2556,7 +2556,17 @@ export function TrimPricingCalculator() {
                           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
                             <div className="flex justify-between text-white/70">
                               <span>Total Inches:</span>
-                              <span className="font-semibold text-white">{config.inches.reduce((a, b) => a + b, 0).toFixed(2)}"</span>
+                              <span className="font-semibold text-white">{(() => {
+                                try {
+                                  const inchesArray = typeof config.inches === 'string' ? JSON.parse(config.inches) : config.inches;
+                                  if (Array.isArray(inchesArray)) {
+                                    return inchesArray.reduce((a, b) => a + b, 0).toFixed(2) + '"';
+                                  }
+                                  return '0.00"';
+                                } catch {
+                                  return '0.00"';
+                                }
+                              })()}</span>
                             </div>
                             <div className="flex justify-between text-white/70">
                               <span>Bends:</span>
