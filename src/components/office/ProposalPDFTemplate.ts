@@ -38,9 +38,9 @@ export function generateProposalHTML(data: {
             font-family: Arial, sans-serif; 
             line-height: 1.3; 
             color: #000; 
-            max-width: 920px; 
+            max-width: 940px; 
             margin: 0 auto; 
-            padding: 15px 2px; 
+            padding: 15px 0px; 
             font-size: 11pt; 
           }
           
@@ -234,7 +234,7 @@ export function generateProposalHTML(data: {
                 <div class="box-header">Name / Address</div>
                 <div>${job.client_name}</div>
                 <div>${job.address}</div>
-                <div style="margin-top: 8px;"><strong>Phone:</strong> ${job.customer_phone || 'N/A'}</div>
+                <div style="margin-top: 8px;">${job.customer_phone || 'N/A'}</div>
               </div>
             </div>
             
