@@ -434,68 +434,41 @@ function SortableRow({ item, ...props }: any) {
                 </div>
               )}
 
-              {/* Sheet Labor Line Items - Aggregated */}
+              {/* Sheet Labor Line Items - Display as open rows */}
               {(() => {
                 const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
-                const totalLaborCost = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
                 
                 if (sheetLaborItems.length === 0) return null;
                 
                 return (
-                  <Collapsible>
-                    <div className="bg-amber-50 border border-amber-200 rounded p-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                <ChevronDown className="w-4 h-4 text-slate-600" />
-                              </Button>
-                            </CollapsibleTrigger>
-                            <p className="text-xs font-semibold text-slate-900">Labor & Installation</p>
-                            <Badge variant="outline" className="text-xs">{sheetLaborItems.length} {sheetLaborItems.length === 1 ? 'entry' : 'entries'}</Badge>
+                  <div className="space-y-1">
+                    {sheetLaborItems.map((laborItem: any) => (
+                      <div key={laborItem.id} className="bg-amber-50 border border-amber-200 rounded p-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-semibold text-slate-900">{laborItem.description}</p>
+                            <p className="text-xs text-slate-600">
+                              {laborItem.quantity}h × ${laborItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr
+                            </p>
+                            {laborItem.notes && (
+                              <p className="text-xs text-slate-500 mt-0.5">{laborItem.notes}</p>
+                            )}
                           </div>
-                          <p className="text-xs text-slate-600 ml-8">
-                            Total: {sheetLaborItems.reduce((sum: number, item: any) => sum + item.quantity, 0).toFixed(2)}h
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-bold text-slate-900">
-                            ${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-slate-900">
+                              ${laborItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, laborItem, 'labor')}>
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(laborItem.id)}>
+                              <Trash2 className="w-3 h-3 text-red-600" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                      
-                      <CollapsibleContent>
-                        <div className="mt-2 ml-8 space-y-1 pt-2 border-t border-amber-300">
-                          {sheetLaborItems.map((laborItem: any) => (
-                            <div key={laborItem.id} className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-amber-100">
-                              <div className="flex-1">
-                                <p className="text-xs font-medium text-slate-900">{laborItem.description}</p>
-                                <p className="text-xs text-slate-600">
-                                  {laborItem.quantity}h × ${laborItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr
-                                </p>
-                                {laborItem.notes && (
-                                  <p className="text-xs text-slate-500 mt-0.5">{laborItem.notes}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <p className="text-xs font-semibold text-slate-900">
-                                  ${laborItem.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                </p>
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLineItemDialog(sheet.sheetId, laborItem, 'labor')}>
-                                  <Edit className="w-3 h-3" />
-                                </Button>
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => deleteLineItem(laborItem.id)}>
-                                  <Trash2 className="w-3 h-3 text-red-600" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                    </div>
-                  </Collapsible>
+                    ))}
+                  </div>
                 );
               })()}
 
@@ -1032,8 +1005,35 @@ function SortableRow({ item, ...props }: any) {
                               />
                             </>
                           )}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500">+</span>
+                            <Input
+                              type="number"
+                              value={lineItem.markup_percent || 0}
+                              onChange={async (e) => {
+                                const newMarkup = parseFloat(e.target.value) || 0;
+                                try {
+                                  const { error } = await supabase
+                                    .from('subcontractor_estimate_line_items')
+                                    .update({ markup_percent: newMarkup })
+                                    .eq('id', lineItem.id);
+                                  if (error) throw error;
+                                  await loadSubcontractorEstimates();
+                                } catch (error: any) {
+                                  console.error('Error updating line item markup:', error);
+                                  toast.error('Failed to update markup');
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-14 h-5 text-xs px-1 text-center"
+                              step="1"
+                              min="0"
+                              disabled={lineItem.excluded}
+                            />
+                            <span className="text-xs text-slate-500">%</span>
+                          </div>
                           <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                            ${lineItem.total_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>
