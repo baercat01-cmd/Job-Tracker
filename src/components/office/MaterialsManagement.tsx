@@ -53,6 +53,7 @@ import { MaterialComparison } from './MaterialComparison';
 import { TrendingUp } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 
 interface MaterialItem {
   id: string;
@@ -157,6 +158,9 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   // Zoho order state
   const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
   const [selectedMaterialsForOrder, setSelectedMaterialsForOrder] = useState<MaterialItem[]>([]);
+
+  // Document viewer state
+  const [showDocumentViewer, setShowDocumentViewer] = useState(false);
 
   // Sheet management state
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
@@ -1117,6 +1121,15 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                 Select for Package
                               </Button>
                             )}
+                            <Button
+                              onClick={() => setShowDocumentViewer(true)}
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                            >
+                              <FileText className="w-4 h-4 mr-1" />
+                              View Documents
+                            </Button>
                             <Button
                               onClick={() => openAddDialog()}
                               size="sm"
@@ -2079,6 +2092,13 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         onOpenChange={setShowZohoOrderDialog}
         jobName={job.name}
         materials={selectedMaterialsForOrder}
+      />
+
+      {/* Floating Document Viewer */}
+      <FloatingDocumentViewer
+        jobId={job.id}
+        open={showDocumentViewer}
+        onClose={() => setShowDocumentViewer(false)}
       />
     </div>
   );
