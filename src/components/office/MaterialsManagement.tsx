@@ -156,6 +156,14 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   const [targetPackageId, setTargetPackageId] = useState('');
   const [addingMaterialsToPackage, setAddingMaterialsToPackage] = useState(false);
 
+  // Bulk move mode in workbook
+  const [bulkMoveMode, setBulkMoveMode] = useState(false);
+  const [selectedMaterialsForMove, setSelectedMaterialsForMove] = useState<Set<string>>(new Set());
+  const [showBulkMoveDialog, setShowBulkMoveDialog] = useState(false);
+  const [bulkMoveTargetSheetId, setBulkMoveTargetSheetId] = useState('');
+  const [bulkMoveTargetCategory, setBulkMoveTargetCategory] = useState('');
+  const [movingBulkMaterials, setMovingBulkMaterials] = useState(false);
+
   // Zoho order state
   const [showZohoOrderDialog, setShowZohoOrderDialog] = useState(false);
   const [selectedMaterialsForOrder, setSelectedMaterialsForOrder] = useState<MaterialItem[]>([]);
@@ -303,6 +311,86 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
   function togglePackageSelectionMode() {
     setPackageSelectionMode(!packageSelectionMode);
     setSelectedMaterialsForPackageAdd(new Set());
+  }
+
+  function toggleBulkMoveMode() {
+    setBulkMoveMode(!bulkMoveMode);
+    setSelectedMaterialsForMove(new Set());
+  }
+
+  function toggleMaterialForMove(materialId: string) {
+    const newSet = new Set(selectedMaterialsForMove);
+    if (newSet.has(materialId)) {
+      newSet.delete(materialId);
+    } else {
+      newSet.add(materialId);
+    }
+    setSelectedMaterialsForMove(newSet);
+  }
+
+  function openBulkMoveDialog() {
+    if (selectedMaterialsForMove.size === 0) {
+      toast.error('Please select at least one material');
+      return;
+    }
+    setBulkMoveTargetSheetId(activeSheetId || '');
+    setBulkMoveTargetCategory('');
+    setShowBulkMoveDialog(true);
+  }
+
+  async function bulkMoveMaterials() {
+    if (!bulkMoveTargetSheetId) {
+      toast.error('Please select a target sheet');
+      return;
+    }
+
+    if (!bulkMoveTargetCategory.trim()) {
+      toast.error('Please enter a category');
+      return;
+    }
+
+    if (selectedMaterialsForMove.size === 0) {
+      toast.error('No materials selected');
+      return;
+    }
+
+    setMovingBulkMaterials(true);
+
+    try {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+
+      const materialIds = Array.from(selectedMaterialsForMove);
+
+      const { error } = await supabase
+        .from('material_items')
+        .update({
+          sheet_id: bulkMoveTargetSheetId,
+          category: bulkMoveTargetCategory.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', materialIds);
+
+      if (error) throw error;
+
+      toast.success(`Moved ${materialIds.length} material${materialIds.length !== 1 ? 's' : ''} successfully`);
+      setShowBulkMoveDialog(false);
+      setBulkMoveMode(false);
+      setSelectedMaterialsForMove(new Set());
+      
+      // Reload to reflect changes
+      await loadWorkbook();
+
+      // Restore scroll position after reload
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
+      });
+    } catch (error: any) {
+      console.error('Error moving materials:', error);
+      toast.error(`Failed to move materials: ${error.message || 'Unknown error'}`);
+    } finally {
+      setMovingBulkMaterials(false);
+    }
   }
 
   function toggleMaterialForPackageAdd(materialId: string) {
@@ -1109,8 +1197,40 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                               Cancel
                             </Button>
                           </>
+                        ) : bulkMoveMode ? (
+                          <>
+                            <Button
+                              onClick={openBulkMoveDialog}
+                              size="sm"
+                              disabled={selectedMaterialsForMove.size === 0}
+                              className="bg-orange-600 hover:bg-orange-700 whitespace-nowrap"
+                            >
+                              <MoveHorizontal className="w-4 h-4 mr-1" />
+                              Move Selected ({selectedMaterialsForMove.size})
+                            </Button>
+                            <Button
+                              onClick={toggleBulkMoveMode}
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              Cancel
+                            </Button>
+                          </>
                         ) : (
                           <>
+                            {workbook.sheets.length > 1 && (
+                              <Button
+                                onClick={toggleBulkMoveMode}
+                                size="sm"
+                                variant="outline"
+                                className="whitespace-nowrap bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100"
+                              >
+                                <MoveHorizontal className="w-4 h-4 mr-1" />
+                                Select to Move
+                              </Button>
+                            )}
                             {packages.length > 0 && (
                               <Button
                                 onClick={togglePackageSelectionMode}
@@ -1180,7 +1300,7 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                         <table className="border-collapse w-auto">
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
-                            {packageSelectionMode && (
+                            {(packageSelectionMode || bulkMoveMode) && (
                               <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
                                 <CheckSquare className="w-5 h-5 mx-auto" />
                               </th>
@@ -1248,6 +1368,8 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                     className={`border-b transition-colors ${
                                       packageSelectionMode && selectedMaterialsForPackageAdd.has(item.id)
                                         ? 'bg-blue-100 hover:bg-blue-200'
+                                        : bulkMoveMode && selectedMaterialsForMove.has(item.id)
+                                        ? 'bg-orange-100 hover:bg-orange-200'
                                         : `hover:bg-blue-50 ${isEven ? 'bg-white' : 'bg-slate-50/50'}`
                                     }`}
                                   >
@@ -1258,6 +1380,16 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
                                             checked={selectedMaterialsForPackageAdd.has(item.id)}
                                             onCheckedChange={() => toggleMaterialForPackageAdd(item.id)}
                                             disabled={isMaterialInAnyPackage(item.id)}
+                                          />
+                                        </div>
+                                      </td>
+                                    )}
+                                    {bulkMoveMode && (
+                                      <td className="p-1 border-r whitespace-nowrap">
+                                        <div className="flex items-center justify-center">
+                                          <Checkbox
+                                            checked={selectedMaterialsForMove.has(item.id)}
+                                            onCheckedChange={() => toggleMaterialForMove(item.id)}
                                           />
                                         </div>
                                       </td>
@@ -2101,6 +2233,91 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
         jobName={job.name}
         materials={selectedMaterialsForOrder}
       />
+
+      {/* Bulk Move Materials Dialog */}
+      <Dialog open={showBulkMoveDialog} onOpenChange={setShowBulkMoveDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move {selectedMaterialsForMove.size} Material{selectedMaterialsForMove.size !== 1 ? 's' : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Move selected materials to a different sheet and category
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-move-sheet">Target Sheet *</Label>
+              <Select value={bulkMoveTargetSheetId} onValueChange={setBulkMoveTargetSheetId}>
+                <SelectTrigger id="bulk-move-sheet">
+                  <SelectValue placeholder="Select sheet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workbook?.sheets.map(sheet => (
+                    <SelectItem key={sheet.id} value={sheet.id}>
+                      {sheet.sheet_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-move-category">Target Category *</Label>
+              <Select value={bulkMoveTargetCategory} onValueChange={setBulkMoveTargetCategory}>
+                <SelectTrigger id="bulk-move-category">
+                  <SelectValue placeholder="Select or enter category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allCategories.map(category => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={bulkMoveTargetCategory}
+                onChange={(e) => setBulkMoveTargetCategory(e.target.value)}
+                placeholder="Or type new category name"
+                className="mt-2"
+              />
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 rounded p-3">
+              <p className="text-sm font-semibold text-orange-900">
+                {selectedMaterialsForMove.size} material{selectedMaterialsForMove.size !== 1 ? 's' : ''} will be moved
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={bulkMoveMaterials}
+                disabled={movingBulkMaterials || !bulkMoveTargetSheetId || !bulkMoveTargetCategory.trim()}
+                className="flex-1"
+              >
+                {movingBulkMaterials ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Moving...
+                  </>
+                ) : (
+                  <>
+                    <MoveHorizontal className="w-4 h-4 mr-2" />
+                    Move Materials
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowBulkMoveDialog(false)}
+                disabled={movingBulkMaterials}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Floating Document Viewer */}
       <FloatingDocumentViewer
