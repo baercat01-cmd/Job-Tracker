@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
+import { BulkMaterialMover } from './BulkMaterialMover';
 import type { Job } from '@/types';
 import {
   DndContext,
@@ -3728,6 +3729,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 <CardContent>
                   <div className="space-y-6">
                     {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => (
+                      <div key={idx}>
+                        <BulkMaterialMover
+                          sheet={sheet}
+                          allSheets={materialSheets}
+                          onMoveComplete={loadMaterialsData}
+                        />
+                      </div>
+                    ))}
+                    {/* Original breakdown for reference
+                    {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => (
                       <div key={idx} className="border rounded-lg overflow-hidden">
                         <div className="bg-blue-50 p-3 border-b">
                           <div className="flex items-center justify-between">
@@ -3809,7 +3820,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    ))} */}
                   </div>
                 </CardContent>
               </Card>
