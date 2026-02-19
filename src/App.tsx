@@ -21,7 +21,7 @@ import { WorkbookDetailPage } from '@/pages/office/WorkbookDetailPage';
 import { PWAInstallPrompt } from '@/components/ui/pwa-install-prompt';
 import { OfflineIndicator } from '@/components/ui/offline-indicator';
 import { ConnectionStatus } from '@/components/ui/connection-status';
-import { SyncStatus } from '@/components/ui/sync-status';
+import { SyncStatusDetailed } from '@/components/ui/sync-status';
 
 const queryClient = new QueryClient();
 
@@ -55,7 +55,7 @@ export default function App() {
         <PWAInstallPrompt />
         <OfflineIndicator />
         <ConnectionStatus />
-        <SyncStatus />
+        <SyncStatusDetailed />
         <Toaster position="top-right" />
       </AuthProvider>
     </QueryClientProvider>
