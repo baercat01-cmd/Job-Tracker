@@ -7,6 +7,7 @@ export function generateProposalHTML(data: {
     address: string;
     name: string;
     customer_phone?: string;
+    description?: string;
   };
   sections: Array<{
     name: string;
@@ -254,6 +255,7 @@ export function generateProposalHTML(data: {
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 15px 10px 10px 10px;">
+            ${job.description ? '<div style="margin-bottom: 20px; padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: 11pt; line-height: 1.6;">' + job.description + '</div>' : ''}
             ${sections.map((section: any) => {
               let content = '<div class="section-wrapper">';
               

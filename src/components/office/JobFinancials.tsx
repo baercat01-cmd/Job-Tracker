@@ -1415,6 +1415,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+  const [buildingDescription, setBuildingDescription] = useState(job.description || '');
+  const [editingDescription, setEditingDescription] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -2874,6 +2876,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  async function saveBuildingDescription() {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ description: buildingDescription })
+        .eq('id', job.id);
+
+      if (error) throw error;
+      toast.success('Building description saved');
+      setEditingDescription(false);
+    } catch (error: any) {
+      console.error('Error saving description:', error);
+      toast.error('Failed to save description');
+    }
+  }
+
   async function handleExportPDF() {
     setExporting(true);
     
@@ -2987,6 +3005,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           address: job.address,
           name: job.name,
           customer_phone: job.customer_phone,
+          description: buildingDescription,
         },
         sections,
         totals: {
@@ -3546,7 +3565,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           
           {/* Action Buttons - Only show in Proposal tab */}
           {activeTab === 'proposal' && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {/* Building Description Edit Button */}
+              <Button
+                onClick={() => setEditingDescription(true)}
+                variant="outline"
+                size="sm"
+                className="border-amber-300 hover:bg-amber-50"
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                {buildingDescription ? 'Edit Building Description' : 'Add Building Description'}
+              </Button>
+              <div className="h-6 w-px bg-border" />
               {/* Versioning Buttons - Show if quote exists */}
               {quote ? (
                 <>
@@ -4456,6 +4486,47 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         open={showDocumentViewer}
         onClose={() => setShowDocumentViewer(false)}
       />
+
+      {/* Building Description Dialog */}
+      <Dialog open={editingDescription} onOpenChange={setEditingDescription}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Building Description</DialogTitle>
+            <DialogDescription>
+              Add a brief description of the building that will appear at the top of the proposal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={buildingDescription}
+                onChange={(e) => setBuildingDescription(e.target.value)}
+                placeholder="Enter building description...\n\nExample: 72' x 116' pole building with 20' sidewalls, 5:12 roof pitch, and 16' wide x 14' tall overhead doors."
+                rows={6}
+                className="mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                This description will appear at the top of the proposal, inside the "Work to be Completed" section.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingDescription(false);
+                  setBuildingDescription(job.description || '');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveBuildingDescription}>
+                Save Description
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
