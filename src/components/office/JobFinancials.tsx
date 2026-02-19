@@ -499,41 +499,150 @@ function SortableRow({ item, ...props }: any) {
 
               {linkedSubs.map((sub: any) => {
                 const lineItems = subcontractorLineItems[sub.id] || [];
-                // Separate by type (material vs labor)
-                const materialsTotal = lineItems
-                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
+                const includedTotal = lineItems
+                  .filter((item: any) => !item.excluded)
                   .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const laborTotal = lineItems
-                  .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
+                const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
 
                 return (
-                  <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
-                        <p className="text-xs text-slate-600">
-                          📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                          👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-bold text-slate-900">
-                          ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-xs text-slate-600">+{sub.markup_percent || 0}%</p>
-                        {sub.pdf_url && (
-                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
-                            <Eye className="w-3 h-3 text-blue-600" />
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => unlinkSubcontractor(sub.id)}>
-                          <Trash2 className="w-3 h-3 text-red-600" />
+                  <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
+                    <div className="flex items-start gap-2">
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                          <ChevronDown className="w-4 h-4 text-slate-600" />
                         </Button>
+                      </CollapsibleTrigger>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span className="text-slate-500">+</span>
+                              <Input
+                                type="number"
+                                value={sub.markup_percent || 0}
+                                onChange={(e) => {
+                                  const newMarkup = parseFloat(e.target.value) || 0;
+                                  updateSubcontractorMarkup(sub.id, newMarkup);
+                                }}
+                                className="w-14 h-5 text-xs px-1 text-center"
+                                step="1"
+                                min="0"
+                              />
+                              <span className="text-slate-500">%</span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-900">
+                              ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
+                            {sub.pdf_url && (
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
+                                <Eye className="w-3 h-3 text-blue-600" />
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => unlinkSubcontractor(sub.id)}>
+                              <Trash2 className="w-3 h-3 text-red-600" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                    {sub.scope_of_work && (
+                      <div className="ml-8 mt-1">
+                        <p className="text-xs text-slate-600">{sub.scope_of_work}</p>
+                      </div>
+                    )}
+                    <CollapsibleContent>
+                      <div className="ml-8 mt-2 space-y-1">
+                        {lineItems.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                              <List className="w-3 h-3" />
+                              Line Items
+                              <span className="text-slate-500">({lineItems.filter((item: any) => !item.excluded).length} of {lineItems.length} included)</span>
+                            </p>
+                            {lineItems.map((lineItem: any) => (
+                              <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={!lineItem.excluded}
+                                    onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
+                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    title="Include in price"
+                                  />
+                                  <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                    {lineItem.description}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs h-5 cursor-pointer hover:bg-slate-100 ${lineItem.excluded ? 'opacity-50' : ''}`}
+                                      onClick={() => !lineItem.excluded && toggleSubcontractorLineItemType(lineItem.id, lineItem.item_type || 'material')}
+                                      title="Click to toggle between Material and Labor"
+                                    >
+                                      {(lineItem.item_type || 'material') === 'labor' ? '👷 Labor' : '📦 Material'}
+                                    </Badge>
+                                    {(lineItem.item_type || 'material') === 'material' && (
+                                      <>
+                                        <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
+                                          {lineItem.taxable ? 'Tax' : 'No Tax'}
+                                        </Badge>
+                                        <input
+                                          type="checkbox"
+                                          checked={lineItem.taxable}
+                                          onChange={() => toggleSubcontractorLineItemTaxable(lineItem.id, lineItem.taxable)}
+                                          className="rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                          title="Taxable"
+                                          disabled={lineItem.excluded}
+                                        />
+                                      </>
+                                    )}
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs text-slate-500">+</span>
+                                      <Input
+                                        type="number"
+                                        value={lineItem.markup_percent || 0}
+                                        onChange={async (e) => {
+                                          const newMarkup = parseFloat(e.target.value) || 0;
+                                          try {
+                                            const { error } = await supabase
+                                              .from('subcontractor_estimate_line_items')
+                                              .update({ markup_percent: newMarkup })
+                                              .eq('id', lineItem.id);
+                                            if (error) throw error;
+                                            await loadSubcontractorEstimates();
+                                          } catch (error: any) {
+                                            console.error('Error updating line item markup:', error);
+                                            toast.error('Failed to update markup');
+                                          }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-14 h-5 text-xs px-1 text-center"
+                                        step="1"
+                                        min="0"
+                                        disabled={lineItem.excluded}
+                                      />
+                                      <span className="text-xs text-slate-500">%</span>
+                                    </div>
+                                    <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                      ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {sub.exclusions && (
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <p className="text-xs font-semibold text-red-700 mb-1">Exclusions</p>
+                            <p className="text-xs text-slate-600">{sub.exclusions}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 );
               })}
             </div>
@@ -796,41 +905,150 @@ function SortableRow({ item, ...props }: any) {
 
                 {linkedSubs.map((sub: any) => {
                   const subLineItems = subcontractorLineItems[sub.id] || [];
-                  // Separate by type (material vs labor)
-                  const materialsTotal = subLineItems
-                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
+                  const includedTotal = subLineItems
+                    .filter((item: any) => !item.excluded)
                     .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const laborTotal = subLineItems
-                    .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const totalWithMarkup = (materialsTotal + laborTotal) * (1 + (sub.markup_percent || 0) / 100);
+                  const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
 
                   return (
-                    <div key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
-                          <p className="text-xs text-slate-600">
-                            📦 Materials: ${materialsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} | 
-                            👷 Labor: ${laborTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-bold text-slate-900">
-                            ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-xs text-slate-600">+{sub.markup_percent || 0}%</p>
-                          {sub.pdf_url && (
-                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
-                              <Eye className="w-3 h-3 text-blue-600" />
-                            </Button>
-                          )}
-                          <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => unlinkSubcontractor(sub.id)}>
-                            <Trash2 className="w-3 h-3 text-red-600" />
+                    <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
+                      <div className="flex items-start gap-2">
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
+                            <ChevronDown className="w-4 h-4 text-slate-600" />
                           </Button>
+                        </CollapsibleTrigger>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 text-xs">
+                                <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-slate-500">+</span>
+                                <Input
+                                  type="number"
+                                  value={sub.markup_percent || 0}
+                                  onChange={(e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    updateSubcontractorMarkup(sub.id, newMarkup);
+                                  }}
+                                  className="w-14 h-5 text-xs px-1 text-center"
+                                  step="1"
+                                  min="0"
+                                />
+                                <span className="text-slate-500">%</span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-900">
+                                ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                              {sub.pdf_url && (
+                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
+                                  <Eye className="w-3 h-3 text-blue-600" />
+                                </Button>
+                              )}
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => unlinkSubcontractor(sub.id)}>
+                                <Trash2 className="w-3 h-3 text-red-600" />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                      {sub.scope_of_work && (
+                        <div className="ml-8 mt-1">
+                          <p className="text-xs text-slate-600">{sub.scope_of_work}</p>
+                        </div>
+                      )}
+                      <CollapsibleContent>
+                        <div className="ml-8 mt-2 space-y-1">
+                          {subLineItems.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                                <List className="w-3 h-3" />
+                                Line Items
+                                <span className="text-slate-500">({subLineItems.filter((item: any) => !item.excluded).length} of {subLineItems.length} included)</span>
+                              </p>
+                              {subLineItems.map((lineItem: any) => (
+                                <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={!lineItem.excluded}
+                                      onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
+                                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                      title="Include in price"
+                                    />
+                                    <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                      {lineItem.description}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs h-5 cursor-pointer hover:bg-slate-100 ${lineItem.excluded ? 'opacity-50' : ''}`}
+                                        onClick={() => !lineItem.excluded && toggleSubcontractorLineItemType(lineItem.id, lineItem.item_type || 'material')}
+                                        title="Click to toggle between Material and Labor"
+                                      >
+                                        {(lineItem.item_type || 'material') === 'labor' ? '👷 Labor' : '📦 Material'}
+                                      </Badge>
+                                      {(lineItem.item_type || 'material') === 'material' && (
+                                        <>
+                                          <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
+                                            {lineItem.taxable ? 'Tax' : 'No Tax'}
+                                          </Badge>
+                                          <input
+                                            type="checkbox"
+                                            checked={lineItem.taxable}
+                                            onChange={() => toggleSubcontractorLineItemTaxable(lineItem.id, lineItem.taxable)}
+                                            className="rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                            title="Taxable"
+                                            disabled={lineItem.excluded}
+                                          />
+                                        </>
+                                      )}
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs text-slate-500">+</span>
+                                        <Input
+                                          type="number"
+                                          value={lineItem.markup_percent || 0}
+                                          onChange={async (e) => {
+                                            const newMarkup = parseFloat(e.target.value) || 0;
+                                            try {
+                                              const { error } = await supabase
+                                                .from('subcontractor_estimate_line_items')
+                                                .update({ markup_percent: newMarkup })
+                                                .eq('id', lineItem.id);
+                                              if (error) throw error;
+                                              await loadSubcontractorEstimates();
+                                            } catch (error: any) {
+                                              console.error('Error updating line item markup:', error);
+                                              toast.error('Failed to update markup');
+                                            }
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="w-14 h-5 text-xs px-1 text-center"
+                                          step="1"
+                                          min="0"
+                                          disabled={lineItem.excluded}
+                                        />
+                                        <span className="text-xs text-slate-500">%</span>
+                                      </div>
+                                      <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                        ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {sub.exclusions && (
+                            <div className="mt-3 pt-3 border-t border-slate-200">
+                              <p className="text-xs font-semibold text-red-700 mb-1">Exclusions</p>
+                              <p className="text-xs text-slate-600">{sub.exclusions}</p>
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
                   );
                 })}
               </div>
