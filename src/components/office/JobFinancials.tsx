@@ -33,6 +33,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { generateProposalHTML } from './ProposalPDFTemplate';
+import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import type { Job } from '@/types';
 import {
   DndContext,
@@ -1395,6 +1396,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [versionChangeNotes, setVersionChangeNotes] = useState('');
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [initializingVersions, setInitializingVersions] = useState(false);
+  
+  // Document viewer state
+  const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -3591,6 +3595,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </Button>
               )}
               <div className="h-6 w-px bg-border" />
+              <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
+                <FileText className="w-4 h-4 mr-2" />
+                View Documents
+              </Button>
               <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
                 <Download className="w-4 h-4 mr-2" />
                 Export PDF
@@ -4424,6 +4432,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Floating Document Viewer */}
+      <FloatingDocumentViewer
+        jobId={job.id}
+        open={showDocumentViewer}
+        onClose={() => setShowDocumentViewer(false)}
+      />
     </div>
   );
 }
