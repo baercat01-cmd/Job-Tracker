@@ -1181,9 +1181,20 @@ export function TrimPricingCalculator() {
 
   // Load saved values from database on mount
   useEffect(() => {
+    console.log('🚀 Trim Calculator mounted - loading data...');
     loadJobs();
     loadSavedConfigs();
     loadTrimTypes();
+  }, []);
+  
+  // Reload trim types every 5 seconds to catch updates from other users
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing trim types...');
+      loadTrimTypes();
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
   
   // Update selected trim type when selection changes
@@ -1218,27 +1229,43 @@ export function TrimPricingCalculator() {
         .eq('active', true)
         .order('name');
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error loading trim types:', error);
+        toast.error('Failed to load trim types. Please check permissions.');
+        throw error;
+      }
       
       console.log('✅ Loaded trim types:', data);
+      console.log('📊 Total trim types found:', data?.length || 0);
       setTrimTypes(data || []);
       
       // Auto-select first type if none selected
       if (data && data.length > 0 && !selectedTrimTypeId) {
         setSelectedTrimTypeId(data[0].id);
+        console.log('✅ Auto-selected first trim type:', data[0].name);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error loading trim types:', error);
+      toast.error(`Failed to load trim types: ${error.message || 'Unknown error'}`);
     }
   }
 
   async function loadSavedConfigs() {
     try {
-      // Load from localStorage for now (could be database table later)
-      const saved = localStorage.getItem('trim_saved_configs');
-      if (saved) {
-        setSavedConfigs(JSON.parse(saved));
+      console.log('🔄 Loading saved trim configurations from database...');
+      const { data, error } = await supabase
+        .from('trim_saved_configs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('❌ Error loading saved configs:', error);
+        toast.error('Failed to load saved configurations');
+        throw error;
       }
+      
+      console.log('✅ Loaded saved configs:', data?.length || 0);
+      setSavedConfigs(data || []);
     } catch (error) {
       console.error('Error loading saved configs:', error);
     }
@@ -1538,38 +1565,45 @@ export function TrimPricingCalculator() {
         ? jobs.find(j => j.id === selectedJobId)?.name || null
         : null;
 
-      const newConfig: SavedConfig = {
-        id: Date.now().toString(),
+
+
+      const configData = {
         name: configName.trim(),
         job_id: selectedJobId || null,
         job_name: jobName,
-        inches,
+        inches: JSON.stringify(inches),
         bends,
-        drawing_segments: drawing.segments.length > 0 ? drawing.segments : undefined,
-        created_at: new Date().toISOString(),
+        drawing_segments: drawing.segments.length > 0 ? JSON.stringify(drawing.segments) : null,
         material_type_id: selectedTrimTypeId,
         material_type_name: selectedTrimType.name,
       };
 
-      const updatedConfigs = [...savedConfigs, newConfig];
-      localStorage.setItem('trim_saved_configs', JSON.stringify(updatedConfigs));
-      setSavedConfigs(updatedConfigs);
+      const { error } = await supabase
+        .from('trim_saved_configs')
+        .insert([configData]);
+
+      if (error) throw error;
       
-      toast.success('Configuration saved successfully');
+      toast.success('Configuration saved successfully and is now visible to all users');
       setShowSaveDialog(false);
       setConfigName('');
       setSelectedJobId('');
-    } catch (error) {
+      await loadSavedConfigs(); // Reload to show the new config
+    } catch (error: any) {
       console.error('Error saving configuration:', error);
-      toast.error('Failed to save configuration');
+      toast.error(`Failed to save configuration: ${error.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
   }
 
   function loadConfiguration(config: SavedConfig) {
-    // Load the inches
-    const newInputs = config.inches.map((value, index) => ({
+    // Parse inches from database (stored as JSON)
+    const inches = typeof config.inches === 'string' 
+      ? JSON.parse(config.inches) 
+      : config.inches;
+    
+    const newInputs = inches.map((value: number, index: number) => ({
       id: (index + 1).toString(),
       value: value.toString(),
     }));
@@ -1578,13 +1612,24 @@ export function TrimPricingCalculator() {
     // Load bends
     setNumberOfBends(config.bends.toString());
     
-    // Load drawing if it exists
-    if (config.drawing_segments && config.drawing_segments.length > 0) {
+    // Load material type if available
+    if (config.material_type_id && trimTypes.some(t => t.id === config.material_type_id)) {
+      setSelectedTrimTypeId(config.material_type_id);
+    }
+    
+    // Parse and load drawing if it exists
+    const drawingSegments = config.drawing_segments 
+      ? (typeof config.drawing_segments === 'string' 
+          ? JSON.parse(config.drawing_segments) 
+          : config.drawing_segments)
+      : null;
+    
+    if (drawingSegments && drawingSegments.length > 0) {
       setDrawing({
-        segments: config.drawing_segments,
+        segments: drawingSegments,
         selectedSegmentId: null,
         currentPoint: null,
-        nextLabel: 65 + config.drawing_segments.length
+        nextLabel: 65 + drawingSegments.length
       });
       toast.success(`Loaded configuration with drawing: ${config.name}`);
     } else {
@@ -1614,7 +1659,11 @@ export function TrimPricingCalculator() {
       return { cost: 0, price: 0, markup: 0, markupPercent: 0 };
     }
     
-    const totalInches = config.inches.reduce((sum, val) => sum + val, 0);
+    // Parse inches from database (stored as JSON)
+    const inches = typeof config.inches === 'string' 
+      ? JSON.parse(config.inches) 
+      : config.inches;
+    const totalInches = inches.reduce((sum: number, val: number) => sum + val, 0);
     
     // Material cost calculation
     const sheetCost = lfCost * 10;
@@ -1643,13 +1692,23 @@ export function TrimPricingCalculator() {
     };
   }
 
-  function deleteConfiguration(configId: string) {
+  async function deleteConfiguration(configId: string) {
     if (!confirm('Delete this saved configuration?')) return;
     
-    const updatedConfigs = savedConfigs.filter(c => c.id !== configId);
-    localStorage.setItem('trim_saved_configs', JSON.stringify(updatedConfigs));
-    setSavedConfigs(updatedConfigs);
-    toast.success('Configuration deleted');
+    try {
+      const { error } = await supabase
+        .from('trim_saved_configs')
+        .delete()
+        .eq('id', configId);
+
+      if (error) throw error;
+      
+      toast.success('Configuration deleted');
+      await loadSavedConfigs(); // Reload to update the list
+    } catch (error: any) {
+      console.error('Error deleting configuration:', error);
+      toast.error('Failed to delete configuration');
+    }
   }
 
   const hasSettings = selectedTrimType !== null;
