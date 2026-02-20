@@ -1567,6 +1567,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [initializingVersions, setInitializingVersions] = useState(false);
   
+  // Version navigation state
+  const [viewingVersionNumber, setViewingVersionNumber] = useState<number | null>(null);
+  const [loadingVersionSnapshot, setLoadingVersionSnapshot] = useState(false);
+  
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [buildingDescription, setBuildingDescription] = useState(job.description || '');
@@ -1975,6 +1979,185 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error creating quote:', error);
       toast.error('Failed to create proposal number');
+    }
+  }
+
+  // Version navigation functions
+  async function navigateToPreviousVersion() {
+    if (proposalVersions.length === 0) return;
+    
+    const currentIndex = viewingVersionNumber === null 
+      ? -1 
+      : proposalVersions.findIndex(v => v.version_number === viewingVersionNumber);
+    
+    // Move to next older version (higher index)
+    if (currentIndex < proposalVersions.length - 1) {
+      const nextVersion = proposalVersions[currentIndex + 1];
+      setViewingVersionNumber(nextVersion.version_number);
+      await loadVersionSnapshot(nextVersion.version_number);
+    }
+  }
+
+  async function navigateToNextVersion() {
+    if (proposalVersions.length === 0) return;
+    
+    const currentIndex = viewingVersionNumber === null 
+      ? -1 
+      : proposalVersions.findIndex(v => v.version_number === viewingVersionNumber);
+    
+    // Move to next newer version (lower index)
+    if (currentIndex > 0) {
+      const nextVersion = proposalVersions[currentIndex - 1];
+      setViewingVersionNumber(nextVersion.version_number);
+      await loadVersionSnapshot(nextVersion.version_number);
+    } else if (currentIndex === 0) {
+      // Return to live/current view
+      setViewingVersionNumber(null);
+      toast.info('Viewing current working version');
+      await loadData(false);
+    }
+  }
+
+  async function loadVersionSnapshot(versionNumber: number) {
+    setLoadingVersionSnapshot(true);
+    try {
+      const version = proposalVersions.find(v => v.version_number === versionNumber);
+      if (!version) {
+        toast.error('Version not found');
+        return;
+      }
+
+      toast.info(`Loading Version ${versionNumber}...`);
+
+      // Load materials snapshot
+      if (version.materials_snapshot && Array.isArray(version.materials_snapshot)) {
+        // Convert materials snapshot to breakdown format
+        const sheetMap = new Map<string, any>();
+        
+        version.materials_snapshot.forEach((item: any) => {
+          const sheetId = item.sheet_id;
+          if (!sheetMap.has(sheetId)) {
+            sheetMap.set(sheetId, {
+              sheetId,
+              sheetName: 'Sheet',
+              sheetDescription: '',
+              categories: new Map<string, any>(),
+            });
+          }
+          
+          const sheet = sheetMap.get(sheetId);
+          const category = item.category || 'Uncategorized';
+          
+          if (!sheet.categories.has(category)) {
+            sheet.categories.set(category, {
+              name: category,
+              itemCount: 0,
+              totalCost: 0,
+              totalPrice: 0,
+              items: [],
+            });
+          }
+          
+          const cat = sheet.categories.get(category);
+          cat.itemCount++;
+          cat.totalCost += item.extended_cost || 0;
+          cat.totalPrice += item.extended_price || 0;
+          cat.items.push(item);
+        });
+        
+        // Convert to array format
+        const sheetBreakdowns = Array.from(sheetMap.values()).map((sheet, idx) => ({
+          ...sheet,
+          orderIndex: idx,
+          categories: Array.from(sheet.categories.values()),
+          totalCost: Array.from(sheet.categories.values()).reduce((sum, cat) => sum + cat.totalCost, 0),
+          totalPrice: Array.from(sheet.categories.values()).reduce((sum, cat) => sum + cat.totalPrice, 0),
+          profit: 0,
+          margin: 0,
+        }));
+        
+        // Update sheet names from workbook snapshot
+        if (version.workbook_snapshot?.sheets) {
+          version.workbook_snapshot.sheets.forEach((s: any) => {
+            const sheet = sheetBreakdowns.find(sb => sb.sheetId === s.id);
+            if (sheet) {
+              sheet.sheetName = s.sheet_name;
+              sheet.sheetDescription = s.description || '';
+              sheet.orderIndex = s.order_index;
+            }
+          });
+        }
+        
+        setMaterialsBreakdown({
+          sheetBreakdowns,
+          totals: {
+            totalCost: sheetBreakdowns.reduce((sum, s) => sum + s.totalCost, 0),
+            totalPrice: sheetBreakdowns.reduce((sum, s) => sum + s.totalPrice, 0),
+            totalProfit: 0,
+            profitMargin: 0,
+          },
+        });
+      }
+
+      // Load custom rows snapshot
+      if (version.financial_rows_snapshot && Array.isArray(version.financial_rows_snapshot)) {
+        setCustomRows(version.financial_rows_snapshot);
+        
+        // Extract line items from snapshot
+        const lineItemsMap: Record<string, any[]> = {};
+        version.financial_rows_snapshot.forEach((row: any) => {
+          if (row.line_items && Array.isArray(row.line_items)) {
+            lineItemsMap[row.id] = row.line_items;
+          }
+        });
+        setCustomRowLineItems(lineItemsMap);
+      }
+
+      // Load sheet labor snapshot
+      if (version.sheet_labor_snapshot && Array.isArray(version.sheet_labor_snapshot)) {
+        const laborMap: Record<string, any> = {};
+        version.sheet_labor_snapshot.forEach((labor: any) => {
+          laborMap[labor.sheet_id] = labor;
+        });
+        setSheetLabor(laborMap);
+      }
+
+      // Load subcontractor snapshot
+      if (version.subcontractor_snapshot && Array.isArray(version.subcontractor_snapshot)) {
+        setSubcontractorEstimates(version.subcontractor_snapshot);
+        
+        // Extract subcontractor line items and linked relationships
+        const subLineItemsMap: Record<string, any[]> = {};
+        const linkedMap: Record<string, any[]> = {};
+        
+        version.subcontractor_snapshot.forEach((sub: any) => {
+          if (sub.line_items && Array.isArray(sub.line_items)) {
+            subLineItemsMap[sub.id] = sub.line_items;
+          }
+          if (sub.sheet_id) {
+            if (!linkedMap[sub.sheet_id]) linkedMap[sub.sheet_id] = [];
+            linkedMap[sub.sheet_id].push(sub);
+          } else if (sub.row_id) {
+            if (!linkedMap[sub.row_id]) linkedMap[sub.row_id] = [];
+            linkedMap[sub.row_id].push(sub);
+          }
+        });
+        
+        setSubcontractorLineItems(subLineItemsMap);
+        setLinkedSubcontractors(linkedMap);
+      }
+
+      // Load category markups snapshot
+      if (version.category_markups_snapshot) {
+        setCategoryMarkups(version.category_markups_snapshot);
+      }
+
+      toast.success(`Loaded Version ${versionNumber}`);
+    } catch (error: any) {
+      console.error('Error loading version snapshot:', error);
+      toast.error('Failed to load version snapshot');
+    } finally {
+      setLoadingVersionSnapshot(false);
     }
   }
 
@@ -3795,6 +3978,32 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
+              {/* Version Navigation Arrows */}
+              {proposalVersions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={navigateToPreviousVersion}
+                    disabled={loadingVersionSnapshot || (viewingVersionNumber !== null && proposalVersions.findIndex(v => v.version_number === viewingVersionNumber) === proposalVersions.length - 1)}
+                    className="h-8 w-8 p-0"
+                    title="Previous version (older)"
+                  >
+                    <ChevronDown className="w-4 h-4 rotate-90" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={navigateToNextVersion}
+                    disabled={loadingVersionSnapshot || viewingVersionNumber === null}
+                    className="h-8 w-8 p-0"
+                    title="Next version (newer)"
+                  >
+                    <ChevronDown className="w-4 h-4 -rotate-90" />
+                  </Button>
+                </div>
+              )}
+              
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold text-blue-900">
@@ -3804,9 +4013,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               {proposalVersions.length > 0 && (
                 <>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      Version {quote.current_version || 1}
-                    </Badge>
+                    {viewingVersionNumber !== null ? (
+                      <>
+                        <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
+                          Viewing v{viewingVersionNumber} of {proposalVersions.length}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setViewingVersionNumber(null);
+                            loadData(false);
+                            toast.info('Returned to current working version');
+                          }}
+                          className="h-6 text-xs text-blue-700 hover:text-blue-900"
+                        >
+                          Return to Current
+                        </Button>
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">
+                        Version {quote.current_version || 1}
+                      </Badge>
+                    )}
                     {quote.signed_version && (
                       <Badge className="text-xs bg-emerald-600">
                         <Lock className="w-3 h-3 mr-1" />
