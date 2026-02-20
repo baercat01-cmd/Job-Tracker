@@ -197,9 +197,25 @@ export function generateProposalHTML(data: {
           /* Page setup for print */
           @page {
             margin: 0.75in 0.5in;
+            
+            @bottom-left {
+              content: "Proposal #" attr(data-proposal-number);
+              color: #999;
+              font-size: 9pt;
+              font-weight: 600;
+              margin-left: 30px;
+            }
+            
+            @bottom-right {
+              content: "Page " counter(page);
+              color: #999;
+              font-size: 9pt;
+              font-weight: 600;
+              margin-right: 30px;
+            }
           }
           
-          /* Fixed footer for proposal number and page info */
+          /* Fallback footer for browsers that don't support @page margin boxes */
           .page-footer {
             position: fixed;
             bottom: 40px;
@@ -212,7 +228,9 @@ export function generateProposalHTML(data: {
             font-weight: 600;
           }
           
-          /* Note: CSS page counters not reliable in all browsers for print-to-PDF */
+          .page-number::after {
+            content: counter(page);
+          }
           
           @media print {
             body { 
@@ -224,10 +242,10 @@ export function generateProposalHTML(data: {
         </style>
       </head>
       <body data-proposal-number="${proposalNumber}">
-        <!-- Page Footer (Note: Page numbers shown as placeholder - actual numbering happens in print) -->
+        <!-- Page Footer (Fallback for browsers without @page margin box support) -->
         <div class="page-footer">
           <span>Proposal #${proposalNumber}</span>
-          <span>Page</span>
+          <span>Page <span class="page-number"></span></span>
         </div>
         
         <!-- Main Content -->
