@@ -199,7 +199,7 @@ export function generateProposalHTML(data: {
             margin-bottom: 90px;
             
             @bottom-left {
-              content: "Proposal #${proposalNumber}";
+              content: "Proposal #" attr(data-proposal-number);
               color: #999;
               font-size: 9pt;
               font-weight: 600;
@@ -214,6 +214,11 @@ export function generateProposalHTML(data: {
             }
           }
           
+          /* Running header for proposal number using position */
+          .page-footer-proposal::before {
+            content: "Proposal #${proposalNumber}";
+          }
+          
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
@@ -223,7 +228,7 @@ export function generateProposalHTML(data: {
           }
         </style>
       </head>
-      <body>
+      <body data-proposal-number="${proposalNumber}">
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
