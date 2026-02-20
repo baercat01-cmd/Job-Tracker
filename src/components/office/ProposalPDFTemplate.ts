@@ -274,38 +274,63 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Page footer for printing */
+          /* Print page setup */
           @page {
-            margin: 0.75in 0.5in 0.85in 0.5in;
+            margin: 0.75in 0.5in 1in 0.5in;
             size: letter;
-            
-            @bottom-left {
-              content: "Proposal #${proposalNumber}";
-              color: #999;
-              font-size: 9pt;
-              font-weight: 600;
-              font-family: Arial, sans-serif;
-            }
-            
-            @bottom-right {
-              content: "Page " counter(page);
-              color: #999;
-              font-size: 9pt;
-              font-weight: 600;
-              font-family: Arial, sans-serif;
-            }
+          }
+          
+          /* Fixed footer for page numbers - will appear on every printed page */
+          .print-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0.5in;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 0.5in;
+            font-size: 9pt;
+            color: #999;
+            font-weight: 600;
+            z-index: 9999;
+          }
+          
+          .print-footer::before {
+            content: "Proposal #${proposalNumber}";
+          }
+          
+          .print-footer::after {
+            content: "Page " counter(page);
           }
           
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
+              counter-reset: page;
             }
-            .page-break { page-break-after: always; }
+            .page-break { 
+              page-break-after: always;
+              counter-increment: page;
+            }
+            .print-footer {
+              display: flex;
+            }
+          }
+          
+          @media screen {
+            .print-footer {
+              display: none;
+            }
           }
         </style>
       </head>
       <body>
+        <!-- Print Footer - appears on every page -->
+        <div class="print-footer"></div>
+        
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
@@ -356,7 +381,7 @@ export function generateProposalHTML(data: {
           We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
         </p>
         
-        ${job.description ? `
+        ${job.description && job.description.trim() ? `
         <div class="intro-box" style="margin-top: 10px; margin-bottom: 15px;">
           <div class="box-header">Building Description</div>
           <div style="padding: 15px 10px 10px 10px;">
