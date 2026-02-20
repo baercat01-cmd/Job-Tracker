@@ -392,15 +392,17 @@ function SortableRow({ item, ...props }: any) {
                                   const newMarkup = parseFloat(e.target.value) || 0;
                                   const categoryKey = `${sheet.sheetId}_${category.name}`;
                                   
+                                  // Update local state immediately for responsive UI
+                                  setCategoryMarkups(prev => ({
+                                    ...prev,
+                                    [categoryKey]: newMarkup
+                                  }));
+                                  
                                   try {
-                                    // Mark this markup as being saved (using ref so polling sees latest value)
+                                    // Mark this markup as being saved
                                     savingMarkupsRef.current.add(categoryKey);
                                     
-                                    // Update local state immediately for responsive UI
-                                    setCategoryMarkups(prev => ({
-                                      ...prev,
-                                      [categoryKey]: newMarkup
-                                    }));
+                                    console.log(`Saving markup ${newMarkup}% for ${category.name} in sheet ${sheet.sheetId}`);
                                     
                                     // Save to database
                                     const { error: upsertError } = await supabase
@@ -412,25 +414,32 @@ function SortableRow({ item, ...props }: any) {
                                       }, {
                                         onConflict: 'sheet_id,category_name'
                                       });
-                                    if (upsertError) throw upsertError;
+                                    if (upsertError) {
+                                      console.error('Database error:', upsertError);
+                                      throw upsertError;
+                                    }
                                     
-                                    // Wait for database replication
-                                    await new Promise(resolve => setTimeout(resolve, 300));
+                                    console.log('✅ Markup saved successfully');
                                     
-                                    // Reload to get fresh data from database (key still in ref so value is preserved)
-                                    await loadMaterialsData();
+                                    // Wait longer for database replication
+                                    await new Promise(resolve => setTimeout(resolve, 500));
                                     
-                                    // Remove from saving set AFTER reload completes
+                                    // Remove from saving set BEFORE reload
                                     savingMarkupsRef.current.delete(categoryKey);
+                                    
+                                    // Reload to get fresh data
+                                    await loadMaterialsData();
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
-                                    // Remove from saving set and reload to revert
+                                    // Remove from saving set
                                     savingMarkupsRef.current.delete(categoryKey);
+                                    // Reload to get correct value from database
                                     await loadMaterialsData();
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
+                                onFocus={(e) => e.target.select()}
                                 className="w-14 h-5 text-xs px-1 text-center"
                                 step="1"
                                 min="0"
