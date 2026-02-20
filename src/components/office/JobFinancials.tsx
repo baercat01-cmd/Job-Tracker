@@ -1441,7 +1441,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
   const [editingLineItem, setEditingLineItem] = useState<CustomRowLineItem | null>(null);
   const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
-  const [lineItemType, setLineItemType] = useState<'material' | 'labor'>('material');
+  const [lineItemType, setLineItemType] = useState<'material' | 'labor' | 'combined'>('material');
   const [lineItemForm, setLineItemForm] = useState({
     description: '',
     quantity: '1',
@@ -1450,6 +1450,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     taxable: true,
     item_type: 'material' as 'material' | 'labor',
     markup_percent: '10',
+    // Labor fields for combined items
+    labor_hours: '0',
+    labor_rate: '60',
+    labor_markup_percent: '10',
   });
   
   // Individual row markups state
@@ -2759,31 +2763,58 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   // Line item functions
-  function openLineItemDialog(parentId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor') {
+  function openLineItemDialog(parentId: string, lineItem?: CustomRowLineItem, itemType?: 'material' | 'labor' | 'combined') {
     setLineItemParentRowId(parentId);
-    setLineItemType(itemType || 'material');
+    setLineItemType(itemType || 'combined');
     
     if (lineItem) {
       setEditingLineItem(lineItem);
+      
+      // Try to parse labor data from notes
+      let laborData = { hours: 0, rate: 60, markup: 10 };
+      let actualNotes = lineItem.notes || '';
+      
+      if (lineItem.notes) {
+        try {
+          const parsed = JSON.parse(lineItem.notes);
+          if (parsed.labor) {
+            laborData = {
+              hours: parsed.labor.hours || 0,
+              rate: parsed.labor.rate || 60,
+              markup: parsed.labor.markup || 10,
+            };
+            actualNotes = parsed.notes || '';
+          }
+        } catch {
+          // Not JSON, use as regular notes
+        }
+      }
+      
       setLineItemForm({
         description: lineItem.description,
         quantity: lineItem.quantity.toString(),
         unit_cost: lineItem.unit_cost.toString(),
-        notes: lineItem.notes || '',
+        notes: actualNotes,
         taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
         item_type: (lineItem as any).item_type || 'material',
         markup_percent: (lineItem.markup_percent ?? 10).toString(),
+        labor_hours: laborData.hours.toString(),
+        labor_rate: laborData.rate.toString(),
+        labor_markup_percent: laborData.markup.toString(),
       });
     } else {
       setEditingLineItem(null);
       setLineItemForm({
         description: '',
-        quantity: itemType === 'labor' ? '1' : '1',
-        unit_cost: itemType === 'labor' ? '60' : '0',
+        quantity: '1',
+        unit_cost: '0',
         notes: '',
-        taxable: itemType === 'material' ? true : false,
-        item_type: itemType,
+        taxable: true,
+        item_type: 'material',
         markup_percent: '10',
+        labor_hours: '0',
+        labor_rate: '60',
+        labor_markup_percent: '10',
       });
     }
     
@@ -2796,14 +2827,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
 
-    const qty = parseFloat(lineItemForm.quantity) || 1;
+    const qty = parseFloat(lineItemForm.quantity) || 0;
     const cost = parseFloat(lineItemForm.unit_cost) || 0;
-    const totalCost = qty * cost;
+    const materialCost = qty * cost;
+    
+    const laborHours = parseFloat(lineItemForm.labor_hours) || 0;
+    const laborRate = parseFloat(lineItemForm.labor_rate) || 0;
+    const laborCost = laborHours * laborRate;
+    
+    const totalCost = materialCost + laborCost;
 
     // Determine if this is for a sheet or a custom row
     const isSheet = materialSheets.some(s => s.id === lineItemParentRowId);
     
     const markup = parseFloat(lineItemForm.markup_percent) || 0;
+    
+    // Store labor data in notes as JSON if labor hours > 0
+    let notesData = lineItemForm.notes || null;
+    if (laborHours > 0) {
+      notesData = JSON.stringify({
+        labor: {
+          hours: laborHours,
+          rate: laborRate,
+          markup: parseFloat(lineItemForm.labor_markup_percent) || 0,
+        },
+        notes: lineItemForm.notes || '',
+      });
+    }
     
     const itemData = {
       row_id: isSheet ? null : lineItemParentRowId,
@@ -2812,7 +2862,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       quantity: qty,
       unit_cost: cost,
       total_cost: totalCost,
-      notes: lineItemForm.notes || null,
+      notes: notesData,
       taxable: lineItemForm.item_type === 'labor' ? false : lineItemForm.taxable,
       item_type: lineItemForm.item_type,
       markup_percent: markup,
@@ -2846,14 +2896,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         // Reset form for adding another item, keeping the taxable status and appropriate defaults
         const currentTaxable = lineItemForm.taxable;
         const currentMarkup = lineItemForm.markup_percent;
+        const currentLaborRate = lineItemForm.labor_rate;
+        const currentLaborMarkup = lineItemForm.labor_markup_percent;
+        
         setLineItemForm({
           description: '',
           quantity: '1',
-          unit_cost: lineItemType === 'labor' ? '60' : '0',
+          unit_cost: '0',
           notes: '',
-          taxable: lineItemType === 'labor' ? false : currentTaxable,
-          item_type: lineItemType,
+          taxable: currentTaxable,
+          item_type: 'material',
           markup_percent: currentMarkup,
+          labor_hours: '0',
+          labor_rate: currentLaborRate,
+          labor_markup_percent: currentLaborMarkup,
         });
         setEditingLineItem(null);
       } else {
@@ -4318,12 +4374,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       {/* Line Item Dialog */}
       <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>
-              {editingLineItem ? 'Edit ' : 'Add '}
-              {lineItemType === 'labor' ? 'Labor' : 'Line Item'}
+              {editingLineItem ? 'Edit Line Item' : 'Add Line Item'}
             </DialogTitle>
+            <DialogDescription>
+              Add material costs, labor hours, or both in a single line item
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -4331,35 +4389,43 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Input
                 value={lineItemForm.description}
                 onChange={(e) => setLineItemForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder={lineItemType === 'labor' ? 'e.g., Installation labor, Finishing work' : 'e.g., Concrete materials'}
+                placeholder="e.g., Concrete Foundation with Installation"
               />
             </div>
 
-            {category !== 'line_items' && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>{lineItemType === 'labor' ? 'Hours' : 'Quantity'}</Label>
-                    <Input
-                      type="number"
-                      value={lineItemForm.quantity}
-                      onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
-                      step="0.01"
-                      placeholder={lineItemType === 'labor' ? 'e.g., 8' : ''}
-                    />
-                  </div>
-                  <div>
-                    <Label>{lineItemType === 'labor' ? 'Hourly Rate ($)' : 'Unit Cost ($)'}</Label>
-                    <Input
-                      type="number"
-                      value={lineItemForm.unit_cost}
-                      onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
-                      step="0.01"
-                      placeholder={lineItemType === 'labor' ? '60' : ''}
-                    />
-                  </div>
+            {/* Two-column layout for Material and Labor */}
+            <div className="grid grid-cols-2 gap-6">
+              {/* Material Section */}
+              <div className="space-y-4 border-r pr-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-blue-600" />
+                  <h3 className="text-sm font-semibold text-blue-900">Material</h3>
                 </div>
-
+                
+                <div>
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.quantity}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                    step="0.01"
+                    min="0"
+                    placeholder="0"
+                  />
+                </div>
+                
+                <div>
+                  <Label>Unit Cost ($)</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.unit_cost}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                  />
+                </div>
+                
                 <div>
                   <Label>Markup %</Label>
                   <Input
@@ -4371,69 +4437,137 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     placeholder="10"
                   />
                 </div>
-
-                <div className={`border rounded p-3 ${lineItemType === 'labor' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Cost:</span>
-                  <span className="font-semibold">
-                    ${(
-                      (parseFloat(lineItemForm.quantity) || 0) * 
-                      (parseFloat(lineItemForm.unit_cost) || 0)
-                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-600">Cost:</span>
+                    <span className="font-semibold">
+                      ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-600">Markup:</span>
+                    <span className="font-semibold">
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-blue-300">
+                    <span className="font-bold text-blue-900">Material Price:</span>
+                    <span className="font-bold text-blue-700">
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Markup ({lineItemForm.markup_percent}%):</span>
-                  <span className="font-semibold">
-                    ${(
-                      (parseFloat(lineItemForm.quantity) || 0) * 
-                      (parseFloat(lineItemForm.unit_cost) || 0) *
-                      (parseFloat(lineItemForm.markup_percent) || 0) / 100
-                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between pt-2 border-t border-current">
-                  <span className="font-bold">Total Price:</span>
-                  <span className="font-bold text-blue-700">
-                    ${(
-                      (parseFloat(lineItemForm.quantity) || 0) * 
-                      (parseFloat(lineItemForm.unit_cost) || 0) *
-                      (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)
-                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
+                
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="lineitem-taxable"
+                    checked={lineItemForm.taxable}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <Label htmlFor="lineitem-taxable" className="cursor-pointer text-xs">
+                    Taxable (materials only)
+                  </Label>
                 </div>
               </div>
-            </div>
-
+              
+              {/* Labor Section */}
+              <div className="space-y-4 pl-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-amber-600" />
+                  <h3 className="text-sm font-semibold text-amber-900">Labor</h3>
+                </div>
+                
                 <div>
-                  <Label>Notes (Optional)</Label>
-                  <Textarea
-                    value={lineItemForm.notes}
-                    onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
-                    rows={2}
+                  <Label>Hours</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.labor_hours}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_hours: e.target.value }))}
+                    step="0.5"
+                    min="0"
+                    placeholder="0"
                   />
                 </div>
-
-                {lineItemType === 'material' && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="lineitem-taxable"
-                      checked={lineItemForm.taxable}
-                      onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <Label htmlFor="lineitem-taxable" className="cursor-pointer">
-                      Taxable
-                    </Label>
-                    <p className="text-xs text-muted-foreground ml-2">
-                      {lineItemForm.taxable ? 'Will be included in taxable subtotal' : 'Tax exempt'}
-                    </p>
+                
+                <div>
+                  <Label>Hourly Rate ($)</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.labor_rate}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_rate: e.target.value }))}
+                    step="1"
+                    min="0"
+                    placeholder="60"
+                  />
+                </div>
+                
+                <div>
+                  <Label>Markup %</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.labor_markup_percent}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_markup_percent: e.target.value }))}
+                    step="1"
+                    min="0"
+                    placeholder="10"
+                  />
+                </div>
+                
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs">
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-600">Cost:</span>
+                    <span className="font-semibold">
+                      ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
-                )}
-              </>
-            )}
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-600">Markup:</span>
+                    <span className="font-semibold">
+                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-amber-300">
+                    <span className="font-bold text-amber-900">Labor Price:</span>
+                    <span className="font-bold text-amber-700">
+                      ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  Labor is automatically non-taxable
+                </p>
+              </div>
+            </div>
+            
+            {/* Combined Total */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-green-900">Combined Total Price</p>
+                  <p className="text-xs text-green-700">Material + Labor (with markups)</p>
+                </div>
+                <p className="text-2xl font-bold text-green-700">
+                  ${(
+                    (((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)) +
+                    (((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100))
+                  ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+            
+            <div>
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={lineItemForm.notes}
+                onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+                placeholder="Additional details about this line item..."
+              />
+            </div>
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowLineItemDialog(false)}>
@@ -4446,7 +4580,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </Button>
               )}
               <Button onClick={() => saveLineItem(false)}>
-                {editingLineItem ? 'Update' : 'Save'} {lineItemType === 'labor' ? 'Labor' : 'Line Item'}
+                {editingLineItem ? 'Update' : 'Save'} Line Item
               </Button>
             </div>
           </div>
