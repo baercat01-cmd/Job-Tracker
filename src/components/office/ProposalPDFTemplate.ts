@@ -192,18 +192,98 @@ export function generateProposalHTML(data: {
             margin-top: 30px; 
           }
           
+          /* Terms and Conditions Page */
+          .terms-page {
+            page-break-before: always;
+            padding-top: 40px;
+          }
+          
+          .terms-header {
+            text-align: center;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #2d5f3f;
+            padding-bottom: 15px;
+          }
+          
+          .terms-title {
+            font-size: 20pt;
+            font-weight: bold;
+            color: #2d5f3f;
+            margin-bottom: 15px;
+          }
+          
+          .terms-reference {
+            font-size: 10pt;
+            color: #666;
+            margin-bottom: 3px;
+          }
+          
+          .terms-content {
+            font-size: 10pt;
+            line-height: 1.6;
+            color: #333;
+          }
+          
+          .terms-section {
+            margin-bottom: 18px;
+          }
+          
+          .terms-section-title {
+            font-weight: bold;
+            color: #2d5f3f;
+            margin-bottom: 6px;
+            font-size: 10pt;
+          }
+          
+          .terms-section-text {
+            margin-left: 0;
+            text-align: justify;
+          }
+          
+          .terms-signature-section {
+            margin-top: 50px;
+            page-break-inside: avoid;
+          }
+          
+          .terms-signature-intro {
+            margin-bottom: 25px;
+            font-size: 10pt;
+            font-weight: 600;
+          }
+          
+          .terms-signature-line {
+            border-top: 1px solid #333;
+            width: 300px;
+            margin-top: 40px;
+          }
+          
+          .terms-signature-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 35px;
+          }
+          
+          .terms-signature-block {
+            width: 45%;
+          }
+          
+          .terms-signature-label {
+            font-size: 10pt;
+            margin-bottom: 5px;
+            font-weight: 600;
+          }
+          
           table { width: 100%; }
           
           /* Page setup for print */
           @page {
-            margin: 0.75in 0.5in;
+            margin: 0.75in 0.5in 0.85in 0.5in;
             
             @bottom-left {
-              content: "Proposal #" attr(data-proposal-number);
+              content: "Proposal #${proposalNumber}";
               color: #999;
               font-size: 9pt;
               font-weight: 600;
-              margin-left: 30px;
             }
             
             @bottom-right {
@@ -211,25 +291,7 @@ export function generateProposalHTML(data: {
               color: #999;
               font-size: 9pt;
               font-weight: 600;
-              margin-right: 30px;
             }
-          }
-          
-          /* Fallback footer for browsers that don't support @page margin boxes */
-          .page-footer {
-            position: fixed;
-            bottom: 40px;
-            left: 60px;
-            right: 60px;
-            display: flex;
-            justify-content: space-between;
-            color: #999;
-            font-size: 9pt;
-            font-weight: 600;
-          }
-          
-          .page-number::after {
-            content: counter(page);
           }
           
           @media print {
@@ -241,13 +303,7 @@ export function generateProposalHTML(data: {
           }
         </style>
       </head>
-      <body data-proposal-number="${proposalNumber}">
-        <!-- Page Footer (Fallback for browsers without @page margin box support) -->
-        <div class="page-footer">
-          <span>Proposal #${proposalNumber}</span>
-          <span>Page <span class="page-number"></span></span>
-        </div>
-        
+      <body>
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
@@ -405,6 +461,70 @@ export function generateProposalHTML(data: {
               </tr>
             </table>
           </div>
+          
+          <!-- Terms and Conditions Page (Office View) -->
+          <div class="terms-page">
+            <div class="terms-header">
+              <div class="terms-title">Standard Terms and Conditions</div>
+              <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
+              <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            </div>
+            
+            <div class="terms-content">
+              <div class="terms-section">
+                <div class="terms-section-title">Change Orders:</div>
+                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both Martin Builder and the Customer.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Site Conditions:</div>
+                <div class="terms-section-text">The contract price assumes normal soil conditions. If subsurface obstructions (e.g., rock, utilities, high water) are encountered, the Customer is responsible for additional excavation costs.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Permits:</div>
+                <div class="terms-section-text">Unless otherwise noted, the Customer is responsible for all building permits, zoning fees, and utility hookups.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Payment Schedule:</div>
+                <div class="terms-section-text">Payments are due as follows: 20% Down, 60% COD (due upon delivery of framing materials), and 20% Final (due upon substantial completion).</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Site Access:</div>
+                <div class="terms-section-text">Customer must provide clear, unobstructed access for heavy equipment and delivery trucks to the build site.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Insurance:</div>
+                <div class="terms-section-text">Martin Builder carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Workmanship Warranty:</div>
+                <div class="terms-section-text">Martin Builder warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
+              </div>
+              
+              <div class="terms-signature-section">
+                <div class="terms-signature-intro">
+                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
+                </div>
+                
+                <div class="terms-signature-row">
+                  <div class="terms-signature-block">
+                    <div class="terms-signature-label">Customer Signature</div>
+                    <div class="terms-signature-line"></div>
+                  </div>
+                  
+                  <div class="terms-signature-block">
+                    <div class="terms-signature-label">Date</div>
+                    <div class="terms-signature-line"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         ` : `
           <!-- Customer Version - Full Footer with Payment Terms -->
           <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
@@ -441,6 +561,70 @@ export function generateProposalHTML(data: {
                 <div>
                   <p>Date of Acceptance</p>
                   <div class="signature-line"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Terms and Conditions Page (Customer Version) -->
+          <div class="terms-page">
+            <div class="terms-header">
+              <div class="terms-title">Standard Terms and Conditions</div>
+              <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
+              <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            </div>
+            
+            <div class="terms-content">
+              <div class="terms-section">
+                <div class="terms-section-title">Change Orders:</div>
+                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both Martin Builder and the Customer.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Site Conditions:</div>
+                <div class="terms-section-text">The contract price assumes normal soil conditions. If subsurface obstructions (e.g., rock, utilities, high water) are encountered, the Customer is responsible for additional excavation costs.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Permits:</div>
+                <div class="terms-section-text">Unless otherwise noted, the Customer is responsible for all building permits, zoning fees, and utility hookups.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Payment Schedule:</div>
+                <div class="terms-section-text">Payments are due as follows: 20% Down, 60% COD (due upon delivery of framing materials), and 20% Final (due upon substantial completion).</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Site Access:</div>
+                <div class="terms-section-text">Customer must provide clear, unobstructed access for heavy equipment and delivery trucks to the build site.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Insurance:</div>
+                <div class="terms-section-text">Martin Builder carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
+              </div>
+              
+              <div class="terms-section">
+                <div class="terms-section-title">Workmanship Warranty:</div>
+                <div class="terms-section-text">Martin Builder warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
+              </div>
+              
+              <div class="terms-signature-section">
+                <div class="terms-signature-intro">
+                  By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
+                </div>
+                
+                <div class="terms-signature-row">
+                  <div class="terms-signature-block">
+                    <div class="terms-signature-label">Customer Signature</div>
+                    <div class="terms-signature-line"></div>
+                  </div>
+                  
+                  <div class="terms-signature-block">
+                    <div class="terms-signature-label">Date</div>
+                    <div class="terms-signature-line"></div>
+                  </div>
                 </div>
               </div>
             </div>
