@@ -1564,6 +1564,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [creatingProposal, setCreatingProposal] = useState(false);
   
+  // Version management state
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [initializingVersions, setInitializingVersions] = useState(false);
+  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
+  const [versionChangeNotes, setVersionChangeNotes] = useState('');
+  
   // Proposal navigation state
   const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
   const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
@@ -1742,6 +1750,100 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } finally {
       setCreatingProposal(false);
     }
+  }
+
+  async function createNewProposalVersion() {
+    if (!quote || !profile) return;
+
+    setCreatingVersion(true);
+    
+    try {
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_created_by: profile.id,
+        p_change_notes: versionChangeNotes || null,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Proposal version #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
+      setShowCreateVersionDialog(false);
+      setVersionChangeNotes('');
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error creating proposal version:', error);
+      toast.error('Failed to create proposal version: ' + error.message);
+    } finally {
+      setCreatingVersion(false);
+    }
+  }
+
+  async function initializeVersioning() {
+    if (!quote || !profile) return;
+
+    setInitializingVersions(true);
+    
+    try {
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_created_by: profile.id,
+        p_change_notes: 'Initial version',
+      });
+
+      if (error) throw error;
+
+      toast.success(`Initial proposal version created`);
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error initializing versions:', error);
+      toast.error('Failed to initialize versioning: ' + error.message);
+    } finally {
+      setInitializingVersions(false);
+    }
+  }
+
+  async function signAndLockVersion(versionId: string) {
+    if (!confirm('Sign and lock this version? This will mark it as the signed contract and cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const version = proposalVersions.find(v => v.id === versionId);
+      if (!version) {
+        toast.error('Version not found');
+        return;
+      }
+
+      const { error: versionError } = await supabase
+        .from('proposal_versions')
+        .update({
+          is_signed: true,
+          signed_at: new Date().toISOString(),
+          signed_by: profile?.id,
+        })
+        .eq('id', versionId);
+
+      if (versionError) throw versionError;
+
+      const { error: quoteError } = await supabase
+        .from('quotes')
+        .update({
+          signed_version: version.version_number,
+        })
+        .eq('id', quote.id);
+
+      if (quoteError) throw quoteError;
+
+      toast.success('Version signed and locked successfully');
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error signing version:', error);
+      toast.error('Failed to sign version: ' + error.message);
+    }
+  }
+
+  function openVersionHistoryDialog() {
+    setShowVersionHistory(true);
   }
 
   async function checkAndAutoCreateQuote() {
@@ -3855,7 +3957,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
-              {/* Proposal Navigation Arrows */}
+              {/* Proposal Navigation Arrows - Only show if there are versions */}
               {proposalVersions.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Button
@@ -3881,16 +3983,27 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </div>
               )}
               
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-blue-900">
-                  Proposal #{quote.proposal_number || quote.quote_number}
-                </span>
-              </div>
-              {proposalVersions.length > 0 && viewingProposalNumber !== null && (
+              {/* Current Proposal Info - Show when viewing current (viewingProposalNumber === null) */}
+              {viewingProposalNumber === null && (
                 <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-blue-900">
+                    Proposal #{quote.proposal_number || quote.quote_number}
+                  </span>
+                  {proposalVersions.length > 0 && (
+                    <Badge variant="outline" className="text-xs bg-green-100 border-green-300 text-green-900">
+                      Current (Editable)
+                    </Badge>
+                  )}
+                </div>
+              )}
+              
+              {/* Historical Proposal Info - Show when viewing old version (viewingProposalNumber !== null) */}
+              {viewingProposalNumber !== null && (
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-amber-600" />
                   <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                    Viewing #{quote.proposal_number?.split('-')[0]}-{viewingProposalNumber}
+                    Viewing #{quote.proposal_number?.split('-')[0]}-{viewingProposalNumber} (Historical)
                   </Badge>
                   <Button
                     size="sm"
