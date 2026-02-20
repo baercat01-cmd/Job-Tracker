@@ -598,7 +598,15 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       if (['quantity', 'cost_per_unit', 'price_per_unit'].includes(field)) {
         value = parseFloat(cellValue) || null;
       } else if (field === 'markup_percent') {
-        value = parseFloat(cellValue) / 100 || null;
+        // Convert percentage input (e.g., "35") to decimal (e.g., 0.35)
+        const percentValue = parseFloat(cellValue);
+        if (isNaN(percentValue)) {
+          toast.error('Please enter a valid number');
+          cancelCellEdit();
+          return;
+        }
+        value = percentValue / 100;
+        console.log('Saving markup:', { input: cellValue, decimal: value });
       }
 
       const updateData: any = {
@@ -606,11 +614,28 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         updated_at: new Date().toISOString(),
       };
 
+      // Recalculate extended_cost when quantity or cost_per_unit changes
       if (field === 'quantity' || field === 'cost_per_unit') {
         const qty = field === 'quantity' ? value : item.quantity;
         const cost = field === 'cost_per_unit' ? value : item.cost_per_unit;
         updateData.extended_cost = qty && cost ? qty * cost : null;
       }
+      
+      // Recalculate price_per_unit when markup changes
+      if (field === 'markup_percent' && item.cost_per_unit) {
+        const markupDecimal = value; // already converted to decimal above
+        const newPricePerUnit = item.cost_per_unit * (1 + markupDecimal);
+        updateData.price_per_unit = newPricePerUnit;
+        updateData.extended_price = item.quantity && newPricePerUnit ? item.quantity * newPricePerUnit : null;
+        console.log('Recalculated prices:', { 
+          cost: item.cost_per_unit, 
+          markup: markupDecimal, 
+          newPrice: newPricePerUnit,
+          extendedPrice: updateData.extended_price 
+        });
+      }
+      
+      // Recalculate extended_price when quantity or price_per_unit changes
       if (field === 'quantity' || field === 'price_per_unit') {
         const qty = field === 'quantity' ? value : item.quantity;
         const price = field === 'price_per_unit' ? value : item.price_per_unit;
@@ -619,6 +644,10 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
 
       // Save current scroll position
       scrollPositionRef.current = window.scrollY;
+
+      // Close editing mode immediately for better UX
+      setEditingCell(null);
+      setCellValue('');
 
       // Optimistic update - update local state immediately
       if (workbook) {
@@ -636,20 +665,21 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         setWorkbook(updatedWorkbook);
       }
 
-      setEditingCell(null);
-      setCellValue('');
-
-      // Save to database in background
+      // Save to database
+      console.log('Updating database with:', updateData);
       const { error } = await supabase
         .from('material_items')
         .update(updateData)
         .eq('id', item.id);
 
       if (error) {
-        console.error('Error saving cell:', error);
-        toast.error('Failed to save');
+        console.error('Database error saving cell:', error);
+        toast.error(`Failed to update ${field}: ${error.message}`);
         // Reload on error to revert optimistic update
         await loadWorkbook();
+      } else {
+        console.log('Successfully saved to database');
+        toast.success('Updated successfully');
       }
 
       // Restore scroll position
@@ -658,8 +688,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       });
 
     } catch (error: any) {
-      console.error('Error saving cell:', error);
-      toast.error('Failed to save');
+      console.error('Error in saveCellEdit:', error);
+      toast.error(`Failed to save: ${error.message}`);
       await loadWorkbook();
     }
   }
@@ -1085,20 +1115,15 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          {/* Proposal Number Banner */}
-          {proposalNumber && (
-            <div className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 mb-2">
-              <FileSpreadsheet className="w-5 h-5" />
-              <div className="flex-1">
-                <p className="text-xs font-medium opacity-90">Working on Proposal</p>
-                <p className="text-xl font-bold tracking-wide">#{proposalNumber}</p>
+          <div className="relative w-full">
+            {proposalNumber && (
+              <div className="absolute -top-1 right-2 z-20">
+                <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
+                  Proposal #{proposalNumber}
+                </Badge>
               </div>
-              <Badge variant="secondary" className="bg-white/20 text-white border-white/30 font-semibold">
-                Current Version
-              </Badge>
-            </div>
-          )}
-          <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm flex-1">
+            )}
+            <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
               <span className="text-xs sm:text-base">Workbook</span>
@@ -1124,6 +1149,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
               <span className="text-xs sm:text-base">Upload</span>
             </TabsTrigger>
           </TabsList>
+          </div>
         </div>
 
         <TabsContent value="manage" className="space-y-3">
@@ -1629,14 +1655,65 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                       )}
                                     </td>
 
-                                    <td className="p-2 text-center border-r">
-                                      {markupPercent > 0 ? (
-                                        <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold">
-                                          <Percent className="w-3 h-3 mr-1" />
-                                          {markupPercent.toFixed(1)}%
-                                        </Badge>
+                                    <td className="p-1 border-r whitespace-nowrap">
+                                      {isEditingThisCell('markup_percent') ? (
+                                        <div className="flex items-center gap-1 px-2">
+                                          <Input
+                                            type="number"
+                                            step="0.1"
+                                            min="0"
+                                            max="999"
+                                            value={cellValue}
+                                            onChange={(e) => {
+                                              console.log('Markup input changed:', e.target.value);
+                                              setCellValue(e.target.value);
+                                            }}
+                                            onBlur={() => saveCellEdit(item)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                saveCellEdit(item);
+                                              }
+                                              if (e.key === 'Escape') {
+                                                e.preventDefault();
+                                                cancelCellEdit();
+                                              }
+                                            }}
+                                            autoFocus
+                                            className="h-8 text-sm text-center w-20"
+                                            placeholder="35"
+                                          />
+                                          <span className="text-xs text-muted-foreground">%</span>
+                                        </div>
                                       ) : (
-                                        '-'
+                                        <div
+                                          onClick={() => {
+                                            // Use stored markup_percent if available, otherwise calculate from cost/price
+                                            const currentMarkup = item.markup_percent !== null 
+                                              ? (item.markup_percent * 100) 
+                                              : markupPercent;
+                                            console.log('Starting markup edit:', { 
+                                              stored: item.markup_percent, 
+                                              calculated: markupPercent, 
+                                              using: currentMarkup 
+                                            });
+                                            startCellEdit(item.id, 'markup_percent', currentMarkup.toFixed(1));
+                                          }}
+                                          className="cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] flex items-center justify-center"
+                                          title="Click to edit markup percentage"
+                                        >
+                                          {(item.markup_percent !== null && item.markup_percent > 0) || markupPercent > 0 ? (
+                                            <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold">
+                                              <Percent className="w-3 h-3 mr-1" />
+                                              {item.markup_percent !== null 
+                                                ? (item.markup_percent * 100).toFixed(1)
+                                                : markupPercent.toFixed(1)
+                                              }%
+                                            </Badge>
+                                          ) : (
+                                            <span className="text-xs text-muted-foreground">Click to set</span>
+                                          )}
+                                        </div>
                                       )}
                                     </td>
 
