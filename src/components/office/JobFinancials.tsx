@@ -4067,29 +4067,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 min="0"
               />
             </div>
-              </>
-            )}
-
-            {category === 'line_items' && (
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <List className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div className="space-y-2 text-sm">
-                    <p className="font-semibold text-blue-900">Line Items Only Section</p>
-                    <p className="text-slate-700">This row serves as a container. After creating it, you can:</p>
-                    <ul className="list-disc list-inside text-slate-600 space-y-1 ml-2">
-                      <li>Add individual line items with their own pricing</li>
-                      <li>Set different markup percentages for each item</li>
-                      <li>Control taxable status per line item</li>
-                      <li>Mix material and labor items in the same section</li>
-                    </ul>
-                    <p className="text-blue-700 font-medium mt-3">
-                      ✓ No base cost • ✓ No row-level markup • ✓ Full line item control
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
             <div>
               <Label>Notes (Optional)</Label>
               <Textarea
@@ -4175,52 +4152,52 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             {category !== 'line_items' && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-              <div>
-                <Label>Unit Cost ($)</Label>
-                <Input
-                  type="number"
-                  value={unitCost}
-                  onChange={(e) => setUnitCost(e.target.value)}
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600 font-medium">Base Cost:</span>
-                  <span className="font-bold text-blue-700">
-                    ${((parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
+                  <div>
+                    <Label>Quantity</Label>
+                    <Input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <Label>Unit Cost ($)</Label>
+                    <Input
+                      type="number"
+                      value={unitCost}
+                      onChange={(e) => setUnitCost(e.target.value)}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-slate-600 mt-2">
-                  💡 <strong>Tip:</strong> Set Quantity or Unit Cost to $0 if you only want to use line items for this section.
-                  The section can have a base cost AND line items, or just line items alone.
-                </p>
-              </div>
-            </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600 font-medium">Base Cost:</span>
+                      <span className="font-bold text-blue-700">
+                        ${((parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-2">
+                      💡 <strong>Tip:</strong> Set Quantity or Unit Cost to $0 if you only want to use line items for this section.
+                      The section can have a base cost AND line items, or just line items alone.
+                    </p>
+                  </div>
+                </div>
 
-            <div>
-              <Label>Markup %</Label>
-              <Input
-                type="number"
-                value={markupPercent}
-                onChange={(e) => setMarkupPercent(e.target.value)}
-                step="1"
-                min="0"
-              />
-            </div>
+                <div>
+                  <Label>Markup %</Label>
+                  <Input
+                    type="number"
+                    value={markupPercent}
+                    onChange={(e) => setMarkupPercent(e.target.value)}
+                    step="1"
+                    min="0"
+                  />
+                </div>
               </>
             )}
 
@@ -4309,41 +4286,41 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             {category !== 'line_items' && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>{lineItemType === 'labor' ? 'Hours' : 'Quantity'}</Label>
-                <Input
-                  type="number"
-                  value={lineItemForm.quantity}
-                  onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
-                  step="0.01"
-                  placeholder={lineItemType === 'labor' ? 'e.g., 8' : ''}
-                />
-              </div>
-              <div>
-                <Label>{lineItemType === 'labor' ? 'Hourly Rate ($)' : 'Unit Cost ($)'}</Label>
-                <Input
-                  type="number"
-                  value={lineItemForm.unit_cost}
-                  onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
-                  step="0.01"
-                  placeholder={lineItemType === 'labor' ? '60' : ''}
-                />
-              </div>
-            </div>
+                  <div>
+                    <Label>{lineItemType === 'labor' ? 'Hours' : 'Quantity'}</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.quantity}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                      step="0.01"
+                      placeholder={lineItemType === 'labor' ? 'e.g., 8' : ''}
+                    />
+                  </div>
+                  <div>
+                    <Label>{lineItemType === 'labor' ? 'Hourly Rate ($)' : 'Unit Cost ($)'}</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.unit_cost}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
+                      step="0.01"
+                      placeholder={lineItemType === 'labor' ? '60' : ''}
+                    />
+                  </div>
+                </div>
 
-            <div>
-              <Label>Markup %</Label>
-              <Input
-                type="number"
-                value={lineItemForm.markup_percent}
-                onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
-                step="1"
-                min="0"
-                placeholder="10"
-              />
-            </div>
+                <div>
+                  <Label>Markup %</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.markup_percent}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
+                    step="1"
+                    min="0"
+                    placeholder="10"
+                  />
+                </div>
 
-            <div className={`border rounded p-3 ${lineItemType === 'labor' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                <div className={`border rounded p-3 ${lineItemType === 'labor' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-600">Cost:</span>
@@ -4377,31 +4354,33 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               </div>
             </div>
 
-            <div>
-              <Label>Notes (Optional)</Label>
-              <Textarea
-                value={lineItemForm.notes}
-                onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
-                rows={2}
-              />
-            </div>
+                <div>
+                  <Label>Notes (Optional)</Label>
+                  <Textarea
+                    value={lineItemForm.notes}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={2}
+                  />
+                </div>
 
-            {lineItemType === 'material' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="lineitem-taxable"
-                  checked={lineItemForm.taxable}
-                  onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <Label htmlFor="lineitem-taxable" className="cursor-pointer">
-                  Taxable
-                </Label>
-                <p className="text-xs text-muted-foreground ml-2">
-                  {lineItemForm.taxable ? 'Will be included in taxable subtotal' : 'Tax exempt'}
-                </p>
-              </div>
+                {lineItemType === 'material' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="lineitem-taxable"
+                      checked={lineItemForm.taxable}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="lineitem-taxable" className="cursor-pointer">
+                      Taxable
+                    </Label>
+                    <p className="text-xs text-muted-foreground ml-2">
+                      {lineItemForm.taxable ? 'Will be included in taxable subtotal' : 'Tax exempt'}
+                    </p>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="flex justify-end gap-2">
@@ -4716,9 +4695,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {category !== 'line_items' && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-xs text-muted-foreground">Customer</Label>
                         <p className="font-medium">{version.customer_name || 'N/A'}</p>
