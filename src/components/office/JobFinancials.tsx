@@ -1856,7 +1856,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (quote) return;
     
     try {
-      console.log('🔍 Auto-creating quote for job:', job.id);
+      console.log('🔍 Checking for existing quote for job:', job.id);
+
+      // First, check if a quote already exists for this job
+      const { data: existingQuote, error: fetchError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('❌ Error fetching existing quote:', fetchError);
+        throw fetchError;
+      }
+
+      if (existingQuote) {
+        console.log('✅ Found existing quote:', existingQuote.proposal_number);
+        setQuote(existingQuote);
+        return;
+      }
+
+      console.log('🔍 No existing quote found, creating new one...');
 
       // Auto-create quote for this job
       const { data: newQuote, error: createError } = await supabase
@@ -1902,6 +1924,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
 
     try {
+      // Double-check for existing quote before creating
+      const { data: existingQuote } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingQuote) {
+        setQuote(existingQuote);
+        toast.info(`Using existing proposal #${existingQuote.proposal_number}`);
+        return;
+      }
+
       const { data: newQuote, error: createError } = await supabase
         .from('quotes')
         .insert({
