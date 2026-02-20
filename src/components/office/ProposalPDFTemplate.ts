@@ -204,7 +204,7 @@ export function generateProposalHTML(data: {
             z-index: 1000;
             display: flex;
             justify-content: space-between;
-            padding: 0 30px;
+            padding: 0 60px;
           }
           
           .page-footer .proposal-number {
