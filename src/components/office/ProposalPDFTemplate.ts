@@ -41,7 +41,7 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 15px 0px; 
+            padding: 15px 30px; 
             font-size: 11pt; 
           }
           
