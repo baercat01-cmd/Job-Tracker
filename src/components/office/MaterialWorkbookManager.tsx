@@ -508,6 +508,23 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
   return (
     <div className="space-y-4">
+      {/* Proposal Info Banner - Show if quote exists */}
+      {quote && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-semibold text-blue-900">
+                Proposal #{quote.proposal_number || quote.quote_number}
+              </span>
+              <Badge variant="outline" className="text-xs bg-green-100 border-green-300 text-green-900">
+                Current Proposal
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
