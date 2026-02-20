@@ -1758,15 +1758,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingVersion(true);
     
     try {
+      // If viewing a historical proposal, add context to the notes
+      let finalChangeNotes = versionChangeNotes || null;
+      
+      if (viewingProposalNumber !== null) {
+        toast.info(`Creating new proposal from historical version #${quote.proposal_number?.split('-')[0]}-${viewingProposalNumber}...`);
+        
+        // Add a note about which version this was created from
+        const sourceNote = versionChangeNotes 
+          ? `Based on version ${viewingProposalNumber}. ${versionChangeNotes}`
+          : `Based on version ${viewingProposalNumber}`;
+        
+        finalChangeNotes = sourceNote;
+      }
+
       const { data, error } = await supabase.rpc('create_proposal_version', {
         p_quote_id: quote.id,
         p_created_by: profile.id,
-        p_change_notes: versionChangeNotes || null,
+        p_change_notes: finalChangeNotes,
       });
 
       if (error) throw error;
 
-      toast.success(`Proposal version #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
+      if (viewingProposalNumber !== null) {
+        toast.success(`New proposal #${quote.proposal_number?.split('-')[0]}-${data} created from version ${viewingProposalNumber}`);
+        // Return to current view
+        setViewingProposalNumber(null);
+        await loadData(false);
+      } else {
+        toast.success(`Proposal version #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
+      }
+      
       setShowCreateVersionDialog(false);
       setVersionChangeNotes('');
       await loadQuoteData();
@@ -5203,10 +5225,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           <DialogHeader>
             <DialogTitle>Create New Proposal</DialogTitle>
             <DialogDescription>
-              This will create a new proposal with an incremented number (e.g., -1 becomes -2). All current materials and pricing will be saved with this new proposal.
+              {viewingProposalNumber !== null ? (
+                <span>
+                  This will create a new proposal based on the current live data. A note will be added indicating it was created while viewing version #{viewingProposalNumber}.
+                </span>
+              ) : (
+                <span>
+                  This will create a new proposal with an incremented number (e.g., -1 becomes -2). All current materials and pricing will be saved with this new proposal.
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {viewingProposalNumber !== null && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <History className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-amber-900 mb-1">Creating from Historical View</p>
+                    <p className="text-amber-800">
+                      You are viewing version #{viewingProposalNumber}. The new proposal will snapshot the current live database data and will include a note that it was created from this historical view.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div>
               <Label>Change Notes (Optional)</Label>
               <Textarea
@@ -5216,7 +5259,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 rows={3}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Describe what changed in this version to help track the proposal evolution
+                {viewingProposalNumber !== null 
+                  ? `Will be combined with note: "Based on version ${viewingProposalNumber}"`
+                  : 'Describe what changed in this version to help track the proposal evolution'
+                }
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -5239,7 +5285,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 ) : (
                   <>
                     <Plus className="w-4 h-4 mr-2" />
-                    Create Version
+                    Create {viewingProposalNumber !== null ? 'New Proposal' : 'Version'}
                   </>
                 )}
               </Button>
