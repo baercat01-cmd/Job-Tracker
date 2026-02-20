@@ -1772,6 +1772,199 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         finalChangeNotes = sourceNote;
       }
 
+      // STEP 1: Lock the current material workbook before creating new proposal
+      console.log('🔒 Locking current material workbook...');
+      const { data: currentWorkbook, error: workbookFetchError } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working')
+        .maybeSingle();
+
+      if (workbookFetchError && workbookFetchError.code !== 'PGRST116') {
+        console.error('Error fetching current workbook:', workbookFetchError);
+      }
+
+      if (currentWorkbook) {
+        console.log('📋 Found current workbook:', currentWorkbook.id);
+        
+        // Lock the current workbook
+        const { error: lockError } = await supabase
+          .from('material_workbooks')
+          .update({
+            status: 'locked',
+            locked_at: new Date().toISOString(),
+            locked_by: profile.id,
+          })
+          .eq('id', currentWorkbook.id);
+
+        if (lockError) {
+          console.error('Error locking workbook:', lockError);
+          toast.error('Failed to lock material workbook');
+          return;
+        }
+
+        console.log('✅ Workbook locked successfully');
+
+        // STEP 2: Create a new working workbook by copying the locked one
+        console.log('📋 Creating new working workbook...');
+        
+        // Get the next version number
+        const { data: latestVersion } = await supabase
+          .from('material_workbooks')
+          .select('version_number')
+          .eq('job_id', job.id)
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const nextVersion = (latestVersion?.version_number || 0) + 1;
+
+        // Create new workbook
+        const { data: newWorkbook, error: createWorkbookError } = await supabase
+          .from('material_workbooks')
+          .insert({
+            job_id: job.id,
+            version_number: nextVersion,
+            status: 'working',
+            created_by: profile.id,
+          })
+          .select()
+          .single();
+
+        if (createWorkbookError) {
+          console.error('Error creating new workbook:', createWorkbookError);
+          toast.error('Failed to create new workbook');
+          return;
+        }
+
+        console.log('✅ New workbook created:', newWorkbook.id);
+
+        // STEP 3: Copy all sheets from locked workbook to new workbook
+        console.log('📄 Copying sheets...');
+        
+        const { data: sheets, error: sheetsError } = await supabase
+          .from('material_sheets')
+          .select('*')
+          .eq('workbook_id', currentWorkbook.id)
+          .order('order_index');
+
+        if (sheetsError) {
+          console.error('Error fetching sheets:', sheetsError);
+          toast.error('Failed to copy sheets');
+          return;
+        }
+
+        for (const sheet of sheets || []) {
+          const { data: newSheet, error: createSheetError } = await supabase
+            .from('material_sheets')
+            .insert({
+              workbook_id: newWorkbook.id,
+              sheet_name: sheet.sheet_name,
+              description: sheet.description,
+              order_index: sheet.order_index,
+              is_option: sheet.is_option,
+              markup_percent: sheet.markup_percent,
+            })
+            .select()
+            .single();
+
+          if (createSheetError) {
+            console.error('Error creating sheet:', createSheetError);
+            continue;
+          }
+
+          // STEP 4: Copy all items from old sheet to new sheet
+          const { data: items, error: itemsError } = await supabase
+            .from('material_items')
+            .select('*')
+            .eq('sheet_id', sheet.id)
+            .order('order_index');
+
+          if (itemsError) {
+            console.error('Error fetching items:', itemsError);
+            continue;
+          }
+
+          const itemsToInsert = (items || []).map(item => ({
+            sheet_id: newSheet.id,
+            category: item.category,
+            usage: item.usage,
+            sku: item.sku,
+            material_name: item.material_name,
+            quantity: item.quantity,
+            length: item.length,
+            color: item.color,
+            cost_per_unit: item.cost_per_unit,
+            markup_percent: item.markup_percent,
+            price_per_unit: item.price_per_unit,
+            extended_cost: item.extended_cost,
+            extended_price: item.extended_price,
+            taxable: item.taxable,
+            notes: item.notes,
+            order_index: item.order_index,
+            status: item.status,
+            date_needed_by: item.date_needed_by,
+            priority: item.priority,
+          }));
+
+          if (itemsToInsert.length > 0) {
+            const { error: insertItemsError } = await supabase
+              .from('material_items')
+              .insert(itemsToInsert);
+
+            if (insertItemsError) {
+              console.error('Error inserting items:', insertItemsError);
+            }
+          }
+
+          // Copy category markups
+          const { data: categoryMarkups, error: markupsError } = await supabase
+            .from('material_category_markups')
+            .select('*')
+            .eq('sheet_id', sheet.id);
+
+          if (!markupsError && categoryMarkups && categoryMarkups.length > 0) {
+            const markupsToInsert = categoryMarkups.map(markup => ({
+              sheet_id: newSheet.id,
+              category_name: markup.category_name,
+              markup_percent: markup.markup_percent,
+            }));
+
+            await supabase
+              .from('material_category_markups')
+              .insert(markupsToInsert);
+          }
+
+          // Copy sheet labor
+          const { data: sheetLabor, error: laborError } = await supabase
+            .from('material_sheet_labor')
+            .select('*')
+            .eq('sheet_id', sheet.id)
+            .maybeSingle();
+
+          if (!laborError && sheetLabor) {
+            await supabase
+              .from('material_sheet_labor')
+              .insert({
+                sheet_id: newSheet.id,
+                description: sheetLabor.description,
+                estimated_hours: sheetLabor.estimated_hours,
+                hourly_rate: sheetLabor.hourly_rate,
+                notes: sheetLabor.notes,
+                markup_percent: sheetLabor.markup_percent,
+              });
+          }
+        }
+
+        console.log('✅ All sheets and items copied successfully');
+        toast.success('Material workbook locked and new version created');
+      } else {
+        console.log('ℹ️ No material workbook found - skipping lock/copy');
+      }
+
+      // STEP 5: Create the proposal version (this will snapshot the current database state)
+      console.log('📋 Creating proposal version...');
       const { data, error } = await supabase.rpc('create_proposal_version', {
         p_quote_id: quote.id,
         p_created_by: profile.id,
@@ -1786,7 +1979,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         setViewingProposalNumber(null);
         await loadData(false);
       } else {
-        toast.success(`Proposal version #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
+        toast.success(`Proposal #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
       }
       
       setShowCreateVersionDialog(false);
@@ -1993,9 +2186,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     
     // Move to next older proposal (higher index)
     if (currentIndex < proposalVersions.length - 1) {
-      const nextProposal = proposalVersions[currentIndex + 1];
-      setViewingProposalNumber(nextProposal.version_number);
-      await loadProposalSnapshot(nextProposal.version_number);
+      let targetIndex = currentIndex + 1;
+      
+      // If coming from live view (currentIndex === -1) and the first snapshot is the current version,
+      // skip it and go to the next older version to avoid the "gap"
+      if (currentIndex === -1 && proposalVersions[0]?.version_number === quote?.current_version) {
+        targetIndex = 1; // Skip index 0, go to index 1 (next older version)
+      }
+      
+      // Make sure we don't go out of bounds
+      if (targetIndex < proposalVersions.length) {
+        const nextProposal = proposalVersions[targetIndex];
+        setViewingProposalNumber(nextProposal.version_number);
+        await loadProposalSnapshot(nextProposal.version_number);
+      }
     }
   }
 
@@ -3994,7 +4198,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     size="sm"
                     variant="outline"
                     onClick={navigateToPreviousProposal}
-                    disabled={loadingProposalSnapshot || (viewingProposalNumber !== null && proposalVersions.findIndex(v => v.version_number === viewingProposalNumber) === proposalVersions.length - 1)}
+                    disabled={loadingProposalSnapshot || (
+                      viewingProposalNumber === null 
+                        ? proposalVersions.length === 0 || (proposalVersions.length === 1 && proposalVersions[0]?.version_number === quote?.current_version)
+                        : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber) === proposalVersions.length - 1
+                    )}
                     className="h-8 w-8 p-0"
                     title="Previous proposal"
                   >
