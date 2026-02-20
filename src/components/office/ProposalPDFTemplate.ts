@@ -274,24 +274,23 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Print footer - appears on every page */
-          .print-footer {
-            position: fixed;
-            bottom: 30px;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 60px;
-            color: #999;
-            font-size: 9pt;
-            font-weight: 600;
-            pointer-events: none;
-          }
-          
           /* Page setup for print */
           @page {
-            margin: 0.75in 0.5in 0.95in 0.5in;
+            margin: 0.75in 0.5in 0.85in 0.5in;
+            
+            @bottom-left {
+              content: "Proposal #${proposalNumber}";
+              color: #999;
+              font-size: 9pt;
+              font-weight: 600;
+            }
+            
+            @bottom-right {
+              content: "Page " counter(page);
+              color: #999;
+              font-size: 9pt;
+              font-weight: 600;
+            }
           }
           
           @media print {
@@ -300,46 +299,10 @@ export function generateProposalHTML(data: {
               print-color-adjust: exact;
             }
             .page-break { page-break-after: always; }
-            .print-footer { display: flex; }
-          }
-          
-          @media screen {
-            .print-footer { display: none; }
           }
         </style>
       </head>
       <body>
-        <!-- Fixed footer for page numbers - appears on every printed page -->
-        <div class="print-footer">
-          <span>Proposal #${proposalNumber}</span>
-          <span>Page <span class="page-number"></span></span>
-        </div>
-        
-        <script>
-          // Auto-number pages when printing
-          if (window.matchMedia) {
-            var mediaQueryList = window.matchMedia('print');
-            mediaQueryList.addListener(function(mql) {
-              if (mql.matches) {
-                setTimeout(function() {
-                  var pageNumbers = document.querySelectorAll('.page-number');
-                  pageNumbers.forEach(function(el, i) {
-                    el.textContent = (i + 1);
-                  });
-                }, 100);
-              }
-            });
-          }
-          // Also trigger on load for print preview
-          window.addEventListener('load', function() {
-            setTimeout(function() {
-              var pageNumbers = document.querySelectorAll('.page-number');
-              pageNumbers.forEach(function(el, i) {
-                el.textContent = (i + 1);
-              });
-            }, 100);
-          });
-        </script>
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
