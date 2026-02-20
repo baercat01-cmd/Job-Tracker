@@ -595,18 +595,36 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       const { field } = editingCell;
       let value: any = cellValue;
 
+      console.log('=== SAVE CELL EDIT START ===');
+      console.log('Field:', field);
+      console.log('Input value:', cellValue);
+      console.log('Current item:', item);
+
       if (['quantity', 'cost_per_unit', 'price_per_unit'].includes(field)) {
         value = parseFloat(cellValue) || null;
       } else if (field === 'markup_percent') {
         // Convert percentage input (e.g., "35") to decimal (e.g., 0.35)
         const percentValue = parseFloat(cellValue);
+        console.log('Parsed percentage value:', percentValue);
+        
         if (isNaN(percentValue)) {
+          console.error('Invalid number entered:', cellValue);
           toast.error('Please enter a valid number');
           cancelCellEdit();
           return;
         }
-        value = percentValue / 100;
-        console.log('Saving markup:', { input: cellValue, decimal: value });
+        
+        // Check if the value is too large for the database field (numeric(5,4) = max 9.9999)
+        const decimalValue = percentValue / 100;
+        if (decimalValue > 9.9999) {
+          console.error('Markup too large:', decimalValue);
+          toast.error('Markup cannot exceed 999.99%');
+          cancelCellEdit();
+          return;
+        }
+        
+        value = decimalValue;
+        console.log('Converted to decimal:', value);
       }
 
       const updateData: any = {
@@ -634,6 +652,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
           extendedPrice: updateData.extended_price 
         });
       }
+      
+      console.log('Final updateData:', updateData);
       
       // Recalculate extended_price when quantity or price_per_unit changes
       if (field === 'quantity' || field === 'price_per_unit') {
@@ -666,21 +686,35 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       }
 
       // Save to database
-      console.log('Updating database with:', updateData);
-      const { error } = await supabase
+      console.log('Sending to database - Item ID:', item.id);
+      console.log('Update payload:', JSON.stringify(updateData, null, 2));
+      
+      const { data, error } = await supabase
         .from('material_items')
         .update(updateData)
-        .eq('id', item.id);
+        .eq('id', item.id)
+        .select();
+
+      console.log('Database response - data:', data);
+      console.log('Database response - error:', error);
 
       if (error) {
-        console.error('Database error saving cell:', error);
+        console.error('=== DATABASE ERROR ===');
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error details:', error.details);
+        console.error('Error hint:', error.hint);
         toast.error(`Failed to update ${field}: ${error.message}`);
         // Reload on error to revert optimistic update
         await loadWorkbook();
       } else {
-        console.log('Successfully saved to database');
+        console.log('=== SUCCESS ===');
+        console.log('Database updated successfully');
+        console.log('Updated row:', data);
         toast.success('Updated successfully');
       }
+      
+      console.log('=== SAVE CELL EDIT END ===');
 
       // Restore scroll position
       requestAnimationFrame(() => {
@@ -688,8 +722,12 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       });
 
     } catch (error: any) {
-      console.error('Error in saveCellEdit:', error);
-      toast.error(`Failed to save: ${error.message}`);
+      console.error('=== EXCEPTION IN saveCellEdit ===');
+      console.error('Error type:', typeof error);
+      console.error('Error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      toast.error(`Failed to save: ${error?.message || 'Unknown error'}`);
       await loadWorkbook();
     }
   }
