@@ -408,13 +408,13 @@ function SortableRow({ item, ...props }: any) {
                                       });
                                     if (upsertError) throw upsertError;
                                     
-                                    // Reload full data to ensure everything is in sync
-                                    await loadMaterialsData();
-                                    toast.success('Markup updated');
+                                    // Success - local state already updated, no need to reload
+                                    // Just reload materials data without showing loading spinner
+                                    setTimeout(() => loadMaterialsData(), 100);
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
-                                    // Revert local state on error
+                                    // Revert local state on error by reloading from database
                                     await loadMaterialsData();
                                   }
                                 }}
