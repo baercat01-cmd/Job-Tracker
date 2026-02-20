@@ -2009,10 +2009,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     // Move to next newer proposal (lower index)
     if (currentIndex > 0) {
       const nextProposal = proposalVersions[currentIndex - 1];
-      setViewingProposalNumber(nextProposal.version_number);
-      await loadProposalSnapshot(nextProposal.version_number);
+      
+      // If navigating to the current version, return to live view instead
+      if (nextProposal.version_number === quote?.current_version) {
+        setViewingProposalNumber(null);
+        toast.info('Viewing current proposal');
+        await loadData(false);
+      } else {
+        setViewingProposalNumber(nextProposal.version_number);
+        await loadProposalSnapshot(nextProposal.version_number);
+      }
     } else if (currentIndex === 0) {
-      // Return to live/current view
+      // Already at current version, return to live view
       setViewingProposalNumber(null);
       toast.info('Viewing current proposal');
       await loadData(false);
@@ -4021,7 +4029,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               )}
               
               {/* Historical Proposal Info - Show when viewing old version (viewingProposalNumber !== null) */}
-              {viewingProposalNumber !== null && (
+              {/* Only show if viewing a version that's NOT the current version */}
+              {viewingProposalNumber !== null && viewingProposalNumber !== quote?.current_version && (
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-amber-600" />
                   <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
