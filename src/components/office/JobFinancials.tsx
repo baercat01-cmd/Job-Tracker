@@ -391,14 +391,8 @@ function SortableRow({ item, ...props }: any) {
                                 onChange={async (e) => {
                                   const newMarkup = parseFloat(e.target.value) || 0;
                                   
-                                  // Update local state immediately for responsiveness
-                                  setCategoryMarkups(prev => ({
-                                    ...prev,
-                                    [categoryKey]: newMarkup
-                                  }));
-                                  
                                   try {
-                                    // Wait for database update to complete
+                                    // Save to database first (NO optimistic update)
                                     const { error: upsertError } = await supabase
                                       .from('material_category_markups')
                                       .upsert({
@@ -410,13 +404,14 @@ function SortableRow({ item, ...props }: any) {
                                       });
                                     if (upsertError) throw upsertError;
                                     
+                                    // Wait a brief moment for database consistency
+                                    await new Promise(resolve => setTimeout(resolve, 100));
+                                    
                                     // Reload materials data AFTER database update completes
                                     await loadMaterialsData();
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
-                                    // Revert local state on error by reloading from database
-                                    await loadMaterialsData();
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
