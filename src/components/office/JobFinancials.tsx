@@ -2538,16 +2538,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           .in('sheet_id', sheetIds);
 
         if (!categoryMarkupsError && categoryMarkupsData) {
-          const markupsMap: Record<string, number> = {};
+          // Build final markups: start with fresh database values
+          const finalMarkups: Record<string, number> = {};
+          
+          // Add all database values
           categoryMarkupsData.forEach(cm => {
             const key = `${cm.sheet_id}_${cm.category_name}`;
-            // Only update values that aren't currently being saved (check ref for latest value)
-            if (!savingMarkupsRef.current.has(key)) {
-              markupsMap[key] = cm.markup_percent;
+            finalMarkups[key] = cm.markup_percent;
+          });
+          
+          // Override with in-progress values that are currently being saved
+          savingMarkupsRef.current.forEach(key => {
+            if (categoryMarkups[key] !== undefined) {
+              finalMarkups[key] = categoryMarkups[key];
             }
           });
-          // Merge with existing saved values to avoid overwriting pending changes
-          const finalMarkups = { ...categoryMarkups, ...markupsMap };
+          
+          // Only update state if values actually changed
           if (JSON.stringify(finalMarkups) !== JSON.stringify(categoryMarkups)) {
             setCategoryMarkups(finalMarkups);
           }
