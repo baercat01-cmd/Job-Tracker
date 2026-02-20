@@ -113,7 +113,7 @@ interface CategoryGroup {
 export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'manage' | 'packages' | 'crew-orders' | 'upload'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'comparison' | 'upload'>('manage');
   const [activeSheetId, setActiveSheetId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -1098,10 +1098,14 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
               </Badge>
             </div>
           )}
-          <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
+          <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
               <span className="text-xs sm:text-base">Workbook</span>
+            </TabsTrigger>
+            <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
+              <DollarSign className="w-5 h-5" />
+              <span className="text-xs sm:text-base">Breakdown</span>
             </TabsTrigger>
             <TabsTrigger value="comparison" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <TrendingUp className="w-5 h-5" />
@@ -1303,96 +1307,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     </div>
                   </div>
 
-                  {/* Cost Breakdown Summary */}
-                  {activeSheet && filteredItems.length > 0 && (
-                    <div className="p-4 bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300">
-                      <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                        <DollarSign className="w-5 h-5" />
-                        Cost Breakdown - {activeSheet.sheet_name}
-                      </h3>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {(() => {
-                          const totalCost = filteredItems.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
-                          const totalPrice = filteredItems.reduce((sum, item) => sum + (item.extended_price || 0), 0);
-                          const totalProfit = totalPrice - totalCost;
-                          const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
 
-                          return (
-                            <>
-                              <div className="bg-white rounded-lg p-4 border-2 border-slate-300 shadow-sm">
-                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Cost</div>
-                                <div className="text-2xl font-bold text-red-600">
-                                  ${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                              </div>
-                              <div className="bg-white rounded-lg p-4 border-2 border-green-500 shadow-sm">
-                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Price</div>
-                                <div className="text-2xl font-bold text-green-700">
-                                  ${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                              </div>
-                              <div className="bg-white rounded-lg p-4 border-2 border-blue-500 shadow-sm">
-                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Profit</div>
-                                <div className="text-2xl font-bold text-blue-700">
-                                  ${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                              </div>
-                              <div className="bg-white rounded-lg p-4 border-2 border-purple-500 shadow-sm">
-                                <div className="text-xs font-semibold text-muted-foreground mb-1">Profit Margin</div>
-                                <div className="text-2xl font-bold text-purple-700 flex items-center gap-1">
-                                  <Percent className="w-5 h-5" />
-                                  {profitMargin.toFixed(1)}%
-                                </div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Category Breakdown */}
-                      <div className="mt-4 bg-white rounded-lg p-4 border-2 border-slate-300">
-                        <h4 className="font-semibold text-sm text-slate-900 mb-3">By Category:</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {categoryGroups.map((catGroup) => {
-                            const catCost = catGroup.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
-                            const catPrice = catGroup.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
-                            const catProfit = catPrice - catCost;
-                            const catMargin = catCost > 0 ? (catProfit / catCost) * 100 : 0;
-
-                            return (
-                              <div key={catGroup.category} className="border rounded p-3 bg-slate-50">
-                                <div className="font-semibold text-sm text-slate-900 mb-2">{catGroup.category}</div>
-                                <div className="space-y-1 text-xs">
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Cost:</span>
-                                    <span className="font-semibold text-red-600">
-                                      ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Price:</span>
-                                    <span className="font-semibold text-green-600">
-                                      ${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Profit:</span>
-                                    <span className="font-semibold text-blue-600">
-                                      ${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between pt-1 border-t">
-                                    <span className="text-muted-foreground">Margin:</span>
-                                    <span className="font-bold text-purple-600">{catMargin.toFixed(1)}%</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="overflow-x-auto">
                     {categoryGroups.length === 0 ? (
@@ -1817,6 +1732,157 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                 </CardContent>
               </Card>
             </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="breakdown" className="space-y-2">
+          {!workbook ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <DollarSign className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Upload an Excel workbook to view cost breakdown
+                </p>
+                <Button onClick={() => setActiveTab('upload')} className="gradient-primary">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Workbook
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-2">
+              <CardHeader className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="w-6 h-6" />
+                    Cost Breakdown
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-semibold">Sheet:</Label>
+                    <Select value={activeSheetId} onValueChange={setActiveSheetId}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workbook.sheets.map(sheet => (
+                          <SelectItem key={sheet.id} value={sheet.id}>
+                            {sheet.sheet_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                {(() => {
+                  const sheet = workbook.sheets.find(s => s.id === activeSheetId);
+                  if (!sheet || sheet.items.length === 0) {
+                    return (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
+                        <p>No materials in this sheet</p>
+                      </div>
+                    );
+                  }
+
+                  const totalCost = sheet.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
+                  const totalPrice = sheet.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                  const totalProfit = totalPrice - totalCost;
+                  const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+                  const categoryGroups = groupByCategory(sheet.items);
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Overall Totals */}
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 mb-4">Overall Totals - {sheet.sheet_name}</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-white rounded-lg p-6 border-2 border-slate-300 shadow-sm">
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Total Cost</div>
+                            <div className="text-3xl font-bold text-red-600">
+                              ${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-6 border-2 border-green-500 shadow-sm">
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Total Price</div>
+                            <div className="text-3xl font-bold text-green-700">
+                              ${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-6 border-2 border-blue-500 shadow-sm">
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Total Profit</div>
+                            <div className="text-3xl font-bold text-blue-700">
+                              ${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-6 border-2 border-purple-500 shadow-sm">
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Profit Margin</div>
+                            <div className="text-3xl font-bold text-purple-700 flex items-center gap-2">
+                              <Percent className="w-6 h-6" />
+                              {profitMargin.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Category Breakdown */}
+                      <div>
+                        <h4 className="text-lg font-bold text-slate-900 mb-4">Breakdown by Category</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {categoryGroups.map((catGroup) => {
+                            const catCost = catGroup.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
+                            const catPrice = catGroup.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                            const catProfit = catPrice - catCost;
+                            const catMargin = catCost > 0 ? (catProfit / catCost) * 100 : 0;
+
+                            return (
+                              <div key={catGroup.category} className="border-2 rounded-lg p-4 bg-gradient-to-br from-white to-slate-50 shadow-sm hover:shadow-md transition-shadow">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                                  <div className="font-bold text-base text-slate-900">{catGroup.category}</div>
+                                  <Badge variant="outline" className="ml-auto">
+                                    {catGroup.items.length} items
+                                  </Badge>
+                                </div>
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between items-center py-1">
+                                    <span className="text-muted-foreground">Cost:</span>
+                                    <span className="font-bold text-red-600">
+                                      ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center py-1">
+                                    <span className="text-muted-foreground">Price:</span>
+                                    <span className="font-bold text-green-600">
+                                      ${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center py-1">
+                                    <span className="text-muted-foreground">Profit:</span>
+                                    <span className="font-bold text-blue-600">
+                                      ${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center py-1 pt-2 border-t-2">
+                                    <span className="font-semibold text-slate-700">Margin:</span>
+                                    <span className="font-bold text-lg text-purple-600 flex items-center gap-1">
+                                      <Percent className="w-4 h-4" />
+                                      {catMargin.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
