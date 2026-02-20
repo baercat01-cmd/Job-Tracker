@@ -3523,6 +3523,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const isOverBudget = totalClockInHours > totalLaborHours && totalLaborHours > 0;
 
   const categoryLabels: Record<string, string> = {
+    line_items: 'Line Items',
     labor: 'Labor',
     subcontractor: 'Subcontractors',
     materials: 'Additional Materials',
@@ -3531,6 +3532,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   };
 
   const categoryDescriptions: Record<string, string> = {
+    line_items: 'Container for individual line items with their own pricing and markups',
     labor: 'Labor hours and installation work for this project',
     subcontractor: 'Third-party contractors and specialized services for this project',
     materials: 'Additional materials not included in the main material workbook',
@@ -4065,6 +4067,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 min="0"
               />
             </div>
+              </>
+            )}
+
+            {category === 'line_items' && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <List className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2 text-sm">
+                    <p className="font-semibold text-blue-900">Line Items Only Section</p>
+                    <p className="text-slate-700">This row serves as a container. After creating it, you can:</p>
+                    <ul className="list-disc list-inside text-slate-600 space-y-1 ml-2">
+                      <li>Add individual line items with their own pricing</li>
+                      <li>Set different markup percentages for each item</li>
+                      <li>Control taxable status per line item</li>
+                      <li>Mix material and labor items in the same section</li>
+                    </ul>
+                    <p className="text-blue-700 font-medium mt-3">
+                      ✓ No base cost • ✓ No row-level markup • ✓ Full line item control
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div>
               <Label>Notes (Optional)</Label>
               <Textarea
@@ -4099,11 +4124,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   value={category} 
                   onValueChange={(val) => {
                     setCategory(val);
-                    // Auto-set taxable based on category as a helpful default
+                    // Auto-set fields based on category
                     if (val === 'materials') {
                       setTaxable(true);
                     } else if (val === 'labor') {
                       setTaxable(false);
+                    } else if (val === 'line_items') {
+                      // Line items container - no base cost
+                      setQuantity('1');
+                      setUnitCost('0');
+                      setMarkupPercent('0');
+                      setTaxable(true);
                     }
                   }}
                 >
@@ -4111,6 +4142,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="line_items">
+                      <div className="flex items-center gap-2">
+                        <List className="w-4 h-4" />
+                        <span>Line Items Container</span>
+                      </div>
+                    </SelectItem>
                     <SelectItem value="materials">Materials</SelectItem>
                     <SelectItem value="labor">Labor</SelectItem>
                     <SelectItem value="subcontractor">Subcontractor</SelectItem>
@@ -4118,6 +4155,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
+                {category === 'line_items' && (
+                  <p className="text-xs text-blue-600 mt-2 bg-blue-50 border border-blue-200 rounded p-2">
+                    <strong>Line Items Container:</strong> This row has no base cost. Add individual line items below, each with their own pricing, markup, and tax settings.
+                  </p>
+                )}
               </div>
             )}
 
@@ -4130,7 +4172,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {category !== 'line_items' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Quantity</Label>
                 <Input
@@ -4177,6 +4221,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 min="0"
               />
             </div>
+              </>
+            )}
+
+            {category === 'line_items' && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <List className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2 text-sm">
+                    <p className="font-semibold text-blue-900">Line Items Only Section</p>
+                    <p className="text-slate-700">This row serves as a container. After creating it, you can:</p>
+                    <ul className="list-disc list-inside text-slate-600 space-y-1 ml-2">
+                      <li>Add individual line items with their own pricing</li>
+                      <li>Set different markup percentages for each item</li>
+                      <li>Control taxable status per line item</li>
+                      <li>Mix material and labor items in the same section</li>
+                    </ul>
+                    <p className="text-blue-700 font-medium mt-3">
+                      ✓ No base cost • ✓ No row-level markup • ✓ Full line item control
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>Description</Label>
@@ -4188,23 +4255,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="row-taxable"
-                checked={taxable}
-                onChange={(e) => setTaxable(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <Label htmlFor="row-taxable" className="cursor-pointer">
-                Taxable
-              </Label>
-              <p className="text-xs text-muted-foreground ml-2">
-                {taxable 
-                  ? 'Will be included in taxable subtotal (materials)' 
-                  : 'Will be excluded from tax calculation (labor)'}
-              </p>
-            </div>
+            {category !== 'line_items' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="row-taxable"
+                  checked={taxable}
+                  onChange={(e) => setTaxable(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <Label htmlFor="row-taxable" className="cursor-pointer">
+                  Taxable
+                </Label>
+                <p className="text-xs text-muted-foreground ml-2">
+                  {taxable 
+                    ? 'Will be included in taxable subtotal (materials)' 
+                    : 'Will be excluded from tax calculation (labor)'}
+                </p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -4237,7 +4306,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {category !== 'line_items' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>{lineItemType === 'labor' ? 'Hours' : 'Quantity'}</Label>
                 <Input
@@ -4645,7 +4716,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
+                    {category !== 'line_items' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-xs text-muted-foreground">Customer</Label>
                         <p className="font-medium">{version.customer_name || 'N/A'}</p>
