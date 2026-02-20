@@ -23,10 +23,40 @@ export function generateProposalHTML(data: {
     grandTotal: number;
   };
   showLineItems: boolean;
-  showSectionPrices?: boolean; // Option to show/hide individual section prices (customer version - defaults to false)
-  showInternalDetails?: boolean; // Option to show all row items with individual prices (Office View - internal use only)
+  showSectionPrices?: boolean;
+  showInternalDetails?: boolean;
+  templateSettings?: any; // Template customization settings
 }): string {
-  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false } = data;
+  const { proposalNumber, date, job, sections, totals, showLineItems, showSectionPrices = false, showInternalDetails = false, templateSettings } = data;
+
+  // Apply template settings or use defaults
+  const t = templateSettings || {};
+  const pageMarginTop = t.page_margin_top ?? 0.75;
+  const pageMarginBottom = t.page_margin_bottom ?? 0.75;
+  const pageMarginLeft = t.page_margin_left ?? 0.5;
+  const pageMarginRight = t.page_margin_right ?? 0.5;
+  const bodyPaddingTop = t.body_padding_top ?? 50;
+  const bodyPaddingBottom = t.body_padding_bottom ?? 60;
+  const bodyPaddingLeft = t.body_padding_left ?? 30;
+  const bodyPaddingRight = t.body_padding_right ?? 30;
+  const bodyFontSize = t.body_font_size ?? 11;
+  const bodyLineHeight = t.body_line_height ?? 1.3;
+  const sectionMarginTop = t.section_margin_top ?? 12;
+  const sectionMarginBottom = t.section_margin_bottom ?? 6;
+  const sectionPaddingBottom = t.section_padding_bottom ?? 4;
+  const sectionMinHeight = t.section_min_height ?? 60;
+  const proposalTitleSize = t.proposal_title_size ?? 32;
+  const sectionTitleSize = t.section_title_size ?? 12;
+  const introText = t.intro_text ?? 'We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:';
+  const paymentText = t.payment_text ?? 'Payment to be made as follows: 20% Down, 60% COD, 20% Final';
+  const acceptanceText = t.acceptance_text ?? 'The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.';
+  const companyName = t.company_name ?? 'Martin Builder';
+  const companyAddress1 = t.company_address_1 ?? '27608-A CR 36';
+  const companyAddress2 = t.company_address_2 ?? 'Goshen, IN 46526';
+  const companyPhone = t.company_phone ?? '574-862-4448';
+  const companyFax = t.company_fax ?? '574-862-1548';
+  const companyEmail = t.company_email ?? 'office@martinbuilder.net';
+  const companyLogoUrl = t.company_logo_url ?? 'https://cdn-ai.onspace.ai/onspace/files/4ZzeFr2RKnB7oAxZwNpsZR/MB_Logo_Green_192x64_12.9kb.png';
 
   return `
     <!DOCTYPE html>
@@ -37,12 +67,12 @@ export function generateProposalHTML(data: {
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
             font-family: Arial, sans-serif; 
-            line-height: 1.3; 
+            line-height: ${bodyLineHeight}; 
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 50px 30px 60px 30px; 
-            font-size: 11pt;
+            padding: ${bodyPaddingTop}px ${bodyPaddingRight}px ${bodyPaddingBottom}px ${bodyPaddingLeft}px; 
+            font-size: ${bodyFontSize}pt;
           }
           
           .header-row { 
@@ -60,11 +90,11 @@ export function generateProposalHTML(data: {
             margin-bottom: 10px; 
           }
           
-          .company-address { font-size: 11pt; margin-bottom: 3px; }
-          .company-contact { font-size: 10pt; margin-bottom: 2px; }
+          .company-address { font-size: ${bodyFontSize}pt; margin-bottom: 3px; }
+          .company-contact { font-size: ${bodyFontSize - 1}pt; margin-bottom: 2px; }
           
           .proposal-header { text-align: right; }
-          .proposal-title { font-size: 32pt; font-weight: bold; margin-bottom: 5px; }
+          .proposal-title { font-size: ${proposalTitleSize}pt; font-weight: bold; margin-bottom: 5px; }
           
           .proposal-info-table { 
             border: 1px solid #000; 
@@ -77,7 +107,7 @@ export function generateProposalHTML(data: {
             border: 1px solid #000; 
             padding: 8px 15px; 
             text-align: center; 
-            font-size: 11pt;
+            font-size: ${bodyFontSize}pt;
           }
           
           .proposal-info-table th { font-weight: bold; }
@@ -110,9 +140,9 @@ export function generateProposalHTML(data: {
           
           .section-title { 
             font-weight: bold; 
-            font-size: 12pt;
-            margin-top: 12px; 
-            margin-bottom: 6px;
+            font-size: ${sectionTitleSize}pt;
+            margin-top: ${sectionMarginTop}px; 
+            margin-bottom: ${sectionMarginBottom}px;
             display: flex;
             justify-content: space-between;
             align-items: baseline;
@@ -129,8 +159,8 @@ export function generateProposalHTML(data: {
           .section-wrapper {
             page-break-inside: avoid;
             margin-bottom: 8px;
-            min-height: 60px;
-            padding-bottom: 4px;
+            min-height: ${sectionMinHeight}px;
+            padding-bottom: ${sectionPaddingBottom}px;
           }
           
           .section-price {
@@ -277,7 +307,7 @@ export function generateProposalHTML(data: {
           
           /* Print page setup */
           @page {
-            margin: 0.75in 0.5in 0.75in 0.5in;
+            margin: ${pageMarginTop}in ${pageMarginRight}in ${pageMarginBottom}in ${pageMarginLeft}in;
             size: letter;
           }
           
@@ -335,12 +365,12 @@ export function generateProposalHTML(data: {
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
-            <img src="https://cdn-ai.onspace.ai/onspace/files/4ZzeFr2RKnB7oAxZwNpsZR/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" class="company-logo" />
-            <div class="company-address">27608-A CR 36</div>
-            <div class="company-address">Goshen, IN 46526</div>
-            <div class="company-contact">Phone: 574-862-4448</div>
-            <div class="company-contact">Fax: 574-862-1548</div>
-            <div class="company-contact">Email: office@martinbuilder.net</div>
+            <img src="${companyLogoUrl}" alt="${companyName}" class="company-logo" />
+            <div class="company-address">${companyAddress1}</div>
+            <div class="company-address">${companyAddress2}</div>
+            <div class="company-contact">Phone: ${companyPhone}</div>
+            <div class="company-contact">Fax: ${companyFax}</div>
+            <div class="company-contact">Email: ${companyEmail}</div>
           </div>
           
           <div class="proposal-header">
@@ -378,15 +408,15 @@ export function generateProposalHTML(data: {
           </div>
         </div>
         
-        <p style="margin: 20px 0; font-size: 11pt; line-height: 1.6;">
-          We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
+        <p style="margin: 20px 0; font-size: ${bodyFontSize}pt; line-height: 1.6;">
+          ${introText}
         </p>
         
         ${job.description && job.description.trim() ? `
         <div class="intro-box" style="margin-top: 10px; margin-bottom: 15px;">
           <div class="box-header">Building Description</div>
           <div style="padding: 15px 10px 10px 10px;">
-            <div style="padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: 11pt; line-height: 1.6;">${job.description}</div>
+            <div style="padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: ${bodyFontSize}pt; line-height: 1.6;">${job.description}</div>
           </div>
         </div>
         ` : ''}
@@ -398,20 +428,17 @@ export function generateProposalHTML(data: {
               let content = '<div class="section-wrapper">';
               
               if (showInternalDetails) {
-                // OFFICE VIEW: Show section name with price, description, and all items with individual unit and total prices
                 content += '<div class="section-title" style="margin-top: 15px;">';
-                content += '<span style="font-weight: bold; font-size: 13pt;">' + section.name + '</span>';
+                content += '<span style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">' + section.name + '</span>';
                 if (section.price) {
-                  content += '<span class="section-price" style="font-weight: bold; font-size: 13pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
+                  content += '<span class="section-price" style="font-weight: bold; font-size: ' + (sectionTitleSize + 1) + 'pt;">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
                 }
                 content += '</div>';
                 
-                // Show description first if exists
                 if (section.description) {
                   content += '<div class="section-content" style="margin: 8px 0 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #2d5f3f;">' + section.description + '</div>';
                 }
                 
-                // Show all sub-items with individual prices in a detailed table
                 if (section.items && section.items.length > 0) {
                   content += '<div style="margin: 10px 0 20px 0;">';
                   content += '<p style="font-size: 10pt; font-weight: 600; color: #666; margin-bottom: 8px;">LINE ITEM BREAKDOWN:</p>';
@@ -436,22 +463,18 @@ export function generateProposalHTML(data: {
                   
                   content += '<tr class="total-row">';
                   content += '<td colspan="3" style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0;">Section Total:</td>';
-                  content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: 11pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
+                  content += '<td style="text-align: right; font-weight: bold; padding: 10px 8px; background: #f0f0f0; font-size: ' + bodyFontSize + 'pt;">$' + (section.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>';
                   content += '</tr>';
                   content += '</tbody></table>';
                   content += '</div>';
                 }
               } else {
-                // CUSTOMER VERSION: Only show section name (with optional price) and description
-                // Do NOT show sub-items
                 if (showSectionPrices && section.price) {
-                  // Show section name with price on the right
                   content += '<div class="section-title" style="margin-top: 15px;">';
                   content += '<span>' + section.name + '</span>';
                   content += '<span class="section-price">$' + section.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</span>';
                   content += '</div>';
                 } else {
-                  // Show section name only
                   content += '<div class="section-title" style="display: block; margin-top: 15px;">' + section.name + '</div>';
                 }
                 
@@ -460,14 +483,14 @@ export function generateProposalHTML(data: {
                 }
               }
               
-              content += '</div>'; // Close section-wrapper
+              content += '</div>';
               return content;
             }).join('')}
           </div>
         </div>
         
         ${showInternalDetails ? `
-          <!-- Office View - Summary Only (No Payment Terms) -->
+          <!-- Office View - Summary Only -->
           <div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border: 2px solid #333; border-radius: 8px;">
             <h3 style="margin: 0 0 15px 0; font-size: 14pt;">Proposal Summary - Office View</h3>
             <table style="width: 100%;">
@@ -498,61 +521,50 @@ export function generateProposalHTML(data: {
             </table>
           </div>
           
-          <!-- Terms and Conditions Page (Office View) -->
           <div class="terms-page">
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
               <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
             </div>
-            
             <div class="terms-content">
               <div class="terms-section">
                 <div class="terms-section-title">Change Orders:</div>
-                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both Martin Builder and the Customer.</div>
+                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both ${companyName} and the Customer.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Site Conditions:</div>
                 <div class="terms-section-text">The contract price assumes normal soil conditions. If subsurface obstructions (e.g., rock, utilities, high water) are encountered, the Customer is responsible for additional excavation costs.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Permits:</div>
                 <div class="terms-section-text">Unless otherwise noted, the Customer is responsible for all building permits, zoning fees, and utility hookups.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Payment Schedule:</div>
-                <div class="terms-section-text">Payments are due as follows: 20% Down, 60% COD (due upon delivery of framing materials), and 20% Final (due upon substantial completion).</div>
+                <div class="terms-section-text">${paymentText}</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Site Access:</div>
                 <div class="terms-section-text">Customer must provide clear, unobstructed access for heavy equipment and delivery trucks to the build site.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Insurance:</div>
-                <div class="terms-section-text">Martin Builder carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
+                <div class="terms-section-text">${companyName} carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Workmanship Warranty:</div>
-                <div class="terms-section-text">Martin Builder warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
+                <div class="terms-section-text">${companyName} warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
               </div>
-              
               <div class="terms-signature-section">
                 <div class="terms-signature-intro">
                   By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
                 </div>
-                
                 <div class="terms-signature-row">
                   <div class="terms-signature-block">
                     <div class="terms-signature-label">Customer Signature</div>
                     <div class="terms-signature-line"></div>
                   </div>
-                  
                   <div class="terms-signature-block">
                     <div class="terms-signature-label">Date</div>
                     <div class="terms-signature-line"></div>
@@ -562,7 +574,7 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         ` : `
-          <!-- Customer Version - Full Footer with Payment Terms -->
+          <!-- Customer Version - Full Footer -->
           <p style="margin-top: 30px; margin-bottom: 10px;">We Propose hereby to furnish material and labor, complete in accordance with the above specifications, for sum of:</p>
           
           <table style="margin-top: 15px;">
@@ -581,14 +593,11 @@ export function generateProposalHTML(data: {
           </table>
           
           <div class="footer">
-            <p style="margin-bottom: 10px;">Payment to be made as follows: 20% Down, 60% COD, 20% Final</p>
-            
+            <p style="margin-bottom: 10px;">${paymentText}</p>
             <p style="margin-bottom: 15px;"><strong>Note:</strong> This proposal may be withdrawn by us if not accepted within 30 days.</p>
-            
             <div class="signature-section">
               <p style="margin-bottom: 5px;"><strong>Acceptance of Proposal</strong></p>
-              <p style="margin-bottom: 20px;">The above prices, specifications and conditions are satisfactory and are hereby accepted. You are authorized to do the work as specified. Payment will be made as outlined above.</p>
-              
+              <p style="margin-bottom: 20px;">${acceptanceText}</p>
               <div style="display: flex; justify-content: space-between; margin-top: 40px;">
                 <div>
                   <p>Authorized Signature</p>
@@ -602,61 +611,50 @@ export function generateProposalHTML(data: {
             </div>
           </div>
           
-          <!-- Terms and Conditions Page (Customer Version) -->
           <div class="terms-page">
             <div class="terms-header">
               <div class="terms-title">Standard Terms and Conditions</div>
               <div class="terms-reference">Proposal #${proposalNumber} | ${job.name} | ${job.client_name}</div>
               <div class="terms-reference">Contract Amount: $${totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
             </div>
-            
             <div class="terms-content">
               <div class="terms-section">
                 <div class="terms-section-title">Change Orders:</div>
-                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both Martin Builder and the Customer.</div>
+                <div class="terms-section-text">Any additions or deviations from the original scope involving extra costs for labor or materials will be executed only upon a written Change Order, signed by both ${companyName} and the Customer.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Site Conditions:</div>
                 <div class="terms-section-text">The contract price assumes normal soil conditions. If subsurface obstructions (e.g., rock, utilities, high water) are encountered, the Customer is responsible for additional excavation costs.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Permits:</div>
                 <div class="terms-section-text">Unless otherwise noted, the Customer is responsible for all building permits, zoning fees, and utility hookups.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Payment Schedule:</div>
-                <div class="terms-section-text">Payments are due as follows: 20% Down, 60% COD (due upon delivery of framing materials), and 20% Final (due upon substantial completion).</div>
+                <div class="terms-section-text">${paymentText}</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Site Access:</div>
                 <div class="terms-section-text">Customer must provide clear, unobstructed access for heavy equipment and delivery trucks to the build site.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Insurance:</div>
-                <div class="terms-section-text">Martin Builder carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
+                <div class="terms-section-text">${companyName} carries General Liability and Workers' Comp. Customer is responsible for 'Course of Construction' insurance once materials are delivered.</div>
               </div>
-              
               <div class="terms-section">
                 <div class="terms-section-title">Workmanship Warranty:</div>
-                <div class="terms-section-text">Martin Builder warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
+                <div class="terms-section-text">${companyName} warrants workmanship for one (1) year. Manufacturer warranties apply to steel panels, doors, and hardware.</div>
               </div>
-              
               <div class="terms-signature-section">
                 <div class="terms-signature-intro">
                   By signing below, the Customer acknowledges having read, understood, and agreed to these Standard Terms and Conditions as part of Proposal #${proposalNumber}.
                 </div>
-                
                 <div class="terms-signature-row">
                   <div class="terms-signature-block">
                     <div class="terms-signature-label">Customer Signature</div>
                     <div class="terms-signature-line"></div>
                   </div>
-                  
                   <div class="terms-signature-block">
                     <div class="terms-signature-label">Date</div>
                     <div class="terms-signature-line"></div>
@@ -666,8 +664,6 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         `}
-        
-
       </body>
     </html>
   `;
