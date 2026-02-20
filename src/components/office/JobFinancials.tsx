@@ -2715,7 +2715,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         notes: lineItem.notes || '',
         taxable: lineItem.taxable !== undefined ? lineItem.taxable : true,
         item_type: (lineItem as any).item_type || 'material',
-        markup_percent: (lineItem.markup_percent || 10).toString(),
+        markup_percent: (lineItem.markup_percent ?? 10).toString(),
       });
     } else {
       setEditingLineItem(null);
@@ -3278,10 +3278,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       rowMaterialsTaxableOnly = row.taxable ? row.total_cost : 0;
     }
     
-    // Calculate labor portion
+    // Calculate labor portion - WITH MARKUP
     let rowLaborTotal = 0;
     if (lineItems.length > 0) {
-      rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => {
+        const itemMarkup = item.markup_percent || 0;
+        return sum + (item.total_cost * (1 + itemMarkup / 100));
+      }, 0);
     } else if (row.category === 'labor') {
       rowLaborTotal = row.total_cost;
     }
@@ -3441,7 +3444,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     // Add labor from sheet line items (labor type)
     const sheetLineItems = customRowLineItems[sheet.sheetId] || [];
     const sheetLaborLineItems = sheetLineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
-    const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+    const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((sum: number, item: any) => {
+      const itemMarkup = item.markup_percent || 0;
+      return sum + (item.total_cost * (1 + itemMarkup / 100));
+    }, 0);
     
     // Add labor from linked custom rows (labor line items)
     const linkedRows = customRows.filter(r => (r as any).sheet_id === sheet.sheetId);
@@ -3452,10 +3458,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       // Separate line items by type
       const laborLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
       
-      // Calculate labor portion
+      // Calculate labor portion - WITH MARKUP
       let rowLaborTotal = 0;
       if (lineItems.length > 0) {
-        rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+        rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => {
+          const itemMarkup = item.markup_percent || 0;
+          return sum + (item.total_cost * (1 + itemMarkup / 100));
+        }, 0);
       } else if (row.category === 'labor') {
         rowLaborTotal = row.total_cost;
       }
