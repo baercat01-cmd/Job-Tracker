@@ -417,11 +417,11 @@ function SortableRow({ item, ...props }: any) {
                                     // Wait for database replication
                                     await new Promise(resolve => setTimeout(resolve, 300));
                                     
-                                    // Remove from saving set - reload can now overwrite this value
-                                    savingMarkupsRef.current.delete(categoryKey);
-                                    
-                                    // Reload to get fresh data from database
+                                    // Reload to get fresh data from database (key still in ref so value is preserved)
                                     await loadMaterialsData();
+                                    
+                                    // Remove from saving set AFTER reload completes
+                                    savingMarkupsRef.current.delete(categoryKey);
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
