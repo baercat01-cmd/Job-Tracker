@@ -389,6 +389,13 @@ function SortableRow({ item, ...props }: any) {
                                 value={categoryMarkup}
                                 onChange={async (e) => {
                                   const newMarkup = parseFloat(e.target.value) || 0;
+                                  
+                                  // Update local state immediately for responsiveness
+                                  setCategoryMarkups(prev => ({
+                                    ...prev,
+                                    [categoryKey]: newMarkup
+                                  }));
+                                  
                                   try {
                                     const { error: upsertError } = await supabase
                                       .from('material_category_markups')
@@ -400,10 +407,15 @@ function SortableRow({ item, ...props }: any) {
                                         onConflict: 'sheet_id,category_name'
                                       });
                                     if (upsertError) throw upsertError;
+                                    
+                                    // Reload full data to ensure everything is in sync
                                     await loadMaterialsData();
+                                    toast.success('Markup updated');
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
+                                    // Revert local state on error
+                                    await loadMaterialsData();
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
