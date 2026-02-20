@@ -1557,19 +1557,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
   const [exporting, setExporting] = useState(false);
   
-  // Proposal versioning state
+  // Proposal state
   const [quote, setQuote] = useState<any>(null);
   const [proposalVersions, setProposalVersions] = useState<any[]>([]);
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
-  const [versionChangeNotes, setVersionChangeNotes] = useState('');
-  const [creatingVersion, setCreatingVersion] = useState(false);
-  const [initializingVersions, setInitializingVersions] = useState(false);
+  const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
+  const [proposalChangeNotes, setProposalChangeNotes] = useState('');
+  const [creatingProposal, setCreatingProposal] = useState(false);
   
-  // Version navigation state
-  const [viewingVersionNumber, setViewingVersionNumber] = useState<number | null>(null);
-  const [loadingVersionSnapshot, setLoadingVersionSnapshot] = useState(false);
+  // Proposal navigation state
+  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
+  const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -1721,149 +1718,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function openVersionHistoryDialog() {
-    if (!quote) return;
-    
-    setLoadingVersions(true);
-    setShowVersionHistory(true);
-    
-    try {
-      const { data, error } = await supabase
-        .from('proposal_versions')
-        .select('*')
-        .eq('quote_id', quote.id)
-        .order('version_number', { ascending: false });
-
-      if (error) throw error;
-      setProposalVersions(data || []);
-    } catch (error: any) {
-      console.error('Error loading version history:', error);
-      toast.error('Failed to load version history');
-    } finally {
-      setLoadingVersions(false);
-    }
-  }
-
-  async function initializeVersioning() {
+  async function createNewProposal() {
     if (!quote || !profile) return;
 
-    if (!confirm(
-      'Initialize version tracking for this proposal?\n\n' +
-      'This will create Version 1 from the current proposal state.\n\n' +
-      'Continue?'
-    )) {
-      return;
-    }
-
-    setInitializingVersions(true);
+    setCreatingProposal(true);
     
     try {
       const { data, error } = await supabase.rpc('create_proposal_version', {
         p_quote_id: quote.id,
         p_created_by: profile.id,
-        p_change_notes: 'Initial version - migrated from existing proposal',
+        p_change_notes: proposalChangeNotes || null,
       });
 
       if (error) throw error;
 
-      toast.success('Version tracking initialized! Version 1 created.');
+      toast.success(`Proposal #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
+      setShowCreateProposalDialog(false);
+      setProposalChangeNotes('');
       await loadQuoteData();
     } catch (error: any) {
-      console.error('Error initializing versions:', error);
-      toast.error('Failed to initialize versions: ' + error.message);
+      console.error('Error creating proposal:', error);
+      toast.error('Failed to create proposal: ' + error.message);
     } finally {
-      setInitializingVersions(false);
-    }
-  }
-
-  async function createNewProposalVersion() {
-    if (!quote || !profile) return;
-
-    setCreatingVersion(true);
-    
-    try {
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote.id,
-        p_created_by: profile.id,
-        p_change_notes: versionChangeNotes || null,
-      });
-
-      if (error) throw error;
-
-      toast.success(`Version ${data} created successfully`);
-      setShowCreateVersionDialog(false);
-      setVersionChangeNotes('');
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error creating version:', error);
-      toast.error('Failed to create version: ' + error.message);
-    } finally {
-      setCreatingVersion(false);
-    }
-  }
-
-  async function signAndLockVersion(versionId: string) {
-    if (!profile) return;
-
-    if (!confirm(
-      'Set this as the contract version?\n\n' +
-      'This will:\n' +
-      '• Mark Version ' + (proposalVersions.find(v => v.id === versionId)?.version_number || '') + ' as the signed contract\n' +
-      '• Lock this version permanently (cannot be edited)\n' +
-      '• Create a new working version for future changes\n\n' +
-      'Continue?'
-    )) {
-      return;
-    }
-
-    try {
-      // Mark version as signed
-      const { error: signError } = await supabase
-        .from('proposal_versions')
-        .update({
-          is_signed: true,
-          signed_at: new Date().toISOString(),
-          signed_by: profile.id,
-        })
-        .eq('id', versionId);
-
-      if (signError) throw signError;
-
-      // Get the version number that was signed
-      const { data: signedVersion, error: getError } = await supabase
-        .from('proposal_versions')
-        .select('version_number, quote_id')
-        .eq('id', versionId)
-        .single();
-
-      if (getError) throw getError;
-
-      // Update quote to track signed version
-      const { error: quoteError } = await supabase
-        .from('quotes')
-        .update({ signed_version: signedVersion.version_number })
-        .eq('id', signedVersion.quote_id);
-
-      if (quoteError) throw quoteError;
-
-      // Create new working version automatically
-      const { error: newVersionError } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: signedVersion.quote_id,
-        p_created_by: profile.id,
-        p_change_notes: `Created after signing version ${signedVersion.version_number}`,
-      });
-
-      if (newVersionError) throw newVersionError;
-
-      toast.success(
-        `Version ${signedVersion.version_number} signed and locked!\n` +
-        `New working version ${signedVersion.version_number + 1} created.`
-      );
-      
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error signing version:', error);
-      toast.error('Failed to sign version: ' + error.message);
+      setCreatingProposal(false);
     }
   }
 
@@ -1982,59 +1859,59 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  // Version navigation functions
-  async function navigateToPreviousVersion() {
+  // Proposal navigation functions
+  async function navigateToPreviousProposal() {
     if (proposalVersions.length === 0) return;
     
-    const currentIndex = viewingVersionNumber === null 
+    const currentIndex = viewingProposalNumber === null 
       ? -1 
-      : proposalVersions.findIndex(v => v.version_number === viewingVersionNumber);
+      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
     
-    // Move to next older version (higher index)
+    // Move to next older proposal (higher index)
     if (currentIndex < proposalVersions.length - 1) {
-      const nextVersion = proposalVersions[currentIndex + 1];
-      setViewingVersionNumber(nextVersion.version_number);
-      await loadVersionSnapshot(nextVersion.version_number);
+      const nextProposal = proposalVersions[currentIndex + 1];
+      setViewingProposalNumber(nextProposal.version_number);
+      await loadProposalSnapshot(nextProposal.version_number);
     }
   }
 
-  async function navigateToNextVersion() {
+  async function navigateToNextProposal() {
     if (proposalVersions.length === 0) return;
     
-    const currentIndex = viewingVersionNumber === null 
+    const currentIndex = viewingProposalNumber === null 
       ? -1 
-      : proposalVersions.findIndex(v => v.version_number === viewingVersionNumber);
+      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
     
-    // Move to next newer version (lower index)
+    // Move to next newer proposal (lower index)
     if (currentIndex > 0) {
-      const nextVersion = proposalVersions[currentIndex - 1];
-      setViewingVersionNumber(nextVersion.version_number);
-      await loadVersionSnapshot(nextVersion.version_number);
+      const nextProposal = proposalVersions[currentIndex - 1];
+      setViewingProposalNumber(nextProposal.version_number);
+      await loadProposalSnapshot(nextProposal.version_number);
     } else if (currentIndex === 0) {
       // Return to live/current view
-      setViewingVersionNumber(null);
-      toast.info('Viewing current working version');
+      setViewingProposalNumber(null);
+      toast.info('Viewing current proposal');
       await loadData(false);
     }
   }
 
-  async function loadVersionSnapshot(versionNumber: number) {
-    setLoadingVersionSnapshot(true);
+  async function loadProposalSnapshot(proposalNumber: number) {
+    setLoadingProposalSnapshot(true);
     try {
-      const version = proposalVersions.find(v => v.version_number === versionNumber);
-      if (!version) {
-        toast.error('Version not found');
+      const proposal = proposalVersions.find(v => v.version_number === proposalNumber);
+      if (!proposal) {
+        toast.error('Proposal not found');
         return;
       }
 
-      toast.info(`Loading Version ${versionNumber}...`);
+      toast.info(`Loading Proposal #${quote.proposal_number?.split('-')[0]}-${proposalNumber}...`);
 
       // Load materials snapshot
-      if (version.materials_snapshot && Array.isArray(version.materials_snapshot)) {
+      if (proposal.materials_snapshot && Array.isArray(proposal.materials_snapshot)) {
         // Convert materials snapshot to breakdown format
         const sheetMap = new Map<string, any>();
         
-        version.materials_snapshot.forEach((item: any) => {
+        proposal.materials_snapshot.forEach((item: any) => {
           const sheetId = item.sheet_id;
           if (!sheetMap.has(sheetId)) {
             sheetMap.set(sheetId, {
@@ -2077,8 +1954,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         }));
         
         // Update sheet names from workbook snapshot
-        if (version.workbook_snapshot?.sheets) {
-          version.workbook_snapshot.sheets.forEach((s: any) => {
+        if (proposal.workbook_snapshot?.sheets) {
+          proposal.workbook_snapshot.sheets.forEach((s: any) => {
             const sheet = sheetBreakdowns.find(sb => sb.sheetId === s.id);
             if (sheet) {
               sheet.sheetName = s.sheet_name;
@@ -2100,12 +1977,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       // Load custom rows snapshot
-      if (version.financial_rows_snapshot && Array.isArray(version.financial_rows_snapshot)) {
-        setCustomRows(version.financial_rows_snapshot);
+      if (proposal.financial_rows_snapshot && Array.isArray(proposal.financial_rows_snapshot)) {
+        setCustomRows(proposal.financial_rows_snapshot);
         
         // Extract line items from snapshot
         const lineItemsMap: Record<string, any[]> = {};
-        version.financial_rows_snapshot.forEach((row: any) => {
+        proposal.financial_rows_snapshot.forEach((row: any) => {
           if (row.line_items && Array.isArray(row.line_items)) {
             lineItemsMap[row.id] = row.line_items;
           }
@@ -2114,23 +1991,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       // Load sheet labor snapshot
-      if (version.sheet_labor_snapshot && Array.isArray(version.sheet_labor_snapshot)) {
+      if (proposal.sheet_labor_snapshot && Array.isArray(proposal.sheet_labor_snapshot)) {
         const laborMap: Record<string, any> = {};
-        version.sheet_labor_snapshot.forEach((labor: any) => {
+        proposal.sheet_labor_snapshot.forEach((labor: any) => {
           laborMap[labor.sheet_id] = labor;
         });
         setSheetLabor(laborMap);
       }
 
       // Load subcontractor snapshot
-      if (version.subcontractor_snapshot && Array.isArray(version.subcontractor_snapshot)) {
-        setSubcontractorEstimates(version.subcontractor_snapshot);
+      if (proposal.subcontractor_snapshot && Array.isArray(proposal.subcontractor_snapshot)) {
+        setSubcontractorEstimates(proposal.subcontractor_snapshot);
         
         // Extract subcontractor line items and linked relationships
         const subLineItemsMap: Record<string, any[]> = {};
         const linkedMap: Record<string, any[]> = {};
         
-        version.subcontractor_snapshot.forEach((sub: any) => {
+        proposal.subcontractor_snapshot.forEach((sub: any) => {
           if (sub.line_items && Array.isArray(sub.line_items)) {
             subLineItemsMap[sub.id] = sub.line_items;
           }
@@ -2148,16 +2025,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       // Load category markups snapshot
-      if (version.category_markups_snapshot) {
-        setCategoryMarkups(version.category_markups_snapshot);
+      if (proposal.category_markups_snapshot) {
+        setCategoryMarkups(proposal.category_markups_snapshot);
       }
 
-      toast.success(`Loaded Version ${versionNumber}`);
+      toast.success(`Loaded Proposal #${quote.proposal_number?.split('-')[0]}-${proposalNumber}`);
     } catch (error: any) {
-      console.error('Error loading version snapshot:', error);
-      toast.error('Failed to load version snapshot');
+      console.error('Error loading proposal snapshot:', error);
+      toast.error('Failed to load proposal snapshot');
     } finally {
-      setLoadingVersionSnapshot(false);
+      setLoadingProposalSnapshot(false);
     }
   }
 
@@ -3973,31 +3850,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      {/* Proposal Version Info Banner - Show if quote exists */}
+      {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
-              {/* Version Navigation Arrows */}
+              {/* Proposal Navigation Arrows */}
               {proposalVersions.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={navigateToPreviousVersion}
-                    disabled={loadingVersionSnapshot || (viewingVersionNumber !== null && proposalVersions.findIndex(v => v.version_number === viewingVersionNumber) === proposalVersions.length - 1)}
+                    onClick={navigateToPreviousProposal}
+                    disabled={loadingProposalSnapshot || (viewingProposalNumber !== null && proposalVersions.findIndex(v => v.version_number === viewingProposalNumber) === proposalVersions.length - 1)}
                     className="h-8 w-8 p-0"
-                    title="Previous version (older)"
+                    title="Previous proposal"
                   >
                     <ChevronDown className="w-4 h-4 rotate-90" />
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={navigateToNextVersion}
-                    disabled={loadingVersionSnapshot || viewingVersionNumber === null}
+                    onClick={navigateToNextProposal}
+                    disabled={loadingProposalSnapshot || viewingProposalNumber === null}
                     className="h-8 w-8 p-0"
-                    title="Next version (newer)"
+                    title="Next proposal"
                   >
                     <ChevronDown className="w-4 h-4 -rotate-90" />
                   </Button>
@@ -4010,45 +3887,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   Proposal #{quote.proposal_number || quote.quote_number}
                 </span>
               </div>
-              {proposalVersions.length > 0 && (
-                <>
-                  <div className="flex items-center gap-2">
-                    {viewingVersionNumber !== null ? (
-                      <>
-                        <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                          Viewing v{viewingVersionNumber} of {proposalVersions.length}
-                        </Badge>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setViewingVersionNumber(null);
-                            loadData(false);
-                            toast.info('Returned to current working version');
-                          }}
-                          className="h-6 text-xs text-blue-700 hover:text-blue-900"
-                        >
-                          Return to Current
-                        </Button>
-                      </>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">
-                        Version {quote.current_version || 1}
-                      </Badge>
-                    )}
-                    {quote.signed_version && (
-                      <Badge className="text-xs bg-emerald-600">
-                        <Lock className="w-3 h-3 mr-1" />
-                        Contract v{quote.signed_version}
-                      </Badge>
-                    )}
-                  </div>
-                  {quote.estimated_price && (
-                    <div className="text-sm text-blue-700">
-                      Contract Price: <span className="font-bold">${quote.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-                </>
+              {proposalVersions.length > 0 && viewingProposalNumber !== null && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
+                    Viewing #{quote.proposal_number?.split('-')[0]}-{viewingProposalNumber}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setViewingProposalNumber(null);
+                      loadData(false);
+                      toast.info('Returned to current proposal');
+                    }}
+                    className="h-6 text-xs text-blue-700 hover:text-blue-900"
+                  >
+                    Return to Current
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>
@@ -4100,7 +3956,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     ) : (
                       <>
                         <Plus className="w-3 h-3 mr-2" />
-                        Create Version
+                        Create New Proposal
                       </>
                     )}
                   </Button>
@@ -5232,9 +5088,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       <Dialog open={showCreateVersionDialog} onOpenChange={setShowCreateVersionDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Proposal Version</DialogTitle>
+            <DialogTitle>Create New Proposal</DialogTitle>
             <DialogDescription>
-              Create a snapshot of the current proposal state. This allows you to track changes over time.
+              This will create a new proposal with an incremented number (e.g., -1 becomes -2). All current materials and pricing will be saved with this new proposal.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
