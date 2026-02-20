@@ -382,27 +382,24 @@ function SortableRow({ item, ...props }: any) {
                               <span className="text-slate-500">+</span>
                               <Input
                                 type="number"
-                                defaultValue={categoryMarkup}
-                                onBlur={async (e) => {
+                                value={categoryMarkup}
+                                onChange={async (e) => {
                                   const newMarkup = parseFloat(e.target.value) || 0;
-                                  if (newMarkup !== categoryMarkup) {
-                                    try {
-                                      const { error: upsertError } = await supabase
-                                        .from('material_category_markups')
-                                        .upsert({
-                                          sheet_id: sheet.sheetId,
-                                          category_name: category.name,
-                                          markup_percent: newMarkup,
-                                        }, {
-                                          onConflict: 'sheet_id,category_name'
-                                        });
-                                      if (upsertError) throw upsertError;
-                                      await loadMaterialsData();
-                                      toast.success('Category markup updated');
-                                    } catch (error) {
-                                      console.error('Error updating category markup:', error);
-                                      toast.error('Failed to update markup');
-                                    }
+                                  try {
+                                    const { error: upsertError } = await supabase
+                                      .from('material_category_markups')
+                                      .upsert({
+                                        sheet_id: sheet.sheetId,
+                                        category_name: category.name,
+                                        markup_percent: newMarkup,
+                                      }, {
+                                        onConflict: 'sheet_id,category_name'
+                                      });
+                                    if (upsertError) throw upsertError;
+                                    await loadMaterialsData();
+                                  } catch (error) {
+                                    console.error('Error updating category markup:', error);
+                                    toast.error('Failed to update markup');
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
@@ -547,6 +544,7 @@ function SortableRow({ item, ...props }: any) {
                                   const newMarkup = parseFloat(e.target.value) || 0;
                                   updateSubcontractorMarkup(sub.id, newMarkup);
                                 }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="w-14 h-5 text-xs px-1 text-center"
                                 step="1"
                                 min="0"
@@ -869,12 +867,10 @@ function SortableRow({ item, ...props }: any) {
                   <span>+</span>
                   <Input
                     type="number"
-                    defaultValue={row.markup_percent || 0}
-                    onBlur={(e) => {
+                    value={row.markup_percent || 0}
+                    onChange={(e) => {
                       const newMarkup = parseFloat(e.target.value) || 0;
-                      if (newMarkup !== row.markup_percent) {
-                        updateCustomRowMarkup(row.id, newMarkup);
-                      }
+                      updateCustomRowMarkup(row.id, newMarkup);
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className="w-14 h-5 text-xs px-1 text-center"
@@ -1253,11 +1249,12 @@ function SortableRow({ item, ...props }: any) {
                 <span>+</span>
                 <Input
                   type="number"
-                  value={estMarkup}
+                  value={estMarkup || 0}
                   onChange={(e) => {
                     const newMarkup = parseFloat(e.target.value) || 0;
                     updateSubcontractorMarkup(est.id, newMarkup);
                   }}
+                  onClick={(e) => e.stopPropagation()}
                   className="w-14 h-5 text-xs px-1 text-center"
                   step="1"
                   min="0"
