@@ -472,307 +472,54 @@ function SortableRow({ item, ...props }: any) {
                     const totalLaborCost = laborLineItemsTotal + linkedSubsNonTaxableTotal;
 
                     return (
-                      <Collapsible key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
-                        <div className="flex items-start gap-2">
-                          {(lineItems.length > 0 || linkedSubs.length > 0) && (
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                <ChevronDown className="w-4 h-4 text-slate-600" />
-                              </Button>
-                            </CollapsibleTrigger>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs font-semibold text-slate-900">{row.description}</p>
-                                {(lineItems.length > 0 || linkedSubs.length > 0) && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {lineItems.length + linkedSubs.length} item{(lineItems.length + linkedSubs.length) !== 1 ? 's' : ''}
-                                  </Badge>
-                                )}
+                      <div key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-semibold text-slate-900">{row.description}</p>
+                            {row.notes && (
+                              <p className="text-xs text-slate-600 mt-0.5">{row.notes}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {lineItems.length === 0 && (
+                              <div className="flex items-center gap-1 text-xs">
+                                <span className="text-slate-600">${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-slate-500">+</span>
+                                <Input
+                                  type="number"
+                                  value={row.markup_percent || 0}
+                                  onChange={(e) => {
+                                    const newMarkup = parseFloat(e.target.value) || 0;
+                                    updateCustomRowMarkup(row.id, newMarkup);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-14 h-5 text-xs px-1 text-center"
+                                  step="1"
+                                  min="0"
+                                />
+                                <span className="text-slate-500">%</span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                {lineItems.length === 0 && (
-                                  <div className="flex items-center gap-1 text-xs">
-                                    <span className="text-slate-600">${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                    <span className="text-slate-500">+</span>
-                                    <Input
-                                      type="number"
-                                      value={row.markup_percent || 0}
-                                      onChange={(e) => {
-                                        const newMarkup = parseFloat(e.target.value) || 0;
-                                        updateCustomRowMarkup(row.id, newMarkup);
-                                      }}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="w-14 h-5 text-xs px-1 text-center"
-                                      step="1"
-                                      min="0"
-                                    />
-                                    <span className="text-slate-500">%</span>
-                                  </div>
-                                )}
-                                <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0">
-                                      <MoreVertical className="w-3 h-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => openAddDialog(row)}>
-                                      <Edit className="w-3 h-3 mr-2" />
-                                      Edit Row
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'material')}>
-                                      <Plus className="w-3 h-3 mr-2" />
-                                      Add Material Item
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
-                                      <DollarSign className="w-3 h-3 mr-2" />
-                                      Add Labor
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
-                                      <Briefcase className="w-3 h-3 mr-2" />
-                                      Add Subcontractor
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => deleteRow(row.id)}>
-                                      <Trash2 className="w-3 h-3 mr-2" />
-                                      Delete Row
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </div>
+                            )}
+                            <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0"
+                              onClick={() => openAddDialog(row)}
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0"
+                              onClick={() => deleteRow(row.id)}
+                            >
+                              <Trash2 className="w-3 h-3 text-red-600" />
+                            </Button>
                           </div>
                         </div>
-                        
-                        {(lineItems.length > 0 || linkedSubs.length > 0) && (
-                          <CollapsibleContent>
-                            <div className="mt-2 ml-6 space-y-1">
-                              {lineItems.length > 0 && (
-                                <>
-                                  <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
-                                    <List className="w-3 h-3" />
-                                    Line Items
-                                  </p>
-                                  {lineItems.map((lineItem: any) => {
-                                    const isLabor = (lineItem as any).item_type === 'labor';
-                                    const itemMarkup = lineItem.markup_percent || 0;
-                                    const itemCost = lineItem.total_cost;
-                                    const itemPrice = itemCost * (1 + itemMarkup / 100);
-                                    
-                                    return (
-                                      <div key={lineItem.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex-1">
-                                            <p className="text-xs font-semibold text-slate-900">{lineItem.description}</p>
-                                            <p className="text-xs text-slate-600">
-                                              {lineItem.quantity} × ${lineItem.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </p>
-                                            {lineItem.notes && (
-                                              <p className="text-xs text-slate-500 mt-1">{lineItem.notes}</p>
-                                            )}
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <Badge variant={isLabor ? 'secondary' : 'default'} className="text-xs h-5">
-                                              {isLabor ? '👷 Labor' : '📦 Material'}
-                                            </Badge>
-                                            <div className="flex items-center gap-1">
-                                              <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                              <span className="text-xs text-slate-500">+</span>
-                                              <Input
-                                                type="number"
-                                                value={itemMarkup}
-                                                onChange={async (e) => {
-                                                  const newMarkup = parseFloat(e.target.value) || 0;
-                                                  try {
-                                                    const { error } = await supabase
-                                                      .from('custom_financial_row_items')
-                                                      .update({ markup_percent: newMarkup })
-                                                      .eq('id', lineItem.id);
-                                                    if (error) throw error;
-                                                    await loadCustomRows();
-                                                    await loadMaterialsData();
-                                                  } catch (error: any) {
-                                                    console.error('Error updating markup:', error);
-                                                    toast.error('Failed to update markup');
-                                                  }
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="w-14 h-5 text-xs px-1 text-center"
-                                                step="1"
-                                                min="0"
-                                              />
-                                              <span className="text-xs text-slate-500">%</span>
-                                            </div>
-                                            <p className="text-xs font-bold text-blue-700">
-                                              ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </p>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-5 w-5 p-0"
-                                              onClick={() => openLineItemDialog(row.id, lineItem, isLabor ? 'labor' : 'material')}
-                                            >
-                                              <Edit className="w-3 h-3" />
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-5 w-5 p-0"
-                                              onClick={() => deleteLineItem(lineItem.id)}
-                                            >
-                                              <Trash2 className="w-3 h-3 text-red-600" />
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </>
-                              )}
-                              
-                              {linkedSubs.map((sub: any) => {
-                                const subLineItems = subcontractorLineItems[sub.id] || [];
-                                const includedTotal = subLineItems
-                                  .filter((item: any) => !item.excluded)
-                                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                                const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
-
-                                return (
-                                  <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
-                                    <div className="flex items-start gap-2">
-                                      <CollapsibleTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent">
-                                          <ChevronDown className="w-4 h-4 text-slate-600" />
-                                        </Button>
-                                      </CollapsibleTrigger>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between">
-                                          <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
-                                          <div className="flex items-center gap-2">
-                                            <div className="flex items-center gap-1 text-xs">
-                                              <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                              <span className="text-slate-500">+</span>
-                                              <Input
-                                                type="number"
-                                                value={sub.markup_percent || 0}
-                                                onChange={(e) => {
-                                                  const newMarkup = parseFloat(e.target.value) || 0;
-                                                  updateSubcontractorMarkup(sub.id, newMarkup);
-                                                }}
-                                                className="w-14 h-5 text-xs px-1 text-center"
-                                                step="1"
-                                                min="0"
-                                              />
-                                              <span className="text-slate-500">%</span>
-                                            </div>
-                                            <p className="text-xs font-bold text-slate-900">
-                                              ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </p>
-                                            {sub.pdf_url && (
-                                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
-                                                <Eye className="w-3 h-3 text-blue-600" />
-                                              </Button>
-                                            )}
-                                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => unlinkSubcontractor(sub.id)}>
-                                              <Trash2 className="w-3 h-3 text-red-600" />
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <CollapsibleContent>
-                                      <div className="ml-8 mt-2 space-y-1">
-                                        {subLineItems.length > 0 && (
-                                          <div>
-                                            <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
-                                              <List className="w-3 h-3" />
-                                              Line Items
-                                              <span className="text-slate-500">({subLineItems.filter((item: any) => !item.excluded).length} of {subLineItems.length} included)</span>
-                                            </p>
-                                            {subLineItems.map((lineItem: any) => (
-                                              <div key={lineItem.id} className={`p-2 rounded mb-1 ${lineItem.excluded ? 'bg-red-50' : 'bg-slate-50'}`}>
-                                                <div className="flex items-center gap-2">
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={!lineItem.excluded}
-                                                    onChange={() => toggleSubcontractorLineItem(lineItem.id, lineItem.excluded)}
-                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                    title="Include in price"
-                                                  />
-                                                  <p className={`text-xs flex-1 ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                                    {lineItem.description}
-                                                  </p>
-                                                  <div className="flex items-center gap-2">
-                                                    <Badge
-                                                      variant="outline"
-                                                      className={`text-xs h-5 cursor-pointer hover:bg-slate-100 ${lineItem.excluded ? 'opacity-50' : ''}`}
-                                                      onClick={() => !lineItem.excluded && toggleSubcontractorLineItemType(lineItem.id, lineItem.item_type || 'material')}
-                                                      title="Click to toggle between Material and Labor"
-                                                    >
-                                                      {(lineItem.item_type || 'material') === 'labor' ? '👷 Labor' : '📦 Material'}
-                                                    </Badge>
-                                                    {(lineItem.item_type || 'material') === 'material' && (
-                                                      <>
-                                                        <Badge variant={lineItem.taxable ? 'default' : 'secondary'} className="text-xs h-5">
-                                                          {lineItem.taxable ? 'Tax' : 'No Tax'}
-                                                        </Badge>
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={lineItem.taxable}
-                                                          onChange={() => toggleSubcontractorLineItemTaxable(lineItem.id, lineItem.taxable)}
-                                                          className="rounded border-slate-300 text-green-600 focus:ring-green-500"
-                                                          title="Taxable"
-                                                          disabled={lineItem.excluded}
-                                                        />
-                                                      </>
-                                                    )}
-                                                    <div className="flex items-center gap-1">
-                                                      <span className="text-xs text-slate-500">+</span>
-                                                      <Input
-                                                        type="number"
-                                                        value={lineItem.markup_percent || 0}
-                                                        onChange={async (e) => {
-                                                          const newMarkup = parseFloat(e.target.value) || 0;
-                                                          try {
-                                                            const { error } = await supabase
-                                                              .from('subcontractor_estimate_line_items')
-                                                              .update({ markup_percent: newMarkup })
-                                                              .eq('id', lineItem.id);
-                                                            if (error) throw error;
-                                                            await loadSubcontractorEstimates();
-                                                          } catch (error: any) {
-                                                            console.error('Error updating line item markup:', error);
-                                                            toast.error('Failed to update markup');
-                                                          }
-                                                        }}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="w-14 h-5 text-xs px-1 text-center"
-                                                        step="1"
-                                                        min="0"
-                                                        disabled={lineItem.excluded}
-                                                      />
-                                                      <span className="text-xs text-slate-500">%</span>
-                                                    </div>
-                                                    <p className={`text-xs font-semibold ${lineItem.excluded ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                                      ${(lineItem.total_price * (1 + (lineItem.markup_percent || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </CollapsibleContent>
-                                  </Collapsible>
-                                );
-                              })}
-                            </div>
-                          </CollapsibleContent>
-                        )}
-                      </Collapsible>
+                      </div>
                     );
                   })}
                 </div>
