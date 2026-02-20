@@ -41,7 +41,7 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 70px 30px 150px 30px; 
+            padding: 70px 30px 120px 30px; 
             font-size: 11pt;
           }
           
@@ -274,15 +274,17 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Page setup for print */
+          /* Page footer for printing */
           @page {
             margin: 0.75in 0.5in 0.85in 0.5in;
+            size: letter;
             
             @bottom-left {
               content: "Proposal #${proposalNumber}";
               color: #999;
               font-size: 9pt;
               font-weight: 600;
+              font-family: Arial, sans-serif;
             }
             
             @bottom-right {
@@ -290,6 +292,7 @@ export function generateProposalHTML(data: {
               color: #999;
               font-size: 9pt;
               font-weight: 600;
+              font-family: Arial, sans-serif;
             }
           }
           
@@ -353,10 +356,18 @@ export function generateProposalHTML(data: {
           We hereby submit specifications and estimates for: Thanks for requesting a Martin Builder building quotation. We propose to furnish material, labor and equipment as described below:
         </p>
         
+        ${job.description ? `
+        <div class="intro-box" style="margin-top: 10px; margin-bottom: 15px;">
+          <div class="box-header">Building Description</div>
+          <div style="padding: 15px 10px 10px 10px;">
+            <div style="padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: 11pt; line-height: 1.6;">${job.description}</div>
+          </div>
+        </div>
+        ` : ''}
+        
         <div class="intro-box" style="margin-top: 10px;">
           <div class="box-header">Work to be Completed</div>
           <div style="padding: 15px 10px 10px 10px;">
-            ${job.description ? '<div style="margin-bottom: 20px; padding: 12px; background: #f9f9f9; border-left: 4px solid #2d5f3f; font-size: 11pt; line-height: 1.6;">' + job.description + '</div>' : ''}
             ${sections.map((section: any) => {
               let content = '<div class="section-wrapper">';
               
