@@ -3274,13 +3274,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       });
     } else {
       setEditingLineItem(null);
+      // Set default item_type based on dialog type
+      const defaultItemType = itemType === 'labor' ? 'labor' : 'material';
       setLineItemForm({
         description: '',
         quantity: '1',
         unit_cost: '0',
         notes: '',
-        taxable: true,
-        item_type: 'material',
+        taxable: defaultItemType === 'material',
+        item_type: defaultItemType,
         markup_percent: '10',
         labor_hours: '0',
         labor_rate: '60',
@@ -3297,32 +3299,60 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
 
-    const qty = parseFloat(lineItemForm.quantity) || 0;
-    const cost = parseFloat(lineItemForm.unit_cost) || 0;
-    const materialCost = qty * cost;
-    
-    const laborHours = parseFloat(lineItemForm.labor_hours) || 0;
-    const laborRate = parseFloat(lineItemForm.labor_rate) || 0;
-    const laborCost = laborHours * laborRate;
-    
-    const totalCost = materialCost + laborCost;
-
     // Determine if this is for a sheet or a custom row
     const isSheet = materialSheets.some(s => s.id === lineItemParentRowId);
     
-    const markup = parseFloat(lineItemForm.markup_percent) || 0;
-    
-    // Store labor data in notes as JSON if labor hours > 0
+    // Calculate costs based on line item type
+    let totalCost = 0;
+    let qty = 0;
+    let cost = 0;
+    let markup = 0;
+    let actualItemType = lineItemForm.item_type;
     let notesData = lineItemForm.notes || null;
-    if (laborHours > 0) {
-      notesData = JSON.stringify({
-        labor: {
-          hours: laborHours,
-          rate: laborRate,
-          markup: parseFloat(lineItemForm.labor_markup_percent) || 0,
-        },
-        notes: lineItemForm.notes || '',
-      });
+    
+    if (lineItemType === 'labor') {
+      // Labor-only item
+      const laborHours = parseFloat(lineItemForm.labor_hours) || 0;
+      const laborRate = parseFloat(lineItemForm.labor_rate) || 0;
+      totalCost = laborHours * laborRate;
+      qty = laborHours;
+      cost = laborRate;
+      markup = parseFloat(lineItemForm.labor_markup_percent) || 0;
+      actualItemType = 'labor';
+    } else if (lineItemType === 'combined') {
+      // Combined material + labor
+      const materialQty = parseFloat(lineItemForm.quantity) || 0;
+      const materialCost = parseFloat(lineItemForm.unit_cost) || 0;
+      const materialTotal = materialQty * materialCost;
+      
+      const laborHours = parseFloat(lineItemForm.labor_hours) || 0;
+      const laborRate = parseFloat(lineItemForm.labor_rate) || 0;
+      const laborTotal = laborHours * laborRate;
+      
+      totalCost = materialTotal + laborTotal;
+      qty = materialQty;
+      cost = materialCost;
+      markup = parseFloat(lineItemForm.markup_percent) || 0;
+      actualItemType = 'material'; // Combined items are primarily material
+      
+      // Store labor data in notes if present
+      if (laborHours > 0) {
+        notesData = JSON.stringify({
+          labor: {
+            hours: laborHours,
+            rate: laborRate,
+            markup: parseFloat(lineItemForm.labor_markup_percent) || 0,
+          },
+          notes: lineItemForm.notes || '',
+        });
+      }
+    } else {
+      // Material-only item
+      qty = parseFloat(lineItemForm.quantity) || 0;
+      cost = parseFloat(lineItemForm.unit_cost) || 0;
+      totalCost = qty * cost;
+      markup = parseFloat(lineItemForm.markup_percent) || 0;
+      actualItemType = 'material';
     }
     
     const itemData = {
@@ -3333,8 +3363,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       unit_cost: cost,
       total_cost: totalCost,
       notes: notesData,
-      taxable: lineItemForm.item_type === 'labor' ? false : lineItemForm.taxable,
-      item_type: lineItemForm.item_type,
+      taxable: actualItemType === 'labor' ? false : lineItemForm.taxable,
+      item_type: actualItemType,
       markup_percent: markup,
       order_index: editingLineItem 
         ? editingLineItem.order_index 
