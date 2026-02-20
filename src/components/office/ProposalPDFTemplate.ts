@@ -225,7 +225,7 @@ export function generateProposalHTML(data: {
           }
           
           .terms-section {
-            margin-bottom: 18px;
+            margin-bottom: 15px;
           }
           
           .terms-section-title {
@@ -241,8 +241,7 @@ export function generateProposalHTML(data: {
           }
           
           .terms-signature-section {
-            margin-top: 50px;
-            page-break-inside: avoid;
+            margin-top: 30px;
           }
           
           .terms-signature-intro {

@@ -3292,11 +3292,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         throw new Error(errorMessage);
       }
       
-      // The Edge Function returns HTML for print-to-PDF, open in new tab
+      // The Edge Function returns HTML, open in new tab for viewing
       const blob = new Blob([data], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
-      toast.success('PDF preview opened! Use your browser\'s Print dialog to save as PDF.');
+      toast.success('Proposal opened in new tab. You can print or save as PDF from the browser menu.');
       
       setShowExportDialog(false);
     } catch (error: any) {
