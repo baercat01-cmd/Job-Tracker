@@ -4419,13 +4419,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       {/* Line Item Dialog */}
       <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className={lineItemType === 'combined' ? "max-w-4xl" : "max-w-lg"}>
           <DialogHeader>
             <DialogTitle>
               {editingLineItem ? 'Edit Line Item' : 'Add Line Item'}
             </DialogTitle>
             <DialogDescription>
-              Add material costs, labor hours, or both in a single line item
+              {lineItemType === 'material' && 'Add material costs with markup and tax options'}
+              {lineItemType === 'labor' && 'Add labor hours and rates'}
+              {lineItemType === 'combined' && 'Add material costs, labor hours, or both in a single line item'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4434,95 +4436,167 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Input
                 value={lineItemForm.description}
                 onChange={(e) => setLineItemForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="e.g., Concrete Foundation with Installation"
+                placeholder={lineItemType === 'labor' ? "e.g., Installation Labor" : "e.g., Concrete Foundation with Installation"}
               />
             </div>
 
-            {/* Two-column layout for Material and Labor */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Material Section */}
-              <div className="space-y-4 border-r pr-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 rounded-full bg-blue-600" />
-                  <h3 className="text-sm font-semibold text-blue-900">Material</h3>
-                </div>
-                
-                <div>
-                  <Label>Quantity</Label>
-                  <Input
-                    type="number"
-                    value={lineItemForm.quantity}
-                    onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
-                    step="0.01"
-                    min="0"
-                    placeholder="0"
-                  />
-                </div>
-                
-                <div>
-                  <Label>Unit Cost ($)</Label>
-                  <Input
-                    type="number"
-                    value={lineItemForm.unit_cost}
-                    onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                  />
-                </div>
-                
-                <div>
-                  <Label>Markup %</Label>
-                  <Input
-                    type="number"
-                    value={lineItemForm.markup_percent}
-                    onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
-                    step="1"
-                    min="0"
-                    placeholder="10"
-                  />
-                </div>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-600">Cost:</span>
-                    <span className="font-semibold">
-                      ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
+            {/* Conditional layout based on type */}
+            {lineItemType === 'combined' ? (
+              /* Two-column layout for Combined */
+              <div className="grid grid-cols-2 gap-6">
+                {/* Material Section */}
+                <div className="space-y-4 border-r pr-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-blue-600" />
+                    <h3 className="text-sm font-semibold text-blue-900">Material</h3>
                   </div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-600">Markup:</span>
-                    <span className="font-semibold">
-                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
+                  
+                  <div>
+                    <Label>Quantity</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.quantity}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                      step="0.01"
+                      min="0"
+                      placeholder="0"
+                    />
                   </div>
-                  <div className="flex justify-between pt-2 border-t border-blue-300">
-                    <span className="font-bold text-blue-900">Material Price:</span>
-                    <span className="font-bold text-blue-700">
-                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
+                  
+                  <div>
+                    <Label>Unit Cost ($)</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.unit_cost}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Markup %</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.markup_percent}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
+                      step="1"
+                      min="0"
+                      placeholder="10"
+                    />
+                  </div>
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-600">Cost:</span>
+                      <span className="font-semibold">
+                        ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-600">Markup:</span>
+                      <span className="font-semibold">
+                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-blue-300">
+                      <span className="font-bold text-blue-900">Material Price:</span>
+                      <span className="font-bold text-blue-700">
+                        ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="lineitem-taxable"
+                      checked={lineItemForm.taxable}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="lineitem-taxable" className="cursor-pointer text-xs">
+                      Taxable (materials only)
+                    </Label>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="lineitem-taxable"
-                    checked={lineItemForm.taxable}
-                    onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <Label htmlFor="lineitem-taxable" className="cursor-pointer text-xs">
-                    Taxable (materials only)
-                  </Label>
+                {/* Labor Section */}
+                <div className="space-y-4 pl-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-amber-600" />
+                    <h3 className="text-sm font-semibold text-amber-900">Labor</h3>
+                  </div>
+                  
+                  <div>
+                    <Label>Hours</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.labor_hours}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_hours: e.target.value }))}
+                      step="0.5"
+                      min="0"
+                      placeholder="0"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Hourly Rate ($)</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.labor_rate}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_rate: e.target.value }))}
+                      step="1"
+                      min="0"
+                      placeholder="60"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Markup %</Label>
+                    <Input
+                      type="number"
+                      value={lineItemForm.labor_markup_percent}
+                      onChange={(e) => setLineItemForm(prev => ({ ...prev, labor_markup_percent: e.target.value }))}
+                      step="1"
+                      min="0"
+                      placeholder="10"
+                    />
+                  </div>
+                  
+                  <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-600">Cost:</span>
+                      <span className="font-semibold">
+                        ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-600">Markup:</span>
+                      <span className="font-semibold">
+                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-amber-300">
+                      <span className="font-bold text-amber-900">Labor Price:</span>
+                      <span className="font-bold text-amber-700">
+                        ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    Labor is automatically non-taxable
+                  </p>
                 </div>
               </div>
-              
-              {/* Labor Section */}
-              <div className="space-y-4 pl-4">
+            ) : lineItemType === 'labor' ? (
+              /* Labor-only layout */
+              <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-2 h-2 rounded-full bg-amber-600" />
-                  <h3 className="text-sm font-semibold text-amber-900">Labor</h3>
+                  <h3 className="text-sm font-semibold text-amber-900">Labor Details</h3>
                 </div>
                 
                 <div>
@@ -4561,22 +4635,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   />
                 </div>
                 
-                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs">
-                  <div className="flex justify-between mb-1">
+                <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                  <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Cost:</span>
                     <span className="font-semibold">
                       ${((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-                  <div className="flex justify-between mb-1">
+                  <div className="flex justify-between mb-1 text-sm">
                     <span className="text-slate-600">Markup:</span>
                     <span className="font-semibold">
                       ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-amber-300">
-                    <span className="font-bold text-amber-900">Labor Price:</span>
-                    <span className="font-bold text-amber-700">
+                    <span className="font-bold text-amber-900">Total Labor Price:</span>
+                    <span className="font-bold text-amber-700 text-lg">
                       ${(((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -4586,23 +4660,103 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   Labor is automatically non-taxable
                 </p>
               </div>
-            </div>
-            
-            {/* Combined Total */}
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-green-900">Combined Total Price</p>
-                  <p className="text-xs text-green-700">Material + Labor (with markups)</p>
+            ) : (
+              /* Material-only layout */
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-blue-600" />
+                  <h3 className="text-sm font-semibold text-blue-900">Material Details</h3>
                 </div>
-                <p className="text-2xl font-bold text-green-700">
-                  ${(
-                    (((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)) +
-                    (((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100))
-                  ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </p>
+                
+                <div>
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.quantity}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                    step="0.01"
+                    min="0"
+                    placeholder="0"
+                  />
+                </div>
+                
+                <div>
+                  <Label>Unit Cost ($)</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.unit_cost}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, unit_cost: e.target.value }))}
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div>
+                  <Label>Markup %</Label>
+                  <Input
+                    type="number"
+                    value={lineItemForm.markup_percent}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, markup_percent: e.target.value }))}
+                    step="1"
+                    min="0"
+                    placeholder="10"
+                  />
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <div className="flex justify-between mb-1 text-sm">
+                    <span className="text-slate-600">Cost:</span>
+                    <span className="font-semibold">
+                      ${((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mb-1 text-sm">
+                    <span className="text-slate-600">Markup:</span>
+                    <span className="font-semibold">
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (parseFloat(lineItemForm.markup_percent) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-blue-300">
+                    <span className="font-bold text-blue-900">Total Material Price:</span>
+                    <span className="font-bold text-blue-700 text-lg">
+                      ${(((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="lineitem-taxable"
+                    checked={lineItemForm.taxable}
+                    onChange={(e) => setLineItemForm(prev => ({ ...prev, taxable: e.target.checked }))}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <Label htmlFor="lineitem-taxable" className="cursor-pointer text-sm">
+                    Taxable
+                  </Label>
+                </div>
               </div>
-            </div>
+            )}
+            
+            {/* Combined Total - only show for combined type */}
+            {lineItemType === 'combined' && (
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-green-900">Combined Total Price</p>
+                    <p className="text-xs text-green-700">Material + Labor (with markups)</p>
+                  </div>
+                  <p className="text-2xl font-bold text-green-700">
+                    ${(
+                      (((parseFloat(lineItemForm.quantity) || 0) * (parseFloat(lineItemForm.unit_cost) || 0)) * (1 + (parseFloat(lineItemForm.markup_percent) || 0) / 100)) +
+                      (((parseFloat(lineItemForm.labor_hours) || 0) * (parseFloat(lineItemForm.labor_rate) || 0)) * (1 + (parseFloat(lineItemForm.labor_markup_percent) || 0) / 100))
+                    ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            )}
             
             <div>
               <Label>Notes (Optional)</Label>
