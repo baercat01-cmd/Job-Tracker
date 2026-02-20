@@ -423,84 +423,63 @@ function SortableRow({ item, ...props }: any) {
 
               {linkedRows.length > 0 && (
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Additional Materials</p>
+                  <p className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-2">
+                    <List className="w-3 h-3" />
+                    Line Items
+                  </p>
                   {linkedRows.map((row: any) => {
-                    const lineItems = customRowLineItems[row.id] || [];
-                    const linkedSubs = linkedSubcontractors[row.id] || [];
+                    const isLabor = row.category === 'labor';
+                    const itemMarkup = row.markup_percent || 0;
+                    const itemCost = row.total_cost;
+                    const itemPrice = itemCost * (1 + itemMarkup / 100);
                     
-                    // Separate line items by type
-                    const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
-                    const laborLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
-                    
-                    // Calculate material line items total WITH individual markups
-                    const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => {
-                      const itemMarkup = item.markup_percent || 0;
-                      return sum + (item.total_cost * (1 + itemMarkup / 100));
-                    }, 0);
-                    
-                    // Calculate labor line items total WITH individual markups
-                    const laborLineItemsTotal = laborLineItems.reduce((sum: number, item: any) => {
-                      const itemMarkup = item.markup_percent || 0;
-                      return sum + (item.total_cost * (1 + itemMarkup / 100));
-                    }, 0);
-                    
-                    // Calculate linked subcontractors
-                    const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
-                      const subLineItems = subcontractorLineItems[sub.id] || [];
-                      const taxableTotal = subLineItems
-                        .filter((item: any) => !item.excluded && item.taxable)
-                        .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-                      const estMarkup = sub.markup_percent || 0;
-                      return sum + (taxableTotal * (1 + estMarkup / 100));
-                    }, 0);
-                    
-                    const linkedSubsNonTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
-                      const subLineItems = subcontractorLineItems[sub.id] || [];
-                      const nonTaxableTotal = subLineItems
-                        .filter((item: any) => !item.excluded && !item.taxable)
-                        .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-                      const estMarkup = sub.markup_percent || 0;
-                      return sum + (nonTaxableTotal * (1 + estMarkup / 100));
-                    }, 0);
-                    
-                    // When line items exist, use their marked-up totals directly (NO row-level markup)
-                    // When no line items, use row total with row markup
-                    const finalPrice = lineItems.length > 0
-                      ? materialLineItemsTotal + linkedSubsTaxableTotal
-                      : (row.total_cost + linkedSubsTaxableTotal) * (1 + row.markup_percent / 100);
-                    
-                    const totalLaborCost = laborLineItemsTotal + linkedSubsNonTaxableTotal;
-
                     return (
-                      <div key={row.id} className="bg-blue-50 border border-blue-200 rounded p-2">
+                      <div key={row.id} className={`rounded p-2 border ${isLabor ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <p className="text-xs font-semibold text-slate-900">{row.description}</p>
+                            <p className="text-xs text-slate-600">
+                              {row.quantity} × ${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
                             {row.notes && (
-                              <p className="text-xs text-slate-600 mt-0.5">{row.notes}</p>
+                              <p className="text-xs text-slate-500 mt-1">{row.notes}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            {lineItems.length === 0 && (
-                              <div className="flex items-center gap-1 text-xs">
-                                <span className="text-slate-600">${row.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                <span className="text-slate-500">+</span>
-                                <Input
-                                  type="number"
-                                  value={row.markup_percent || 0}
-                                  onChange={(e) => {
-                                    const newMarkup = parseFloat(e.target.value) || 0;
-                                    updateCustomRowMarkup(row.id, newMarkup);
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="w-14 h-5 text-xs px-1 text-center"
-                                  step="1"
-                                  min="0"
-                                />
-                                <span className="text-slate-500">%</span>
-                              </div>
-                            )}
-                            <p className="text-xs font-bold text-slate-900">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <Badge variant={isLabor ? 'secondary' : 'default'} className="text-xs h-5">
+                              {isLabor ? '👷 Labor' : '📦 Material'}
+                            </Badge>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span className="text-xs text-slate-500">+</span>
+                              <Input
+                                type="number"
+                                value={itemMarkup}
+                                onChange={async (e) => {
+                                  const newMarkup = parseFloat(e.target.value) || 0;
+                                  try {
+                                    const { error } = await supabase
+                                      .from('custom_financial_rows')
+                                      .update({ markup_percent: newMarkup })
+                                      .eq('id', row.id);
+                                    if (error) throw error;
+                                    await loadCustomRows();
+                                    await loadMaterialsData();
+                                  } catch (error: any) {
+                                    console.error('Error updating markup:', error);
+                                    toast.error('Failed to update markup');
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-14 h-5 text-xs px-1 text-center"
+                                step="1"
+                                min="0"
+                              />
+                              <span className="text-xs text-slate-500">%</span>
+                            </div>
+                            <p className="text-xs font-bold text-blue-700">
+                              ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
                             <Button
                               size="sm"
                               variant="ghost"
