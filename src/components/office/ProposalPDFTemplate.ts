@@ -41,8 +41,9 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 50px 30px 80px 30px; 
+            padding: 70px 30px 130px 30px; 
             font-size: 11pt; 
+            counter-reset: page;
           }
           
           .header-row { 
@@ -196,12 +197,13 @@ export function generateProposalHTML(data: {
           /* Page setup for print */
           @page {
             margin: 0.75in 0.5in;
+            counter-increment: page;
           }
           
           /* Fixed footer for proposal number and page info */
           .page-footer {
             position: fixed;
-            bottom: 30px;
+            bottom: 40px;
             left: 60px;
             right: 60px;
             display: flex;
@@ -209,6 +211,10 @@ export function generateProposalHTML(data: {
             color: #999;
             font-size: 9pt;
             font-weight: 600;
+          }
+          
+          .page-number::after {
+            content: counter(page);
           }
           
           @media print {
@@ -224,7 +230,7 @@ export function generateProposalHTML(data: {
         <!-- Page Footer -->
         <div class="page-footer">
           <span>Proposal #${proposalNumber}</span>
-          <span>Page</span>
+          <span>Page <span class="page-number"></span></span>
         </div>
         
         <!-- Main Content -->
