@@ -134,6 +134,7 @@ function SortableRow({ item, ...props }: any) {
     sheetMarkups,
     setSheetMarkups,
     categoryMarkups,
+    setCategoryMarkups,
     customRowLineItems,
     sheetLabor,
     customRowLabor,
@@ -4581,6 +4582,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         sheetMarkups={sheetMarkups}
                         setSheetMarkups={setSheetMarkups}
                         categoryMarkups={categoryMarkups}
+                        setCategoryMarkups={setCategoryMarkups}
                         customRowLineItems={customRowLineItems}
                         sheetLabor={sheetLabor}
                         customRowLabor={customRowLabor}
