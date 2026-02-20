@@ -129,9 +129,9 @@ export function generateProposalHTML(data: {
           
           .section-wrapper {
             page-break-inside: avoid;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             min-height: 80px;
-            padding-bottom: 10px;
+            padding-bottom: 6px;
           }
           
           .section-price {
@@ -286,7 +286,7 @@ export function generateProposalHTML(data: {
           /* Fixed footer for page numbers - will appear on every printed page */
           .print-footer {
             position: fixed;
-            bottom: 0.25in;
+            bottom: 0.1in;
             left: 0;
             right: 0;
             height: 0.3in;
