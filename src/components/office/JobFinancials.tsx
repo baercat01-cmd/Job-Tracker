@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { generateProposalHTML } from './ProposalPDFTemplate';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
+import { ProposalTemplateEditor } from './ProposalTemplateEditor';
 import { BulkMaterialMover } from './BulkMaterialMover';
 import type { Job } from '@/types';
 import {
@@ -1601,6 +1602,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [buildingDescription, setBuildingDescription] = useState(job.description || '');
   const [editingDescription, setEditingDescription] = useState(false);
+  
+  // Template editor state
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   
   // Drag and drop sensors
   const sensors = useSensors(
@@ -4399,6 +4403,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 </Button>
               )}
               <div className="h-6 w-px bg-border" />
+              <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className="bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
+                <Settings className="w-4 h-4 mr-2" />
+                Edit Template
+              </Button>
               <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
                 <FileText className="w-4 h-4 mr-2" />
                 View Documents
@@ -5502,6 +5510,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         jobId={job.id}
         open={showDocumentViewer}
         onClose={() => setShowDocumentViewer(false)}
+      />
+
+      {/* Template Editor */}
+      <ProposalTemplateEditor
+        open={showTemplateEditor}
+        onClose={() => setShowTemplateEditor(false)}
       />
 
       {/* Building Description Dialog */}
