@@ -2323,7 +2323,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCategory('subcontractor');
     setDescription('');
     setQuantity('1');
-    setUnitCost('60');
+    setUnitCost('0'); // Default to 0 - user can add line items without base cost
     setMarkupPercent('0');
     setNotes('');
     setTaxable(true);
@@ -4138,6 +4138,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   step="0.01"
+                  min="0"
                 />
               </div>
               <div>
@@ -4147,7 +4148,22 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   value={unitCost}
                   onChange={(e) => setUnitCost(e.target.value)}
                   step="0.01"
+                  min="0"
                 />
+              </div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 font-medium">Base Cost:</span>
+                  <span className="font-bold text-blue-700">
+                    ${((parseFloat(quantity) || 0) * (parseFloat(unitCost) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-2">
+                  💡 <strong>Tip:</strong> Set Quantity or Unit Cost to $0 if you only want to use line items for this section.
+                  The section can have a base cost AND line items, or just line items alone.
+                </p>
               </div>
             </div>
 
