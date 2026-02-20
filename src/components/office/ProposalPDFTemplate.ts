@@ -193,16 +193,68 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
+          /* Page numbering and proposal number */
+          .proposal-number-header {
+            position: fixed;
+            top: 15px;
+            right: 30px;
+            color: #999;
+            font-size: 9pt;
+            font-weight: 600;
+            z-index: 1000;
+          }
+          
+          .page-footer {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: #999;
+            font-size: 9pt;
+            z-index: 1000;
+          }
+          
+          @page {
+            margin-top: 50px;
+            margin-bottom: 60px;
+          }
+          
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
-              print-color-adjust: exact; 
+              print-color-adjust: exact;
+              counter-reset: page 1;
             }
             .page-break { page-break-after: always; }
+            
+            .page-footer::after {
+              content: "Page " counter(page);
+            }
+          }
+          
+          @media screen {
+            .page-footer::after {
+              content: "Page numbers will appear in print view";
+            }
+            .page-footer {
+              position: relative;
+              bottom: auto;
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #e0e0e0;
+            }
           }
         </style>
       </head>
       <body>
+        <!-- Proposal Number - appears on all pages in top right -->
+        <div class="proposal-number-header">Proposal #${proposalNumber}</div>
+        
+        <!-- Page Footer - shows page number -->
+        <div class="page-footer"></div>
+        
+        <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
             <img src="https://cdn-ai.onspace.ai/onspace/files/4ZzeFr2RKnB7oAxZwNpsZR/MB_Logo_Green_192x64_12.9kb.png" alt="Martin Builder" class="company-logo" />
@@ -400,6 +452,8 @@ export function generateProposalHTML(data: {
             </div>
           </div>
         `}
+        
+
       </body>
     </html>
   `;
