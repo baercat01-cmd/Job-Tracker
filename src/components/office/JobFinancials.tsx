@@ -292,6 +292,10 @@ function SortableRow({ item, ...props }: any) {
                   <DollarSign className="w-3 h-3 mr-2" />
                   Add Labor
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openLineItemDialog(sheet.sheetId, undefined, 'combined')}>
+                  <Plus className="w-3 h-3 mr-2" />
+                  Add Material + Labor
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => openSubcontractorDialog(sheet.sheetId, 'sheet')}>
                   <Briefcase className="w-3 h-3 mr-2" />
                   Add Subcontractor
@@ -862,6 +866,10 @@ function SortableRow({ item, ...props }: any) {
                 <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'labor')}>
                   <DollarSign className="w-3 h-3 mr-2" />
                   Add Labor
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openLineItemDialog(row.id, undefined, 'combined')}>
+                  <Plus className="w-3 h-3 mr-2" />
+                  Add Material + Labor
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => openSubcontractorDialog(row.id, 'row')}>
                   <Briefcase className="w-3 h-3 mr-2" />
