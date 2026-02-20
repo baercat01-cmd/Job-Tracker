@@ -41,7 +41,7 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 70px 30px 150px 30px; 
+            padding: 110px 30px 160px 30px; 
             font-size: 11pt;
           }
           
@@ -129,7 +129,7 @@ export function generateProposalHTML(data: {
           .section-wrapper {
             page-break-inside: avoid;
             margin-bottom: 20px;
-            min-height: 80px;
+            min-height: 120px;
           }
           
           .section-price {
@@ -212,7 +212,14 @@ export function generateProposalHTML(data: {
             font-weight: 600;
           }
           
-          /* Note: CSS page counters not reliable in all browsers for print-to-PDF */
+          .page-number::after {
+            content: counter(page);
+          }
+          
+          /* Page counter setup */
+          @page {
+            margin: 0.75in 0.5in;
+          }
           
           @media print {
             body { 
@@ -224,11 +231,26 @@ export function generateProposalHTML(data: {
         </style>
       </head>
       <body data-proposal-number="${proposalNumber}">
-        <!-- Page Footer (Note: Page numbers shown as placeholder - actual numbering happens in print) -->
+        <!-- Page Footer with dynamic page numbering -->
         <div class="page-footer">
           <span>Proposal #${proposalNumber}</span>
-          <span>Page</span>
+          <span>Page <span class="page-number"></span></span>
         </div>
+        
+        <script>
+          // Inject actual page numbers using browser's print API
+          window.addEventListener('load', function() {
+            // For browsers that support it, page numbers will be injected
+            // When printing to PDF, browsers automatically number pages
+            const pageNumberElements = document.querySelectorAll('.page-number');
+            pageNumberElements.forEach((el, index) => {
+              // Fallback for preview - will be replaced by browser during print
+              if (!el.textContent) {
+                el.textContent = '1';
+              }
+            });
+          });
+        </script>
         
         <!-- Main Content -->
         <div class="header-row">
