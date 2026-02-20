@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -393,8 +393,8 @@ function SortableRow({ item, ...props }: any) {
                                   const categoryKey = `${sheet.sheetId}_${category.name}`;
                                   
                                   try {
-                                    // Mark this markup as being saved to prevent polling from overwriting it
-                                    setSavingMarkups(prev => new Set(prev).add(categoryKey));
+                                    // Mark this markup as being saved (using ref so polling sees latest value)
+                                    savingMarkupsRef.current.add(categoryKey);
                                     
                                     // Update local state immediately for responsive UI
                                     setCategoryMarkups(prev => ({
@@ -418,11 +418,7 @@ function SortableRow({ item, ...props }: any) {
                                     await new Promise(resolve => setTimeout(resolve, 300));
                                     
                                     // Remove from saving set - reload can now overwrite this value
-                                    setSavingMarkups(prev => {
-                                      const newSet = new Set(prev);
-                                      newSet.delete(categoryKey);
-                                      return newSet;
-                                    });
+                                    savingMarkupsRef.current.delete(categoryKey);
                                     
                                     // Reload to get fresh data from database
                                     await loadMaterialsData();
@@ -430,11 +426,7 @@ function SortableRow({ item, ...props }: any) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
                                     // Remove from saving set and reload to revert
-                                    setSavingMarkups(prev => {
-                                      const newSet = new Set(prev);
-                                      newSet.delete(categoryKey);
-                                      return newSet;
-                                    });
+                                    savingMarkupsRef.current.delete(categoryKey);
                                     await loadMaterialsData();
                                   }
                                 }}
@@ -1476,7 +1468,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showSubUploadDialog, setShowSubUploadDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
-  const [savingMarkups, setSavingMarkups] = useState<Set<string>>(new Set());
+  const savingMarkupsRef = useRef<Set<string>>(new Set());
   
   // Line item dialog state
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
@@ -2549,8 +2541,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           const markupsMap: Record<string, number> = {};
           categoryMarkupsData.forEach(cm => {
             const key = `${cm.sheet_id}_${cm.category_name}`;
-            // Only update values that aren't currently being saved
-            if (!savingMarkups.has(key)) {
+            // Only update values that aren't currently being saved (check ref for latest value)
+            if (!savingMarkupsRef.current.has(key)) {
               markupsMap[key] = cm.markup_percent;
             }
           });
