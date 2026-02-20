@@ -53,10 +53,12 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [creatingWorkbook, setCreatingWorkbook] = useState(false);
   const [workbookName, setWorkbookName] = useState('');
+  const [quote, setQuote] = useState<any>(null);
 
   useEffect(() => {
     loadWorkbooks();
     loadJob();
+    loadQuote();
   }, [jobId]);
 
   async function loadJob() {
@@ -71,6 +73,25 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       setJob(data);
     } catch (error: any) {
       console.error('Error loading job:', error);
+    }
+  }
+
+  async function loadQuote() {
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', jobId)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error loading quote:', error);
+        return;
+      }
+
+      setQuote(data);
+    } catch (error: any) {
+      console.error('Error loading quote:', error);
     }
   }
 
@@ -514,10 +535,23 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
           <Card className="border-2 border-green-500">
             <CardHeader className="bg-green-50">
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <LockOpen className="w-5 h-5 text-green-600" />
-                  Working Version (v{workingVersion.version_number})
-                </CardTitle>
+                <div className="flex flex-col gap-1">
+                  <CardTitle className="flex items-center gap-2">
+                    <LockOpen className="w-5 h-5 text-green-600" />
+                    Working Version (v{workingVersion.version_number})
+                  </CardTitle>
+                  {quote && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                      <span className="font-semibold text-blue-900">
+                        Proposal #{quote.proposal_number || quote.quote_number}
+                      </span>
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800 text-xs">
+                        Current Proposal
+                      </Badge>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
@@ -565,14 +599,22 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
               </div>
             </CardHeader>
             <CardContent className="pt-4">
-              <div className="flex items-center gap-4 text-sm flex-wrap">
-                <div>
-                  <span className="text-muted-foreground">Created:</span>{' '}
-                  {new Date(workingVersion.created_at).toLocaleDateString()}
+              <div className="space-y-3">
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  <div>
+                    <span className="text-muted-foreground">Created:</span>{' '}
+                    {new Date(workingVersion.created_at).toLocaleDateString()}
+                  </div>
+                  <Badge variant="outline" className="bg-green-100 text-green-800">
+                    Quoting Mode - Editable
+                  </Badge>
                 </div>
-                <Badge variant="outline" className="bg-green-100 text-green-800">
-                  Quoting Mode - Editable
-                </Badge>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-900">
+                    <strong>📝 Note:</strong> Changes to this workbook only affect the current proposal version. 
+                    Previous proposals remain unchanged with their original materials and pricing.
+                  </p>
+                </div>
                 {job?.zoho_quote_number && (
                   <a
                     href={`https://books.zoho.com/app/60007115224#/quotes/${job.zoho_quote_id}`}
