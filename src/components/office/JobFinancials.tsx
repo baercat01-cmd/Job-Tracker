@@ -390,9 +390,19 @@ function SortableRow({ item, ...props }: any) {
                                 value={categoryMarkup}
                                 onChange={async (e) => {
                                   const newMarkup = parseFloat(e.target.value) || 0;
+                                  const categoryKey = `${sheet.sheetId}_${category.name}`;
                                   
                                   try {
-                                    // Save to database first (NO optimistic update)
+                                    // Mark this markup as being saved to prevent polling from overwriting it
+                                    setSavingMarkups(prev => new Set(prev).add(categoryKey));
+                                    
+                                    // Update local state immediately for responsive UI
+                                    setCategoryMarkups(prev => ({
+                                      ...prev,
+                                      [categoryKey]: newMarkup
+                                    }));
+                                    
+                                    // Save to database
                                     const { error: upsertError } = await supabase
                                       .from('material_category_markups')
                                       .upsert({
@@ -404,14 +414,28 @@ function SortableRow({ item, ...props }: any) {
                                       });
                                     if (upsertError) throw upsertError;
                                     
-                                    // Wait a brief moment for database consistency
-                                    await new Promise(resolve => setTimeout(resolve, 100));
+                                    // Wait for database replication
+                                    await new Promise(resolve => setTimeout(resolve, 300));
                                     
-                                    // Reload materials data AFTER database update completes
+                                    // Remove from saving set - reload can now overwrite this value
+                                    setSavingMarkups(prev => {
+                                      const newSet = new Set(prev);
+                                      newSet.delete(categoryKey);
+                                      return newSet;
+                                    });
+                                    
+                                    // Reload to get fresh data from database
                                     await loadMaterialsData();
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
+                                    // Remove from saving set and reload to revert
+                                    setSavingMarkups(prev => {
+                                      const newSet = new Set(prev);
+                                      newSet.delete(categoryKey);
+                                      return newSet;
+                                    });
+                                    await loadMaterialsData();
                                   }
                                 }}
                                 onClick={(e) => e.stopPropagation()}
@@ -1452,6 +1476,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showSubUploadDialog, setShowSubUploadDialog] = useState(false);
   const [editingRow, setEditingRow] = useState<CustomFinancialRow | null>(null);
+  const [savingMarkups, setSavingMarkups] = useState<Set<string>>(new Set());
   
   // Line item dialog state
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
@@ -2513,7 +2538,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         setMaterialSheets(sheetsData || []);
       }
 
-      // Load category markups
+      // Load category markups (but don't overwrite values currently being saved)
       if (sheetIds.length > 0) {
         const { data: categoryMarkupsData, error: categoryMarkupsError } = await supabase
           .from('material_category_markups')
@@ -2524,9 +2549,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           const markupsMap: Record<string, number> = {};
           categoryMarkupsData.forEach(cm => {
             const key = `${cm.sheet_id}_${cm.category_name}`;
-            markupsMap[key] = cm.markup_percent;
+            // Only update values that aren't currently being saved
+            if (!savingMarkups.has(key)) {
+              markupsMap[key] = cm.markup_percent;
+            }
           });
-          setCategoryMarkups(markupsMap);
+          // Merge with existing saved values to avoid overwriting pending changes
+          const finalMarkups = { ...categoryMarkups, ...markupsMap };
+          if (JSON.stringify(finalMarkups) !== JSON.stringify(categoryMarkups)) {
+            setCategoryMarkups(finalMarkups);
+          }
         }
       }
       
