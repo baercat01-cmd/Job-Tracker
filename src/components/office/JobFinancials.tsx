@@ -402,36 +402,44 @@ function SortableRow({ item, ...props }: any) {
                                     // Mark this markup as being saved
                                     savingMarkupsRef.current.add(categoryKey);
                                     
-                                    console.log(`Saving markup ${newMarkup}% for ${category.name} in sheet ${sheet.sheetId}`);
+                                    console.log(`[MARKUP SAVE] Starting save: ${newMarkup}% for category "${category.name}" in sheet ${sheet.sheetId}`);
                                     
-                                    // Save to database
-                                    const { error: upsertError } = await supabase
+                                    // Save to database with explicit conflict resolution
+                                    const { data: upsertData, error: upsertError } = await supabase
                                       .from('material_category_markups')
                                       .upsert({
                                         sheet_id: sheet.sheetId,
                                         category_name: category.name,
                                         markup_percent: newMarkup,
+                                        updated_at: new Date().toISOString(),
                                       }, {
-                                        onConflict: 'sheet_id,category_name'
-                                      });
+                                        onConflict: 'sheet_id,category_name',
+                                        ignoreDuplicates: false,
+                                      })
+                                      .select();
+                                    
                                     if (upsertError) {
-                                      console.error('Database error:', upsertError);
+                                      console.error('[MARKUP SAVE] Database error:', upsertError);
                                       throw upsertError;
                                     }
                                     
-                                    console.log('✅ Markup saved successfully');
+                                    console.log('[MARKUP SAVE] Database response:', upsertData);
+                                    console.log('[MARKUP SAVE] ✅ Markup saved successfully');
                                     
-                                    // Wait longer for database replication
-                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                    // Small delay for database replication
+                                    await new Promise(resolve => setTimeout(resolve, 300));
                                     
                                     // Remove from saving set BEFORE reload
                                     savingMarkupsRef.current.delete(categoryKey);
                                     
                                     // Reload to get fresh data
                                     await loadMaterialsData();
-                                  } catch (error) {
-                                    console.error('Error updating category markup:', error);
-                                    toast.error('Failed to update markup');
+                                    
+                                    // Show success toast
+                                    toast.success(`Markup updated to ${newMarkup}%`);
+                                  } catch (error: any) {
+                                    console.error('[MARKUP SAVE] Error updating category markup:', error);
+                                    toast.error(`Failed to save markup: ${error.message || 'Unknown error'}`);
                                     // Remove from saving set
                                     savingMarkupsRef.current.delete(categoryKey);
                                     // Reload to get correct value from database
