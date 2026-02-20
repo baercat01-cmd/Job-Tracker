@@ -41,7 +41,7 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 15px 30px; 
+            padding: 50px 30px 80px 30px; 
             font-size: 11pt; 
           }
           
@@ -193,30 +193,22 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Page margin boxes for automatic page numbering */
+          /* Page setup for print */
           @page {
-            margin-top: 50px;
-            margin-bottom: 120px;
-            
-            @bottom-left {
-              content: "Proposal #" attr(data-proposal-number);
-              color: #999;
-              font-size: 9pt;
-              font-weight: 600;
-              margin-left: 60px;
-            }
-            
-            @bottom-right {
-              content: "Page " counter(page);
-              color: #999;
-              font-size: 9pt;
-              margin-right: 60px;
-            }
+            margin: 0.75in 0.5in;
           }
           
-          /* Running header for proposal number using position */
-          .page-footer-proposal::before {
-            content: "Proposal #${proposalNumber}";
+          /* Fixed footer for proposal number and page info */
+          .page-footer {
+            position: fixed;
+            bottom: 30px;
+            left: 60px;
+            right: 60px;
+            display: flex;
+            justify-content: space-between;
+            color: #999;
+            font-size: 9pt;
+            font-weight: 600;
           }
           
           @media print {
@@ -229,6 +221,12 @@ export function generateProposalHTML(data: {
         </style>
       </head>
       <body data-proposal-number="${proposalNumber}">
+        <!-- Page Footer -->
+        <div class="page-footer">
+          <span>Proposal #${proposalNumber}</span>
+          <span>Page</span>
+        </div>
+        
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
