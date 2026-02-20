@@ -41,9 +41,8 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 70px 30px 80px 30px; 
+            padding: 50px 30px 60px 30px; 
             font-size: 11pt;
-            counter-reset: page 1;
           }
           
           .header-row { 
@@ -112,8 +111,8 @@ export function generateProposalHTML(data: {
           .section-title { 
             font-weight: bold; 
             font-size: 12pt;
-            margin-top: 20px; 
-            margin-bottom: 8px;
+            margin-top: 12px; 
+            margin-bottom: 6px;
             display: flex;
             justify-content: space-between;
             align-items: baseline;
@@ -129,9 +128,9 @@ export function generateProposalHTML(data: {
           
           .section-wrapper {
             page-break-inside: avoid;
-            margin-bottom: 12px;
-            min-height: 80px;
-            padding-bottom: 6px;
+            margin-bottom: 8px;
+            min-height: 60px;
+            padding-bottom: 4px;
           }
           
           .section-price {
@@ -280,7 +279,10 @@ export function generateProposalHTML(data: {
           @page {
             margin: 0.75in 0.5in 0.75in 0.5in;
             size: letter;
-            counter-increment: page;
+          }
+          
+          @page:first {
+            counter-reset: page 1;
           }
           
           /* Fixed footer for page numbers - will appear on every printed page */
