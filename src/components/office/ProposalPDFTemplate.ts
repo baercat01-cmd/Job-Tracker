@@ -193,26 +193,26 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Page numbering and proposal number */
-          .proposal-number-header {
-            position: fixed;
-            top: 15px;
-            right: 30px;
-            color: #999;
-            font-size: 9pt;
-            font-weight: 600;
-            z-index: 1000;
-          }
-          
+          /* Page numbering and proposal number at bottom */
           .page-footer {
             position: fixed;
             bottom: 20px;
             left: 0;
             right: 0;
-            text-align: center;
             color: #999;
             font-size: 9pt;
             z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+          }
+          
+          .page-footer .proposal-number {
+            font-weight: 600;
+          }
+          
+          .page-footer .page-number {
+            text-align: right;
           }
           
           @page {
@@ -228,13 +228,13 @@ export function generateProposalHTML(data: {
             }
             .page-break { page-break-after: always; }
             
-            .page-footer::after {
+            .page-footer .page-number::after {
               content: "Page " counter(page);
             }
           }
           
           @media screen {
-            .page-footer::after {
+            .page-footer .page-number::after {
               content: "Page numbers will appear in print view";
             }
             .page-footer {
@@ -248,11 +248,11 @@ export function generateProposalHTML(data: {
         </style>
       </head>
       <body>
-        <!-- Proposal Number - appears on all pages in top right -->
-        <div class="proposal-number-header">Proposal #${proposalNumber}</div>
-        
-        <!-- Page Footer - shows page number -->
-        <div class="page-footer"></div>
+        <!-- Page Footer - shows proposal number and page number at bottom -->
+        <div class="page-footer">
+          <div class="proposal-number">Proposal #${proposalNumber}</div>
+          <div class="page-number"></div>
+        </div>
         
         <!-- Main Content -->
         <div class="header-row">
