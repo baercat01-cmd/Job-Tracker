@@ -41,10 +41,8 @@ export function generateProposalHTML(data: {
             color: #000; 
             max-width: 940px; 
             margin: 0 auto; 
-            padding: 90px 30px 180px 30px; 
+            padding: 70px 30px 150px 30px; 
             font-size: 11pt;
-            orphans: 3;
-            widows: 3;
           }
           
           .header-row { 
@@ -118,7 +116,6 @@ export function generateProposalHTML(data: {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            page-break-after: avoid;
           }
           
           .section-content { 
@@ -131,11 +128,8 @@ export function generateProposalHTML(data: {
           
           .section-wrapper {
             page-break-inside: avoid;
-            break-inside: avoid;
             margin-bottom: 20px;
-            min-height: 120px;
-            orphans: 3;
-            widows: 3;
+            min-height: 80px;
           }
           
           .section-price {
