@@ -1303,6 +1303,97 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     </div>
                   </div>
 
+                  {/* Cost Breakdown Summary */}
+                  {activeSheet && filteredItems.length > 0 && (
+                    <div className="p-4 bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300">
+                      <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+                        <DollarSign className="w-5 h-5" />
+                        Cost Breakdown - {activeSheet.sheet_name}
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {(() => {
+                          const totalCost = filteredItems.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
+                          const totalPrice = filteredItems.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                          const totalProfit = totalPrice - totalCost;
+                          const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+
+                          return (
+                            <>
+                              <div className="bg-white rounded-lg p-4 border-2 border-slate-300 shadow-sm">
+                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Cost</div>
+                                <div className="text-2xl font-bold text-red-600">
+                                  ${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg p-4 border-2 border-green-500 shadow-sm">
+                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Price</div>
+                                <div className="text-2xl font-bold text-green-700">
+                                  ${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg p-4 border-2 border-blue-500 shadow-sm">
+                                <div className="text-xs font-semibold text-muted-foreground mb-1">Total Profit</div>
+                                <div className="text-2xl font-bold text-blue-700">
+                                  ${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg p-4 border-2 border-purple-500 shadow-sm">
+                                <div className="text-xs font-semibold text-muted-foreground mb-1">Profit Margin</div>
+                                <div className="text-2xl font-bold text-purple-700 flex items-center gap-1">
+                                  <Percent className="w-5 h-5" />
+                                  {profitMargin.toFixed(1)}%
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Category Breakdown */}
+                      <div className="mt-4 bg-white rounded-lg p-4 border-2 border-slate-300">
+                        <h4 className="font-semibold text-sm text-slate-900 mb-3">By Category:</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {categoryGroups.map((catGroup) => {
+                            const catCost = catGroup.items.reduce((sum, item) => sum + (item.extended_cost || 0), 0);
+                            const catPrice = catGroup.items.reduce((sum, item) => sum + (item.extended_price || 0), 0);
+                            const catProfit = catPrice - catCost;
+                            const catMargin = catCost > 0 ? (catProfit / catCost) * 100 : 0;
+
+                            return (
+                              <div key={catGroup.category} className="border rounded p-3 bg-slate-50">
+                                <div className="font-semibold text-sm text-slate-900 mb-2">{catGroup.category}</div>
+                                <div className="space-y-1 text-xs">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Cost:</span>
+                                    <span className="font-semibold text-red-600">
+                                      ${catCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Price:</span>
+                                    <span className="font-semibold text-green-600">
+                                      ${catPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Profit:</span>
+                                    <span className="font-semibold text-blue-600">
+                                      ${catProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between pt-1 border-t">
+                                    <span className="text-muted-foreground">Margin:</span>
+                                    <span className="font-bold text-purple-600">{catMargin.toFixed(1)}%</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto">
                     {categoryGroups.length === 0 ? (
                       <div className="text-center py-12 text-muted-foreground">
