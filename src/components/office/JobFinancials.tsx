@@ -439,7 +439,10 @@ function SortableRow({ item, ...props }: any) {
                           <div className="flex-1">
                             <p className="text-xs font-semibold text-slate-900">{row.description}</p>
                             <p className="text-xs text-slate-600">
-                              {row.quantity} × ${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              {isLabor 
+                                ? `${row.quantity}h × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}/hr`
+                                : `${row.quantity} × $${row.unit_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                              }
                             </p>
                             {row.notes && (
                               <p className="text-xs text-slate-500 mt-1">{row.notes}</p>
@@ -449,7 +452,8 @@ function SortableRow({ item, ...props }: any) {
                             <Badge variant={isLabor ? 'secondary' : 'default'} className="text-xs h-5">
                               {isLabor ? '👷 Labor' : '📦 Material'}
                             </Badge>
-                            <div className="flex items-center gap-1">
+                            {!isLabor && (
+                              <div className="flex items-center gap-1">
                               <span className="text-xs text-slate-600">${itemCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                               <span className="text-xs text-slate-500">+</span>
                               <Input
@@ -476,7 +480,8 @@ function SortableRow({ item, ...props }: any) {
                                 min="0"
                               />
                               <span className="text-xs text-slate-500">%</span>
-                            </div>
+                              </div>
+                            )}
                             <p className="text-xs font-bold text-blue-700">
                               ${itemPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </p>
