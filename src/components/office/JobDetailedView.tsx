@@ -374,6 +374,7 @@ interface DailyLog {
 export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }: JobDetailedViewProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [proposalNumber, setProposalNumber] = useState<string | null>(null);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
   const [componentGroups, setComponentGroups] = useState<ComponentGroup[]>([]);
   const [personGroups, setPersonGroups] = useState<PersonGroup[]>([]);
@@ -464,6 +465,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   useEffect(() => {
     loadData();
     loadNotifications();
+    loadProposalNumber();
     
     // Subscribe to new notifications
     const notificationsChannel = supabase
@@ -516,6 +518,23 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       console.error('Error loading job details:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadProposalNumber() {
+    try {
+      // Get the quote/proposal for this job
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('proposal_number, quote_number')
+        .eq('job_id', job.id)
+        .maybeSingle();
+
+      if (!error && data) {
+        setProposalNumber(data.proposal_number || data.quote_number);
+      }
+    } catch (error) {
+      console.error('Error loading proposal number:', error);
     }
   }
 
@@ -1673,7 +1692,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
         <TabsContent value="materials" className="space-y-4 pt-4 px-2">
           {profile?.id && (
-            <MaterialsManagement job={job} userId={profile.id} />
+            <MaterialsManagement job={job} userId={profile.id} proposalNumber={proposalNumber} />
           )}
         </TabsContent>
 

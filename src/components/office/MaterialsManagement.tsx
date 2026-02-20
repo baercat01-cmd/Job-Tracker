@@ -102,6 +102,7 @@ interface MaterialWorkbook {
 interface MaterialsManagementProps {
   job: Job;
   userId: string;
+  proposalNumber?: string | null;
 }
 
 interface CategoryGroup {
@@ -109,7 +110,7 @@ interface CategoryGroup {
   items: MaterialItem[];
 }
 
-export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
+export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsManagementProps) {
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'packages' | 'crew-orders' | 'upload'>('manage');
@@ -1084,6 +1085,19 @@ export function MaterialsManagement({ job, userId }: MaterialsManagementProps) {
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
+          {/* Proposal Number Banner */}
+          {proposalNumber && (
+            <div className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 mb-2">
+              <FileSpreadsheet className="w-5 h-5" />
+              <div className="flex-1">
+                <p className="text-xs font-medium opacity-90">Working on Proposal</p>
+                <p className="text-xl font-bold tracking-wide">#{proposalNumber}</p>
+              </div>
+              <Badge variant="secondary" className="bg-white/20 text-white border-white/30 font-semibold">
+                Current Version
+              </Badge>
+            </div>
+          )}
           <TabsList className="grid w-full grid-cols-5 h-14 bg-white shadow-sm flex-1">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
