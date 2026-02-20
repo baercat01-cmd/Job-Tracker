@@ -3974,62 +3974,82 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 <CardContent>
                   <div className="space-y-6">
                     {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => (
-                      <div key={idx}>
-                        <BulkMaterialMover
-                          sheet={sheet}
-                          allSheets={materialSheets}
-                          onMoveComplete={loadMaterialsData}
-                        />
-                      </div>
-                    ))}
-                    {/* Original breakdown for reference
-                    {materialsBreakdown.sheetBreakdowns.map((sheet, idx) => (
                       <div key={idx} className="border rounded-lg overflow-hidden">
-                        <div className="bg-blue-50 p-3 border-b">
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b-2 border-blue-300">
                           <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-blue-900">{sheet.sheetName}</h3>
+                            <div>
+                              <h3 className="font-bold text-blue-900 text-lg">{sheet.sheetName}</h3>
+                              <p className="text-sm text-blue-700 mt-1">{sheet.categories?.length || 0} categories</p>
+                            </div>
                             <div className="text-right">
-                              <p className="text-sm text-blue-700">Cost: ${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                              <p className="font-bold text-blue-900">Price: ${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <div className="grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                  <p className="text-blue-700 font-medium">Total Cost</p>
+                                  <p className="font-bold text-blue-900 text-lg">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div>
+                                  <p className="text-blue-700 font-medium">Total Price</p>
+                                  <p className="font-bold text-blue-900 text-xl">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div>
+                                  <p className="text-green-700 font-medium">Profit</p>
+                                  <p className="font-bold text-green-700 text-lg">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-green-600">{sheet.margin.toFixed(1)}%</p>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
                         <div className="p-4">
                           <div className="space-y-3">
-                            {sheet.categories.map((category: any, catIdx: number) => (
-                              <Collapsible key={catIdx} className="border-b last:border-0">
-                                <div className="py-2">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <CollapsibleTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                          <ChevronDown className="w-4 h-4" />
-                                        </Button>
-                                      </CollapsibleTrigger>
-                                      <div>
-                                        <p className="font-semibold text-slate-900">{category.name}</p>
-                                        <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                            {sheet.categories.map((category: any, catIdx: number) => {
+                              // Calculate category total with markup
+                              const categoryKey = `${sheet.sheetId}_${category.name}`;
+                              const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
+                              const categoryPriceWithMarkup = category.totalCost * (1 + categoryMarkup / 100);
+                              const categoryProfit = categoryPriceWithMarkup - category.totalCost;
+                              const categoryMargin = categoryPriceWithMarkup > 0 ? (categoryProfit / categoryPriceWithMarkup) * 100 : 0;
+                              
+                              return (
+                                <Collapsible key={catIdx} className="border rounded-lg bg-white">
+                                  <div className="p-3 bg-slate-50 border-b">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <CollapsibleTrigger asChild>
+                                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                            <ChevronDown className="w-4 h-4" />
+                                          </Button>
+                                        </CollapsibleTrigger>
+                                        <div>
+                                          <p className="font-semibold text-slate-900">{category.name}</p>
+                                          <p className="text-sm text-slate-600">{category.itemCount} items</p>
+                                        </div>
                                       </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="flex gap-4 text-sm">
-                                        <div>
-                                          <p className="text-muted-foreground">Cost</p>
-                                          <p className="font-semibold">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-muted-foreground">Price</p>
-                                          <p className="font-bold text-blue-600">${category.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-muted-foreground">Profit</p>
-                                          <p className="font-bold text-green-600">${category.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                      <div className="text-right">
+                                        <div className="grid grid-cols-4 gap-3 text-sm">
+                                          <div>
+                                            <p className="text-slate-600 text-xs">Cost</p>
+                                            <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-600 text-xs">Markup</p>
+                                            <p className="font-semibold text-amber-700">{categoryMarkup}%</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-blue-600 text-xs font-medium">Price</p>
+                                            <p className="font-bold text-blue-700 text-base">${categoryPriceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-green-600 text-xs font-medium">Profit</p>
+                                            <p className="font-bold text-green-700">${categoryProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            <p className="text-xs text-green-600">{categoryMargin.toFixed(1)}%</p>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
                                   </div>
                                   <CollapsibleContent>
-                                    <div className="mt-3 ml-8 bg-slate-50 rounded p-3">
+                                    <div className="p-3">
                                       <table className="w-full text-sm">
                                         <thead>
                                           <tr className="border-b border-slate-300">
@@ -4056,16 +4076,45 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                                             </tr>
                                           ))}
                                         </tbody>
+                                        <tfoot>
+                                          <tr className="border-t-2 border-blue-300 bg-blue-50">
+                                            <td colSpan={3} className="py-2 text-right font-bold text-slate-900">Category Total:</td>
+                                            <td className="text-right py-2 font-bold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                            <td className="text-right py-2 font-bold text-blue-900">with {categoryMarkup}% markup:</td>
+                                            <td className="text-right py-2 font-bold text-blue-700 text-base">${categoryPriceWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                          </tr>
+                                        </tfoot>
                                       </table>
                                     </div>
                                   </CollapsibleContent>
-                                </div>
-                              </Collapsible>
-                            ))}
+                                </Collapsible>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {/* Sheet Total Summary */}
+                        <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-4 border-t-2 border-blue-400">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-blue-900 text-lg">Sheet Total: {sheet.sheetName}</h4>
+                            <div className="grid grid-cols-3 gap-6 text-sm">
+                              <div className="text-right">
+                                <p className="text-blue-700 font-medium">Total Cost</p>
+                                <p className="font-bold text-blue-900 text-xl">${sheet.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-blue-700 font-medium">Total Price</p>
+                                <p className="font-bold text-blue-900 text-2xl">${sheet.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-green-700 font-medium">Total Profit</p>
+                                <p className="font-bold text-green-700 text-xl">${sheet.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-sm text-green-600 font-semibold">{sheet.margin.toFixed(1)}% margin</p>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    ))} */}
+                    ))}
                   </div>
                 </CardContent>
               </Card>
