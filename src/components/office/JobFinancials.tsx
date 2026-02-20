@@ -4027,9 +4027,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     // Add labor from sheet line items (labor type)
     const sheetLineItems = customRowLineItems[sheet.sheetId] || [];
     const sheetLaborLineItems = sheetLineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
-    const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((sum: number, item: any) => {
+    const sheetLaborLineItemsTotal = sheetLaborLineItems.reduce((itemSum: number, item: any) => {
       const itemMarkup = item.markup_percent || 0;
-      return sum + (item.total_cost * (1 + itemMarkup / 100));
+      return itemSum + (item.total_cost * (1 + itemMarkup / 100));
     }, 0);
     
     // Add labor from linked custom rows (labor line items)
@@ -4044,9 +4044,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       // Calculate labor portion - WITH MARKUP
       let rowLaborTotal = 0;
       if (lineItems.length > 0) {
-        rowLaborTotal = laborLineItems.reduce((sum: number, item: any) => {
+        rowLaborTotal = laborLineItems.reduce((itemSum: number, item: any) => {
           const itemMarkup = item.markup_percent || 0;
-          return sum + (item.total_cost * (1 + itemMarkup / 100));
+          return itemSum + (item.total_cost * (1 + itemMarkup / 100));
         }, 0);
       } else if (row.category === 'labor') {
         rowLaborTotal = row.total_cost;
@@ -4057,7 +4057,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         const subLineItems = subcontractorLineItems[sub.id] || [];
         const subLaborTotal = subLineItems
           .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-          .reduce((sum: number, item: any) => sum + item.total_price, 0);
+          .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
         const estMarkup = sub.markup_percent || 0;
         rowLaborTotal += subLaborTotal * (1 + estMarkup / 100);
       });
