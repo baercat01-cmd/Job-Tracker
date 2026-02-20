@@ -397,6 +397,7 @@ function SortableRow({ item, ...props }: any) {
                                   }));
                                   
                                   try {
+                                    // Wait for database update to complete
                                     const { error: upsertError } = await supabase
                                       .from('material_category_markups')
                                       .upsert({
@@ -408,9 +409,8 @@ function SortableRow({ item, ...props }: any) {
                                       });
                                     if (upsertError) throw upsertError;
                                     
-                                    // Success - local state already updated, no need to reload
-                                    // Just reload materials data without showing loading spinner
-                                    setTimeout(() => loadMaterialsData(), 100);
+                                    // Reload materials data AFTER database update completes
+                                    await loadMaterialsData();
                                   } catch (error) {
                                     console.error('Error updating category markup:', error);
                                     toast.error('Failed to update markup');
