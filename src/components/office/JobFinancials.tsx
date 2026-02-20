@@ -165,6 +165,7 @@ function SortableRow({ item, ...props }: any) {
     loadCustomRows,
     loadSubcontractorEstimates,
     customRows,
+    savingMarkupsRef,
   } = props;
 
   const content = (() => {
@@ -4469,6 +4470,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         loadCustomRows={loadCustomRows}
                         loadSubcontractorEstimates={loadSubcontractorEstimates}
                         customRows={customRows}
+                        savingMarkupsRef={savingMarkupsRef}
                       />
                     ))}
                   </SortableContext>
