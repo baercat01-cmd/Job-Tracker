@@ -193,67 +193,37 @@ export function generateProposalHTML(data: {
           
           table { width: 100%; }
           
-          /* Page numbering and proposal number at bottom */
-          .page-footer {
-            position: fixed;
-            bottom: 20px;
-            left: 0;
-            right: 0;
-            color: #999;
-            font-size: 9pt;
-            z-index: 1000;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 60px;
-          }
-          
-          .page-footer .proposal-number {
-            font-weight: 600;
-          }
-          
-          .page-footer .page-number {
-            text-align: right;
-          }
-          
+          /* Page margin boxes for automatic page numbering */
           @page {
             margin-top: 50px;
             margin-bottom: 60px;
+            
+            @bottom-left {
+              content: "Proposal #${proposalNumber}";
+              color: #999;
+              font-size: 9pt;
+              font-weight: 600;
+              margin-left: 60px;
+            }
+            
+            @bottom-right {
+              content: "Page " counter(page);
+              color: #999;
+              font-size: 9pt;
+              margin-right: 60px;
+            }
           }
           
           @media print {
             body { 
               -webkit-print-color-adjust: exact; 
               print-color-adjust: exact;
-              counter-reset: page 1;
             }
             .page-break { page-break-after: always; }
-            
-            .page-footer .page-number::after {
-              content: "Page " counter(page);
-            }
-          }
-          
-          @media screen {
-            .page-footer .page-number::after {
-              content: "Page numbers will appear in print view";
-            }
-            .page-footer {
-              position: relative;
-              bottom: auto;
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #e0e0e0;
-            }
           }
         </style>
       </head>
       <body>
-        <!-- Page Footer - shows proposal number and page number at bottom -->
-        <div class="page-footer">
-          <div class="proposal-number">Proposal #${proposalNumber}</div>
-          <div class="page-number"></div>
-        </div>
-        
         <!-- Main Content -->
         <div class="header-row">
           <div class="logo-section">
