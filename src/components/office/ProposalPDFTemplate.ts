@@ -196,7 +196,7 @@ export function generateProposalHTML(data: {
           /* Page margin boxes for automatic page numbering */
           @page {
             margin-top: 50px;
-            margin-bottom: 90px;
+            margin-bottom: 120px;
             
             @bottom-left {
               content: "Proposal #" attr(data-proposal-number);
