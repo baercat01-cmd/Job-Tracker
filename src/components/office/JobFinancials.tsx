@@ -115,7 +115,7 @@ interface JobFinancialsProps {
 }
 
 // Sortable Row Component
-function SortableRow({ item, ...props }: any) {
+function SortableRow({ item, isReadOnly, ...props }: any) {
   const {
     attributes,
     listeners,
@@ -1598,6 +1598,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
   const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
   
+  // Determine if we're in read-only mode (viewing historical proposal)
+  const isReadOnly = viewingProposalNumber !== null;
+  
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [buildingDescription, setBuildingDescription] = useState(job.description || '');
@@ -2884,6 +2887,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function saveCustomRow() {
+    if (isReadOnly) {
+      toast.error('Cannot edit in historical view');
+      return;
+    }
+    
     if (!description || !unitCost) {
       toast.error('Please fill in description and ' + (category === 'labor' ? 'hourly rate' : 'unit cost'));
       return;
@@ -4204,6 +4212,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const { active, over } = event;
 
     if (!over || active.id === over.id) return;
+    
+    // Prevent reordering in read-only mode
+    if (isReadOnly) {
+      toast.error('Cannot reorder in historical view');
+      return;
+    }
 
     const oldIndex = allItems.findIndex(item => item.id === active.id);
     const newIndex = allItems.findIndex(item => item.id === over.id);
@@ -4255,6 +4269,32 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
+      {/* Read-Only Warning Banner - Show when viewing historical proposal */}
+      {isReadOnly && (
+        <Card className="mb-4 border-red-300 bg-red-50">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-3">
+              <Lock className="w-5 h-5 text-red-600" />
+              <div className="flex-1">
+                <p className="font-semibold text-red-900">Read-Only Historical View</p>
+                <p className="text-sm text-red-700">You are viewing a historical snapshot. All editing is disabled. Create a new version or return to current to make changes.</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setViewingProposalNumber(null);
+                  loadData(false);
+                  toast.info('Returned to current proposal - editing enabled');
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Return to Current
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
@@ -4415,11 +4455,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 <Download className="w-4 h-4 mr-2" />
                 Export PDF
               </Button>
-              <Button onClick={() => openAddDialog()} variant="outline" size="sm">
+              <Button onClick={() => openAddDialog()} variant="outline" size="sm" disabled={isReadOnly}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Row
               </Button>
-              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm">
+              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm" disabled={isReadOnly}>
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Subcontractor Estimate
               </Button>
@@ -4479,6 +4519,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         loadSubcontractorEstimates={loadSubcontractorEstimates}
                         customRows={customRows}
                         savingMarkupsRef={savingMarkupsRef}
+                        isReadOnly={isReadOnly}
                       />
                     ))}
                   </SortableContext>
