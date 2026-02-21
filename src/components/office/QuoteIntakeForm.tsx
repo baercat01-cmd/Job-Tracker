@@ -236,10 +236,25 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
     }
   }, [quoteId]);
 
+  // Debug: Log navigation state
+  useEffect(() => {
+    console.log('🔍 Navigation Debug:', {
+      allJobProposals: allJobProposals.length,
+      currentProposalIndex,
+      showNavigation: allJobProposals.length > 1,
+      proposals: allJobProposals.map(p => ({ id: p.id, proposal_number: p.proposal_number }))
+    });
+  }, [allJobProposals, currentProposalIndex]);
+
   async function loadJobProposals() {
-    if (!quoteId) return;
+    if (!quoteId) {
+      console.log('❌ No quoteId provided');
+      return;
+    }
     
     try {
+      console.log('📋 Loading proposals for quote:', quoteId);
+      
       // First get the current quote to find the job_id
       const { data: currentQuote, error: quoteError } = await supabase
         .from('quotes')
@@ -247,7 +262,17 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
         .eq('id', quoteId)
         .single();
 
-      if (quoteError || !currentQuote?.job_id) return;
+      if (quoteError) {
+        console.error('❌ Error fetching current quote:', quoteError);
+        return;
+      }
+      
+      if (!currentQuote?.job_id) {
+        console.log('⚠️ Quote has no job_id yet');
+        return;
+      }
+
+      console.log('✅ Found job_id:', currentQuote.job_id);
 
       // Get all proposals for this job
       const { data: proposals, error: proposalsError } = await supabase
@@ -256,13 +281,20 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
         .eq('job_id', currentQuote.job_id)
         .order('proposal_number', { ascending: true });
 
-      if (proposalsError) throw proposalsError;
+      if (proposalsError) {
+        console.error('❌ Error fetching proposals:', proposalsError);
+        throw proposalsError;
+      }
+
+      console.log('✅ Found proposals:', proposals);
 
       setAllJobProposals(proposals || []);
       
       // Find current proposal index
       const currentIndex = proposals?.findIndex(p => p.id === quoteId) ?? -1;
       setCurrentProposalIndex(currentIndex);
+      
+      console.log('✅ Current proposal index:', currentIndex, 'of', proposals?.length);
     } catch (error: any) {
       console.error('Error loading job proposals:', error);
     }
