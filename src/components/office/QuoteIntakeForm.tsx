@@ -15,12 +15,14 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Save, Send, Briefcase, CheckCircle, FileText } from 'lucide-react';
+import { Save, Send, Briefcase, CheckCircle, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { FloorPlanBuilder } from './FloorPlanBuilder';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { FloatingDocumentViewer } from './FloatingDocumentViewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 // Helper function to create or update contact
 async function createOrUpdateContact(contactInfo: {
@@ -168,6 +170,7 @@ interface QuoteData {
 
 export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIntakeFormProps) {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [existingQuote, setExistingQuote] = useState<any>(null);
@@ -177,6 +180,10 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+  
+  // Proposal navigation state
+  const [allJobProposals, setAllJobProposals] = useState<any[]>([]);
+  const [currentProposalIndex, setCurrentProposalIndex] = useState<number>(-1);
   
   // Config options from database
   const [configOptions, setConfigOptions] = useState<Record<string, string[]>>({});
@@ -225,8 +232,53 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
     if (quoteId) {
       setCurrentQuoteId(quoteId);
       loadQuote();
+      loadJobProposals();
     }
   }, [quoteId]);
+
+  async function loadJobProposals() {
+    if (!quoteId) return;
+    
+    try {
+      // First get the current quote to find the job_id
+      const { data: currentQuote, error: quoteError } = await supabase
+        .from('quotes')
+        .select('job_id')
+        .eq('id', quoteId)
+        .single();
+
+      if (quoteError || !currentQuote?.job_id) return;
+
+      // Get all proposals for this job
+      const { data: proposals, error: proposalsError } = await supabase
+        .from('quotes')
+        .select('id, proposal_number, quote_number, status')
+        .eq('job_id', currentQuote.job_id)
+        .order('proposal_number', { ascending: true });
+
+      if (proposalsError) throw proposalsError;
+
+      setAllJobProposals(proposals || []);
+      
+      // Find current proposal index
+      const currentIndex = proposals?.findIndex(p => p.id === quoteId) ?? -1;
+      setCurrentProposalIndex(currentIndex);
+    } catch (error: any) {
+      console.error('Error loading job proposals:', error);
+    }
+  }
+
+  function navigateToProposal(direction: 'prev' | 'next') {
+    const newIndex = direction === 'prev' 
+      ? currentProposalIndex - 1 
+      : currentProposalIndex + 1;
+
+    if (newIndex >= 0 && newIndex < allJobProposals.length) {
+      const targetProposal = allJobProposals[newIndex];
+      navigate(`/office/quotes/${targetProposal.id}`);
+      // The parent component will reload with new quoteId
+    }
+  }
 
   async function loadConfigOptions() {
     try {
@@ -900,6 +952,40 @@ export function QuoteIntakeForm({ quoteId, jobId, onSuccess, onCancel }: QuoteIn
       {/* Action Buttons */}
       <div className="flex items-center justify-between sticky top-0 bg-background z-10 py-2 border-b">
         <div className="flex items-center gap-3">
+          {/* Proposal Navigation */}
+          {allJobProposals.length > 1 && (
+            <div className="flex items-center gap-2 border-r pr-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigateToProposal('prev')}
+                disabled={currentProposalIndex <= 0}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <div className="flex flex-col items-center min-w-[120px]">
+                <Badge variant="outline" className="text-xs">
+                  Proposal {currentProposalIndex + 1} of {allJobProposals.length}
+                </Badge>
+                {existingQuote?.proposal_number && (
+                  <span className="text-xs text-muted-foreground mt-0.5">
+                    {existingQuote.proposal_number}
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigateToProposal('next')}
+                disabled={currentProposalIndex >= allJobProposals.length - 1}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+          
           <div className="text-sm text-muted-foreground">
             {existingQuote?.status && (
               <span className="capitalize">{existingQuote.status} Quote</span>
