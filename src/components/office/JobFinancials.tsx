@@ -1646,12 +1646,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function loadQuoteData() {
     try {
       let quoteData = null;
+      let allJobQuotes: any[] = [];
       
-      // Try 1: Direct job_id match
+      // Load ALL quotes for this job (for navigation)
+      const { data: allQuotes, error: allQuotesError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+      
+      if (!allQuotesError && allQuotes) {
+        allJobQuotes = allQuotes;
+      }
+      
+      // Try 1: Direct job_id match (get the most recent one)
       const { data: directMatch, error: directError } = await supabase
         .from('quotes')
         .select('*')
         .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (directError && directError.code !== 'PGRST116') {
@@ -1729,20 +1743,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (quoteData) {
         setQuote(quoteData);
         console.log('Quote loaded:', quoteData.proposal_number || quoteData.quote_number);
+        console.log('Total quotes for this job:', allJobQuotes.length);
         
-        const { data: versionsData, error: versionsError } = await supabase
-          .from('proposal_versions')
-          .select('*')
-          .eq('quote_id', quoteData.id)
-          .order('version_number', { ascending: false });
-
-        if (!versionsError && versionsData) {
-          setProposalVersions(versionsData || []);
-          console.log('Loaded', versionsData.length, 'proposal versions');
-        } else {
-          setProposalVersions([]);
-          console.log('No proposal versions found');
-        }
+        // Store all quotes for navigation (use as "versions" for navigation purposes)
+        setProposalVersions(allJobQuotes.map((q, idx) => ({
+          id: q.id,
+          quote_id: q.id,
+          version_number: allJobQuotes.length - idx, // Number from newest to oldest
+          customer_name: q.customer_name,
+          proposal_number: q.proposal_number,
+          created_at: q.created_at,
+          is_current: q.id === quoteData.id,
+        })));
+        console.log('Loaded', allJobQuotes.length, 'proposals for navigation');
       } else {
         // No quote found - will check after data loads
         console.log('No quote found for job - will check after loading data');
@@ -1786,34 +1799,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingVersion(true);
     
     try {
-      // NEW LOGIC: Create a separate quote entry for each proposal
-      // Instead of versioning the same quote, we create a new quote with a new proposal number
-      
-      // Step 1: Determine the next proposal number
-      const { data: allQuotes, error: fetchError } = await supabase
-        .from('quotes')
-        .select('proposal_number')
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false });
-      
-      if (fetchError) throw fetchError;
-      
-      // Find the highest proposal number for this job
-      let nextNumber = 1;
-      if (allQuotes && allQuotes.length > 0) {
-        allQuotes.forEach(q => {
-          if (q.proposal_number) {
-            // Extract number from formats like "P-001" or "P-001-1" or "P-001-2"
-            const match = q.proposal_number.match(/-([0-9]+)$/);
-            if (match) {
-              const num = parseInt(match[1]);
-              if (num >= nextNumber) {
-                nextNumber = num + 1;
-              }
-            }
-          }
-        });
-      }
+      console.log('🚀 Creating new proposal from current quote:', quote.id);
+      console.log('Current proposal number:', quote.proposal_number);
       
       // Step 2: Lock current material workbook before creating new proposal
 
@@ -2008,46 +1995,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         console.log('ℹ️ No material workbook found - skipping lock/copy');
       }
 
-      // STEP 5: Create a NEW quote entry with the next proposal number
-      console.log('📋 Creating new proposal quote entry...');
-      
-      // Get the base proposal number (without the suffix)
-      const baseProposalNumber = quote.proposal_number?.split('-')[0] || 'P-001';
-      let newProposalNumber = `${baseProposalNumber}-${nextNumber}`;
-      
-      // CRITICAL: Check if this proposal number already exists globally (not just for this job)
-      // Keep incrementing until we find an unused number
-      let attemptNumber = nextNumber;
-      let isUnique = false;
-      
-      while (!isUnique && attemptNumber < 1000) { // Safety limit
-        const testProposalNumber = `${baseProposalNumber}-${attemptNumber}`;
-        
-        const { data: existingQuote, error: checkError } = await supabase
-          .from('quotes')
-          .select('id')
-          .eq('proposal_number', testProposalNumber)
-          .maybeSingle();
-        
-        if (checkError && checkError.code !== 'PGRST116') {
-          console.error('Error checking proposal number uniqueness:', checkError);
-          throw checkError;
-        }
-        
-        if (!existingQuote) {
-          // This number is available
-          isUnique = true;
-          newProposalNumber = testProposalNumber;
-          console.log(`✅ Found unique proposal number: ${newProposalNumber}`);
-        } else {
-          console.log(`⚠️ Proposal number ${testProposalNumber} already exists, trying next...`);
-          attemptNumber++;
-        }
-      }
-      
-      if (!isUnique) {
-        throw new Error('Could not generate unique proposal number after 1000 attempts');
-      }
+      // STEP 5: Create a NEW quote entry WITHOUT specifying proposal_number
+      // Let the database trigger handle the proposal number assignment
+      console.log('📋 Creating new quote entry (trigger will assign proposal number)...');
       
       const { data: newQuote, error: createError } = await supabase
         .from('quotes')
@@ -2064,8 +2014,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           pitch: quote.pitch,
           status: 'draft',
           created_by: profile.id,
-          proposal_number: newProposalNumber,
-          current_version: 1,
+          // DON'T specify proposal_number - let trigger handle it
         })
         .select()
         .single();
@@ -2075,18 +2024,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         throw createError;
       }
       
-      console.log(`✅ New quote created with proposal number: ${newProposalNumber}`);
+      console.log(`✅ New quote created with proposal number: ${newQuote.proposal_number}`);
       
-      // Create initial version for the new proposal
-      const { error: versionError } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: newQuote.id,
-        p_created_by: profile.id,
-        p_change_notes: versionChangeNotes || `Created from ${quote.proposal_number}`,
-      });
-      
-      if (versionError) throw versionError;
-      
-      toast.success(`New proposal ${newProposalNumber} created successfully!`);
+      toast.success(`New proposal ${newQuote.proposal_number} created successfully!`);
       setShowCreateVersionDialog(false);
       setVersionChangeNotes('');
       
@@ -2289,25 +2229,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function navigateToPreviousProposal() {
     if (proposalVersions.length === 0) return;
     
-    const currentIndex = viewingProposalNumber === null 
-      ? -1 
-      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
+    const currentIndex = proposalVersions.findIndex(v => v.is_current);
     
     // Move to next older proposal (higher index)
     if (currentIndex < proposalVersions.length - 1) {
-      let targetIndex = currentIndex + 1;
+      const nextProposal = proposalVersions[currentIndex + 1];
+      // Load the older quote
+      const { data: olderQuote } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', nextProposal.id)
+        .single();
       
-      // If coming from live view (currentIndex === -1) and the first snapshot is the current version,
-      // skip it and go to the next older version to avoid the "gap"
-      if (currentIndex === -1 && proposalVersions[0]?.version_number === quote?.current_version) {
-        targetIndex = 1; // Skip index 0, go to index 1 (next older version)
-      }
-      
-      // Make sure we don't go out of bounds
-      if (targetIndex < proposalVersions.length) {
-        const nextProposal = proposalVersions[targetIndex];
-        setViewingProposalNumber(nextProposal.version_number);
-        await loadProposalSnapshot(nextProposal.version_number);
+      if (olderQuote) {
+        setQuote(olderQuote);
+        await loadQuoteData();
+        await loadData(false);
+        toast.info(`Viewing proposal ${olderQuote.proposal_number}`);
       }
     }
   }
@@ -2315,28 +2253,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function navigateToNextProposal() {
     if (proposalVersions.length === 0) return;
     
-    const currentIndex = viewingProposalNumber === null 
-      ? -1 
-      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
+    const currentIndex = proposalVersions.findIndex(v => v.is_current);
     
     // Move to next newer proposal (lower index)
     if (currentIndex > 0) {
       const nextProposal = proposalVersions[currentIndex - 1];
+      // Load the newer quote
+      const { data: newerQuote } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', nextProposal.id)
+        .single();
       
-      // If navigating to the current version, return to live view instead
-      if (nextProposal.version_number === quote?.current_version) {
-        setViewingProposalNumber(null);
-        toast.info('Viewing current proposal');
+      if (newerQuote) {
+        setQuote(newerQuote);
+        await loadQuoteData();
         await loadData(false);
-      } else {
-        setViewingProposalNumber(nextProposal.version_number);
-        await loadProposalSnapshot(nextProposal.version_number);
+        toast.info(`Viewing proposal ${newerQuote.proposal_number}`);
       }
-    } else if (currentIndex === 0) {
-      // Already at current version, return to live view
-      setViewingProposalNumber(null);
-      toast.info('Viewing current proposal');
-      await loadData(false);
     }
   }
 
@@ -4381,20 +4315,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
-              {/* Proposal Navigation Arrows - Only show if there are versions */}
-              {proposalVersions.length > 0 && (
+              {/* Proposal Navigation Arrows - Show if there are multiple proposals */}
+              {proposalVersions.length > 1 && (
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={navigateToPreviousProposal}
-                    disabled={loadingProposalSnapshot || (
-                      viewingProposalNumber === null 
-                        ? proposalVersions.length === 0 || (proposalVersions.length === 1 && proposalVersions[0]?.version_number === quote?.current_version)
-                        : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber) === proposalVersions.length - 1
-                    )}
+                    disabled={loading || proposalVersions.findIndex(v => v.is_current) === proposalVersions.length - 1}
                     className="h-8 w-8 p-0"
-                    title="Previous proposal"
+                    title="Previous proposal (older)"
                   >
                     <ChevronDown className="w-4 h-4 rotate-90" />
                   </Button>
@@ -4402,52 +4332,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     size="sm"
                     variant="outline"
                     onClick={navigateToNextProposal}
-                    disabled={loadingProposalSnapshot || viewingProposalNumber === null}
+                    disabled={loading || proposalVersions.findIndex(v => v.is_current) === 0}
                     className="h-8 w-8 p-0"
-                    title="Next proposal"
+                    title="Next proposal (newer)"
                   >
                     <ChevronDown className="w-4 h-4 -rotate-90" />
                   </Button>
                 </div>
               )}
               
-              {/* Current Proposal Info - Show when viewing current (viewingProposalNumber === null) */}
-              {viewingProposalNumber === null && (
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-semibold text-blue-900">
-                    Proposal #{quote.proposal_number || quote.quote_number}
-                  </span>
-                  {proposalVersions.length > 0 && (
-                    <Badge variant="outline" className="text-xs bg-green-100 border-green-300 text-green-900">
-                      Current (Editable)
-                    </Badge>
-                  )}
-                </div>
-              )}
-              
-              {/* Historical Proposal Info - Show when viewing old version (viewingProposalNumber !== null) */}
-              {/* Only show if viewing a version that's NOT the current version */}
-              {viewingProposalNumber !== null && viewingProposalNumber !== quote?.current_version && (
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-amber-600" />
-                  <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                    Viewing #{quote.proposal_number?.split('-')[0]}-{viewingProposalNumber} (Historical)
+              {/* Current Proposal Info */}
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-semibold text-blue-900">
+                  Proposal #{quote.proposal_number || quote.quote_number}
+                </span>
+                {proposalVersions.length > 1 && (
+                  <Badge variant="outline" className="text-xs bg-blue-100 border-blue-300 text-blue-900">
+                    {proposalVersions.findIndex(v => v.is_current) + 1} of {proposalVersions.length}
                   </Badge>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setViewingProposalNumber(null);
-                      loadData(false);
-                      toast.info('Returned to current proposal');
-                    }}
-                    className="h-6 text-xs text-blue-700 hover:text-blue-900"
-                  >
-                    Return to Current
-                  </Button>
-                </div>
-              )}
+                )}
+              </div>
+              
+
             </div>
           </CardContent>
         </Card>
