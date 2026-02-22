@@ -1579,27 +1579,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
   const [exporting, setExporting] = useState(false);
   
-  // Proposal state
-  const [quote, setQuote] = useState<any>(null);
-  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
-  const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
-  const [proposalChangeNotes, setProposalChangeNotes] = useState('');
-  const [creatingProposal, setCreatingProposal] = useState(false);
-  
-  // Version management state
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [creatingVersion, setCreatingVersion] = useState(false);
-  const [initializingVersions, setInitializingVersions] = useState(false);
-  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
-  const [versionChangeNotes, setVersionChangeNotes] = useState('');
-  
-  // Proposal navigation state
-  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
-  const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
-  
-  // Determine if we're in read-only mode (viewing historical proposal)
-  const isReadOnly = viewingProposalNumber !== null;
+  // Proposal state - each proposal is independent
+  const [currentProposal, setCurrentProposal] = useState<any>(null);
+  const [allProposals, setAllProposals] = useState<any[]>([]);
+  const [creatingNewProposal, setCreatingNewProposal] = useState(false);
+  const [loadingProposalData, setLoadingProposalData] = useState(false);
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
