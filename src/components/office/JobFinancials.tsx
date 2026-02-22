@@ -1587,20 +1587,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Proposal/Quote state
   const [quote, setQuote] = useState<any>(null);
-  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
-  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
-  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
-  const [creatingVersion, setCreatingVersion] = useState(false);
-  const [versionChangeNotes, setVersionChangeNotes] = useState('');
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [initializingVersions, setInitializingVersions] = useState(false);
+  const [allJobQuotes, setAllJobQuotes] = useState<any[]>([]); // All quotes for this job
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
-  const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
+  const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   
-  // Computed: Read-only mode when viewing historical proposal
-  const isReadOnly = viewingProposalNumber !== null;
+  // Proposal versioning state
+  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
+  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
+  const [versionChangeNotes, setVersionChangeNotes] = useState('');
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [initializingVersions, setInitializingVersions] = useState(false);
+  
+  // Computed: Read-only mode when viewing historical proposal (not the most recent)
+  const isReadOnly = quote && allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id;
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -1631,6 +1634,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return () => clearInterval(pollInterval);
   }, [job.id]);
 
+  // Load proposal versions when quote changes
+  useEffect(() => {
+    if (quote) {
+      loadProposalVersions();
+    } else {
+      setProposalVersions([]);
+    }
+  }, [quote?.id]);
+
   // Auto-create quote for new jobs (run once after initial load)
   useEffect(() => {
     if (!loading && !quote) {
@@ -1644,10 +1656,121 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // This effect has been replaced by the simpler loading-based auto-create above
 
+  async function initializeVersioning() {
+    if (!quote) return;
+    
+    setInitializingVersions(true);
+    try {
+      console.log('🚀 Initializing versioning system for quote:', quote.id);
+      
+      // Create initial snapshot using Edge Function
+      const { data, error } = await supabase.functions.invoke('create-proposal-version', {
+        body: { quoteId: quote.id }
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Version 1 created successfully!');
+      await loadProposalVersions();
+    } catch (error: any) {
+      console.error('Error initializing versioning:', error);
+      toast.error('Failed to initialize versioning: ' + error.message);
+    } finally {
+      setInitializingVersions(false);
+    }
+  }
+
+  async function loadProposalVersions() {
+    if (!quote) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('proposal_versions')
+        .select('*')
+        .eq('quote_id', quote.id)
+        .order('version_number', { ascending: false });
+      
+      if (error) throw error;
+      setProposalVersions(data || []);
+    } catch (error: any) {
+      console.error('Error loading proposal versions:', error);
+    }
+  }
+
+  async function createNewProposalVersion() {
+    if (!quote) return;
+    
+    setCreatingVersion(true);
+    try {
+      // Build change notes
+      let changeNotes = versionChangeNotes.trim();
+      if (viewingProposalNumber !== null) {
+        const baseNote = `Based on version ${viewingProposalNumber}`;
+        changeNotes = changeNotes ? `${baseNote}. ${changeNotes}` : baseNote;
+      }
+      
+      // Create new version using Edge Function
+      const { data, error } = await supabase.functions.invoke('create-proposal-version', {
+        body: { 
+          quoteId: quote.id,
+          changeNotes: changeNotes || undefined
+        }
+      });
+      
+      if (error) throw error;
+      
+      const nextVersion = (proposalVersions[0]?.version_number || 0) + 1;
+      toast.success(`Version ${nextVersion} created successfully!`);
+      
+      // Reset state and reload
+      setShowCreateVersionDialog(false);
+      setVersionChangeNotes('');
+      setViewingProposalNumber(null);
+      await loadProposalVersions();
+    } catch (error: any) {
+      console.error('Error creating proposal version:', error);
+      toast.error('Failed to create version: ' + error.message);
+    } finally {
+      setCreatingVersion(false);
+    }
+  }
+
+  async function signAndLockVersion(versionId: string) {
+    if (!confirm('Sign and lock this version? This cannot be undone.')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('proposal_versions')
+        .update({
+          is_signed: true,
+          signed_at: new Date().toISOString(),
+          signed_by: profile?.id
+        })
+        .eq('id', versionId);
+      
+      if (error) throw error;
+      
+      // Update quote to mark this version as signed
+      const version = proposalVersions.find(v => v.id === versionId);
+      if (version) {
+        await supabase
+          .from('quotes')
+          .update({ signed_version: version.version_number })
+          .eq('id', quote.id);
+      }
+      
+      toast.success('Version signed and locked!');
+      await loadProposalVersions();
+      await loadQuoteData();
+    } catch (error: any) {
+      console.error('Error signing version:', error);
+      toast.error('Failed to sign version');
+    }
+  }
+
   async function loadQuoteData() {
     try {
       let quoteData = null;
-      let allJobQuotes: any[] = [];
       
       // Load ALL quotes for this job (for navigation)
       const { data: allQuotes, error: allQuotesError } = await supabase
@@ -1656,9 +1779,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .eq('job_id', job.id)
         .order('created_at', { ascending: false });
       
-      if (!allQuotesError && allQuotes) {
-        allJobQuotes = allQuotes;
+      if (allQuotesError) {
+        console.error('Error loading all quotes:', allQuotesError);
+        return;
       }
+      
+      // Store all quotes for navigation
+      setAllJobQuotes(allQuotes || []);
       
       // Try 1: Direct job_id match (get the most recent one)
       const { data: directMatch, error: directError } = await supabase
@@ -1741,43 +1868,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         }
       }
 
-      if (quoteData) {
-        setQuote(quoteData);
-        console.log('Quote loaded:', quoteData.proposal_number || quoteData.quote_number);
-        console.log('Total quotes for this job:', allJobQuotes.length);
-        
-        // Filter to only valid quotes with proposal numbers (NO deduplication)
-        const validQuotes = allJobQuotes.filter(q => {
-          // Must have a proposal_number
-          if (!q.proposal_number) return false;
-          // Must have valid data
-          if (!q.customer_name && !q.project_name) return false;
-          return true;
-        });
-        
-        console.log('Found', validQuotes.length, 'valid proposals (no deduplication)');
-        
-        // Sort by created_at descending (newest first)
-        const sortedQuotes = validQuotes.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        
-        // Store all valid quotes for navigation
-        setProposalVersions(sortedQuotes.map((q, idx) => ({
-          id: q.id,
-          quote_id: q.id,
-          version_number: sortedQuotes.length - idx, // Number from newest to oldest
-          customer_name: q.customer_name,
-          proposal_number: q.proposal_number,
-          created_at: q.created_at,
-          is_current: q.id === quoteData.id,
-        })));
-        console.log('Loaded', sortedQuotes.length, 'proposals for navigation');
+      // If we have quotes, use the most recent one by default (unless user navigated to a different one)
+      if (allQuotes && allQuotes.length > 0) {
+        // If quote is not set yet, use the most recent
+        if (!quote) {
+          quoteData = allQuotes[0];
+          setQuote(quoteData);
+          console.log('Loaded most recent quote:', quoteData.proposal_number);
+        } else {
+          // Keep the currently selected quote
+          quoteData = quote;
+        }
       } else {
-        // No quote found - will check after data loads
-        console.log('No quote found for job - will check after loading data');
+        console.log('No quotes found for job');
         setQuote(null);
-        setProposalVersions([]);
       }
     } catch (error: any) {
       console.error('Error loading quote data:', error);
@@ -1790,232 +1894,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingProposal(true);
     
     try {
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote.id,
-        p_created_by: profile.id,
-        p_change_notes: proposalChangeNotes || null,
-      });
-
-      if (error) throw error;
-
-      toast.success(`Proposal #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
-      setShowCreateProposalDialog(false);
-      setProposalChangeNotes('');
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error creating proposal:', error);
-      toast.error('Failed to create proposal: ' + error.message);
-    } finally {
-      setCreatingProposal(false);
-    }
-  }
-
-  async function createNewProposalVersion() {
-    if (!quote || !profile) return;
-
-    setCreatingVersion(true);
-    
-    try {
-      console.log('🚀 Creating new proposal from current quote:', quote.id);
+      console.log('🚀 Creating new proposal from quote:', quote.id);
       console.log('Current proposal number:', quote.proposal_number);
       
-      // Step 2: Lock current material workbook before creating new proposal
-
-      // STEP 1: Lock the current material workbook before creating new proposal
-      console.log('🔒 Locking current material workbook...');
-      const { data: currentWorkbook, error: workbookFetchError } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
-
-      if (workbookFetchError && workbookFetchError.code !== 'PGRST116') {
-        console.error('Error fetching current workbook:', workbookFetchError);
+      // Extract base number from current proposal (e.g., "26020-1" -> "26020")
+      const baseNumber = quote.proposal_number?.split('-')[0];
+      if (!baseNumber) {
+        throw new Error('Cannot determine base proposal number');
       }
-
-      if (currentWorkbook) {
-        console.log('📋 Found current workbook:', currentWorkbook.id);
-        
-        // Lock the current workbook
-        const { error: lockError } = await supabase
-          .from('material_workbooks')
-          .update({
-            status: 'locked',
-            locked_at: new Date().toISOString(),
-            locked_by: profile.id,
-          })
-          .eq('id', currentWorkbook.id);
-
-        if (lockError) {
-          console.error('Error locking workbook:', lockError);
-          toast.error('Failed to lock material workbook');
-          return;
-        }
-
-        console.log('✅ Workbook locked successfully');
-
-        // STEP 2: Create a new working workbook by copying the locked one
-        console.log('📋 Creating new working workbook...');
-        
-        // Get the next version number
-        const { data: latestVersion } = await supabase
-          .from('material_workbooks')
-          .select('version_number')
-          .eq('job_id', job.id)
-          .order('version_number', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const nextVersion = (latestVersion?.version_number || 0) + 1;
-
-        // Create new workbook
-        const { data: newWorkbook, error: createWorkbookError } = await supabase
-          .from('material_workbooks')
-          .insert({
-            job_id: job.id,
-            version_number: nextVersion,
-            status: 'working',
-            created_by: profile.id,
-          })
-          .select()
-          .single();
-
-        if (createWorkbookError) {
-          console.error('Error creating new workbook:', createWorkbookError);
-          toast.error('Failed to create new workbook');
-          return;
-        }
-
-        console.log('✅ New workbook created:', newWorkbook.id);
-
-        // STEP 3: Copy all sheets from locked workbook to new workbook
-        console.log('📄 Copying sheets...');
-        
-        const { data: sheets, error: sheetsError } = await supabase
-          .from('material_sheets')
-          .select('*')
-          .eq('workbook_id', currentWorkbook.id)
-          .order('order_index');
-
-        if (sheetsError) {
-          console.error('Error fetching sheets:', sheetsError);
-          toast.error('Failed to copy sheets');
-          return;
-        }
-
-        for (const sheet of sheets || []) {
-          const { data: newSheet, error: createSheetError } = await supabase
-            .from('material_sheets')
-            .insert({
-              workbook_id: newWorkbook.id,
-              sheet_name: sheet.sheet_name,
-              description: sheet.description,
-              order_index: sheet.order_index,
-              is_option: sheet.is_option,
-              markup_percent: sheet.markup_percent,
-            })
-            .select()
-            .single();
-
-          if (createSheetError) {
-            console.error('Error creating sheet:', createSheetError);
-            continue;
-          }
-
-          // STEP 4: Copy all items from old sheet to new sheet
-          const { data: items, error: itemsError } = await supabase
-            .from('material_items')
-            .select('*')
-            .eq('sheet_id', sheet.id)
-            .order('order_index');
-
-          if (itemsError) {
-            console.error('Error fetching items:', itemsError);
-            continue;
-          }
-
-          const itemsToInsert = (items || []).map(item => ({
-            sheet_id: newSheet.id,
-            category: item.category,
-            usage: item.usage,
-            sku: item.sku,
-            material_name: item.material_name,
-            quantity: item.quantity,
-            length: item.length,
-            color: item.color,
-            cost_per_unit: item.cost_per_unit,
-            markup_percent: item.markup_percent,
-            price_per_unit: item.price_per_unit,
-            extended_cost: item.extended_cost,
-            extended_price: item.extended_price,
-            taxable: item.taxable,
-            notes: item.notes,
-            order_index: item.order_index,
-            status: item.status,
-            date_needed_by: item.date_needed_by,
-            priority: item.priority,
-          }));
-
-          if (itemsToInsert.length > 0) {
-            const { error: insertItemsError } = await supabase
-              .from('material_items')
-              .insert(itemsToInsert);
-
-            if (insertItemsError) {
-              console.error('Error inserting items:', insertItemsError);
-            }
-          }
-
-          // Copy category markups
-          const { data: categoryMarkups, error: markupsError } = await supabase
-            .from('material_category_markups')
-            .select('*')
-            .eq('sheet_id', sheet.id);
-
-          if (!markupsError && categoryMarkups && categoryMarkups.length > 0) {
-            const markupsToInsert = categoryMarkups.map(markup => ({
-              sheet_id: newSheet.id,
-              category_name: markup.category_name,
-              markup_percent: markup.markup_percent,
-            }));
-
-            await supabase
-              .from('material_category_markups')
-              .insert(markupsToInsert);
-          }
-
-          // Copy sheet labor
-          const { data: sheetLabor, error: laborError } = await supabase
-            .from('material_sheet_labor')
-            .select('*')
-            .eq('sheet_id', sheet.id)
-            .maybeSingle();
-
-          if (!laborError && sheetLabor) {
-            await supabase
-              .from('material_sheet_labor')
-              .insert({
-                sheet_id: newSheet.id,
-                description: sheetLabor.description,
-                estimated_hours: sheetLabor.estimated_hours,
-                hourly_rate: sheetLabor.hourly_rate,
-                notes: sheetLabor.notes,
-                markup_percent: sheetLabor.markup_percent,
-              });
-          }
-        }
-
-        console.log('✅ All sheets and items copied successfully');
-        toast.success('Material workbook locked and new version created');
-      } else {
-        console.log('ℹ️ No material workbook found - skipping lock/copy');
-      }
-
-      // STEP 5: Create a NEW quote entry WITHOUT specifying proposal_number
-      // Let the database trigger handle the proposal number assignment
-      console.log('📋 Creating new quote entry (trigger will assign proposal number)...');
       
+      // Find max suffix for this job's proposals with the same base
+      const maxSuffix = allJobQuotes
+        .filter(q => q.proposal_number?.startsWith(baseNumber + '-'))
+        .reduce((max, q) => {
+          const suffix = parseInt(q.proposal_number.split('-')[1] || '0');
+          return Math.max(max, suffix);
+        }, 0);
+      
+      const nextSuffix = maxSuffix + 1;
+      const newProposalNumber = `${baseNumber}-${nextSuffix}`;
+      
+      console.log(`📋 Creating new proposal: ${newProposalNumber}`);
+      
+      // Create a NEW quote entry with the new proposal number
       const { data: newQuote, error: createError } = await supabase
         .from('quotes')
         .insert({
@@ -2031,7 +1932,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           pitch: quote.pitch,
           status: 'draft',
           created_by: profile.id,
-          // DON'T specify proposal_number - let trigger handle it
+          proposal_number: newProposalNumber, // Set the proposal number explicitly
         })
         .select()
         .single();
@@ -2041,11 +1942,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         throw createError;
       }
       
-      console.log(`✅ New quote created with proposal number: ${newQuote.proposal_number}`);
+      console.log(`✅ New proposal created: ${newQuote.proposal_number}`);
       
       toast.success(`New proposal ${newQuote.proposal_number} created successfully!`);
-      setShowCreateVersionDialog(false);
-      setVersionChangeNotes('');
+      setShowCreateProposalDialog(false);
+      setProposalChangeNotes('');
       
       // Switch to the new proposal
       setQuote(newQuote);
@@ -2055,76 +1956,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       console.error('Error creating new proposal:', error);
       toast.error('Failed to create new proposal: ' + error.message);
     } finally {
-      setCreatingVersion(false);
+      setCreatingProposal(false);
     }
-  }
-
-  async function initializeVersioning() {
-    if (!quote || !profile) return;
-
-    setInitializingVersions(true);
-    
-    try {
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote.id,
-        p_created_by: profile.id,
-        p_change_notes: 'Initial version',
-      });
-
-      if (error) throw error;
-
-      toast.success(`Initial proposal version created`);
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error initializing versions:', error);
-      toast.error('Failed to initialize versioning: ' + error.message);
-    } finally {
-      setInitializingVersions(false);
-    }
-  }
-
-  async function signAndLockVersion(versionId: string) {
-    if (!confirm('Sign and lock this version? This will mark it as the signed contract and cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const version = proposalVersions.find(v => v.id === versionId);
-      if (!version) {
-        toast.error('Version not found');
-        return;
-      }
-
-      const { error: versionError } = await supabase
-        .from('proposal_versions')
-        .update({
-          is_signed: true,
-          signed_at: new Date().toISOString(),
-          signed_by: profile?.id,
-        })
-        .eq('id', versionId);
-
-      if (versionError) throw versionError;
-
-      const { error: quoteError } = await supabase
-        .from('quotes')
-        .update({
-          signed_version: version.version_number,
-        })
-        .eq('id', quote.id);
-
-      if (quoteError) throw quoteError;
-
-      toast.success('Version signed and locked successfully');
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error signing version:', error);
-      toast.error('Failed to sign version: ' + error.message);
-    }
-  }
-
-  function openVersionHistoryDialog() {
-    setShowVersionHistory(true);
   }
 
   async function checkAndAutoCreateQuote() {
@@ -2244,246 +2077,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   // Proposal navigation functions
   async function navigateToPreviousProposal() {
-    if (proposalVersions.length === 0) return;
+    if (allJobQuotes.length === 0) return;
     
-    // Find current position in the list
-    const currentlyViewingId = quote?.id;
-    const currentIndex = proposalVersions.findIndex(v => v.id === currentlyViewingId);
-    
-    // Move to next older proposal (higher index)
-    if (currentIndex < proposalVersions.length - 1) {
-      const olderProposal = proposalVersions[currentIndex + 1];
-      
-      // Load the quote record
-      const { data: olderQuote, error: quoteError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('id', olderProposal.id)
-        .single();
-      
-      if (quoteError) {
-        console.error('Error loading older quote:', quoteError);
-        toast.error('Failed to load proposal');
-        return;
-      }
-      
-      if (olderQuote) {
-        console.log(`📖 Navigating to proposal ${olderQuote.proposal_number}`);
-        setQuote(olderQuote);
-        
-        // Mark all versions as not current
-        const updatedVersions = proposalVersions.map(v => ({
-          ...v,
-          is_current: v.id === olderQuote.id
-        }));
-        setProposalVersions(updatedVersions);
-        
-        // Set read-only mode with version number
-        const versionNum = proposalVersions.length - currentIndex - 1;
-        setViewingProposalNumber(versionNum);
-        
-        // Load the snapshot data for this version
-        // Since we're using the quote as the "version", we need to load its current database state
-        // (In a true versioning system, this would load from proposal_versions snapshot)
-        await loadData(false);
-        
-        toast.info(`📖 Viewing proposal ${olderQuote.proposal_number} (version ${versionNum})`);
-      }
+    const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
+    if (currentIndex < allJobQuotes.length - 1) {
+      const olderQuote = allJobQuotes[currentIndex + 1];
+      setQuote(olderQuote);
+      await loadData(false);
+      toast.info(`📖 Viewing proposal ${olderQuote.proposal_number}`);
     }
   }
 
   async function navigateToNextProposal() {
-    if (proposalVersions.length === 0) return;
+    if (allJobQuotes.length === 0) return;
     
-    // Find current position in the list
-    const currentlyViewingId = quote?.id;
-    const currentIndex = proposalVersions.findIndex(v => v.id === currentlyViewingId);
-    
-    // Move to next newer proposal (lower index)
+    const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
     if (currentIndex > 0) {
-      const newerProposal = proposalVersions[currentIndex - 1];
-      
-      // Load the quote record
-      const { data: newerQuote, error: quoteError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('id', newerProposal.id)
-        .single();
-      
-      if (quoteError) {
-        console.error('Error loading newer quote:', quoteError);
-        toast.error('Failed to load proposal');
-        return;
+      const newerQuote = allJobQuotes[currentIndex - 1];
+      setQuote(newerQuote);
+      await loadData(false);
+      const isNowCurrent = currentIndex === 1;
+      if (isNowCurrent) {
+        toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
+      } else {
+        toast.info(`📖 Viewing proposal ${newerQuote.proposal_number}`);
       }
-      
-      if (newerQuote) {
-        console.log(`📖 Navigating to proposal ${newerQuote.proposal_number}`);
-        setQuote(newerQuote);
-        
-        // Mark all versions as not current
-        const updatedVersions = proposalVersions.map(v => ({
-          ...v,
-          is_current: v.id === newerQuote.id
-        }));
-        setProposalVersions(updatedVersions);
-        
-        // Check if this is the most recent (current working version)
-        if (currentIndex === 1) {
-          // Moving to the most recent version - exit read-only mode
-          setViewingProposalNumber(null);
-          await loadData(false);
-          toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
-        } else {
-          // Still viewing a historical version
-          const versionNum = proposalVersions.length - currentIndex + 1;
-          setViewingProposalNumber(versionNum);
-          await loadData(false);
-          toast.info(`📖 Viewing proposal ${newerQuote.proposal_number} (version ${versionNum})`);
-        }
-      }
-    }
-  }
-
-  async function loadProposalSnapshot(proposalNumber: number) {
-    setLoadingProposalSnapshot(true);
-    try {
-      const proposal = proposalVersions.find(v => v.version_number === proposalNumber);
-      if (!proposal) {
-        toast.error('Proposal not found');
-        return;
-      }
-
-      toast.info(`Loading Proposal #${quote.proposal_number?.split('-')[0]}-${proposalNumber}...`);
-
-      // Load materials snapshot
-      if (proposal.materials_snapshot && Array.isArray(proposal.materials_snapshot)) {
-        // Convert materials snapshot to breakdown format
-        const sheetMap = new Map<string, any>();
-        
-        proposal.materials_snapshot.forEach((item: any) => {
-          const sheetId = item.sheet_id;
-          if (!sheetMap.has(sheetId)) {
-            sheetMap.set(sheetId, {
-              sheetId,
-              sheetName: 'Sheet',
-              sheetDescription: '',
-              categories: new Map<string, any>(),
-            });
-          }
-          
-          const sheet = sheetMap.get(sheetId);
-          const category = item.category || 'Uncategorized';
-          
-          if (!sheet.categories.has(category)) {
-            sheet.categories.set(category, {
-              name: category,
-              itemCount: 0,
-              totalCost: 0,
-              totalPrice: 0,
-              items: [],
-            });
-          }
-          
-          const cat = sheet.categories.get(category);
-          cat.itemCount++;
-          cat.totalCost += item.extended_cost || 0;
-          cat.totalPrice += item.extended_price || 0;
-          cat.items.push(item);
-        });
-        
-        // Convert to array format
-        const sheetBreakdowns = Array.from(sheetMap.values()).map((sheet, idx) => ({
-          ...sheet,
-          orderIndex: idx,
-          categories: Array.from(sheet.categories.values()),
-          totalCost: Array.from(sheet.categories.values()).reduce((sum, cat) => sum + cat.totalCost, 0),
-          totalPrice: Array.from(sheet.categories.values()).reduce((sum, cat) => sum + cat.totalPrice, 0),
-          profit: 0,
-          margin: 0,
-        }));
-        
-        // Update sheet names from workbook snapshot
-        if (proposal.workbook_snapshot?.sheets) {
-          proposal.workbook_snapshot.sheets.forEach((s: any) => {
-            const sheet = sheetBreakdowns.find(sb => sb.sheetId === s.id);
-            if (sheet) {
-              sheet.sheetName = s.sheet_name;
-              sheet.sheetDescription = s.description || '';
-              sheet.orderIndex = s.order_index;
-            }
-          });
-        }
-        
-        setMaterialsBreakdown({
-          sheetBreakdowns,
-          totals: {
-            totalCost: sheetBreakdowns.reduce((sum, s) => sum + s.totalCost, 0),
-            totalPrice: sheetBreakdowns.reduce((sum, s) => sum + s.totalPrice, 0),
-            totalProfit: 0,
-            profitMargin: 0,
-          },
-        });
-      }
-
-      // Load custom rows snapshot
-      if (proposal.financial_rows_snapshot && Array.isArray(proposal.financial_rows_snapshot)) {
-        setCustomRows(proposal.financial_rows_snapshot);
-        
-        // Extract line items from snapshot
-        const lineItemsMap: Record<string, any[]> = {};
-        proposal.financial_rows_snapshot.forEach((row: any) => {
-          if (row.line_items && Array.isArray(row.line_items)) {
-            lineItemsMap[row.id] = row.line_items;
-          }
-        });
-        setCustomRowLineItems(lineItemsMap);
-      }
-
-      // Load sheet labor snapshot
-      if (proposal.sheet_labor_snapshot && Array.isArray(proposal.sheet_labor_snapshot)) {
-        const laborMap: Record<string, any> = {};
-        proposal.sheet_labor_snapshot.forEach((labor: any) => {
-          laborMap[labor.sheet_id] = labor;
-        });
-        setSheetLabor(laborMap);
-      }
-
-      // Load subcontractor snapshot
-      if (proposal.subcontractor_snapshot && Array.isArray(proposal.subcontractor_snapshot)) {
-        setSubcontractorEstimates(proposal.subcontractor_snapshot);
-        
-        // Extract subcontractor line items and linked relationships
-        const subLineItemsMap: Record<string, any[]> = {};
-        const linkedMap: Record<string, any[]> = {};
-        
-        proposal.subcontractor_snapshot.forEach((sub: any) => {
-          if (sub.line_items && Array.isArray(sub.line_items)) {
-            subLineItemsMap[sub.id] = sub.line_items;
-          }
-          if (sub.sheet_id) {
-            if (!linkedMap[sub.sheet_id]) linkedMap[sub.sheet_id] = [];
-            linkedMap[sub.sheet_id].push(sub);
-          } else if (sub.row_id) {
-            if (!linkedMap[sub.row_id]) linkedMap[sub.row_id] = [];
-            linkedMap[sub.row_id].push(sub);
-          }
-        });
-        
-        setSubcontractorLineItems(subLineItemsMap);
-        setLinkedSubcontractors(linkedMap);
-      }
-
-      // Load category markups snapshot
-      if (proposal.category_markups_snapshot) {
-        setCategoryMarkups(proposal.category_markups_snapshot);
-      }
-
-      toast.success(`Loaded Proposal #${quote.proposal_number?.split('-')[0]}-${proposalNumber}`);
-    } catch (error: any) {
-      console.error('Error loading proposal snapshot:', error);
-      toast.error('Failed to load proposal snapshot');
-    } finally {
-      setLoadingProposalSnapshot(false);
     }
   }
 
