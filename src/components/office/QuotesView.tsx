@@ -150,6 +150,15 @@ export function QuotesView() {
 
   async function createNewVersion(quoteId: string, notes?: string) {
     try {
+      // Get the current quote to find the job_id
+      const { data: currentQuote, error: quoteError } = await supabase
+        .from('quotes')
+        .select('job_id, proposal_number')
+        .eq('id', quoteId)
+        .single();
+
+      if (quoteError) throw quoteError;
+
       // Call the database function to create a new version
       const { data, error } = await supabase.rpc('create_proposal_version', {
         p_quote_id: quoteId
