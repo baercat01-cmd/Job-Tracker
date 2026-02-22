@@ -115,7 +115,7 @@ interface JobFinancialsProps {
 }
 
 // Sortable Row Component
-function SortableRow({ item, isReadOnly, ...props }: any) {
+function SortableRow({ item, ...props }: any) {
   const {
     attributes,
     listeners,
@@ -1598,9 +1598,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
   const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
   
-  // Determine if we're in read-only mode (viewing historical proposal)
-  const isReadOnly = viewingProposalNumber !== null;
-  
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [buildingDescription, setBuildingDescription] = useState(job.description || '');
@@ -1646,26 +1643,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function loadQuoteData() {
     try {
       let quoteData = null;
-      let allJobQuotes: any[] = [];
       
-      // Load ALL quotes for this job (for navigation)
-      const { data: allQuotes, error: allQuotesError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false });
-      
-      if (!allQuotesError && allQuotes) {
-        allJobQuotes = allQuotes;
-      }
-      
-      // Try 1: Direct job_id match (get the most recent one)
+      // Try 1: Direct job_id match
       const { data: directMatch, error: directError } = await supabase
         .from('quotes')
         .select('*')
         .eq('job_id', job.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
 
       if (directError && directError.code !== 'PGRST116') {
@@ -1743,35 +1726,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (quoteData) {
         setQuote(quoteData);
         console.log('Quote loaded:', quoteData.proposal_number || quoteData.quote_number);
-        console.log('Total quotes for this job:', allJobQuotes.length);
         
-        // Filter to only valid quotes with proposal numbers (NO deduplication)
-        const validQuotes = allJobQuotes.filter(q => {
-          // Must have a proposal_number
-          if (!q.proposal_number) return false;
-          // Must have valid data
-          if (!q.customer_name && !q.project_name) return false;
-          return true;
-        });
-        
-        console.log('Found', validQuotes.length, 'valid proposals (no deduplication)');
-        
-        // Sort by created_at descending (newest first)
-        const sortedQuotes = validQuotes.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        
-        // Store all valid quotes for navigation
-        setProposalVersions(sortedQuotes.map((q, idx) => ({
-          id: q.id,
-          quote_id: q.id,
-          version_number: sortedQuotes.length - idx, // Number from newest to oldest
-          customer_name: q.customer_name,
-          proposal_number: q.proposal_number,
-          created_at: q.created_at,
-          is_current: q.id === quoteData.id,
-        })));
-        console.log('Loaded', sortedQuotes.length, 'proposals for navigation');
+        const { data: versionsData, error: versionsError } = await supabase
+          .from('proposal_versions')
+          .select('*')
+          .eq('quote_id', quoteData.id)
+          .order('version_number', { ascending: false });
+
+        if (!versionsError && versionsData) {
+          setProposalVersions(versionsData || []);
+          console.log('Loaded', versionsData.length, 'proposal versions');
+        } else {
+          setProposalVersions([]);
+          console.log('No proposal versions found');
+        }
       } else {
         // No quote found - will check after data loads
         console.log('No quote found for job - will check after loading data');
@@ -1815,10 +1783,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingVersion(true);
     
     try {
-      console.log('🚀 Creating new proposal from current quote:', quote.id);
-      console.log('Current proposal number:', quote.proposal_number);
+      // If viewing a historical proposal, add context to the notes
+      let finalChangeNotes = versionChangeNotes || null;
       
-      // Step 2: Lock current material workbook before creating new proposal
+      if (viewingProposalNumber !== null) {
+        toast.info(`Creating new proposal from historical version #${quote.proposal_number?.split('-')[0]}-${viewingProposalNumber}...`);
+        
+        // Add a note about which version this was created from
+        const sourceNote = versionChangeNotes 
+          ? `Based on version ${viewingProposalNumber}. ${versionChangeNotes}`
+          : `Based on version ${viewingProposalNumber}`;
+        
+        finalChangeNotes = sourceNote;
+      }
 
       // STEP 1: Lock the current material workbook before creating new proposal
       console.log('🔒 Locking current material workbook...');
@@ -2011,48 +1988,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         console.log('ℹ️ No material workbook found - skipping lock/copy');
       }
 
-      // STEP 5: Create a NEW quote entry WITHOUT specifying proposal_number
-      // Let the database trigger handle the proposal number assignment
-      console.log('📋 Creating new quote entry (trigger will assign proposal number)...');
-      
-      const { data: newQuote, error: createError } = await supabase
-        .from('quotes')
-        .insert({
-          job_id: job.id,
-          customer_name: quote.customer_name,
-          customer_email: quote.customer_email,
-          customer_phone: quote.customer_phone,
-          customer_address: quote.customer_address,
-          project_name: quote.project_name,
-          width: quote.width,
-          length: quote.length,
-          eave: quote.eave,
-          pitch: quote.pitch,
-          status: 'draft',
-          created_by: profile.id,
-          // DON'T specify proposal_number - let trigger handle it
-        })
-        .select()
-        .single();
-      
-      if (createError) {
-        console.error('❌ Error creating new quote:', createError);
-        throw createError;
+      // STEP 5: Create the proposal version (this will snapshot the current database state)
+      console.log('📋 Creating proposal version...');
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_created_by: profile.id,
+        p_change_notes: finalChangeNotes,
+      });
+
+      if (error) throw error;
+
+      if (viewingProposalNumber !== null) {
+        toast.success(`New proposal #${quote.proposal_number?.split('-')[0]}-${data} created from version ${viewingProposalNumber}`);
+        // Return to current view
+        setViewingProposalNumber(null);
+        await loadData(false);
+      } else {
+        toast.success(`Proposal #${quote.proposal_number?.split('-')[0]}-${data} created successfully`);
       }
       
-      console.log(`✅ New quote created with proposal number: ${newQuote.proposal_number}`);
-      
-      toast.success(`New proposal ${newQuote.proposal_number} created successfully!`);
       setShowCreateVersionDialog(false);
       setVersionChangeNotes('');
-      
-      // Switch to the new proposal
-      setQuote(newQuote);
       await loadQuoteData();
-      await loadData(false);
     } catch (error: any) {
-      console.error('Error creating new proposal:', error);
-      toast.error('Failed to create new proposal: ' + error.message);
+      console.error('Error creating proposal version:', error);
+      toast.error('Failed to create proposal version: ' + error.message);
     } finally {
       setCreatingVersion(false);
     }
@@ -2245,48 +2205,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function navigateToPreviousProposal() {
     if (proposalVersions.length === 0) return;
     
-    // Find current position in the list
-    const currentlyViewingId = quote?.id;
-    const currentIndex = proposalVersions.findIndex(v => v.id === currentlyViewingId);
+    const currentIndex = viewingProposalNumber === null 
+      ? -1 
+      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
     
     // Move to next older proposal (higher index)
     if (currentIndex < proposalVersions.length - 1) {
-      const olderProposal = proposalVersions[currentIndex + 1];
+      let targetIndex = currentIndex + 1;
       
-      // Load the quote record
-      const { data: olderQuote, error: quoteError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('id', olderProposal.id)
-        .single();
-      
-      if (quoteError) {
-        console.error('Error loading older quote:', quoteError);
-        toast.error('Failed to load proposal');
-        return;
+      // If coming from live view (currentIndex === -1) and the first snapshot is the current version,
+      // skip it and go to the next older version to avoid the "gap"
+      if (currentIndex === -1 && proposalVersions[0]?.version_number === quote?.current_version) {
+        targetIndex = 1; // Skip index 0, go to index 1 (next older version)
       }
       
-      if (olderQuote) {
-        console.log(`📖 Navigating to proposal ${olderQuote.proposal_number}`);
-        setQuote(olderQuote);
-        
-        // Mark all versions as not current
-        const updatedVersions = proposalVersions.map(v => ({
-          ...v,
-          is_current: v.id === olderQuote.id
-        }));
-        setProposalVersions(updatedVersions);
-        
-        // Set read-only mode with version number
-        const versionNum = proposalVersions.length - currentIndex - 1;
-        setViewingProposalNumber(versionNum);
-        
-        // Load the snapshot data for this version
-        // Since we're using the quote as the "version", we need to load its current database state
-        // (In a true versioning system, this would load from proposal_versions snapshot)
-        await loadData(false);
-        
-        toast.info(`📖 Viewing proposal ${olderQuote.proposal_number} (version ${versionNum})`);
+      // Make sure we don't go out of bounds
+      if (targetIndex < proposalVersions.length) {
+        const nextProposal = proposalVersions[targetIndex];
+        setViewingProposalNumber(nextProposal.version_number);
+        await loadProposalSnapshot(nextProposal.version_number);
       }
     }
   }
@@ -2294,52 +2231,28 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   async function navigateToNextProposal() {
     if (proposalVersions.length === 0) return;
     
-    // Find current position in the list
-    const currentlyViewingId = quote?.id;
-    const currentIndex = proposalVersions.findIndex(v => v.id === currentlyViewingId);
+    const currentIndex = viewingProposalNumber === null 
+      ? -1 
+      : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber);
     
     // Move to next newer proposal (lower index)
     if (currentIndex > 0) {
-      const newerProposal = proposalVersions[currentIndex - 1];
+      const nextProposal = proposalVersions[currentIndex - 1];
       
-      // Load the quote record
-      const { data: newerQuote, error: quoteError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('id', newerProposal.id)
-        .single();
-      
-      if (quoteError) {
-        console.error('Error loading newer quote:', quoteError);
-        toast.error('Failed to load proposal');
-        return;
+      // If navigating to the current version, return to live view instead
+      if (nextProposal.version_number === quote?.current_version) {
+        setViewingProposalNumber(null);
+        toast.info('Viewing current proposal');
+        await loadData(false);
+      } else {
+        setViewingProposalNumber(nextProposal.version_number);
+        await loadProposalSnapshot(nextProposal.version_number);
       }
-      
-      if (newerQuote) {
-        console.log(`📖 Navigating to proposal ${newerQuote.proposal_number}`);
-        setQuote(newerQuote);
-        
-        // Mark all versions as not current
-        const updatedVersions = proposalVersions.map(v => ({
-          ...v,
-          is_current: v.id === newerQuote.id
-        }));
-        setProposalVersions(updatedVersions);
-        
-        // Check if this is the most recent (current working version)
-        if (currentIndex === 1) {
-          // Moving to the most recent version - exit read-only mode
-          setViewingProposalNumber(null);
-          await loadData(false);
-          toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
-        } else {
-          // Still viewing a historical version
-          const versionNum = proposalVersions.length - currentIndex + 1;
-          setViewingProposalNumber(versionNum);
-          await loadData(false);
-          toast.info(`📖 Viewing proposal ${newerQuote.proposal_number} (version ${versionNum})`);
-        }
-      }
+    } else if (currentIndex === 0) {
+      // Already at current version, return to live view
+      setViewingProposalNumber(null);
+      toast.info('Viewing current proposal');
+      await loadData(false);
     }
   }
 
@@ -2971,11 +2884,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function saveCustomRow() {
-    if (isReadOnly) {
-      toast.error('Cannot edit in historical view');
-      return;
-    }
-    
     if (!description || !unitCost) {
       toast.error('Please fill in description and ' + (category === 'labor' ? 'hourly rate' : 'unit cost'));
       return;
@@ -4296,12 +4204,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     const { active, over } = event;
 
     if (!over || active.id === over.id) return;
-    
-    // Prevent reordering in read-only mode
-    if (isReadOnly) {
-      toast.error('Cannot reorder in historical view');
-      return;
-    }
 
     const oldIndex = allItems.findIndex(item => item.id === active.id);
     const newIndex = allItems.findIndex(item => item.id === over.id);
@@ -4353,69 +4255,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      {/* Read-Only Warning Banner - Show when viewing historical proposal */}
-      {isReadOnly && (
-        <Card className="mb-4 border-red-300 bg-red-50">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-3">
-              <Lock className="w-5 h-5 text-red-600" />
-              <div className="flex-1">
-                <p className="font-semibold text-red-900">Read-Only Historical View</p>
-                <p className="text-sm text-red-700">You are viewing a historical snapshot. All editing is disabled. Create a new version or return to current to make changes.</p>
-              </div>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  // Load the most recent quote
-                  const mostRecentQuote = proposalVersions[0];
-                  if (mostRecentQuote) {
-                    const { data: currentQuote } = await supabase
-                      .from('quotes')
-                      .select('*')
-                      .eq('id', mostRecentQuote.id)
-                      .single();
-                    
-                    if (currentQuote) {
-                      setQuote(currentQuote);
-                      const updatedVersions = proposalVersions.map(v => ({
-                        ...v,
-                        is_current: v.id === currentQuote.id
-                      }));
-                      setProposalVersions(updatedVersions);
-                    }
-                  }
-                  setViewingProposalNumber(null);
-                  await loadData(false);
-                  toast.info('✏️ Returned to current proposal - editing enabled');
-                }}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                Return to Current
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
       {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
-              {/* Proposal Navigation Arrows - Show if there are multiple proposals */}
-              {proposalVersions.length > 1 && (
+              {/* Proposal Navigation Arrows - Only show if there are versions */}
+              {proposalVersions.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={navigateToPreviousProposal}
-                    disabled={loading || (() => {
-                      const currentId = quote?.id;
-                      const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                      return currentIdx === proposalVersions.length - 1;
-                    })()}
+                    disabled={loadingProposalSnapshot || (
+                      viewingProposalNumber === null 
+                        ? proposalVersions.length === 0 || (proposalVersions.length === 1 && proposalVersions[0]?.version_number === quote?.current_version)
+                        : proposalVersions.findIndex(v => v.version_number === viewingProposalNumber) === proposalVersions.length - 1
+                    )}
                     className="h-8 w-8 p-0"
-                    title="Previous proposal (older)"
+                    title="Previous proposal"
                   >
                     <ChevronDown className="w-4 h-4 rotate-90" />
                   </Button>
@@ -4423,42 +4281,52 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     size="sm"
                     variant="outline"
                     onClick={navigateToNextProposal}
-                    disabled={loading || (() => {
-                      const currentId = quote?.id;
-                      const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                      return currentIdx === 0;
-                    })()}
+                    disabled={loadingProposalSnapshot || viewingProposalNumber === null}
                     className="h-8 w-8 p-0"
-                    title="Next proposal (newer)"
+                    title="Next proposal"
                   >
                     <ChevronDown className="w-4 h-4 -rotate-90" />
                   </Button>
                 </div>
               )}
               
-              {/* Current Proposal Info */}
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-blue-900">
-                  Proposal #{quote.proposal_number || quote.quote_number}
-                </span>
-                {proposalVersions.length > 1 && (() => {
-                  const currentId = quote?.id;
-                  const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                  return (
-                    <Badge variant="outline" className="text-xs bg-blue-100 border-blue-300 text-blue-900">
-                      {currentIdx + 1} of {proposalVersions.length}
+              {/* Current Proposal Info - Show when viewing current (viewingProposalNumber === null) */}
+              {viewingProposalNumber === null && (
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-blue-900">
+                    Proposal #{quote.proposal_number || quote.quote_number}
+                  </span>
+                  {proposalVersions.length > 0 && (
+                    <Badge variant="outline" className="text-xs bg-green-100 border-green-300 text-green-900">
+                      Current (Editable)
                     </Badge>
-                  );
-                })()}
-                {isReadOnly && (
-                  <Badge className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                    Historical View
-                  </Badge>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
               
-
+              {/* Historical Proposal Info - Show when viewing old version (viewingProposalNumber !== null) */}
+              {/* Only show if viewing a version that's NOT the current version */}
+              {viewingProposalNumber !== null && viewingProposalNumber !== quote?.current_version && (
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-amber-600" />
+                  <Badge variant="outline" className="text-xs bg-amber-100 border-amber-300 text-amber-900">
+                    Viewing #{quote.proposal_number?.split('-')[0]}-{viewingProposalNumber} (Historical)
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setViewingProposalNumber(null);
+                      loadData(false);
+                      toast.info('Returned to current proposal');
+                    }}
+                    className="h-6 text-xs text-blue-700 hover:text-blue-900"
+                  >
+                    Return to Current
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -4547,11 +4415,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 <Download className="w-4 h-4 mr-2" />
                 Export PDF
               </Button>
-              <Button onClick={() => openAddDialog()} variant="outline" size="sm" disabled={isReadOnly}>
+              <Button onClick={() => openAddDialog()} variant="outline" size="sm">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Row
               </Button>
-              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm" disabled={isReadOnly}>
+              <Button onClick={() => setShowSubUploadDialog(true)} variant="outline" size="sm">
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Subcontractor Estimate
               </Button>
@@ -4611,7 +4479,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                         loadSubcontractorEstimates={loadSubcontractorEstimates}
                         customRows={customRows}
                         savingMarkupsRef={savingMarkupsRef}
-                        isReadOnly={isReadOnly}
                       />
                     ))}
                   </SortableContext>
