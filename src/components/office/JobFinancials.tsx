@@ -1745,7 +1745,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         console.log('Quote loaded:', quoteData.proposal_number || quoteData.quote_number);
         console.log('Total quotes for this job:', allJobQuotes.length);
         
-        // Filter to only valid quotes with proposal numbers and remove duplicates
+        // Filter to only valid quotes with proposal numbers (NO deduplication)
         const validQuotes = allJobQuotes.filter(q => {
           // Must have a proposal_number
           if (!q.proposal_number) return false;
@@ -1754,32 +1754,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           return true;
         });
         
-        // Remove duplicates by proposal_number (keep most recent)
-        const uniqueQuotes = validQuotes.reduce((acc, quote) => {
-          const existing = acc.find(q => q.proposal_number === quote.proposal_number);
-          if (!existing) {
-            acc.push(quote);
-          } else if (new Date(quote.created_at) > new Date(existing.created_at)) {
-            // Replace with newer version if found
-            const index = acc.indexOf(existing);
-            acc[index] = quote;
-          }
-          return acc;
-        }, [] as any[]);
+        console.log('Found', validQuotes.length, 'valid proposals (no deduplication)');
         
-        console.log('Filtered from', allJobQuotes.length, 'to', uniqueQuotes.length, 'valid proposals');
+        // Sort by created_at descending (newest first)
+        const sortedQuotes = validQuotes.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
         
-        // Store unique quotes for navigation
-        setProposalVersions(uniqueQuotes.map((q, idx) => ({
+        // Store all valid quotes for navigation
+        setProposalVersions(sortedQuotes.map((q, idx) => ({
           id: q.id,
           quote_id: q.id,
-          version_number: uniqueQuotes.length - idx, // Number from newest to oldest
+          version_number: sortedQuotes.length - idx, // Number from newest to oldest
           customer_name: q.customer_name,
           proposal_number: q.proposal_number,
           created_at: q.created_at,
           is_current: q.id === quoteData.id,
         })));
-        console.log('Loaded', uniqueQuotes.length, 'proposals for navigation');
+        console.log('Loaded', sortedQuotes.length, 'proposals for navigation');
       } else {
         // No quote found - will check after data loads
         console.log('No quote found for job - will check after loading data');
