@@ -2013,7 +2013,41 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       
       // Get the base proposal number (without the suffix)
       const baseProposalNumber = quote.proposal_number?.split('-')[0] || 'P-001';
-      const newProposalNumber = `${baseProposalNumber}-${nextNumber}`;
+      let newProposalNumber = `${baseProposalNumber}-${nextNumber}`;
+      
+      // CRITICAL: Check if this proposal number already exists globally (not just for this job)
+      // Keep incrementing until we find an unused number
+      let attemptNumber = nextNumber;
+      let isUnique = false;
+      
+      while (!isUnique && attemptNumber < 1000) { // Safety limit
+        const testProposalNumber = `${baseProposalNumber}-${attemptNumber}`;
+        
+        const { data: existingQuote, error: checkError } = await supabase
+          .from('quotes')
+          .select('id')
+          .eq('proposal_number', testProposalNumber)
+          .maybeSingle();
+        
+        if (checkError && checkError.code !== 'PGRST116') {
+          console.error('Error checking proposal number uniqueness:', checkError);
+          throw checkError;
+        }
+        
+        if (!existingQuote) {
+          // This number is available
+          isUnique = true;
+          newProposalNumber = testProposalNumber;
+          console.log(`✅ Found unique proposal number: ${newProposalNumber}`);
+        } else {
+          console.log(`⚠️ Proposal number ${testProposalNumber} already exists, trying next...`);
+          attemptNumber++;
+        }
+      }
+      
+      if (!isUnique) {
+        throw new Error('Could not generate unique proposal number after 1000 attempts');
+      }
       
       const { data: newQuote, error: createError } = await supabase
         .from('quotes')
@@ -2036,7 +2070,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .select()
         .single();
       
-      if (createError) throw createError;
+      if (createError) {
+        console.error('❌ Error creating new quote:', createError);
+        throw createError;
+      }
+      
+      console.log(`✅ New quote created with proposal number: ${newProposalNumber}`);
       
       // Create initial version for the new proposal
       const { error: versionError } = await supabase.rpc('create_proposal_version', {
