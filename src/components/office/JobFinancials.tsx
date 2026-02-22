@@ -1585,6 +1585,23 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [creatingNewProposal, setCreatingNewProposal] = useState(false);
   const [loadingProposalData, setLoadingProposalData] = useState(false);
   
+  // Proposal/Quote state
+  const [quote, setQuote] = useState<any>(null);
+  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
+  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
+  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [versionChangeNotes, setVersionChangeNotes] = useState('');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [initializingVersions, setInitializingVersions] = useState(false);
+  const [creatingProposal, setCreatingProposal] = useState(false);
+  const [proposalChangeNotes, setProposalChangeNotes] = useState('');
+  const [loadingProposalSnapshot, setLoadingProposalSnapshot] = useState(false);
+  
+  // Computed: Read-only mode when viewing historical proposal
+  const isReadOnly = viewingProposalNumber !== null;
+  
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [buildingDescription, setBuildingDescription] = useState(job.description || '');
