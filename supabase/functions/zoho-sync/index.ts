@@ -833,48 +833,12 @@ async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]
     }
   }
   
-  console.log(`📦 Fetched ${allItems.length} total items from ${page - 1} page(s), now fetching full details...`);
+  console.log(`📦 Fetched ${allItems.length} total items from ${page - 1} page(s)`);
+  console.log(`✅ Using list API data with pricing information`);
   
-  // Fetch full details for each item to get complete pricing information
-  const itemsWithDetails = [];
-  let detailsFetched = 0;
-  
-  for (const item of allItems) {
-    try {
-      const detailUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${orgId}`;
-      const detailResponse = await fetch(detailUrl, {
-        headers: {
-          'Authorization': `Zoho-oauthtoken ${accessToken}`,
-        },
-      });
-      
-      if (detailResponse.ok) {
-        const detailData = await detailResponse.json();
-        if (detailData.item) {
-          itemsWithDetails.push(detailData.item);
-          detailsFetched++;
-          
-          // Log progress every 100 items
-          if (detailsFetched % 100 === 0) {
-            console.log(`   ✓ Fetched details for ${detailsFetched}/${allItems.length} items...`);
-          }
-        } else {
-          // Fallback to list item if detail fetch fails
-          itemsWithDetails.push(item);
-        }
-      } else {
-        // Fallback to list item if detail fetch fails
-        console.warn(`⚠️ Failed to fetch details for item ${item.item_id}, using list data`);
-        itemsWithDetails.push(item);
-      }
-    } catch (error) {
-      console.warn(`⚠️ Error fetching details for item ${item.item_id}:`, error);
-      itemsWithDetails.push(item);
-    }
-  }
-  
-  console.log(`✅ Fetched full details for ${itemsWithDetails.length} items`);
-  return itemsWithDetails;
+  // The list API should include pricing - no need to fetch individual details for 800+ items
+  // This prevents timeout issues
+  return allItems;
 }
 
 async function findOrCreateCustomer(accessToken: string, orgId: string, customerName: string): Promise<string> {
