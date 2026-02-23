@@ -780,41 +780,66 @@ async function fetchZohoVendors(accessToken: string, orgId: string): Promise<any
 }
 
 async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]> {
-  const url = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}`;
+  console.log('🌐 Fetching all items from Zoho Books with pagination...');
   
-  console.log('🌐 Calling Zoho API:', url);
+  let allItems: any[] = [];
+  let page = 1;
+  let hasMorePages = true;
+  const perPage = 200; // Zoho Books max per page
   
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Zoho-oauthtoken ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('❌ Zoho API Error Response:', errorText);
+  // Fetch all pages
+  while (hasMorePages) {
+    const url = `https://www.zohoapis.com/books/v3/items?organization_id=${orgId}&page=${page}&per_page=${perPage}`;
     
-    // Parse error to provide helpful message
-    try {
-      const errorJson = JSON.parse(errorText);
-      if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
-        throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
+    console.log(`📄 Fetching page ${page}...`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Zoho API Error Response:', errorText);
+      
+      // Parse error to provide helpful message
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.code === 2 || errorJson.message?.includes('organization_id')) {
+          throw new Error('Invalid Organization ID. Please check your Zoho Books Organization ID in Settings.');
+        }
+      } catch (e) {
+        // If parsing fails, use original error
       }
-    } catch (e) {
-      // If parsing fails, use original error
+      
+      throw new Error(`Failed to fetch Zoho items: ${errorText}`);
     }
-    
-    throw new Error(`Failed to fetch Zoho items: ${errorText}`);
-  }
 
-  const data = await response.json();
-  const items = data.items || [];
+    const data = await response.json();
+    const pageItems = data.items || [];
+    
+    console.log(`📦 Page ${page}: ${pageItems.length} items`);
+    allItems = allItems.concat(pageItems);
+    
+    // Check if there are more pages
+    hasMorePages = data.page_context?.has_more_page || false;
+    page++;
+    
+    // Safety limit to prevent infinite loops
+    if (page > 50) {
+      console.warn('⚠️ Reached safety limit of 50 pages. Stopping pagination.');
+      break;
+    }
+  }
   
-  console.log(`📦 Fetched ${items.length} items from list API, now fetching full details...`);
+  console.log(`📦 Fetched ${allItems.length} total items from ${page - 1} page(s), now fetching full details...`);
   
   // Fetch full details for each item to get complete pricing information
   const itemsWithDetails = [];
-  for (const item of items) {
+  let detailsFetched = 0;
+  
+  for (const item of allItems) {
     try {
       const detailUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${orgId}`;
       const detailResponse = await fetch(detailUrl, {
@@ -827,6 +852,12 @@ async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]
         const detailData = await detailResponse.json();
         if (detailData.item) {
           itemsWithDetails.push(detailData.item);
+          detailsFetched++;
+          
+          // Log progress every 100 items
+          if (detailsFetched % 100 === 0) {
+            console.log(`   ✓ Fetched details for ${detailsFetched}/${allItems.length} items...`);
+          }
         } else {
           // Fallback to list item if detail fetch fails
           itemsWithDetails.push(item);
