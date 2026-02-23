@@ -1881,8 +1881,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           setQuote(quoteData);
           console.log('Loaded most recent quote:', quoteData.proposal_number);
         } else {
-          // Keep the currently selected quote
-          quoteData = quote;
+          // Check if the current quote is still the most recent
+          // If not, and a newer one exists, keep current (user might be reviewing history)
+          // But verify the current quote still exists in the list
+          const currentQuoteExists = allQuotes.some(q => q.id === quote.id);
+          if (currentQuoteExists) {
+            quoteData = quote;
+          } else {
+            // Current quote doesn't exist anymore, switch to most recent
+            quoteData = allQuotes[0];
+            setQuote(quoteData);
+            console.log('Current quote not found, switched to most recent:', quoteData.proposal_number);
+          }
         }
       } else {
         console.log('No quotes found for job');
@@ -1919,12 +1929,30 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
 
       console.log('✅ New proposal created:', data);
+      const newQuoteId = data.quote_id;
       
-      toast.success('New proposal created - previous version locked');
+      // Load the newly created quote and switch to it
+      const { data: newQuote, error: fetchError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', newQuoteId)
+        .single();
+      
+      if (fetchError) {
+        console.error('❌ Error loading new quote:', fetchError);
+        throw fetchError;
+      }
+      
+      console.log('✅ Switching to new proposal:', newQuote.proposal_number);
+      
+      // Set the new quote as current
+      setQuote(newQuote);
+      
+      toast.success(`New proposal ${newQuote.proposal_number} created - now editing`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
       
-      // Reload all data
+      // Reload all data with the new quote
       await loadQuoteData();
       await loadData(false);
     } catch (error: any) {
