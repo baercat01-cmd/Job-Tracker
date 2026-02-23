@@ -1921,13 +1921,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingProposal(true);
     
     try {
-      console.log('🚀 Creating new proposal - locking current and creating next version');
-      console.log('Current proposal:', quote.proposal_number);
+      console.log('🚀 Creating new proposal - this will:');
+      console.log('  1. Lock current proposal:', quote.proposal_number);
+      console.log('  2. Create full snapshot of all data');
+      console.log('  3. Duplicate ALL data for new proposal (complete air gap)');
+      console.log('  4. Create new proposal with incremented number');
       
       // Create new version using database function
-      // This will:
-      // 1. Save snapshot of current proposal (locking it)
-      // 2. Create new proposal with incremented suffix
+      // This will create a complete copy of all data:
+      // - Material workbooks, sheets, items
+      // - Custom financial rows and line items
+      // - Subcontractor estimates and line items
+      // - Category markups and sheet labor
       const { data, error } = await supabase.rpc('create_proposal_version', {
         p_quote_id: quote.id,
         p_job_id: job.id,
@@ -1940,7 +1945,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         throw error;
       }
 
-      console.log('✅ New proposal created:', data);
+      console.log('✅ New proposal created with duplicated data:', data);
       const newQuoteId = data.quote_id;
       
       // Load the newly created quote and switch to it
@@ -1956,11 +1961,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       }
       
       console.log('✅ Switching to new proposal:', newQuote.proposal_number);
+      console.log('   Old and new proposals now have completely separate data');
       
       // Set the new quote as current
       setQuote(newQuote);
+      userSelectedQuoteIdRef.current = newQuote.id;
       
-      toast.success(`New proposal ${newQuote.proposal_number} created - now editing`);
+      toast.success(`New proposal ${newQuote.proposal_number} created with independent data`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
       
@@ -5283,9 +5290,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   <p className="font-semibold text-blue-900 mb-1">What happens:</p>
                   <ul className="text-blue-800 space-y-1 list-disc list-inside">
                     <li>Current proposal ({quote?.proposal_number}) will be locked with a snapshot</li>
-                    <li>New proposal with next number will be created</li>
-                    <li>You can continue editing the new proposal</li>
-                    <li>Previous proposals remain viewable (read-only)</li>
+                    <li>All data will be <strong>fully duplicated</strong> for the new proposal</li>
+                    <li>New proposal gets its own independent materials, rows, and estimates</li>
+                    <li>Old proposal remains frozen and cannot be changed</li>
+                    <li>Complete "air gap" - zero interference between proposals</li>
                   </ul>
                 </div>
               </div>
