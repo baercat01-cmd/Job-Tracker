@@ -2181,6 +2181,151 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function loadMaterialsData() {
     try {
+      // Check if we're viewing a historical proposal (read-only mode)
+      if (isReadOnly && quote) {
+        console.log('📖 Loading materials from historical snapshot for proposal:', quote.proposal_number);
+        
+        // Find the proposal version for this quote
+        const { data: versionData, error: versionError } = await supabase
+          .from('proposal_versions')
+          .select('workbook_snapshot')
+          .eq('quote_id', quote.id)
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (versionError) {
+          console.error('Error loading proposal version:', versionError);
+          throw versionError;
+        }
+        
+        if (!versionData || !versionData.workbook_snapshot) {
+          console.log('No snapshot found for this proposal');
+          setMaterialsBreakdown({
+            sheetBreakdowns: [],
+            totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
+          });
+          setMaterialSheets([]);
+          setSheetLabor({});
+          setCategoryMarkups({});
+          return;
+        }
+        
+        // Parse and use the snapshot data
+        const snapshot = versionData.workbook_snapshot;
+        const sheetsData = snapshot.sheets || [];
+        
+        // Store sheets data
+        setMaterialSheets(sheetsData);
+        
+        // Load category markups from snapshot
+        const categoryMarkupsMap: Record<string, number> = {};
+        if (snapshot.category_markups) {
+          Object.entries(snapshot.category_markups).forEach(([key, value]) => {
+            categoryMarkupsMap[key] = value as number;
+          });
+        }
+        setCategoryMarkups(categoryMarkupsMap);
+        
+        // Load sheet labor from snapshot
+        const laborMap: Record<string, any> = {};
+        if (snapshot.sheet_labor) {
+          snapshot.sheet_labor.forEach((labor: any) => {
+            laborMap[labor.sheet_id] = labor;
+          });
+        }
+        setSheetLabor(laborMap);
+        
+        // Build materials breakdown from snapshot
+        const breakdowns = sheetsData.map((sheet: any) => {
+          const sheetItems = sheet.items || [];
+          
+          // Group by category
+          const categoryMap = new Map<string, any[]>();
+          sheetItems.forEach((item: any) => {
+            const category = item.category || 'Uncategorized';
+            if (!categoryMap.has(category)) {
+              categoryMap.set(category, []);
+            }
+            categoryMap.get(category)!.push(item);
+          });
+          
+          // Calculate totals per category
+          const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
+            const totalCost = items.reduce((sum, item) => {
+              const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
+              return sum + cost;
+            }, 0);
+            
+            const totalPrice = items.reduce((sum, item) => {
+              const price = (item.price_per_unit || 0) * (item.quantity || 0);
+              return sum + price;
+            }, 0);
+            
+            const profit = totalPrice - totalCost;
+            const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
+            
+            return {
+              name: categoryName,
+              itemCount: items.length,
+              items: items.map((item: any) => ({
+                material_name: item.material_name,
+                sku: item.sku,
+                quantity: item.quantity || 0,
+                cost_per_unit: item.cost_per_unit || 0,
+                price_per_unit: item.price_per_unit || 0,
+                extended_cost: (item.cost_per_unit || 0) * (item.quantity || 0),
+                extended_price: (item.price_per_unit || 0) * (item.quantity || 0),
+              })),
+              totalCost,
+              totalPrice,
+              profit,
+              margin,
+            };
+          }).sort((a, b) => a.name.localeCompare(b.name));
+          
+          // Calculate sheet totals
+          const sheetTotalCost = categories.reduce((sum, cat) => sum + cat.totalCost, 0);
+          const sheetTotalPrice = categories.reduce((sum, cat) => sum + cat.totalPrice, 0);
+          const sheetProfit = sheetTotalPrice - sheetTotalCost;
+          const sheetMargin = sheetTotalPrice > 0 ? (sheetProfit / sheetTotalPrice) * 100 : 0;
+          
+          return {
+            sheetId: sheet.id,
+            sheetName: sheet.sheet_name,
+            sheetDescription: sheet.description || '',
+            orderIndex: sheet.order_index,
+            categories,
+            totalCost: sheetTotalCost,
+            totalPrice: sheetTotalPrice,
+            profit: sheetProfit,
+            margin: sheetMargin,
+          };
+        });
+        
+        // Calculate grand totals
+        const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
+        const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
+        const grandProfit = grandTotalPrice - grandTotalCost;
+        const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
+        
+        setMaterialsBreakdown({
+          sheetBreakdowns: breakdowns,
+          totals: {
+            totalCost: grandTotalCost,
+            totalPrice: grandTotalPrice,
+            totalProfit: grandProfit,
+            profitMargin: grandMargin,
+          }
+        });
+        
+        console.log('✅ Loaded materials from snapshot');
+        return;
+      }
+      
+      // Normal flow: Load live data for current/editable proposals
+      console.log('📝 Loading live materials data');
+      
       // Get the working workbook for this job
       const { data: workbookData, error: workbookError } = await supabase
         .from('material_workbooks')
