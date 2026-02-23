@@ -2141,6 +2141,68 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function loadSubcontractorEstimates() {
     try {
+      // Check if we're viewing a historical proposal (read-only mode)
+      if (isReadOnly && quote) {
+        console.log('📖 Loading subcontractors from historical snapshot for proposal:', quote.proposal_number);
+        
+        // Find the proposal version for this quote
+        const { data: versionData, error: versionError } = await supabase
+          .from('proposal_versions')
+          .select('subcontractor_snapshot')
+          .eq('quote_id', quote.id)
+          .order('version_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (versionError) {
+          console.error('Error loading proposal version for subcontractors:', versionError);
+          throw versionError;
+        }
+        
+        if (!versionData || !versionData.subcontractor_snapshot) {
+          console.log('No subcontractor snapshot found for this proposal');
+          setSubcontractorEstimates([]);
+          setSubcontractorLineItems({});
+          setLinkedSubcontractors({});
+          return;
+        }
+        
+        // Parse and use the snapshot data
+        const snapshot = versionData.subcontractor_snapshot;
+        const estimatesData = Array.isArray(snapshot) ? snapshot : [];
+        
+        // Update subcontractor estimates from snapshot
+        if (JSON.stringify(estimatesData) !== JSON.stringify(subcontractorEstimates)) {
+          setSubcontractorEstimates(estimatesData);
+        }
+        
+        // Separate standalone vs linked subcontractors
+        const linkedMap: Record<string, any[]> = {};
+        const lineItemsMap: Record<string, any[]> = {};
+        
+        estimatesData.forEach((est: any) => {
+          if (est.sheet_id) {
+            if (!linkedMap[est.sheet_id]) linkedMap[est.sheet_id] = [];
+            linkedMap[est.sheet_id].push(est);
+          } else if (est.row_id) {
+            if (!linkedMap[est.row_id]) linkedMap[est.row_id] = [];
+            linkedMap[est.row_id].push(est);
+          }
+          
+          // Line items are stored in the snapshot
+          if (est.line_items && Array.isArray(est.line_items)) {
+            lineItemsMap[est.id] = est.line_items;
+          }
+        });
+        
+        setLinkedSubcontractors(linkedMap);
+        setSubcontractorLineItems(lineItemsMap);
+        
+        console.log('✅ Loaded subcontractors from snapshot');
+        return;
+      }
+      
+      // Normal flow: Load live data for current/editable proposals
       const { data, error } = await supabase
         .from('subcontractor_estimates')
         .select('*')
@@ -2535,6 +2597,71 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function loadCustomRows() {
+    // Check if we're viewing a historical proposal (read-only mode)
+    if (isReadOnly && quote) {
+      console.log('📖 Loading custom rows from historical snapshot for proposal:', quote.proposal_number);
+      
+      // Find the proposal version for this quote
+      const { data: versionData, error: versionError } = await supabase
+        .from('proposal_versions')
+        .select('financial_rows_snapshot')
+        .eq('quote_id', quote.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (versionError) {
+        console.error('Error loading proposal version for custom rows:', versionError);
+        return;
+      }
+      
+      if (!versionData || !versionData.financial_rows_snapshot) {
+        console.log('No custom rows snapshot found for this proposal');
+        setCustomRows([]);
+        setCustomRowLineItems({});
+        setCustomRowLabor({});
+        return;
+      }
+      
+      // Parse and use the snapshot data
+      const snapshot = versionData.financial_rows_snapshot;
+      const rowsData = Array.isArray(snapshot) ? snapshot : [];
+      
+      // Update custom rows from snapshot
+      if (JSON.stringify(rowsData) !== JSON.stringify(customRows)) {
+        setCustomRows(rowsData);
+      }
+      
+      // Extract labor and line items from snapshot
+      const laborMap: Record<string, any> = {};
+      const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
+      
+      rowsData.forEach((row: any) => {
+        if (row.notes) {
+          try {
+            const parsed = JSON.parse(row.notes);
+            if (parsed.labor) {
+              laborMap[row.id] = parsed.labor;
+            }
+          } catch {
+            // Not JSON, skip
+          }
+        }
+        
+        // Line items are stored in the snapshot
+        if (row.line_items && Array.isArray(row.line_items)) {
+          lineItemsMap[row.id] = row.line_items;
+        }
+      });
+      
+      setCustomRowLabor(laborMap);
+      setCustomRowLineItems(lineItemsMap);
+      
+      console.log('✅ Loaded custom rows from snapshot');
+      return;
+    }
+    
+    // Normal flow: Load live data for current/editable proposals
     const { data, error } = await supabase
       .from('custom_financial_rows')
       .select('*')
