@@ -222,10 +222,20 @@ export function ZohoDataManagement() {
       if (data.itemsInserted > 0 || data.itemsUpdated > 0) {
         toast.success(
           `📊 Sync Details:\n` +
-          `• ${data.itemsInserted || 0} new materials added\n` +
+          `• ${data.itemsInserted || 0} new materials added to catalog\n` +
           `• ${data.itemsUpdated || 0} materials updated\n` +
-          `• ${data.vendorsSynced || 0} vendors synced`,
-          { duration: 7000 }
+          `• ${data.vendorsSynced || 0} vendors synced\n\n` +
+          `✅ Materials are now available in the Materials Catalog`,
+          { duration: 10000 }
+        );
+        
+        // Additional guidance
+        toast.info(
+          `💡 To use these materials in jobs:\n` +
+          `1. Go to a Job's Materials tab\n` +
+          `2. Click "Add Material"\n` +
+          `3. Click "Search Database" to browse synced materials`,
+          { duration: 12000 }
         );
       }
     } catch (error: any) {
