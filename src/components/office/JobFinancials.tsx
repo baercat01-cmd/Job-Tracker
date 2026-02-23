@@ -325,6 +325,11 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                     return Math.max(2, wrappedLines);
                   })()}
                   onBlur={async (e) => {
+                    if (isReadOnly) {
+                      toast.error('Cannot edit in historical view');
+                      e.target.value = sheet.sheetDescription || '';
+                      return;
+                    }
                     const newValue = e.target.value.trim();
                     if (newValue !== (sheet.sheetDescription || '')) {
                       try {
@@ -944,6 +949,11 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                     return Math.max(2, wrappedLines);
                   })()}
                   onBlur={async (e) => {
+                    if (isReadOnly) {
+                      toast.error('Cannot edit in historical view');
+                      e.target.value = row.notes || '';
+                      return;
+                    }
                     const newValue = e.target.value.trim();
                     if (newValue !== (row.notes || '')) {
                       try {
@@ -1329,6 +1339,11 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                     return Math.max(2, wrappedLines);
                   })()}
                   onBlur={async (e) => {
+                    if (isReadOnly) {
+                      toast.error('Cannot edit in historical view');
+                      e.target.value = est.scope_of_work || '';
+                      return;
+                    }
                     const newValue = e.target.value.trim();
                     if (newValue !== (est.scope_of_work || '')) {
                       try {
