@@ -1643,12 +1643,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }, [quote?.id]);
 
-  // Auto-create quote for new jobs (run once after initial load)
+  // Auto-create first proposal (with -1 suffix) for new jobs
   useEffect(() => {
     if (!loading && !quote) {
       // Small delay to ensure all data is loaded
       const timer = setTimeout(() => {
-        checkAndAutoCreateQuote();
+        autoCreateFirstProposal();
       }, 1000);
       return () => clearTimeout(timer);
     }
@@ -1698,8 +1698,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function createNewProposalVersion() {
-    if (!quote) return;
-    
     setCreatingVersion(true);
     try {
       // Build change notes
@@ -1709,18 +1707,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         changeNotes = changeNotes ? `${baseNote}. ${changeNotes}` : baseNote;
       }
       
-      // Create new version using Edge Function
-      const { data, error } = await supabase.functions.invoke('create-proposal-version', {
-        body: { 
-          quoteId: quote.id,
-          changeNotes: changeNotes || undefined
-        }
+      // Call database function with either quote_id OR job_id
+      // If no quote exists, the function will create one automatically
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote?.id || null,
+        p_job_id: quote ? null : job.id,
+        p_user_id: profile?.id || null,
+        p_change_notes: changeNotes || null
       });
       
       if (error) throw error;
       
-      const nextVersion = (proposalVersions[0]?.version_number || 0) + 1;
-      toast.success(`Version ${nextVersion} created successfully!`);
+      console.log('✅ Version created:', data);
+      
+      toast.success('Proposal version created successfully!');
+      
+      // If we just created the first quote/version, reload quote data
+      if (!quote) {
+        await loadQuoteData();
+      }
       
       // Reset state and reload
       setShowCreateVersionDialog(false);
@@ -1894,62 +1899,32 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingProposal(true);
     
     try {
-      console.log('🚀 Creating new proposal from quote:', quote.id);
-      console.log('Current proposal number:', quote.proposal_number);
+      console.log('🚀 Creating new proposal - locking current and creating next version');
+      console.log('Current proposal:', quote.proposal_number);
       
-      // Extract base number from current proposal (e.g., "26020-1" -> "26020")
-      const baseNumber = quote.proposal_number?.split('-')[0];
-      if (!baseNumber) {
-        throw new Error('Cannot determine base proposal number');
+      // Create new version using database function
+      // This will:
+      // 1. Save snapshot of current proposal (locking it)
+      // 2. Create new proposal with incremented suffix
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: quote.id,
+        p_job_id: job.id,
+        p_user_id: profile.id,
+        p_change_notes: proposalChangeNotes || 'New proposal version'
+      });
+
+      if (error) {
+        console.error('❌ Error creating new proposal:', error);
+        throw error;
       }
+
+      console.log('✅ New proposal created:', data);
       
-      // Find max suffix for this job's proposals with the same base
-      const maxSuffix = allJobQuotes
-        .filter(q => q.proposal_number?.startsWith(baseNumber + '-'))
-        .reduce((max, q) => {
-          const suffix = parseInt(q.proposal_number.split('-')[1] || '0');
-          return Math.max(max, suffix);
-        }, 0);
-      
-      const nextSuffix = maxSuffix + 1;
-      const newProposalNumber = `${baseNumber}-${nextSuffix}`;
-      
-      console.log(`📋 Creating new proposal: ${newProposalNumber}`);
-      
-      // Create a NEW quote entry with the new proposal number
-      const { data: newQuote, error: createError } = await supabase
-        .from('quotes')
-        .insert({
-          job_id: job.id,
-          customer_name: quote.customer_name,
-          customer_email: quote.customer_email,
-          customer_phone: quote.customer_phone,
-          customer_address: quote.customer_address,
-          project_name: quote.project_name,
-          width: quote.width,
-          length: quote.length,
-          eave: quote.eave,
-          pitch: quote.pitch,
-          status: 'draft',
-          created_by: profile.id,
-          proposal_number: newProposalNumber, // Set the proposal number explicitly
-        })
-        .select()
-        .single();
-      
-      if (createError) {
-        console.error('❌ Error creating new quote:', createError);
-        throw createError;
-      }
-      
-      console.log(`✅ New proposal created: ${newQuote.proposal_number}`);
-      
-      toast.success(`New proposal ${newQuote.proposal_number} created successfully!`);
+      toast.success('New proposal created - previous version locked');
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
       
-      // Switch to the new proposal
-      setQuote(newQuote);
+      // Reload all data
       await loadQuoteData();
       await loadData(false);
     } catch (error: any) {
@@ -1960,14 +1935,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function checkAndAutoCreateQuote() {
+  async function autoCreateFirstProposal() {
     // Only run if we don't have a quote yet
     if (quote) return;
     
     try {
-      console.log('🔍 Checking for existing quote for job:', job.id);
+      console.log('🔍 Auto-creating first proposal for job:', job.id);
 
-      // First, check if a quote already exists for this job
+      // Check if a quote already exists for this job
       const { data: existingQuote, error: fetchError } = await supabase
         .from('quotes')
         .select('*')
@@ -1987,41 +1962,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return;
       }
 
-      console.log('🔍 No existing quote found, creating new one...');
+      console.log('📝 Creating first proposal with -1 suffix...');
 
-      // Auto-create quote for this job
-      const { data: newQuote, error: createError } = await supabase
-        .from('quotes')
-        .insert({
-          job_id: job.id,
-          customer_name: job.client_name,
-          customer_address: job.address,
-          project_name: job.name,
-          status: 'draft',
-          width: 0,
-          length: 0,
-          created_by: profile?.id,
-        })
-        .select()
-        .single();
+      // Create first proposal using the database function
+      // This will auto-generate proposal number with -1 suffix
+      const { data, error } = await supabase.rpc('create_proposal_version', {
+        p_quote_id: null,
+        p_job_id: job.id,
+        p_user_id: profile?.id || null,
+        p_change_notes: 'Initial proposal'
+      });
 
-      if (createError) {
-        console.error('❌ Error auto-creating quote:', createError);
-        toast.error(
-          'Failed to auto-create proposal number. Please click the "Generate Proposal Number" button manually.',
-          { duration: 8000 }
-        );
-        throw createError;
+      if (error) {
+        console.error('❌ Error auto-creating first proposal:', error);
+        throw error;
       }
 
-      console.log('✅ Auto-created quote:', newQuote.proposal_number);
-      setQuote(newQuote);
-      setProposalVersions([]);
+      console.log('✅ Auto-created first proposal');
       
-      toast.success(`Proposal #${newQuote.proposal_number} created automatically`);
+      // Reload quote data to get the newly created quote
+      await loadQuoteData();
+      
+      toast.success('First proposal created automatically');
     } catch (error: any) {
-      console.error('❌ Error in checkAndAutoCreateQuote:', error);
-      // Silent failure - user can click the manual button if needed
+      console.error('❌ Error in autoCreateFirstProposal:', error);
+      // Silent failure - user can create manually if needed
       console.log('Will show manual create button instead');
     }
   }
@@ -4100,57 +4065,43 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 {buildingDescription ? 'Edit Building Description' : 'Add Building Description'}
               </Button>
               <div className="h-6 w-px bg-border" />
-              {/* Versioning Buttons - Show if quote exists */}
-              {quote ? (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (proposalVersions.length === 0) {
-                        // Auto-initialize on first version creation
-                        initializeVersioning();
-                      } else {
-                        setShowCreateVersionDialog(true);
-                      }
-                    }}
-                    disabled={initializingVersions}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {initializingVersions ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-3 h-3 mr-2" />
-                        Create Version
-                      </>
-                    )}
-                  </Button>
-                  {/* Show Sign & Lock for current version only */}
-                  {proposalVersions.length > 0 && !quote.signed_version && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
-                        if (currentVersion) signAndLockVersion(currentVersion.id);
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-700"
-                    >
-                      <Lock className="w-3 h-3 mr-2" />
-                      Set as Contract
-                    </Button>
-                  )}
-                </>
-              ) : (
+              {/* Versioning Buttons - Always show "Create Version" */}
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (quote) {
+                    setShowCreateProposalDialog(true);
+                  } else {
+                    autoCreateFirstProposal();
+                  }
+                }}
+                disabled={creatingVersion || isReadOnly}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {creatingVersion ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3 h-3 mr-2" />
+                    {quote ? 'Create New Proposal' : 'Create Proposal'}
+                  </>
+                )}
+              </Button>
+              {/* Show Sign & Lock for current version only */}
+              {quote && proposalVersions.length > 0 && !quote.signed_version && (
                 <Button
                   size="sm"
-                  onClick={manuallyCreateQuote}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold animate-pulse"
+                  onClick={() => {
+                    const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
+                    if (currentVersion) signAndLockVersion(currentVersion.id);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700"
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Click Here to Generate Proposal Number
+                  <Lock className="w-3 h-3 mr-2" />
+                  Set as Contract
                 </Button>
               )}
               <div className="h-6 w-px bg-border" />
@@ -5055,65 +5006,55 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Create New Version Dialog */}
-      <Dialog open={showCreateVersionDialog} onOpenChange={setShowCreateVersionDialog}>
+      {/* Create New Proposal Dialog */}
+      <Dialog open={showCreateProposalDialog} onOpenChange={setShowCreateProposalDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Proposal</DialogTitle>
             <DialogDescription>
-              {viewingProposalNumber !== null ? (
-                <span>
-                  This will create a new proposal based on the current live data. A note will be added indicating it was created while viewing version #{viewingProposalNumber}.
-                </span>
-              ) : (
-                <span>
-                  This will create a new proposal with an incremented number (e.g., -1 becomes -2). All current materials and pricing will be saved with this new proposal.
-                </span>
-              )}
+              This will lock the current proposal (saving a snapshot of all materials and pricing) and create a new proposal with an incremented number that you can continue editing.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {viewingProposalNumber !== null && (
-              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm">
-                <div className="flex items-start gap-2">
-                  <History className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-amber-900 mb-1">Creating from Historical View</p>
-                    <p className="text-amber-800">
-                      You are viewing version #{viewingProposalNumber}. The new proposal will snapshot the current live database data and will include a note that it was created from this historical view.
-                    </p>
-                  </div>
+            <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <Lock className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-blue-900 mb-1">What happens:</p>
+                  <ul className="text-blue-800 space-y-1 list-disc list-inside">
+                    <li>Current proposal ({quote?.proposal_number}) will be locked with a snapshot</li>
+                    <li>New proposal with next number will be created</li>
+                    <li>You can continue editing the new proposal</li>
+                    <li>Previous proposals remain viewable (read-only)</li>
+                  </ul>
                 </div>
               </div>
-            )}
+            </div>
             <div>
-              <Label>Change Notes (Optional)</Label>
+              <Label>Notes (Optional)</Label>
               <Textarea
-                value={versionChangeNotes}
-                onChange={(e) => setVersionChangeNotes(e.target.value)}
-                placeholder="e.g., Updated pricing for customer request, Added optional items, Changed materials..."
+                value={proposalChangeNotes}
+                onChange={(e) => setProposalChangeNotes(e.target.value)}
+                placeholder="e.g., Updated pricing per customer request, Added garage door options, Changed roof color..."
                 rows={3}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                {viewingProposalNumber !== null 
-                  ? `Will be combined with note: "Based on version ${viewingProposalNumber}"`
-                  : 'Describe what changed in this version to help track the proposal evolution'
-                }
+                Document what changed in this new proposal version
               </p>
             </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowCreateVersionDialog(false);
-                  setVersionChangeNotes('');
+                  setShowCreateProposalDialog(false);
+                  setProposalChangeNotes('');
                 }}
-                disabled={creatingVersion}
+                disabled={creatingProposal}
               >
                 Cancel
               </Button>
-              <Button onClick={createNewProposalVersion} disabled={creatingVersion}>
-                {creatingVersion ? (
+              <Button onClick={createNewProposal} disabled={creatingProposal}>
+                {creatingProposal ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                     Creating...
@@ -5121,7 +5062,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 ) : (
                   <>
                     <Plus className="w-4 h-4 mr-2" />
-                    Create {viewingProposalNumber !== null ? 'New Proposal' : 'Version'}
+                    Create New Proposal
                   </>
                 )}
               </Button>
