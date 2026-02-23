@@ -1249,7 +1249,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
       const finalPrice = includedTotal * (1 + estMarkup / 100);
 
       return (
-        <Collapsible className="border rounded bg-white py-1 px-2">
+        <Collapsible className="border rounded bg-white py-1 px-2 opacity-50">
           <div className="flex items-start gap-2">
             {/* Drag Handle */}
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing py-1">
@@ -1287,6 +1287,9 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
               ) : (
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-bold text-slate-900 truncate">{est.company_name}</h3>
+                  <Badge variant="outline" className="bg-amber-100 border-amber-300 text-amber-900 text-xs">
+                    Unlinked - Not in Price
+                  </Badge>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1311,6 +1314,14 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
             )}
           </div>
 
+          {/* Warning message for unlinked subcontractor */}
+          <div className="ml-10 mb-2">
+            <div className="bg-amber-50 border border-amber-300 rounded p-2 text-xs text-amber-900">
+              <p className="font-semibold">⚠️ This subcontractor is not linked to any section</p>
+              <p className="mt-1">To include this in the proposal price, link it to a material sheet or custom row using the dropdown menu on any section.</p>
+            </div>
+          </div>
+          
           {/* Two-column layout: Description + Pricing */}
           <div className="ml-10 flex gap-4 mt-1">
             {/* Description column (wide) */}
@@ -3893,33 +3904,18 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const proposalMaterialsPrice = materialSheetsPrice + customRowsMaterialsTotal;
   const proposalMaterialsTaxableOnly = materialSheetsTaxableOnly + customRowsMaterialsTaxableOnly;
   
-  // Subcontractors: only standalone estimates (not linked to sheets/rows)
+  // Subcontractors: ONLY count linked estimates (those with sheet_id or row_id)
+  // Unlinked/standalone estimates are NOT included in pricing until linked to a section
+  // This ensures subcontractors only contribute to price when explicitly assigned to a section
   // Material type items go to materials, labor type items go to labor
   const standaloneSubcontractors = subcontractorEstimates.filter(est => !est.sheet_id && !est.row_id);
   let subcontractorMaterialsPrice = 0;
   let subcontractorMaterialsTaxableOnly = 0;
   let subcontractorLaborPrice = 0;
   
-  standaloneSubcontractors.forEach(est => {
-    const lineItems = subcontractorLineItems[est.id] || [];
-    // All materials (taxable + non-taxable)
-    const materialsTotal = lineItems
-      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material')
-      .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
-    // Taxable materials only
-    const materialsTaxableOnly = lineItems
-      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'material' && item.taxable)
-      .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
-    // Labor
-    const laborTotal = lineItems
-      .filter((item: any) => !item.excluded && (item.item_type || 'material') === 'labor')
-      .reduce((sum: number, item: any) => sum + (item.total_price || 0), 0);
-    
-    const estMarkup = est.markup_percent || 0;
-    subcontractorMaterialsPrice += materialsTotal * (1 + estMarkup / 100);
-    subcontractorMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
-    subcontractorLaborPrice += laborTotal * (1 + estMarkup / 100);
-  });
+  // NOTE: Standalone subcontractors are NOT counted in pricing
+  // They will only be counted when linked to a section (sheet_id or row_id is set)
+  // This prevents uploaded estimates from affecting the total until they're intentionally placed
   
   // Labor: sheet labor + sheet labor line items + custom row labor + custom rows labor + linked rows labor + subcontractor labor items
   const totalSheetLaborCost = materialsBreakdown.sheetBreakdowns.reduce((sum, sheet) => {
@@ -4024,7 +4020,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     other: 'Miscellaneous project costs and expenses',
   };
 
-  // Create unified list of all proposal items sorted by order_index (only standalone subs)
+  // Create unified list of all proposal items sorted by order_index
+  // NOTE: Standalone subcontractors are shown but marked as "unlinked" and don't affect pricing
   const allItems = [
     ...materialsBreakdown.sheetBreakdowns.map(sheet => ({
       type: 'material' as const,
@@ -4039,7 +4036,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       orderIndex: row.order_index,
       data: row,
     })),
-    // Only include standalone subcontractors (not linked to sheets/rows)
+    // Include standalone subcontractors but they won't affect price until linked
     ...subcontractorEstimates.filter(est => !est.sheet_id && !est.row_id).map(est => ({
       type: 'subcontractor' as const,
       id: est.id,
