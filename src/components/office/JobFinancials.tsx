@@ -1881,12 +1881,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           setQuote(quoteData);
           console.log('Loaded most recent quote:', quoteData.proposal_number);
         } else {
-          // Check if the current quote is still the most recent
-          // If not, and a newer one exists, keep current (user might be reviewing history)
-          // But verify the current quote still exists in the list
+          // User has navigated to a specific quote - keep it selected
+          // Just verify the current quote still exists in the list
           const currentQuoteExists = allQuotes.some(q => q.id === quote.id);
           if (currentQuoteExists) {
+            // Keep the current quote that user navigated to
             quoteData = quote;
+            console.log('Keeping user-selected quote:', quoteData.proposal_number);
           } else {
             // Current quote doesn't exist anymore, switch to most recent
             quoteData = allQuotes[0];
@@ -4110,49 +4111,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   return (
     <div className="w-full">
-      {/* Read-Only Warning Banner - Show when viewing historical proposal */}
-      {isReadOnly && (
-        <Card className="mb-4 border-red-300 bg-red-50">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-3">
-              <Lock className="w-5 h-5 text-red-600" />
-              <div className="flex-1">
-                <p className="font-semibold text-red-900">Read-Only Historical View</p>
-                <p className="text-sm text-red-700">You are viewing a historical snapshot. All editing is disabled. Create a new version or return to current to make changes.</p>
-              </div>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  // Load the most recent quote
-                  const mostRecentQuote = proposalVersions[0];
-                  if (mostRecentQuote) {
-                    const { data: currentQuote } = await supabase
-                      .from('quotes')
-                      .select('*')
-                      .eq('id', mostRecentQuote.id)
-                      .single();
-                    
-                    if (currentQuote) {
-                      setQuote(currentQuote);
-                      const updatedVersions = proposalVersions.map(v => ({
-                        ...v,
-                        is_current: v.id === currentQuote.id
-                      }));
-                      setProposalVersions(updatedVersions);
-                    }
-                  }
-                  setViewingProposalNumber(null);
-                  await loadData(false);
-                  toast.info('✏️ Returned to current proposal - editing enabled');
-                }}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                Return to Current
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
       
       {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
