@@ -3986,55 +3986,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
             <div className="flex items-center gap-4">
-              {/* Proposal Navigation Arrows - Show if there are multiple proposals */}
-              {proposalVersions.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={navigateToPreviousProposal}
-                    disabled={loading || (() => {
-                      const currentId = quote?.id;
-                      const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                      return currentIdx === proposalVersions.length - 1;
-                    })()}
-                    className="h-8 w-8 p-0"
-                    title="Previous proposal (older)"
-                  >
-                    <ChevronDown className="w-4 h-4 rotate-90" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={navigateToNextProposal}
-                    disabled={loading || (() => {
-                      const currentId = quote?.id;
-                      const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                      return currentIdx === 0;
-                    })()}
-                    className="h-8 w-8 p-0"
-                    title="Next proposal (newer)"
-                  >
-                    <ChevronDown className="w-4 h-4 -rotate-90" />
-                  </Button>
-                </div>
-              )}
-              
               {/* Current Proposal Info */}
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold text-blue-900">
                   Proposal #{quote.proposal_number || quote.quote_number}
                 </span>
-                {proposalVersions.length > 1 && (() => {
-                  const currentId = quote?.id;
-                  const currentIdx = proposalVersions.findIndex(v => v.id === currentId);
-                  return (
-                    <Badge variant="outline" className="text-xs bg-blue-100 border-blue-300 text-blue-900">
-                      {currentIdx + 1} of {proposalVersions.length}
-                    </Badge>
-                  );
-                })()}
                 {isReadOnly && (
                   <Badge className="text-xs bg-amber-100 border-amber-300 text-amber-900">
                     Historical View
