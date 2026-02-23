@@ -167,10 +167,15 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5 gap-1 mb-6">
+        <TabsList className="grid w-full grid-cols-6 gap-1 mb-6">
+          <TabsTrigger value="documents" className="flex items-center gap-1 text-xs sm:text-sm">
+            <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
+            <span className="hidden lg:inline">Docs</span>
+            <span className="lg:hidden">Docs</span>
+          </TabsTrigger>
           <TabsTrigger value="pull_from_shop" className="flex items-center gap-1 text-xs sm:text-sm">
             <Package className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden lg:inline">Pull Shop</span>
+            <span className="hidden lg:inline">Pull</span>
             <span className="lg:hidden">Pull</span>
             {pullFromShopCount > 0 && (
               <Badge variant="secondary" className="text-[10px] sm:text-xs">
@@ -195,7 +200,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
           </TabsTrigger>
           <TabsTrigger value="bundles" className="flex items-center gap-1 text-xs sm:text-sm">
             <PackagePlus className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Bundles</span>
+            <span className="hidden sm:inline">Pkgs</span>
             <span className="sm:hidden">Pkgs</span>
             {bundlesCount > 0 && (
               <Badge variant="secondary" className="text-[10px] sm:text-xs">
@@ -206,7 +211,7 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
           <TabsTrigger value="crew_orders" className="flex items-center gap-1 text-xs sm:text-sm">
             <ShoppingCart className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">Orders</span>
-            <span className="sm:hidden">Orders</span>
+            <span className="sm:hidden">Ord</span>
             {crewOrdersCount > 0 && (
               <Badge variant="secondary" className="text-[10px] sm:text-xs">
                 {crewOrdersCount}
@@ -214,6 +219,10 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
             )}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="documents">
+          <DocumentsView job={job} userId={profile?.id || ''} />
+        </TabsContent>
 
         <TabsContent value="pull_from_shop">
           <JobMaterialsByStatus job={job} status="pull_from_shop" />
