@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   FileText, Plus, Search, CheckCircle, XCircle, Clock, DollarSign, 
-  Briefcase, Archive, Lock, History, Eye, Download, Calendar 
+  Briefcase, Archive, Lock, History, Eye, Download, Calendar, RefreshCw 
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeasurement } from '@/lib/utils';
@@ -88,6 +88,7 @@ export function QuotesView() {
   const [showSignDialog, setShowSignDialog] = useState(false);
   const [signQuoteId, setSignQuoteId] = useState<string | null>(null);
   const [changeNotes, setChangeNotes] = useState('');
+  const [restoringVersion, setRestoringVersion] = useState(false);
 
   useEffect(() => {
     loadQuotes();
@@ -277,6 +278,42 @@ export function QuotesView() {
     setSignQuoteId(quoteId);
     setChangeNotes('');
     setShowSignDialog(true);
+  }
+
+  async function restoreVersionToWorkbook(versionId: string, versionNumber: number) {
+    if (!confirm(
+      `⚠️ This will replace the current working materials with Version ${versionNumber}'s snapshot.\n\n` +
+      `Any unsaved changes to the current workbook will be lost.\n\n` +
+      `Are you sure you want to restore Version ${versionNumber}?`
+    )) {
+      return;
+    }
+
+    try {
+      setRestoringVersion(true);
+      
+      const { data, error } = await supabase.rpc('restore_version_to_workbook', {
+        p_version_id: versionId
+      });
+
+      if (error) throw error;
+
+      toast.success(
+        `✅ Version ${versionNumber} restored to workbook!\n\n` +
+        `${data.sheets_restored} sheets restored\n` +
+        `${data.items_restored} materials restored\n` +
+        `${data.financial_rows_restored} financial rows restored\n\n` +
+        `You can now edit these materials in the Materials tab.`,
+        { duration: 6000 }
+      );
+      
+      setShowVersionHistory(false);
+    } catch (error: any) {
+      console.error('Error restoring version:', error);
+      toast.error('Failed to restore version: ' + error.message);
+    } finally {
+      setRestoringVersion(false);
+    }
   }
 
   async function markQuoteAsSigned() {
@@ -865,10 +902,34 @@ export function QuotesView() {
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-3 h-3 mr-2" />
-                        View Details
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            restoreVersionToWorkbook(version.id, version.version_number);
+                          }}
+                          disabled={restoringVersion}
+                          className="text-blue-700 border-blue-300 hover:bg-blue-50"
+                        >
+                          {restoringVersion ? (
+                            <>
+                              <div className="w-3 h-3 mr-2 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
+                              Restoring...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3 h-3 mr-2" />
+                              Restore to Workbook
+                            </>
+                          )}
+                        </Button>
+                        <Button size="sm" variant="outline">
+                          <Eye className="w-3 h-3 mr-2" />
+                          View Details
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
