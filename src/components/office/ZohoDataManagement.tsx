@@ -238,6 +238,25 @@ export function ZohoDataManagement() {
           { duration: 12000 }
         );
       }
+      
+      // Show warning if items were skipped
+      if (data.itemsSkipped > 0) {
+        toast.warning(
+          `⚠️ ${data.itemsSkipped} item(s) skipped because they have no SKU.\n` +
+          `Skipped items: ${(data.skippedItems || []).slice(0, 5).join(', ')}${data.itemsSkipped > 5 ? '...' : ''}\n\n` +
+          `To sync these items, add a SKU to them in Zoho Books and sync again.`,
+          { duration: 15000 }
+        );
+      }
+      
+      // If nothing was synced, show detailed message
+      if (data.itemsInserted === 0 && data.itemsUpdated === 0 && data.itemsSkipped === 0) {
+        toast.info(
+          `ℹ️ No new materials to sync. All Zoho Books items are already in the catalog.\n\n` +
+          `Total materials in catalog: ${materials.length}`,
+          { duration: 8000 }
+        );
+      }
     } catch (error: any) {
       console.error('Sync error:', error);
       toast.error(`Sync failed: ${error.message}`);

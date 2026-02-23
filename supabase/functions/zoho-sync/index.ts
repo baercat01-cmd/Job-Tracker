@@ -159,15 +159,29 @@ serve(async (req) => {
         let itemsSynced = 0;
         let itemsUpdated = 0;
         let itemsInserted = 0;
+        let itemsSkipped = 0;
+        const skippedItems: string[] = [];
         
         for (const item of items) {
-          const sku = item.item_id || item.sku;
+          // Try multiple fields for SKU - Zoho Books can use different field names
+          const sku = item.sku || item.item_id || item.product_id || item.id;
+          
+          // CRITICAL: Skip items without a valid SKU
+          if (!sku || sku.trim() === '') {
+            console.warn(`⚠️ Skipping item without SKU - Name: ${item.name}`);
+            itemsSkipped++;
+            skippedItems.push(item.name || 'Unknown');
+            continue;
+          }
+          
+          console.log(`📦 Processing item - SKU: ${sku} - Name: ${item.name}`);
+          
           const materialData = {
             sku: sku,
-            material_name: item.name,
-            category: item.item_type || 'General',
+            material_name: item.name || 'Unknown Material',
+            category: item.category || item.item_type || 'General',
             unit_price: parseFloat(item.rate || '0'),
-            purchase_cost: parseFloat(item.purchase_rate || '0'),
+            purchase_cost: parseFloat(item.purchase_rate || item.purchase_rate || '0'),
             part_length: item.unit || null,
             raw_metadata: item, // Store full Zoho data
             updated_at: new Date().toISOString(),
@@ -234,7 +248,16 @@ serve(async (req) => {
           }
         }
 
-        console.log(`📊 Sync Summary: ${itemsInserted} inserted, ${itemsUpdated} updated, ${itemsSynced} total processed`);
+        console.log(`📊 Sync Summary:`);
+        console.log(`  ✅ ${itemsInserted} materials inserted`);
+        console.log(`  🔄 ${itemsUpdated} materials updated`);
+        console.log(`  ⏭️ ${itemsSynced - itemsInserted - itemsUpdated} materials unchanged`);
+        console.log(`  ⚠️ ${itemsSkipped} materials skipped (no SKU)`);
+        console.log(`  📋 Total processed: ${itemsSynced}`);
+        
+        if (skippedItems.length > 0) {
+          console.log(`⚠️ Skipped items (no SKU): ${skippedItems.join(', ')}`);
+        }
 
         // Update sync status
         await supabase
@@ -248,11 +271,13 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             success: true,
-            message: `Synced ${vendorsSynced} vendors and ${itemsSynced} materials from Zoho Books (${itemsInserted} new, ${itemsUpdated} updated)`,
+            message: `Synced ${vendorsSynced} vendors and ${itemsSynced} materials from Zoho Books (${itemsInserted} new, ${itemsUpdated} updated, ${itemsSkipped} skipped)`,
             vendorsSynced,
             itemsSynced,
             itemsInserted,
             itemsUpdated,
+            itemsSkipped,
+            skippedItems,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
