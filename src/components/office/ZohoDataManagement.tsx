@@ -126,15 +126,18 @@ export function ZohoDataManagement() {
 
   async function loadMaterials() {
     try {
+      console.log('📦 Loading materials from materials_catalog...');
       const { data, error } = await supabase
         .from('materials_catalog')
         .select('*')
         .order('material_name');
 
       if (error) throw error;
+      console.log(`✅ Loaded ${data?.length || 0} materials from catalog`);
       setMaterials(data || []);
     } catch (error: any) {
-      console.error('Error loading materials:', error);
+      console.error('❌ Error loading materials:', error);
+      toast.error('Failed to load materials from catalog');
     }
   }
 
@@ -207,9 +210,24 @@ export function ZohoDataManagement() {
         throw new Error(errorMessage);
       }
 
-      toast.success(data.message || 'Sync completed successfully');
+      const message = data.message || 'Sync completed successfully';
+      console.log('✅ Zoho sync result:', data);
+      toast.success(message, { duration: 5000 });
+      
+      // Force reload all data
       await loadData();
       await loadSyncStatus();
+      
+      // Show detailed sync results
+      if (data.itemsInserted > 0 || data.itemsUpdated > 0) {
+        toast.success(
+          `📊 Sync Details:\n` +
+          `• ${data.itemsInserted || 0} new materials added\n` +
+          `• ${data.itemsUpdated || 0} materials updated\n` +
+          `• ${data.vendorsSynced || 0} vendors synced`,
+          { duration: 7000 }
+        );
+      }
     } catch (error: any) {
       console.error('Sync error:', error);
       toast.error(`Sync failed: ${error.message}`);
