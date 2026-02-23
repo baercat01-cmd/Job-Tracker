@@ -163,11 +163,7 @@ serve(async (req) => {
         const skippedItems: string[] = [];
         
         for (const item of items) {
-          // Log the full item to see what fields are available
-          console.log('📋 Full Zoho item data:', JSON.stringify(item, null, 2));
-          
-          // Try multiple fields for SKU - Zoho Books can use different field names
-          // Check all possible SKU field names
+          // Extract SKU first
           const sku = 
             item.sku || 
             item.item_id || 
@@ -177,34 +173,28 @@ serve(async (req) => {
             item.code || 
             item.part_number;
           
-          console.log(`🔍 SKU extraction - Checking fields:`, {
-            sku: item.sku,
-            item_id: item.item_id,
-            product_id: item.product_id,
-            id: item.id,
-            item_code: item.item_code,
-            code: item.code,
-            part_number: item.part_number,
-            extracted_sku: sku
-          });
-          
           // CRITICAL: Skip items without a valid SKU
           if (!sku || sku.trim() === '') {
             console.warn(`⚠️ Skipping item without SKU - Name: ${item.name}`);
-            console.warn(`   Available fields:`, Object.keys(item));
             itemsSkipped++;
             skippedItems.push(item.name || 'Unknown');
             continue;
           }
           
-          console.log(`📦 Processing item - SKU: ${sku} - Name: ${item.name}`);
+          // Parse prices with detailed logging
+          const unitPrice = parseFloat(item.rate || '0');
+          const purchaseCost = parseFloat(item.purchase_rate || item.purchase_cost || '0');
+          
+          console.log(`📦 Processing: SKU=${sku}, Name=${item.name}`);
+          console.log(`   💰 Prices from Zoho - Unit Price: $${unitPrice}, Purchase Cost: $${purchaseCost}`);
+          console.log(`   📊 Raw price fields - rate: "${item.rate}", purchase_rate: "${item.purchase_rate}", purchase_cost: "${item.purchase_cost}"`);
           
           const materialData = {
             sku: sku,
             material_name: item.name || 'Unknown Material',
             category: item.category || item.item_type || 'General',
-            unit_price: parseFloat(item.rate || '0'),
-            purchase_cost: parseFloat(item.purchase_rate || item.purchase_cost || '0'),
+            unit_price: unitPrice,
+            purchase_cost: purchaseCost,
             part_length: item.unit || null,
             raw_metadata: item, // Store full Zoho data
             updated_at: new Date().toISOString(),
@@ -224,6 +214,9 @@ serve(async (req) => {
 
           if (existing) {
             // Material exists - UPDATE ALL FIELDS from Zoho Books (Zoho is source of truth)
+            console.log(`   🔄 Updating existing material - Old Price: $${existing.unit_price}, New Price: $${materialData.unit_price}`);
+            console.log(`   🔄 Old Cost: $${existing.purchase_cost}, New Cost: $${materialData.purchase_cost}`);
+            
             const { error: updateError } = await supabase
               .from('materials_catalog')
               .update({
@@ -239,7 +232,8 @@ serve(async (req) => {
 
             if (!updateError) {
               itemsUpdated++;
-              console.log(`✅ Updated material ${sku} - Name: ${materialData.material_name}, Price: $${materialData.unit_price}, Cost: $${materialData.purchase_cost}`);
+              const priceChanged = existing.unit_price !== materialData.unit_price || existing.purchase_cost !== materialData.purchase_cost;
+              console.log(`✅ Updated ${sku} ${priceChanged ? '(PRICES CHANGED)' : '(no price change)'} - Name: ${materialData.material_name}, Price: $${materialData.unit_price}, Cost: $${materialData.purchase_cost}`);
             } else {
               console.error(`❌ Failed to update material ${sku}:`, updateError);
             }
