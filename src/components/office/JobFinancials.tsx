@@ -4158,8 +4158,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardContent className="py-3">
-            <div className="flex items-center gap-4">
-              {/* Current Proposal Info */}
+            <div className="flex items-center justify-between">
+              {/* Left: Current Proposal Info */}
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold text-blue-900">
@@ -4171,8 +4171,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   </Badge>
                 )}
               </div>
-              
 
+              {/* Right: Navigation Controls (only show if multiple proposals exist) */}
+              {allJobQuotes.length > 1 && (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-blue-700 font-medium">
+                    {allJobQuotes.findIndex(q => q.id === quote.id) + 1} of {allJobQuotes.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={navigateToPreviousProposal}
+                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === allJobQuotes.length - 1}
+                      className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
+                      title="Previous Proposal (Older)"
+                    >
+                      <ChevronDown className="w-4 h-4 rotate-90" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={navigateToNextProposal}
+                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === 0}
+                      className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
+                      title="Next Proposal (Newer)"
+                    >
+                      <ChevronDown className="w-4 h-4 -rotate-90" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
