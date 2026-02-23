@@ -163,12 +163,35 @@ serve(async (req) => {
         const skippedItems: string[] = [];
         
         for (const item of items) {
+          // Log the full item to see what fields are available
+          console.log('📋 Full Zoho item data:', JSON.stringify(item, null, 2));
+          
           // Try multiple fields for SKU - Zoho Books can use different field names
-          const sku = item.sku || item.item_id || item.product_id || item.id;
+          // Check all possible SKU field names
+          const sku = 
+            item.sku || 
+            item.item_id || 
+            item.product_id || 
+            item.id || 
+            item.item_code || 
+            item.code || 
+            item.part_number;
+          
+          console.log(`🔍 SKU extraction - Checking fields:`, {
+            sku: item.sku,
+            item_id: item.item_id,
+            product_id: item.product_id,
+            id: item.id,
+            item_code: item.item_code,
+            code: item.code,
+            part_number: item.part_number,
+            extracted_sku: sku
+          });
           
           // CRITICAL: Skip items without a valid SKU
           if (!sku || sku.trim() === '') {
             console.warn(`⚠️ Skipping item without SKU - Name: ${item.name}`);
+            console.warn(`   Available fields:`, Object.keys(item));
             itemsSkipped++;
             skippedItems.push(item.name || 'Unknown');
             continue;
@@ -181,7 +204,7 @@ serve(async (req) => {
             material_name: item.name || 'Unknown Material',
             category: item.category || item.item_type || 'General',
             unit_price: parseFloat(item.rate || '0'),
-            purchase_cost: parseFloat(item.purchase_rate || item.purchase_rate || '0'),
+            purchase_cost: parseFloat(item.purchase_rate || item.purchase_cost || '0'),
             part_length: item.unit || null,
             raw_metadata: item, // Store full Zoho data
             updated_at: new Date().toISOString(),
