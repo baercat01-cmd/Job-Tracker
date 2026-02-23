@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Martin Builder - FieldTrack Pro</title>
+    <meta name="description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
+    <meta name="keywords" content="martin builder, construction, time tracking, field logs, job management, daily reports, post-frame construction">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://fieldtrack.onspace.app">
+    <meta property="og:title" content="Martin Builder - FieldTrack Pro">
+    <meta property="og:description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
+    <meta property="og:image" content="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://fieldtrack.onspace.app">
+    <meta name="twitter:title" content="Martin Builder - FieldTrack Pro">
+    <meta name="twitter:description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
+    <meta name="twitter:image" content="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#1a5632">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Icons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="text-align: center; padding: 50px; font-family: sans-serif;">
+        <h1>JavaScript Required</h1>
+        <p>FieldTrack Pro requires JavaScript to be enabled in your browser.</p>
+      </div>
+    </noscript>
+    <script>
+      // Clear caches but preserve user selection and data
+      (function() {
+        console.log('🧹 Smart cleanup - preserving user data');
+        
+        try {
+          // Preserve user selection and data
+          const userId = localStorage.getItem('fieldtrack_user_id');
+          const timerData = userId ? localStorage.getItem('fieldtrack_timers_' + userId) : null;
+          const draftData = localStorage.getItem('fieldtrack_daily_log_draft');
+          const photoQueue = localStorage.getItem('fieldtrack_photo_queue');
+          
+          // Clear ALL caches
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              names.forEach(function(name) {
+                caches.delete(name);
+              });
+            });
+          }
+          
+          // Clear session storage only
+          sessionStorage.clear();
+        } catch (e) {
+          console.error('Cleanup error:', e);
+        }
+        
+        window.APP_VERSION = '2.0.4';
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
