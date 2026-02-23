@@ -4,13 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Camera, Images, MapPin, X, ExternalLink } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
+import { ArrowLeft, Camera, Images, MapPin, X, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import { createNotification, getPhotosBrief } from '@/lib/notifications';
 import type { Job } from '@/types';
 import { getCurrentPosition } from '@/lib/geolocation';
-import { getLocalDateString } from '@/lib/utils';
 
 interface PhotoUploadProps {
   job: Job;
@@ -197,7 +198,7 @@ export function PhotoUpload({ job, userId, onBack }: PhotoUploadProps) {
       
       console.log('🔗 Public URL:', urlData.publicUrl);
 
-      const today = getLocalDateString();
+      const today = new Date().toISOString().split('T')[0];
 
       const photoData = {
         job_id: job.id,
@@ -211,7 +212,7 @@ export function PhotoUpload({ job, userId, onBack }: PhotoUploadProps) {
       
       console.log('💾 Inserting to database:', photoData);
 
-      const { data: dbData, error: dbError } = await supabase.from('photos').insert(photoData).select().single();
+      const { data: dbData, error: dbError } = await supabase.from('photos').insert(photoData).select();
 
       if (dbError) {
         console.error('❌ Database insert error:', dbError);
@@ -219,16 +220,6 @@ export function PhotoUpload({ job, userId, onBack }: PhotoUploadProps) {
       }
       
       console.log('✅ Database insert successful:', dbData);
-      
-      // Create notification for office
-      await createNotification({
-        jobId: job.id,
-        createdBy: userId,
-        type: 'photos',
-        brief: getPhotosBrief(1, caption || undefined),
-        referenceId: dbData.id,
-        referenceData: { photoUrl: urlData.publicUrl, caption },
-      });
 
       // Don't show individual success toasts for batch uploads
       // Success message is handled by handleGallerySelect
@@ -398,9 +389,6 @@ export function PhotoUpload({ job, userId, onBack }: PhotoUploadProps) {
       {/* Photo Viewer Dialog */}
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
         <DialogContent className="max-w-4xl w-full h-[90vh] p-0 overflow-hidden">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo Details</DialogTitle>
-          </DialogHeader>
           {selectedPhoto && (
             <div className="relative w-full h-full flex flex-col">
               {/* Header */}

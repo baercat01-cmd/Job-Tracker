@@ -1,26 +1,12 @@
-import { Component, ReactNode, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Component, ReactNode } from 'react';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 import { UserSelectPage } from '@/pages/UserSelectPage';
-import { LoginPage } from '@/pages/LoginPage';
-import { PinSetupPage } from '@/pages/PinSetupPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
-import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
-import { ShopDashboard } from '@/pages/shop/ShopDashboard';
-import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
-import BuildingEstimatorPage from '@/pages/office/BuildingEstimatorPage';
-import ZohoSettingsPage from '@/pages/office/ZohoSettingsPage';
-import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
-import { VendorPricingForm } from '@/pages/VendorPricingForm';
-import CustomerPortal from '@/pages/customer/CustomerPortal';
-import SubcontractorPortal from '@/pages/SubcontractorPortal';
 import { Toaster } from '@/components/ui/sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
-import { PWAInstallPrompt } from '@/components/ui/pwa-install-prompt';
-
 
 // Error Boundary to catch runtime errors
 class ErrorBoundary extends Component<
@@ -76,7 +62,7 @@ class ErrorBoundary extends Component<
 }
 
 function AppContent() {
-  const { profile, loading, selectUser, clearUser, authState } = useAuth();
+  const { profile, loading, selectUser } = useAuth();
   
   // Debug logging in development only
   if (import.meta.env.DEV) {
@@ -99,19 +85,9 @@ function AppContent() {
     );
   }
 
-  // Authentication flow based on state
+  // No user selected - show user selection
   if (!profile) {
     return <UserSelectPage onSelectUser={selectUser} />;
-  }
-
-  // User selected but needs to set up PIN
-  if (authState === 'needs_pin_setup') {
-    return <PinSetupPage user={profile} onComplete={() => window.location.reload()} onBack={clearUser} />;
-  }
-
-  // User selected but needs to login
-  if (authState === 'needs_login') {
-    return <LoginPage user={profile} onSuccess={() => window.location.reload()} onBack={clearUser} />;
   }
 
   // Critical: Role-based routing using profile.role from database
@@ -122,32 +98,9 @@ function AppContent() {
     return <ForemanDashboard />;
   }
 
-  // Crew users also get foreman dashboard (same interface)
-  // This handles legacy 'foreman' role that was renamed to 'crew'
-
   // Office users: full admin dashboard (Jobs, Components, Logs, Time, Photos, Settings)
   if (profile.role === 'office') {
-    return (
-      <Routes>
-        <Route path="/" element={<Navigate to="/office?tab=jobs" replace />} />
-        <Route path="/office" element={<OfficeDashboard />} />
-        <Route path="/office/quotes/new" element={<QuoteIntakePage />} />
-        <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
-        <Route path="/office/estimator" element={<BuildingEstimatorPage />} />
-        <Route path="/office/zoho-settings" element={<ZohoSettingsPage />} />
-        <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
-      </Routes>
-    );
-  }
-
-  // Payroll users: time tracking and export for payroll processing
-  if (profile.role === 'payroll') {
-    return <PayrollDashboard />;
-  }
-
-  // Shop users: material processing and shop tasks
-  if (profile.role === 'shop') {
-    return <ShopDashboard />;
+    return <OfficeDashboard />;
   }
 
   // Fallback: role not recognized - show error and force logout
@@ -171,72 +124,12 @@ function AppContent() {
 }
 
 export default function App() {
-  useEffect(() => {
-    // Prevent double-tap zoom on mobile
-    let lastTouchEnd = 0;
-    const handleTouchEnd = (event: TouchEvent) => {
-      const now = Date.now();
-      if (now - lastTouchEnd <= 300) {
-        event.preventDefault();
-      }
-      lastTouchEnd = now;
-    };
-    
-    document.addEventListener('touchend', handleTouchEnd, false);
-
-    // Check for service worker updates
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((registration) => {
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New service worker available
-                console.log('[PWA] New version available');
-                if (confirm('New version available! Reload to update?')) {
-                  newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  window.location.reload();
-                }
-              }
-            });
-          }
-        });
-
-        // Check for updates every hour
-        const updateInterval = setInterval(() => {
-          registration.update();
-        }, 60 * 60 * 1000);
-
-        return () => {
-          document.removeEventListener('touchend', handleTouchEnd);
-          clearInterval(updateInterval);
-        };
-      });
-    }
-  }, []);
-
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          {/* Public vendor pricing form - no authentication required */}
-          <Route path="/vendor-pricing/:token" element={<VendorPricingForm />} />
-          {/* Public customer portal - no authentication required */}
-          <Route path="/customer-portal" element={<CustomerPortal />} />
-          {/* Public subcontractor portal - requires username/password login */}
-          <Route path="/subcontractor-portal" element={<SubcontractorPortal />} />
-          
-          {/* All other routes use main app authentication */}
-          <Route path="/*" element={
-            <AuthProvider>
-              <AppContent />
-              <PWAInstallPrompt />
-              <Toaster position="top-center" richColors />
-            </AuthProvider>
-          } />
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+        <Toaster position="top-center" richColors />
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

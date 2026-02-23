@@ -1,15 +1,12 @@
-export type UserRole = 'crew' | 'office' | 'payroll' | 'shop';
+export type UserRole = 'crew' | 'office';
 
 export interface UserProfile {
   id: string;
   username: string | null;
   email: string;
-  role: 'crew' | 'office' | 'payroll' | 'shop'; // Must be exactly 'crew', 'office', 'payroll', or 'shop'
+  role: 'crew' | 'office'; // Must be exactly 'crew' or 'office'
   phone: string | null;
   created_at: string;
-  pin_hash?: string | null;
-  webauthn_credentials?: any[] | null;
-  is_admin?: boolean;
 }
 
 export interface Component {
@@ -40,7 +37,6 @@ export interface JobComponent {
   id: string;
   name: string;
   isActive: boolean;
-  isTask?: boolean; // Added to support task-tracking components
   createdAt: string;
 }
 
@@ -55,18 +51,11 @@ export interface Job {
   documents: DocumentFolder[];
   components: JobComponent[];
   notes: string | null;
-  status: 'quoting' | 'prepping' | 'active' | 'completed' | 'on_hold' | 'archived';
+  status: 'active' | 'completed' | 'on_hold';
   created_at: string;
   updated_at: string;
   created_by: string | null;
   job_number?: string; // Legacy field, will be removed
-  estimated_hours?: number;
-  is_internal?: boolean; // For internal jobs like Shop that don't show as cards
-  projected_start_date?: string | null; // When job becomes visible to field crew
-  projected_end_date?: string | null; // Projected completion date
-  quote_number?: string | null; // Quote number from quotes table
-  customer_email?: string | null;
-  customer_phone?: string | null;
 }
 
 export interface JobAssignment {
@@ -198,64 +187,4 @@ export interface ActiveTimer {
   component_name: string;
   start_time: string;
   crew_count: number;
-}
-
-export type CalendarEventType = 'meeting' | 'delivery' | 'inspection' | 'deadline' | 'other' | 'task_completed' | 'material_order' | 'material_delivery' | 'material_pull' | 'task_deadline' | 'subcontractor' | 'material_pickup';
-
-// Shared CalendarEvent interface used across all calendar components
-export interface SharedCalendarEvent {
-  id: string;
-  type: CalendarEventType;
-  date: string;
-  jobId: string;
-  jobName: string;
-  jobColor?: string;
-  title: string;
-  description: string;
-  status?: string;
-  priority?: 'low' | 'medium' | 'high';
-  materialId?: string;
-  subcontractorName?: string;
-  subcontractorPhone?: string;
-  assignedUserName?: string;
-  subcontractorTrades?: string[];
-}
-
-// Database schema for calendar_events table
-export interface CalendarEventDB {
-  id: string;
-  title: string;
-  description: string | null;
-  event_date: string;
-  event_type: CalendarEventType;
-  job_id: string | null;
-  all_day: boolean;
-  start_time: string | null;
-  end_time: string | null;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string | null;
-  completed_by?: string | null;
-}
-
-// UI-friendly calendar event (alias for SharedCalendarEvent for backward compatibility)
-export type CalendarEvent = SharedCalendarEvent;
-
-export interface JobTask {
-  id: string;
-  job_id: string;
-  title: string;
-  description: string | null;
-  task_type: 'field' | 'office' | 'shop' | 'general';
-  assigned_to: string | null;
-  created_by: string;
-  due_date: string | null;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
-  blocked_reason: string | null;
-  completed_at: string | null;
-  completed_by: string | null;
-  created_at: string;
-  updated_at: string;
 }

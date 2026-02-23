@@ -3,8 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { User, Briefcase, Shield, Settings, DollarSign, Users, Package } from 'lucide-react';
-import { InstallButton } from '@/components/ui/install-button';
+import { User, Briefcase, Shield, Settings } from 'lucide-react';
 import type { UserProfile } from '@/types';
 import { AdminSetup } from './AdminSetup';
 
@@ -25,24 +24,11 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('*');
+        .select('*')
+        .order('username');
 
       if (error) throw error;
-      
-      // Sort by role priority (crew -> foreman -> shop -> office -> payroll) then by username
-      const rolePriority = { crew: 1, foreman: 2, shop: 3, office: 4, payroll: 5 };
-      const sorted = (data || []).sort((a, b) => {
-        const roleA = rolePriority[a.role as keyof typeof rolePriority] || 999;
-        const roleB = rolePriority[b.role as keyof typeof rolePriority] || 999;
-        
-        if (roleA !== roleB) {
-          return roleA - roleB;
-        }
-        
-        return (a.username || '').localeCompare(b.username || '');
-      });
-      
-      setUsers(sorted);
+      setUsers(data || []);
     } catch (error) {
       console.error('Error loading users:', error);
     } finally {
@@ -99,11 +85,6 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
           </div>
         </CardHeader>
         <CardContent>
-          {/* Install App Button */}
-          <div className="flex justify-center mb-6">
-            <InstallButton />
-          </div>
-
           {users.length === 0 ? (
             <div className="text-center py-8">
               <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -129,22 +110,16 @@ export function UserSelectPage({ onSelectUser }: UserSelectPageProps) {
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                       {user.role === 'office' ? (
                         <Shield className="w-6 h-6 text-primary" />
-                      ) : user.role === 'payroll' ? (
-                        <DollarSign className="w-6 h-6 text-primary" />
-                      ) : user.role === 'shop' ? (
-                        <Package className="w-6 h-6 text-primary" />
                       ) : (
                         <Briefcase className="w-6 h-6 text-primary" />
                       )}
                     </div>
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-lg">{user.username || 'Unnamed User'}</p>
-                      <p className="text-sm text-muted-foreground capitalize">
-                        {user.role === 'payroll' ? 'Payroll' : user.role === 'office' ? 'Office' : user.role === 'shop' ? 'Shop' : 'Crew'} Member
-                      </p>
+                      <p className="text-sm text-muted-foreground capitalize">{user.role} Member</p>
                     </div>
-                    <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
+                    <Badge variant={user.role === 'office' ? 'default' : 'secondary'}>
+                      {user.role === 'office' ? 'Office' : 'Crew'}
                     </Badge>
                   </div>
                 </Button>

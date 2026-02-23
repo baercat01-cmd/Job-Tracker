@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -84,10 +84,9 @@ export function JobSummary({ job }: JobSummaryProps) {
 
       if (error) throw error;
 
-      // Group by component (exclude clock-in entries where component_id is null)
+      // Group by component
       const componentMap = new Map<string, ComponentTimeSummary>();
       const datesSet = new Set<string>();
-      let totalClockInHours = 0;
 
       (timeEntries || []).forEach((entry: any) => {
         const componentId = entry.component_id;
@@ -102,25 +101,19 @@ export function JobSummary({ job }: JobSummaryProps) {
           datesSet.add(date);
         }
 
-        // Track clock-in hours (entries without component_id)
-        if (componentId === null) {
-          totalClockInHours += crewHours;
+        if (componentMap.has(componentId)) {
+          const existing = componentMap.get(componentId)!;
+          existing.total_hours += hours;
+          existing.entry_count += 1;
+          existing.total_crew_hours += crewHours;
         } else {
-          // Only add to component breakdown if it has a component_id
-          if (componentMap.has(componentId)) {
-            const existing = componentMap.get(componentId)!;
-            existing.total_hours += hours;
-            existing.entry_count += 1;
-            existing.total_crew_hours += crewHours;
-          } else {
-            componentMap.set(componentId, {
-              component_id: componentId,
-              component_name: componentName,
-              total_hours: hours,
-              entry_count: 1,
-              total_crew_hours: crewHours,
-            });
-          }
+          componentMap.set(componentId, {
+            component_id: componentId,
+            component_name: componentName,
+            total_hours: hours,
+            entry_count: 1,
+            total_crew_hours: crewHours,
+          });
         }
       });
 
@@ -133,8 +126,7 @@ export function JobSummary({ job }: JobSummaryProps) {
 
       setComponentSummary(summaryArray);
       setTotalHours(grandTotal);
-      // Use clock-in hours as the total man-hours (100% baseline)
-      setTotalCrewHours(totalClockInHours);
+      setTotalCrewHours(grandCrewTotal);
       setUniqueDates(datesSet.size);
     } catch (error) {
       console.error('Error loading component time summary:', error);
@@ -269,7 +261,7 @@ export function JobSummary({ job }: JobSummaryProps) {
         <Card>
           <CardContent className="pt-6 text-center">
             <Users className="w-8 h-8 mx-auto mb-2 text-primary" />
-            <p className="text-3xl font-bold">{totalCrewHours.toFixed(2)}</p>
+            <p className="text-3xl font-bold">{totalCrewHours.toFixed(1)}</p>
             <p className="text-sm text-muted-foreground">Total Man-Hours</p>
           </CardContent>
         </Card>
@@ -319,7 +311,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-primary">{user.total_hours.toFixed(2)}</p>
+                      <p className="text-2xl font-bold text-primary">{user.total_hours.toFixed(1)}</p>
                       <p className="text-xs text-muted-foreground">Hours Logged</p>
                     </div>
                   </div>
@@ -336,7 +328,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold">{component.total_hours.toFixed(2)}h</p>
+                          <p className="font-bold">{component.total_hours.toFixed(1)}h</p>
                         </div>
                       </div>
                     ))}
@@ -355,19 +347,15 @@ export function JobSummary({ job }: JobSummaryProps) {
             <Clock className="w-5 h-5" />
             Time by Component
           </CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Shows how component hours fit within total clock-in hours ({totalCrewHours.toFixed(2)} hrs)
-          </p>
         </CardHeader>
         <CardContent>
           {componentSummary.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              No component time entries recorded yet
+              No time entries recorded yet
             </p>
           ) : (
             <div className="space-y-3">
               {componentSummary.map((component) => {
-                // Calculate percentage based on total clock-in hours (100% baseline)
                 const percentage = totalCrewHours > 0 ? (component.total_crew_hours / totalCrewHours) * 100 : 0;
                 return (
                   <div key={component.component_id} className="space-y-2">
@@ -379,7 +367,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg">{component.total_crew_hours.toFixed(2)}</p>
+                        <p className="font-bold text-lg">{component.total_crew_hours.toFixed(1)}</p>
                         <p className="text-xs text-muted-foreground">man-hours</p>
                       </div>
                     </div>
@@ -390,7 +378,7 @@ export function JobSummary({ job }: JobSummaryProps) {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground text-right">
-                      {percentage.toFixed(2)}% of total clock-in hours
+                      {percentage.toFixed(1)}% of total man-hours
                     </p>
                   </div>
                 );

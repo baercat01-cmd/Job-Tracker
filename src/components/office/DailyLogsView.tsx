@@ -13,7 +13,6 @@ import {
 import { FileText, Calendar, User, Cloud, Clock, Camera, AlertTriangle, Package, ChevronRight } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import type { DailyLog } from '@/types';
-import { formatShortDate, formatDisplayDate } from '@/lib/utils';
 
 export function DailyLogsView() {
   const { profile } = useAuth();
@@ -107,7 +106,7 @@ export function DailyLogsView() {
                       <p className="text-sm text-muted-foreground">{log.jobs?.client_name}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium">{formatShortDate(log.log_date)}</p>
+                      <p className="text-sm font-medium">{new Date(log.log_date).toLocaleDateString()}</p>
                       {isOffice && log.user_profiles && (
                         <p className="text-xs text-muted-foreground">
                           {log.user_profiles.username || log.user_profiles.email}
@@ -122,7 +121,7 @@ export function DailyLogsView() {
                       <div className="flex items-center justify-center text-primary mb-1">
                         <Clock className="w-4 h-4" />
                       </div>
-                      <p className="text-lg font-bold">{totalHours.toFixed(2)}</p>
+                      <p className="text-lg font-bold">{totalHours.toFixed(1)}</p>
                       <p className="text-xs text-muted-foreground">Hours</p>
                     </div>
                     <div className="text-center">
@@ -175,7 +174,7 @@ export function DailyLogsView() {
                   <Label className="text-muted-foreground">Date</Label>
                   <p className="font-medium flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    {formatDisplayDate(selectedLog.log_date)}
+                    {new Date(selectedLog.log_date).toLocaleDateString()}
                   </p>
                 </div>
                 {isOffice && selectedLog.user_profiles && (
