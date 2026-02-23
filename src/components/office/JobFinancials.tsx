@@ -1592,6 +1592,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
   
+  // Use ref to track user's selected quote ID (persists across polling cycles)
+  const userSelectedQuoteIdRef = useRef<string | null>(null);
+  
   // Proposal versioning state
   const [proposalVersions, setProposalVersions] = useState<any[]>([]);
   const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
@@ -1875,29 +1878,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       // If we have quotes, use the most recent one by default (unless user navigated to a different one)
       if (allQuotes && allQuotes.length > 0) {
-        // If quote is not set yet, use the most recent
-        if (!quote) {
-          quoteData = allQuotes[0];
-          setQuote(quoteData);
-          console.log('Loaded most recent quote:', quoteData.proposal_number);
-        } else {
+        // Check if user has manually selected a specific quote
+        if (userSelectedQuoteIdRef.current) {
           // User has navigated to a specific quote - keep it selected
-          // Just verify the current quote still exists in the list
-          const currentQuoteExists = allQuotes.some(q => q.id === quote.id);
-          if (currentQuoteExists) {
-            // Keep the current quote that user navigated to
-            quoteData = quote;
+          const selectedQuote = allQuotes.find(q => q.id === userSelectedQuoteIdRef.current);
+          if (selectedQuote) {
+            // Keep the user's selected quote
+            quoteData = selectedQuote;
+            setQuote(quoteData);
             console.log('Keeping user-selected quote:', quoteData.proposal_number);
           } else {
-            // Current quote doesn't exist anymore, switch to most recent
+            // User's selected quote no longer exists, switch to most recent
             quoteData = allQuotes[0];
             setQuote(quoteData);
-            console.log('Current quote not found, switched to most recent:', quoteData.proposal_number);
+            userSelectedQuoteIdRef.current = quoteData.id;
+            console.log('Selected quote not found, switched to most recent:', quoteData.proposal_number);
           }
+        } else if (!quote) {
+          // No user selection and no current quote, use the most recent
+          quoteData = allQuotes[0];
+          setQuote(quoteData);
+          userSelectedQuoteIdRef.current = quoteData.id;
+          console.log('Loaded most recent quote:', quoteData.proposal_number);
+        } else {
+          // No user selection but quote exists, keep current quote
+          quoteData = quote;
+          console.log('Keeping current quote:', quoteData.proposal_number);
         }
       } else {
         console.log('No quotes found for job');
         setQuote(null);
+        userSelectedQuoteIdRef.current = null;
       }
     } catch (error: any) {
       console.error('Error loading quote data:', error);
@@ -2077,6 +2088,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (currentIndex < allJobQuotes.length - 1) {
       const olderQuote = allJobQuotes[currentIndex + 1];
       setQuote(olderQuote);
+      // Track user's selection in ref so polling doesn't override it
+      userSelectedQuoteIdRef.current = olderQuote.id;
       await loadData(false);
       toast.info(`📖 Viewing proposal ${olderQuote.proposal_number}`);
     }
@@ -2089,6 +2102,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (currentIndex > 0) {
       const newerQuote = allJobQuotes[currentIndex - 1];
       setQuote(newerQuote);
+      // Track user's selection in ref so polling doesn't override it
+      userSelectedQuoteIdRef.current = newerQuote.id;
       await loadData(false);
       const isNowCurrent = currentIndex === 1;
       if (isNowCurrent) {
