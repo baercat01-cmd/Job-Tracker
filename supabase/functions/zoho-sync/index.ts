@@ -181,13 +181,41 @@ serve(async (req) => {
             continue;
           }
           
-          // Parse prices with detailed logging
-          const unitPrice = parseFloat(item.rate || '0');
-          const purchaseCost = parseFloat(item.purchase_rate || item.purchase_cost || '0');
+          // DEBUG: Log ALL available price-related fields from Zoho
+          if (itemsSynced === 0) {
+            console.log('🔍 FIRST ITEM - All Zoho fields:', JSON.stringify(item, null, 2));
+          }
+          
+          // Try multiple field name variations for prices
+          const unitPrice = parseFloat(
+            item.rate || 
+            item.selling_price || 
+            item.sales_rate || 
+            item.price || 
+            '0'
+          );
+          
+          const purchaseCost = parseFloat(
+            item.purchase_rate || 
+            item.purchase_cost || 
+            item.cost_price || 
+            item.cost || 
+            '0'
+          );
           
           console.log(`📦 Processing: SKU=${sku}, Name=${item.name}`);
-          console.log(`   💰 Prices from Zoho - Unit Price: $${unitPrice}, Purchase Cost: $${purchaseCost}`);
-          console.log(`   📊 Raw price fields - rate: "${item.rate}", purchase_rate: "${item.purchase_rate}", purchase_cost: "${item.purchase_cost}"`);
+          console.log(`   💰 Parsed Prices - Unit Price: $${unitPrice}, Purchase Cost: $${purchaseCost}`);
+          console.log(`   📊 Raw price fields available:`);
+          console.log(`      - rate: "${item.rate}"`);
+          console.log(`      - selling_price: "${item.selling_price}"`);
+          console.log(`      - purchase_rate: "${item.purchase_rate}"`);
+          console.log(`      - purchase_cost: "${item.purchase_cost}"`);
+          console.log(`      - cost_price: "${item.cost_price}"`);
+          console.log(`      - cost: "${item.cost}"`);
+          
+          if (unitPrice === 0 && purchaseCost === 0) {
+            console.warn(`⚠️ WARNING: Both prices are $0.00 for ${sku} - check Zoho field names!`);
+          }
           
           const materialData = {
             sku: sku,
