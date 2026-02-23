@@ -137,7 +137,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   const [newLength, setNewLength] = useState('');
   const [newColor, setNewColor] = useState('');
   const [newCostPerUnit, setNewCostPerUnit] = useState('');
-  const [newMarkup, setNewMarkup] = useState('35');
+  const [newPricePerUnit, setNewPricePerUnit] = useState(''); // Price from Zoho Books
+  const [newMarkup, setNewMarkup] = useState(''); // Display only - calculated from Zoho prices
   const [newNotes, setNewNotes] = useState('');
   const [saving, setSaving] = useState(false);
   
@@ -909,21 +910,29 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   }
 
   function selectMaterialFromCatalog(catalogItem: any) {
-    // Auto-fill form with catalog data
+    // Auto-fill form with catalog data - use Zoho Books prices directly
     const cost = catalogItem.purchase_cost || 0;
-    const markup = parseFloat(newMarkup) || 35;
-    const price = cost * (1 + markup / 100);
+    const price = catalogItem.unit_price || 0;
+    
+    // Calculate markup percentage from Zoho Books prices (for display/reference only)
+    let calculatedMarkup = '';
+    if (cost > 0 && price > 0) {
+      const markupPercent = ((price - cost) / cost) * 100;
+      calculatedMarkup = markupPercent.toFixed(1);
+    }
 
     setNewMaterialName(catalogItem.material_name);
     setNewSku(catalogItem.sku || '');
     setNewLength(catalogItem.part_length || '');
     setNewColor(''); // Color not in catalog, user can enter manually
     setNewCostPerUnit(cost.toString());
+    setNewPricePerUnit(price.toString()); // Use Zoho Books price directly
+    setNewMarkup(calculatedMarkup); // Display calculated markup (reference only)
     setAddToCategory(catalogItem.category || addToCategory);
     
     setShowDatabaseSearch(false);
     setCatalogSearchQuery('');
-    toast.success(`Material "${catalogItem.material_name}" loaded from database`);
+    toast.success(`Material "${catalogItem.material_name}" loaded from Zoho Books`);
   }
 
   function openZohoOrderDialogForMaterial(item: MaterialItem) {
@@ -949,7 +958,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     setNewLength('');
     setNewColor('');
     setNewCostPerUnit('');
-    setNewMarkup('35');
+    setNewPricePerUnit(''); // Reset price from catalog
+    setNewMarkup(''); // Reset markup (no default)
     setNewNotes('');
     setShowDatabaseSearch(false);
     setCatalogSearchQuery('');
@@ -1106,8 +1116,25 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     try {
       const quantity = parseFloat(newQuantity) || 1;
       const costPerUnit = parseFloat(newCostPerUnit) || null;
-      const markup = parseFloat(newMarkup) || 0;
-      const pricePerUnit = costPerUnit ? costPerUnit * (1 + markup / 100) : null;
+      
+      // Use price from Zoho Books if available, otherwise calculate from markup
+      let pricePerUnit: number | null = null;
+      let markupDecimal = 0;
+      
+      if (newPricePerUnit) {
+        // Price from Zoho Books - use as-is
+        pricePerUnit = parseFloat(newPricePerUnit) || null;
+        // Calculate markup for storage (reference only)
+        if (costPerUnit && pricePerUnit && costPerUnit > 0) {
+          markupDecimal = (pricePerUnit - costPerUnit) / costPerUnit;
+        }
+      } else {
+        // Manual entry - calculate from markup
+        const markup = parseFloat(newMarkup) || 0;
+        markupDecimal = markup / 100;
+        pricePerUnit = costPerUnit ? costPerUnit * (1 + markupDecimal) : null;
+      }
+      
       const extendedCost = costPerUnit ? costPerUnit * quantity : null;
       const extendedPrice = pricePerUnit ? pricePerUnit * quantity : null;
 
@@ -1136,7 +1163,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
           length: newLength.trim() || null,
           color: newColor.trim() || null,
           cost_per_unit: costPerUnit,
-          markup_percent: markup / 100,
+          markup_percent: markupDecimal,
           price_per_unit: pricePerUnit,
           extended_cost: extendedCost,
           extended_price: extendedPrice,
@@ -2297,22 +2324,73 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                   min="0"
                   step="0.01"
                   value={newCostPerUnit}
-                  onChange={(e) => setNewCostPerUnit(e.target.value)}
+                  onChange={(e) => {
+                    setNewCostPerUnit(e.target.value);
+                    // If manually editing cost and we have a price, recalculate markup
+                    if (newPricePerUnit) {
+                      const cost = parseFloat(e.target.value) || 0;
+                      const price = parseFloat(newPricePerUnit) || 0;
+                      if (cost > 0 && price > 0) {
+                        const markup = ((price - cost) / cost) * 100;
+                        setNewMarkup(markup.toFixed(1));
+                      }
+                    }
+                  }}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-price">Price/Unit ($) {newPricePerUnit && <span className="text-xs text-muted-foreground">(from Zoho Books)</span>}</Label>
+                <Input
+                  id="add-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newPricePerUnit}
+                  onChange={(e) => {
+                    setNewPricePerUnit(e.target.value);
+                    // Recalculate markup when price changes
+                    if (newCostPerUnit) {
+                      const cost = parseFloat(newCostPerUnit) || 0;
+                      const price = parseFloat(e.target.value) || 0;
+                      if (cost > 0 && price > 0) {
+                        const markup = ((price - cost) / cost) * 100;
+                        setNewMarkup(markup.toFixed(1));
+                      }
+                    }
+                  }}
                   placeholder="0.00"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="add-markup">Markup (%) - Default 35%</Label>
+              <Label htmlFor="add-markup">Markup (%) {newPricePerUnit && <span className="text-xs text-muted-foreground">(calculated from Zoho Books prices - reference only)</span>}</Label>
               <Input
                 id="add-markup"
                 type="number"
                 min="0"
                 step="0.1"
                 value={newMarkup}
-                onChange={(e) => setNewMarkup(e.target.value)}
+                onChange={(e) => {
+                  setNewMarkup(e.target.value);
+                  // If manually changing markup and no catalog price, calculate new price
+                  if (!newPricePerUnit && newCostPerUnit) {
+                    const cost = parseFloat(newCostPerUnit) || 0;
+                    const markup = parseFloat(e.target.value) || 0;
+                    if (cost > 0) {
+                      const price = cost * (1 + markup / 100);
+                      setNewPricePerUnit(price.toFixed(2));
+                    }
+                  }
+                }}
+                placeholder="Enter markup %"
               />
+              {newPricePerUnit && (
+                <p className="text-xs text-blue-600">
+                  💡 Price is from Zoho Books. Markup shown for reference only.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -2329,7 +2407,9 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
             {/* Preview */}
             {newCostPerUnit && newQuantity && (
               <div className="bg-green-50 p-4 rounded-lg border border-green-200 space-y-2">
-                <h4 className="font-semibold text-green-900">Price Preview</h4>
+                <h4 className="font-semibold text-green-900">
+                  Price Preview {newPricePerUnit && <span className="text-xs font-normal text-muted-foreground">(Using Zoho Books Prices)</span>}
+                </h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-muted-foreground">Cost/Unit:</span>
@@ -2338,7 +2418,10 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                   <div>
                     <span className="text-muted-foreground">Price/Unit:</span>
                     <span className="ml-2 font-semibold text-green-700">
-                      ${(parseFloat(newCostPerUnit) * (1 + parseFloat(newMarkup) / 100)).toFixed(2)}
+                      ${newPricePerUnit 
+                        ? parseFloat(newPricePerUnit).toFixed(2)
+                        : (parseFloat(newCostPerUnit) * (1 + (parseFloat(newMarkup) || 0) / 100)).toFixed(2)
+                      }
                     </span>
                   </div>
                   <div>
@@ -2350,9 +2433,21 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                   <div>
                     <span className="text-muted-foreground">Extended Price:</span>
                     <span className="ml-2 font-bold text-green-700">
-                      ${(parseFloat(newCostPerUnit) * parseFloat(newQuantity) * (1 + parseFloat(newMarkup) / 100)).toFixed(2)}
+                      ${newPricePerUnit
+                        ? (parseFloat(newPricePerUnit) * parseFloat(newQuantity)).toFixed(2)
+                        : (parseFloat(newCostPerUnit) * parseFloat(newQuantity) * (1 + (parseFloat(newMarkup) || 0) / 100)).toFixed(2)
+                      }
                     </span>
                   </div>
+                  {newMarkup && (
+                    <div className="col-span-2 pt-2 border-t border-green-300">
+                      <span className="text-muted-foreground">Markup:</span>
+                      <span className="ml-2 font-semibold text-green-700">
+                        {parseFloat(newMarkup).toFixed(1)}%
+                        {newPricePerUnit && <span className="text-xs text-muted-foreground ml-1">(from Zoho Books)</span>}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
