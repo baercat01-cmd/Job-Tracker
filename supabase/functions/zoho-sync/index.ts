@@ -808,7 +808,42 @@ async function fetchZohoItems(accessToken: string, orgId: string): Promise<any[]
   }
 
   const data = await response.json();
-  return data.items || [];
+  const items = data.items || [];
+  
+  console.log(`📦 Fetched ${items.length} items from list API, now fetching full details...`);
+  
+  // Fetch full details for each item to get complete pricing information
+  const itemsWithDetails = [];
+  for (const item of items) {
+    try {
+      const detailUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${orgId}`;
+      const detailResponse = await fetch(detailUrl, {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        },
+      });
+      
+      if (detailResponse.ok) {
+        const detailData = await detailResponse.json();
+        if (detailData.item) {
+          itemsWithDetails.push(detailData.item);
+        } else {
+          // Fallback to list item if detail fetch fails
+          itemsWithDetails.push(item);
+        }
+      } else {
+        // Fallback to list item if detail fetch fails
+        console.warn(`⚠️ Failed to fetch details for item ${item.item_id}, using list data`);
+        itemsWithDetails.push(item);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error fetching details for item ${item.item_id}:`, error);
+      itemsWithDetails.push(item);
+    }
+  }
+  
+  console.log(`✅ Fetched full details for ${itemsWithDetails.length} items`);
+  return itemsWithDetails;
 }
 
 async function findOrCreateCustomer(accessToken: string, orgId: string, customerName: string): Promise<string> {
