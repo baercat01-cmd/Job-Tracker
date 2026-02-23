@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,14 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Archive, ArchiveRestore, Trash2, Edit, Download } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Trash2, Edit, Download, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert';
 import type { Component } from '@/types';
 
 export function ComponentsManagement() {
@@ -25,6 +32,14 @@ export function ComponentsManagement() {
   const [editingComponent, setEditingComponent] = useState<Component | null>(null);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [deletingComponent, setDeletingComponent] = useState<Component | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [componentUsageInfo, setComponentUsageInfo] = useState<{
+    timeEntries: number;
+    completedTasks: number;
+    photos: number;
+    jobs: number;
+  } | null>(null);
 
   useEffect(() => {
     loadComponents();
@@ -109,8 +124,60 @@ export function ComponentsManagement() {
     }
   }
 
-  async function deleteComponent(id: string) {
-    if (!confirm('Are you sure you want to permanently delete this component?')) {
+  async function initiateDelete(component: Component) {
+    setLoading(true);
+    try {
+      // Check if component is used in time entries
+      const { data: timeEntries, error: timeError } = await supabase
+        .from('time_entries')
+        .select('id, job_id')
+        .eq('component_id', component.id);
+
+      if (timeError) throw timeError;
+
+      // Check if component is used in completed tasks
+      const { data: completedTasks, error: tasksError } = await supabase
+        .from('completed_tasks')
+        .select('id, job_id')
+        .eq('component_id', component.id);
+
+      if (tasksError) throw tasksError;
+
+      // Check if component has photos
+      const { data: photos, error: photosError } = await supabase
+        .from('photos')
+        .select('id, job_id')
+        .eq('component_id', component.id);
+
+      if (photosError) throw photosError;
+
+      // Count unique jobs
+      const allJobIds = new Set([
+        ...(timeEntries?.map(e => e.job_id) || []),
+        ...(completedTasks?.map(t => t.job_id) || []),
+        ...(photos?.map(p => p.job_id) || [])
+      ]);
+
+      setComponentUsageInfo({
+        timeEntries: timeEntries?.length || 0,
+        completedTasks: completedTasks?.length || 0,
+        photos: photos?.length || 0,
+        jobs: allJobIds.size
+      });
+
+      setDeletingComponent(component);
+      setDeleteConfirmation('');
+    } catch (error: any) {
+      toast.error('Failed to check component usage');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deletingComponent || deleteConfirmation !== deletingComponent.name) {
+      toast.error('Please type the component name to confirm');
       return;
     }
 
@@ -119,11 +186,14 @@ export function ComponentsManagement() {
       const { error } = await supabase
         .from('components')
         .delete()
-        .eq('id', id);
+        .eq('id', deletingComponent.id);
 
       if (error) throw error;
 
-      toast.success('Component deleted');
+      toast.success('Component permanently deleted');
+      setDeletingComponent(null);
+      setDeleteConfirmation('');
+      setComponentUsageInfo(null);
       loadComponents();
     } catch (error: any) {
       toast.error('Failed to delete component');
@@ -131,6 +201,12 @@ export function ComponentsManagement() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function cancelDelete() {
+    setDeletingComponent(null);
+    setDeleteConfirmation('');
+    setComponentUsageInfo(null);
   }
 
   function openEditDialog(component: Component) {
@@ -461,10 +537,11 @@ export function ComponentsManagement() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => deleteComponent(component.id)}
+                        onClick={() => initiateDelete(component)}
                         disabled={loading}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
                       </Button>
                     </div>
                   </div>
@@ -480,6 +557,9 @@ export function ComponentsManagement() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Component</DialogTitle>
+            <DialogDescription>
+              Update the name and description for this component
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -501,22 +581,104 @@ export function ComponentsManagement() {
                 rows={3}
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setEditingComponent(null)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={saveComponentEdit}
-                disabled={loading || !editName.trim()}
-              >
-                {loading ? 'Saving...' : 'Save Changes'}
-              </Button>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setEditingComponent(null)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={saveComponentEdit}
+              disabled={loading || !editName.trim()}
+            >
+              {loading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deletingComponent} onOpenChange={() => cancelDelete()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Permanently Delete Component?
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the component.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {componentUsageInfo && (componentUsageInfo.timeEntries > 0 || componentUsageInfo.completedTasks > 0 || componentUsageInfo.photos > 0) && (
+            <Alert variant="destructive" className="border-2">
+              <AlertTriangle className="h-5 w-5" />
+              <AlertTitle className="font-bold">Warning: Component is in use!</AlertTitle>
+              <AlertDescription className="mt-2 space-y-1">
+                <p className="font-semibold">This component is being used in:</p>
+                <ul className="list-disc list-inside space-y-1 mt-2">
+                  {componentUsageInfo.jobs > 0 && (
+                    <li><strong>{componentUsageInfo.jobs}</strong> job{componentUsageInfo.jobs !== 1 ? 's' : ''}</li>
+                  )}
+                  {componentUsageInfo.timeEntries > 0 && (
+                    <li><strong>{componentUsageInfo.timeEntries}</strong> time {componentUsageInfo.timeEntries !== 1 ? 'entries' : 'entry'}</li>
+                  )}
+                  {componentUsageInfo.completedTasks > 0 && (
+                    <li><strong>{componentUsageInfo.completedTasks}</strong> completed {componentUsageInfo.completedTasks !== 1 ? 'tasks' : 'task'}</li>
+                  )}
+                  {componentUsageInfo.photos > 0 && (
+                    <li><strong>{componentUsageInfo.photos}</strong> {componentUsageInfo.photos !== 1 ? 'photos' : 'photo'}</li>
+                  )}
+                </ul>
+                <p className="mt-3 text-sm font-semibold text-destructive">
+                  ⚠️ Deleting this component will also delete all associated time entries, completed tasks, and photo associations!
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {componentUsageInfo && componentUsageInfo.timeEntries === 0 && componentUsageInfo.completedTasks === 0 && componentUsageInfo.photos === 0 && (
+            <Alert>
+              <AlertDescription>
+                This component has not been used in any jobs yet. It is safe to delete.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-confirmation">
+                Type <span className="font-mono font-bold">{deletingComponent?.name}</span> to confirm deletion:
+              </Label>
+              <Input
+                id="delete-confirmation"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder={`Type "${deletingComponent?.name}" here`}
+                className="font-mono"
+              />
             </div>
           </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={cancelDelete}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={loading || deleteConfirmation !== deletingComponent?.name}
+            >
+              {loading ? 'Deleting...' : 'Permanently Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

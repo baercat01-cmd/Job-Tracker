@@ -1,3 +1,7 @@
+/**
+ * Geolocation utilities for tracking GPS coordinates
+ */
+
 export interface GeoPosition {
   latitude: number;
   longitude: number;

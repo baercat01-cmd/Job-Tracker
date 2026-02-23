@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, FileText, Calendar, Clock, Camera, AlertTriangle, Package, Cloud, Users } from 'lucide-react';
 import type { Job } from '@/types';
-import { format } from 'date-fns';
+import { formatDisplayDate } from '@/lib/utils';
 
 interface JobLogsViewProps {
   job: Job;
@@ -129,7 +129,7 @@ export function JobLogsView({ job, onBack, onViewLog }: JobLogsViewProps) {
                   <div>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Calendar className="w-5 h-5" />
-                      {format(new Date(log.log_date), 'MMMM dd, yyyy')}
+                      {formatDisplayDate(log.log_date)}
                     </CardTitle>
                     {!isOffice && (
                       <p className="text-xs text-muted-foreground mt-1">Your log</p>
@@ -155,7 +155,7 @@ export function JobLogsView({ job, onBack, onViewLog }: JobLogsViewProps) {
                 {isOffice && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="w-4 h-4 text-muted-foreground" />
-                    <span><strong>{getTotalHours(log).toFixed(1)}h</strong> logged</span>
+                    <span><strong>{getTotalHours(log).toFixed(2)}h</strong> logged</span>
                     {log.crew_count > 0 && (
                       <>
                         <span className="text-muted-foreground">•</span>

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,11 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, FileText, Clock, Camera, AlertTriangle, Package, Cloud, Users, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, FileText, Clock, Camera, AlertTriangle, Package, Cloud, Users, CheckCircle2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { createNotification, getDailyLogBrief } from '@/lib/notifications';
 import type { Job, ComponentWorked, TimeSummaryEntry, PhotoLogged, Issue, MaterialRequest, WeatherDetails } from '@/types';
 import { getCurrentPosition } from '@/lib/geolocation';
 import { getWeatherForLocation } from '@/lib/weather';
+import { getLocalDateString } from '@/lib/utils';
 
 interface DailyLogFormProps {
   job: Job;
@@ -31,7 +34,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
   const isOffice = profile?.role === 'office';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   
   // Auto-collected data
   const [componentsWorked, setComponentsWorked] = useState<ComponentWorked[]>([]);
@@ -55,6 +58,11 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
   
   // Existing log ID (if editing)
   const [existingLogId, setExistingLogId] = useState<string | null>(null);
+  const [existingLogCreatedBy, setExistingLogCreatedBy] = useState<string | null>(null);
+  
+  // Delete confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadDailyData();
@@ -66,7 +74,37 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
     if (!loading && !saving) {
       saveDraftData();
     }
-  }, [issues, materialRequests, finalNotes, autoSummary]);
+  }, [issues, materialRequests, finalNotes, autoSummary]); // Added missing closing parenthesis and dependency array
+  
+  // Removed duplicate confirmDelete functions.
+  // The original error (line 78:2 error:Parsing error: ',' expected.)
+  // was caused by the `useEffect` block missing its closing parenthesis and dependency array.
+  // The multiple `confirmDelete` function definitions also point to a copy-paste error.
+
+  async function confirmDelete() {
+    if (!existingLogId) return;
+    
+    setDeleting(true);
+    
+    try {
+      const { error } = await supabase
+        .from('daily_logs')
+        .delete()
+        .eq('id', existingLogId);
+      
+      if (error) throw error;
+      
+      toast.success('Daily log deleted');
+      clearDraftData();
+      onBack();
+    } catch (error: any) {
+      console.error('Error deleting daily log:', error);
+      toast.error('Failed to delete daily log');
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
   
   function saveDraftData() {
     try {
@@ -132,6 +170,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       if (existingLog) {
         // Load existing log data
         setExistingLogId(existingLog.id);
+        setExistingLogCreatedBy(existingLog.created_by);
         setComponentsWorked(existingLog.components_worked || []);
         setTimeSummary(existingLog.time_summary || []);
         setPhotosLogged(existingLog.photos_logged || []);
@@ -197,7 +236,11 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       try {
         const position = await getCurrentPosition();
         if (position) {
-          weather = await getWeatherForLocation(position.latitude, position.longitude);
+          const weatherData = await getWeatherForLocation(position.latitude, position.longitude);
+          // Ensure we get a WeatherDetails object
+          if (weatherData && typeof weatherData === 'object') {
+            weather = weatherData as WeatherDetails;
+          }
         }
       } catch (error) {
         console.error('Weather fetch failed:', error);
@@ -261,11 +304,11 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
       );
 
       // Set state
-      setComponentsWorked(componentsWorkedArray);
-      setTimeSummary(summaryEntries);
-      setPhotosLogged(photosLoggedArray);
+      setComponentsWorked(componentsWorkedArray as any);
+      setTimeSummary(summaryEntries as any);
+      setPhotosLogged(photosLoggedArray as any);
       setCrewCount(maxCrew);
-      setWeatherDetails(weather);
+      setWeatherDetails(weather as any);
       setAutoSummary(summary);
     } catch (error) {
       console.error('Error gathering daily data:', error);
@@ -287,7 +330,7 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
     
     if (components.length > 0) {
       summary += `Today the crew worked on ${componentNames}. `;
-      summary += `A total of ${totalHours.toFixed(1)} hours were logged`;
+      summary += `A total of ${totalHours.toFixed(2)} hours were logged`;
       if (crew > 0) {
         summary += ` with ${crew} crew member${crew > 1 ? 's' : ''}`;
       }
@@ -403,6 +446,8 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
         };
       }
 
+      let savedLogId = existingLogId;
+      
       if (existingLogId) {
         // Update existing log
         const { error } = await supabase
@@ -414,15 +459,30 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
         toast.success('Daily log updated');
       } else {
         // Insert new log
-        const { error } = await supabase
+        const { data: newLog, error } = await supabase
           .from('daily_logs')
           .insert({
             ...logData,
             created_at: new Date().toISOString(),
-          });
+          })
+          .select()
+          .single();
 
         if (error) throw error;
+        savedLogId = newLog.id;
         toast.success('Daily log saved');
+        
+        // Create notification for office
+        if (isCrew) {
+          await createNotification({
+            jobId: job.id,
+            createdBy: profile!.id,
+            type: 'daily_log',
+            brief: getDailyLogBrief(logData),
+            referenceId: savedLogId,
+            referenceData: { issues, materialRequests, finalNotes },
+          });
+        }
       }
 
       clearDraftData(); // ✅ Clear draft after successful save
@@ -726,25 +786,81 @@ export function DailyLogForm({ job, onBack }: DailyLogFormProps) {
         </CardContent>
       </Card>
 
-      {/* Save Button */}
-      <Button
-        onClick={saveDailyLog}
-        disabled={saving}
-        className="w-full touch-target gradient-primary"
-        size="lg"
-      >
-        {saving ? (
+      {/* Save & Delete Buttons */}
+      <div className="space-y-2">
+        <Button
+          onClick={saveDailyLog}
+          disabled={saving || deleting}
+          className="w-full touch-target gradient-primary"
+          size="lg"
+        >
+          {saving ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              {existingLogId ? 'Update Daily Log' : 'Submit Daily Log'}
+            </>
+          )}
+        </Button>
+        
+        {/* Delete Button - Only show if user created this log */}
+        {existingLogId && existingLogCreatedBy === profile?.id && (
           <>
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-            Saving...
-          </>
-        ) : (
-          <>
-            <CheckCircle2 className="w-4 h-4 mr-2" />
-            {existingLogId ? 'Update Daily Log' : 'Submit Daily Log'}
+            {!showDeleteConfirm ? (
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={saving || deleting}
+                className="w-full border-destructive text-destructive hover:bg-destructive/10"
+                size="lg"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Daily Log
+              </Button>
+            ) : (
+              <div className="border-2 border-destructive rounded-lg p-4 space-y-3">
+                <div className="text-center">
+                  <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-destructive" />
+                  <p className="font-semibold text-destructive">Confirm Deletion</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This will permanently delete this daily log. This action cannot be undone.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Yes, Delete
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
           </>
         )}
-      </Button>
+      </div>
     </div>
   );
 }

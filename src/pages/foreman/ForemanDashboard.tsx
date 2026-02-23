@@ -3,7 +3,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Clock, Camera, LogOut, Briefcase, FileText, ArrowLeft, History } from 'lucide-react';
+import { Clock, Camera, LogOut, Briefcase, FileText, ArrowLeft, History, Package, BarChart3, Calendar as CalendarIcon, ListTodo, Truck } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import type { Job, ActiveTimer } from '@/types';
 import { JobSelector } from '@/components/foreman/JobSelector';
@@ -13,14 +19,55 @@ import { DailyLogForm } from '@/components/foreman/DailyLogForm';
 import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
+import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
+import { JobComponents } from '@/components/office/JobComponents';
 
-type TabMode = 'timer' | 'photos' | 'documents' | 'history';
+import { MaterialsList } from '@/components/foreman/MaterialsList';
+import { ShopMaterialsView } from '@/components/shop/ShopMaterialsView';
+import { NotificationBell } from '@/components/office/NotificationBell';
+import { QuickTimeEntry } from '@/components/foreman/QuickTimeEntry';
+import { MasterCalendar } from '@/components/office/MasterCalendar';
+import { UpcomingEventsWidget } from '@/components/foreman/UpcomingEventsWidget';
+import { JobCalendar } from '@/components/office/JobCalendar';
+import { JobSchedule } from '@/components/office/JobSchedule';
+import { JobGanttChart } from '@/components/office/JobGanttChart';
+import { UnavailableCalendar } from '@/components/foreman/UnavailableCalendar';
+import { FleetDashboard } from '@/pages/fleet/FleetDashboard';
+import { PWAInstallButton } from '@/components/ui/pwa-install-button';
 
-export function ForemanDashboard() {
+
+type TabMode = 'timer' | 'photos' | 'documents' | 'materials' | 'schedule';
+
+interface ForemanDashboardProps {
+  hideHeader?: boolean;
+}
+
+export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps = {}) {
   const { profile, clearUser } = useAuth();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [activeTab, setActiveTab] = useState<TabMode>('timer');
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
+  const [documentTab, setDocumentTab] = useState<string>('documents');
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
+  const [showCalendarPage, setShowCalendarPage] = useState(false);
+  const [calendarJobId, setCalendarJobId] = useState<string | undefined>(undefined);
+  const [showUnavailableCalendar, setShowUnavailableCalendar] = useState(false);
+  const [materialsDefaultTab, setMaterialsDefaultTab] = useState<'all' | 'ready' | 'pull'>('all');
+  const [showGanttChart, setShowGanttChart] = useState(false);
+  const [jobData, setJobData] = useState<Job | null>(selectedJob);
+  const [showFleet, setShowFleet] = useState(false);
+  const [showShopMaterials, setShowShopMaterials] = useState(false);
+  const isForeman = false; // Legacy foreman role no longer used
+
+  // Update jobData when selectedJob changes
+  useEffect(() => {
+    setJobData(selectedJob);
+  }, [selectedJob]);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 ForemanDashboard - Role:', profile?.role, 'isForeman:', isForeman);
+  }, [profile?.role, isForeman]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -40,7 +87,8 @@ export function ForemanDashboard() {
           jobs(*)
         `)
         .eq('user_id', profile.id)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .not('component_id', 'is', null); // Only show component timers in badge
 
       if (error) throw error;
 
@@ -72,6 +120,18 @@ export function ForemanDashboard() {
     setActiveTab('timer'); // Default to timer tab when selecting a job
   };
 
+  const handleJobSelectForMaterials = (job: Job) => {
+    setSelectedJob(job);
+    setActiveTab('materials'); // Open directly to materials tab
+    setDocumentTab('ready_for_job'); // Set the tab in JobDetails
+  };
+
+  const handleJobSelectForPullMaterials = (job: Job) => {
+    setSelectedJob(job);
+    setActiveTab('materials'); // Open directly to materials tab
+    setDocumentTab('pull_from_shop'); // Set the tab in JobDetails
+  };
+
   const handleBackToJobs = () => {
     setSelectedJob(null);
     setActiveTab('timer');
@@ -82,170 +142,676 @@ export function ForemanDashboard() {
     toast.success('Signed out successfully');
   };
 
-  // If no job selected, show job selector
-  if (!selectedJob) {
+  // If showing shop materials, render that view
+  if (showShopMaterials) {
     return (
-      <div className="min-h-screen bg-muted/30">
+      <div className="min-h-screen bg-slate-50">
         {/* Header */}
-        <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <Button variant="outline" size="sm" onClick={() => setShowShopMaterials(false)} className="rounded-none border-slate-300 flex-shrink-0 h-8 sm:h-9 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="font-bold text-green-900 text-sm sm:text-base truncate">Shop Material Packages</p>
+                <p className="text-xs text-black truncate hidden sm:block">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-slate-900">Process Shop Materials</h2>
+            <p className="text-sm text-slate-600">Mark materials as ready when they're pulled from shop and prepared for job sites</p>
+          </div>
+          <ShopMaterialsView userId={profile?.id || ''} />
+        </main>
+      </div>
+    );
+  }
+
+  // If showing fleet management, render that view
+  if (showFleet) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <Button variant="outline" size="sm" onClick={() => setShowFleet(false)} className="rounded-none border-slate-300 flex-shrink-0 h-8 sm:h-9 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="font-bold text-green-900 text-sm sm:text-base truncate">Fleet Management</p>
+                <p className="text-xs text-black truncate hidden sm:block">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <FleetDashboard hideHeader={true} defaultCompany="Martin Builder" />
+        </main>
+      </div>
+    );
+  }
+
+  // If showing Gantt chart, render that view
+  if (showGanttChart) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <Button variant="outline" size="sm" onClick={() => setShowGanttChart(false)} className="rounded-none border-slate-300 flex-shrink-0 h-8 sm:h-9 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="font-bold text-green-900 text-sm sm:text-base truncate">All Jobs Schedule</p>
+                <p className="text-xs text-black truncate hidden sm:block">
+                  {profile?.username} • Foreman
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <JobGanttChart
+            showWeeks={false}
+            onJobSelect={(jobId) => {
+              // Load and select the job
+              supabase
+                .from('jobs')
+                .select('*')
+                .eq('id', jobId)
+                .single()
+                .then(({ data, error }) => {
+                  if (!error && data) {
+                    setSelectedJob(data);
+                    setShowGanttChart(false);
+                  }
+                });
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // If showing unavailable calendar, render that view
+  if (showUnavailableCalendar) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-6 sm:h-8 w-auto flex-shrink-0"
+              />
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="text-xs text-black font-semibold truncate">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <UnavailableCalendar
+            userId={profile?.id || ''}
+            onBack={() => setShowUnavailableCalendar(false)}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // If showing calendar page, render that view
+  if (showCalendarPage) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setShowCalendarPage(false)} className="rounded-none border-slate-300 flex-shrink-0 h-8 sm:h-9 px-2 sm:px-3">
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+              <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+                <p className="font-bold text-green-900 text-sm sm:text-base truncate">Calendar</p>
+                <p className="text-xs text-black truncate hidden sm:block">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <div className="mb-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                setShowCalendarPage(false);
+                setCalendarJobId(undefined);
+              }}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Jobs
+            </Button>
+          </div>
+          <MasterCalendar 
+            jobId={calendarJobId}
+            onJobSelect={(jobId) => {
+              // Load and select the job
+              supabase
+                .from('jobs')
+                .select('*')
+                .eq('id', jobId)
+                .single()
+                .then(({ data, error }) => {
+                  if (!error && data) {
+                    setSelectedJob(data);
+                    setShowCalendarPage(false);
+                    setCalendarJobId(undefined);
+                  }
+                });
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // If showing time history, render that view
+  if (showTimeHistory) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
             <div className="flex items-center gap-3">
               <img 
                 src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
                 alt="Martin Builder" 
                 className="h-8 w-auto"
               />
-              <div className="border-l pl-3">
-                <p className="text-xs text-muted-foreground">
+              <div className="border-l border-slate-300 pl-3">
+                <p className="text-xs text-black font-semibold">
                   {profile?.username} • Crew
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowCalendarPage(true)}
+                className="relative h-8 sm:h-9 w-8 sm:w-9 text-black hover:bg-slate-100 rounded-none"
+              >
+                <CalendarIcon className="w-4 sm:w-5 h-4 sm:h-5" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </header>
-
-        {/* Active Timers Alert */}
-        {activeTimers.length > 0 && (
-          <div className="bg-success text-success-foreground p-3 text-center text-sm font-medium">
-            {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
-          </div>
         )}
 
-        {/* Main Content - Job Selection */}
-        <main className="container mx-auto px-4 py-6">
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-bold mb-2">Select a Job</h2>
-            </div>
-            <JobSelector onSelectJob={handleJobSelect} userId={profile?.id || ''} />
-          </div>
+        <main className="container mx-auto px-2 sm:px-4 py-3 sm:py-6">
+          <MyTimeHistory
+            userId={profile?.id || ''}
+            onBack={() => setShowTimeHistory(false)}
+          />
         </main>
       </div>
     );
   }
 
+  // If no job selected, show job selector
+  if (!selectedJob) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        {!hideHeader && (
+        <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+          <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-0">
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
+                alt="Martin Builder" 
+                className="h-8 w-auto"
+              />
+              <div className="border-l border-slate-300 pl-3">
+                <p className="text-xs text-black font-semibold">
+                  {profile?.username} • Crew
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowCalendarPage(true)}
+                className="relative h-8 sm:h-9 w-8 sm:w-9 text-black hover:bg-slate-100 rounded-none"
+              >
+                <CalendarIcon className="w-4 sm:w-5 h-4 sm:h-5" />
+              </Button>
+              <NotificationBell
+                onNotificationClick={(notification) => {
+                  console.log('Crew notification clicked:', notification);
+                  
+                  // Navigate based on notification type
+                  if (notification.type === 'document_revision') {
+                    // If we have a job selected and it matches the notification job
+                    if (selectedJob?.id === notification.job_id) {
+                      setActiveTab('documents');
+                      setDocumentTab('documents');
+                    } else {
+                      // Load the job first
+                      supabase
+                        .from('jobs')
+                        .select('*')
+                        .eq('id', notification.job_id)
+                        .single()
+                        .then(({ data, error }) => {
+                          if (!error && data) {
+                            setSelectedJob(data);
+                            setActiveTab('documents');
+                            setDocumentTab('documents');
+                          }
+                        });
+                    }
+                    toast.info('New document revision available');
+                  }
+                }}
+                onViewAll={() => {
+                  toast.info('View all notifications');
+                }}
+              />
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        )}
+
+        {/* Active Timers Alert */}
+        {activeTimers.length > 0 && (
+          <div className="bg-orange-500 text-white p-2 sm:p-3 text-center text-xs sm:text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
+            {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
+          </div>
+        )}
+
+        {/* Main Content - Job Selection */}
+        <main className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 pb-32">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg sm:text-2xl font-bold text-green-900 tracking-tight">Select a Job</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCalendarPage(true)}
+                className="flex items-center gap-1 sm:gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black h-8 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0"
+              >
+                <CalendarIcon className="w-3 sm:w-4 h-3 sm:h-4 text-green-900" />
+                <span className="hidden sm:inline">All Events</span>
+                <span className="sm:hidden">Events</span>
+              </Button>
+            </div>
+            
+            <div className="space-y-3 sm:space-y-4">
+              {isForeman && (
+                <Button
+                  onClick={() => setShowGanttChart(true)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full flex items-center gap-2 rounded-none border-slate-300 hover:bg-slate-100 text-black font-semibold mb-3 sm:mb-4 h-9 sm:h-10 text-xs sm:text-sm"
+                >
+                  <BarChart3 className="w-4 h-4 text-green-900" />
+                  <span className="hidden sm:inline">View All Jobs Schedule</span>
+                  <span className="sm:hidden">Jobs Schedule</span>
+                </Button>
+              )}
+              
+              <JobSelector 
+                onSelectJob={handleJobSelect} 
+                userId={profile?.id || ''}
+                userRole={profile?.role}
+                onShowJobCalendar={(job) => {
+                  setCalendarJobId(job.id);
+                  setShowCalendarPage(true);
+                }}
+                onSelectJobForMaterials={handleJobSelectForMaterials}
+                onSelectJobForPullMaterials={handleJobSelectForPullMaterials}
+              />
+            </div>
+          </div>
+        </main>
+
+        {/* Fixed Bottom Action Bar */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg z-10">
+          <div className="w-full px-0 py-2 sm:py-3 space-y-1.5 sm:space-y-2">
+            {/* Time Clock Button - Full width edge to edge */}
+            <QuickTimeEntry 
+              userId={profile?.id || ''} 
+              onSuccess={loadActiveTimers}
+              onBack={() => {
+                // Return to jobs page (already here, but this ensures state is clean)
+                setSelectedJob(null);
+                setActiveTab('timer');
+              }}
+            />
+            
+            {/* Grid layout for shop materials, time off calendar, fleet, and my time button */}
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2 px-2 sm:px-4">
+              {/* Shop Materials Button - Leftmost */}
+              <Button
+                onClick={() => setShowShopMaterials(true)}
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-1.5 sm:px-2 py-2 h-auto rounded-none font-semibold"
+              >
+                <Package className="w-3 h-3 mr-0.5 sm:mr-1" />
+                Shop
+              </Button>
+              
+              {/* Time Off Calendar Button - Left side */}
+              <Button
+                onClick={() => setShowUnavailableCalendar(true)}
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-1.5 sm:px-2 py-2 h-auto rounded-none font-semibold"
+              >
+                <CalendarIcon className="w-3 h-3 mr-0.5 sm:mr-1" />
+                Time Off
+              </Button>
+              
+              {/* Fleet Management Button - Center */}
+              <Button
+                onClick={() => setShowFleet(true)}
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-1.5 sm:px-2 py-2 h-auto rounded-none font-semibold"
+              >
+                <Truck className="w-3 h-3 mr-0.5 sm:mr-1" />
+                Fleet
+              </Button>
+              
+              {/* My Time History Button - Right side */}
+              <Button
+                onClick={() => setShowTimeHistory(true)}
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-black hover:bg-slate-100 hover:text-green-900 px-1.5 sm:px-2 py-2 h-auto rounded-none font-semibold"
+              >
+                <History className="w-3 h-3 mr-0.5 sm:mr-1" />
+                My Time
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Reload job data function
+  const reloadJobData = async () => {
+    if (!selectedJob) return;
+    
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', selectedJob.id)
+      .single();
+    
+    if (!error && data) {
+      setJobData(data);
+      setSelectedJob(data);
+    }
+  };
+
   // Job selected - show tabbed interface
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
       {/* Header */}
-      <header className="bg-card border-b sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      {!hideHeader && (
+      <header className="bg-white border-b-2 border-slate-300 sticky top-0 z-10 shadow-sm">
+        <div className="w-full max-w-full px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <img 
               src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
               alt="Martin Builder" 
-              className="h-8 w-auto"
+              className="h-6 sm:h-8 w-auto flex-shrink-0"
             />
-            <div className="border-l pl-3">
-              <p className="text-xs text-muted-foreground">
+            <div className="border-l border-slate-300 pl-2 sm:pl-3 min-w-0">
+              <p className="text-xs text-black font-semibold truncate">
                 {profile?.username} • Crew
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
-            <LogOut className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <NotificationBell
+              jobId={selectedJob?.id}
+              onNotificationClick={(notification) => {
+                console.log('Crew notification clicked:', notification);
+                
+                // Navigate based on notification type
+                if (notification.type === 'document_revision') {
+                  setActiveTab('documents');
+                  setDocumentTab('documents');
+                } else if (notification.type === 'material_request' || notification.type === 'material_status') {
+                  setActiveTab('materials');
+                }
+                toast.info('Navigating to ' + notification.type);
+              }}
+              onViewAll={() => {
+                toast.info('View all notifications');
+              }}
+            />
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-black hover:bg-slate-100 rounded-none h-8 sm:h-9 px-2 sm:px-3">
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </header>
+      )}
 
       {/* Active Timers Alert */}
       {activeTimers.length > 0 && (
-        <div className="bg-success text-success-foreground p-3 text-center text-sm font-medium">
+        <div className="bg-orange-500 text-white p-2 sm:p-3 text-center text-xs sm:text-sm font-bold tracking-wide rounded-none border-b-2 border-slate-300">
           {activeTimers.length} timer{activeTimers.length > 1 ? 's' : ''} running
         </div>
       )}
 
       {/* Job Header */}
-      <div className="bg-card border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={handleBackToJobs}>
-              <ArrowLeft className="w-4 h-4" />
+      <div className="bg-white border-b-2 border-slate-300">
+        <div className="w-full max-w-full px-2 sm:px-4 py-2 sm:py-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button variant="ghost" size="sm" onClick={handleBackToJobs} className="rounded-none hover:bg-slate-100 h-8 sm:h-9 px-2 sm:px-3 flex-shrink-0">
+              <ArrowLeft className="w-4 h-4 text-black" />
             </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">{selectedJob.name}</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base sm:text-xl font-bold text-green-900 tracking-tight truncate">{selectedJob.name}</h1>
             </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                setCalendarJobId(selectedJob.id); // Filter calendar to current job only
+                setShowCalendarPage(true);
+              }}
+              className="relative rounded-none hover:bg-slate-100 h-8 sm:h-9 px-2 sm:px-3 flex-shrink-0"
+            >
+              <CalendarIcon className="w-4 h-4 text-green-900" />
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Main Content - Tabbed Interface */}
-      <main className="container mx-auto px-4 py-6 pb-24">
-        {activeTab === 'timer' && (
-          <TimeTracker
-            job={selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleBackToJobs}
-            onTimerUpdate={loadActiveTimers}
-          />
-        )}
+      <main className="w-full max-w-full overflow-x-hidden">
+        <div className="px-2 sm:px-4 py-3 sm:py-8 pb-20 sm:pb-24">
+          {activeTab === 'timer' && (
+            <TimeTracker
+              job={selectedJob}
+              userId={profile?.id || ''}
+              onBack={handleBackToJobs}
+              onTimerUpdate={loadActiveTimers}
+            />
+          )}
 
-        {activeTab === 'photos' && (
-          <PhotoUpload
-            job={selectedJob}
-            userId={profile?.id || ''}
-            onBack={handleBackToJobs}
-          />
-        )}
+          {activeTab === 'photos' && (
+            <PhotoUpload
+              job={selectedJob}
+              userId={profile?.id || ''}
+              onBack={handleBackToJobs}
+            />
+          )}
 
-        {activeTab === 'documents' && (
-          <JobDetails
-            job={selectedJob}
-            onBack={handleBackToJobs}
-          />
-        )}
+          {activeTab === 'documents' && (
+            <JobDetails
+              job={selectedJob}
+              onBack={handleBackToJobs}
+              defaultTab="documents"
+            />
+          )}
 
-        {activeTab === 'history' && (
-          <ComponentHistory
-            job={selectedJob}
-            userId={profile?.id || ''}
-          />
-        )}
+          {activeTab === 'materials' && (
+            <JobDetails
+              job={selectedJob}
+              onBack={handleBackToJobs}
+              defaultTab={documentTab}
+            />
+          )}
+
+          {activeTab === 'schedule' && (
+            <JobSchedule
+              job={selectedJob}
+            />
+          )}
+        </div>
+
+
       </main>
 
-      {/* Bottom Navigation - 4 tabs for job features */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t shadow-lg">
-        <div className="container mx-auto px-4 py-2 grid grid-cols-4 gap-1">
+      {/* Bottom Navigation - 5 tabs for job features */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-300 shadow-lg overflow-hidden">
+        <div className="w-full max-w-full flex">
           <Button
-            variant={activeTab === 'timer' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target relative"
+            variant="ghost"
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 relative border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+              activeTab === 'timer' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('timer')}
           >
             {activeTimers.length > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-success rounded-full animate-pulse" />
+              <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
             )}
-            <Clock className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Timer</span>
+            <Clock className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Timer</span>
           </Button>
           <Button
-            variant={activeTab === 'photos' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            variant="ghost"
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+              activeTab === 'photos' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('photos')}
           >
-            <Camera className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Photos</span>
+            <Camera className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Photos</span>
           </Button>
           <Button
-            variant={activeTab === 'documents' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
+            variant="ghost"
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+              activeTab === 'documents' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
             onClick={() => setActiveTab('documents')}
           >
-            <Briefcase className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">Documents</span>
+            <Briefcase className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight">Docs</span>
           </Button>
           <Button
-            variant={activeTab === 'history' ? 'default' : 'ghost'}
-            className="flex-col h-auto py-3 touch-target"
-            onClick={() => setActiveTab('history')}
+            variant="ghost"
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 border-r border-slate-300 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+              activeTab === 'materials' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
+            onClick={() => setActiveTab('materials')}
           >
-            <History className="w-6 h-6 mb-1" />
-            <span className="text-xs font-medium">History</span>
+            <Package className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight text-center">Matl</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`flex-1 flex-col h-auto py-2 sm:py-3 rounded-none px-0.5 sm:px-1 min-h-[60px] ${
+              activeTab === 'schedule' ? 'bg-green-900 text-white hover:bg-green-800' : 'text-black hover:bg-slate-100'
+            }`}
+            onClick={() => setActiveTab('schedule')}
+          >
+            <CalendarIcon className="w-4 sm:w-5 h-4 sm:h-5 mb-0.5 sm:mb-1 flex-shrink-0" />
+            <span className="text-[9px] sm:text-xs font-bold leading-tight text-center">Sched</span>
           </Button>
         </div>
       </nav>
+
+      {/* PWA Install Button */}
+      <PWAInstallButton />
     </div>
   );
 }

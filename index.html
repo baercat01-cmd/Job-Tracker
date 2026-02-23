@@ -1,76 +1,98 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Martin Builder - FieldTrack Pro</title>
-    <meta name="description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
-    <meta name="keywords" content="martin builder, construction, time tracking, field logs, job management, daily reports, post-frame construction">
+    <title>Martin Builder OS</title>
     
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://fieldtrack.onspace.app">
-    <meta property="og:title" content="Martin Builder - FieldTrack Pro">
-    <meta property="og:description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
-    <meta property="og:image" content="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
-    
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:url" content="https://fieldtrack.onspace.app">
-    <meta name="twitter:title" content="Martin Builder - FieldTrack Pro">
-    <meta name="twitter:description" content="Martin Builder's professional construction time tracking and daily logs for field teams and office management.">
-    <meta name="twitter:image" content="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
-    
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#1a5632">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
-    <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
-    
-    <!-- Icons -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="apple-touch-icon" href="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png">
-  </head>
-  <body>
-    <div id="root"></div>
-    <noscript>
-      <div style="text-align: center; padding: 50px; font-family: sans-serif;">
-        <h1>JavaScript Required</h1>
-        <p>FieldTrack Pro requires JavaScript to be enabled in your browser.</p>
-      </div>
-    </noscript>
+    <link rel="icon" type="image/png" sizes="32x32" href="/martin-logo.png?v=2">
+    <link rel="icon" type="image/png" sizes="192x192" href="/martin-logo.png?v=2">
+    <link rel="icon" type="image/png" sizes="512x512" href="/martin-logo.png?v=2">
+    <link rel="shortcut icon" href="/martin-logo.png?v=2">
+    <meta name="theme-color" content="#4179bc">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="/martin-logo.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Clear caches but preserve user selection and data
-      (function() {
-        console.log('🧹 Smart cleanup - preserving user data');
-        
-        try {
-          // Preserve user selection and data
-          const userId = localStorage.getItem('fieldtrack_user_id');
-          const timerData = userId ? localStorage.getItem('fieldtrack_timers_' + userId) : null;
-          const draftData = localStorage.getItem('fieldtrack_daily_log_draft');
-          const photoQueue = localStorage.getItem('fieldtrack_photo_queue');
-          
-          // Clear ALL caches
-          if ('caches' in window) {
-            caches.keys().then(function(names) {
-              names.forEach(function(name) {
-                caches.delete(name);
-              });
+        // 1. Service Worker Registration (Immediate)
+        if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('PWA: Service Worker Active'))
+                    .catch(err => console.log('PWA: SW Error', err));
             });
-          }
-          
-          // Clear session storage only
-          sessionStorage.clear();
-        } catch (e) {
-          console.error('Cleanup error:', e);
         }
-        
-        window.APP_VERSION = '2.0.4';
-      })();
+
+        // 2. Install Logic
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Show the install UI
+            const banner = document.getElementById('pwa-install-banner');
+            if (banner) banner.style.display = 'flex';
+        });
+
+        window.addEventListener('appinstalled', () => {
+            const banner = document.getElementById('pwa-install-banner');
+            if (banner) banner.style.display = 'none';
+            deferredPrompt = null;
+        });
     </script>
+</head>
+<body class="bg-slate-50">
+    <!-- Clean Install Banner -->
+    <div id="pwa-install-banner" style="display:none;" class="fixed top-0 left-0 right-0 bg-[#4179bc] text-white p-4 flex justify-between items-center z-[100] shadow-xl">
+        <div class="flex items-center gap-3">
+            <img src="/martin-logo.png" class="w-10 h-10 rounded-lg border border-white/20" alt="Logo">
+            <div>
+                <p class="font-black text-sm uppercase tracking-tighter leading-none">Martin Builder OS</p>
+                <p class="text-[10px] opacity-80 font-bold">Install for full offline access</p>
+            </div>
+        </div>
+        <button id="pwa-install-action" class="bg-white text-[#4179bc] px-5 py-2 rounded-full text-[11px] font-black uppercase shadow-lg active:scale-95 transition-transform">
+            Install
+        </button>
+    </div>
+
+    <div id="root"></div>
+
+    <script>
+        // Handle both banner and any other install buttons
+        function handleInstall() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choice) => {
+                    if (choice.outcome === 'accepted') {
+                        const banner = document.getElementById('pwa-install-banner');
+                        if (banner) banner.style.display = 'none';
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                // Fallback for iOS or if event hasn't fired
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                if (isIOS) {
+                    alert("iOS: Tap 'Share' then 'Add to Home Screen'");
+                } else {
+                    alert("Please use Chrome Menu (⋮) > Install App");
+                }
+            }
+        }
+
+        document.getElementById('pwa-install-action')?.addEventListener('click', handleInstall);
+        
+        // Expose to React components
+        window.triggerPWAInstall = handleInstall;
+        window.isPWAInstallable = () => {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            return !isStandalone;
+        };
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
-  </body>
+</body>
 </html>

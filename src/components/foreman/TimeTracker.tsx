@@ -15,9 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin } from 'lucide-react';
+import { ArrowLeft, Play, Pause, StopCircle, Clock, Users, Edit, Plus, MapPin, Search, ChevronDown, ChevronRight, Camera, X, Target, TrendingUp, ListChecks, CheckCircle2, Calendar, History } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import type { Job, Component } from '@/types';
+import { createNotification } from '@/lib/notifications';
+import type { Job, Component, CompletedTask } from '@/types';
+import { getLocalDateString } from '@/lib/utils';
+import { MyTimeHistory } from './MyTimeHistory';
 
 interface LocalTimer {
   id: string;
@@ -29,6 +33,7 @@ interface LocalTimer {
   totalElapsedMs: number;
   crewCount: number;
   state: 'running' | 'paused';
+  workerNames: string[];
 }
 
 interface Worker {
@@ -49,12 +54,21 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [localTimers, setLocalTimers] = useState<LocalTimer[]>([]);
   const [selectedComponent, setSelectedComponent] = useState('');
-  const [crewCount, setCrewCount] = useState('0');
   const [loading, setLoading] = useState(false);
+  const [componentSearch, setComponentSearch] = useState('');
+  const [showComponentDropdown, setShowComponentDropdown] = useState(false);
+  const [totalJobHours, setTotalJobHours] = useState(0);
+  const [totalComponentHours, setTotalComponentHours] = useState(0);
+  const [totalClockInHours, setTotalClockInHours] = useState(0);
   
-  // Mode selection: 'count' or 'workers'
-  const [entryMode, setEntryMode] = useState<'count' | 'workers'>('count');
-  const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
+  // Entry mode selection - start with none (show button)
+  const [entryMode, setEntryMode] = useState<'none' | 'timer' | 'manual'>('none');
+  
+  // Timer start mode and selection
+  const [timerMode, setTimerMode] = useState<'count' | 'workers'>('workers');
+  const [timerCrewCount, setTimerCrewCount] = useState('0');
+  const [timerSelectedWorkers, setTimerSelectedWorkers] = useState<string[]>([]);
+  const [showTimerWorkers, setShowTimerWorkers] = useState(false);
   
   // Review modal state
   const [reviewTimer, setReviewTimer] = useState<LocalTimer | null>(null);
@@ -62,17 +76,35 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
   const [reviewCrewCount, setReviewCrewCount] = useState('0');
   const [reviewSelectedWorkers, setReviewSelectedWorkers] = useState<string[]>([]);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [showReviewWorkers, setShowReviewWorkers] = useState(false);
   
-  // Manual entry modal
+  // Manual entry modal - WITH WIZARD STEP STATE
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualStep, setManualStep] = useState(1); // Wizard step: 1=Component, 2=Time, 3=People, 4=Notes&Photos
   const [manualComponent, setManualComponent] = useState('');
-  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualDate, setManualDate] = useState(getLocalDateString());
   const [manualHours, setManualHours] = useState('0');
   const [manualMinutes, setManualMinutes] = useState('0');
-  const [manualMode, setManualMode] = useState<'count' | 'workers'>('count');
+  const [manualMode, setManualMode] = useState<'count' | 'workers'>('workers');
   const [manualCrewCount, setManualCrewCount] = useState('0');
   const [manualSelectedWorkers, setManualSelectedWorkers] = useState<string[]>([]);
   const [manualNotes, setManualNotes] = useState('');
+  const [showManualWorkers, setShowManualWorkers] = useState(false);
+  const [manualComponentSearch, setManualComponentSearch] = useState('');
+  const [showManualComponentDropdown, setShowManualComponentDropdown] = useState(false);
+  const [manualPhotos, setManualPhotos] = useState<File[]>([]);
+  const [manualPhotoUrls, setManualPhotoUrls] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Completed tasks tracking
+  const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
+  const [completingTask, setCompletingTask] = useState<Component | null>(null);
+  const [completionDate, setCompletionDate] = useState(getLocalDateString());
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [savingCompletion, setSavingCompletion] = useState(false);
+  
+  // Time History view state
+  const [showTimeHistory, setShowTimeHistory] = useState(false);
   
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -80,6 +112,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     loadComponents();
     loadWorkers();
     loadLocalTimers();
+    loadTotalComponentHours();
+    loadTotalClockInHours();
+    loadCompletedTasks();
     
     // Start tick interval for live timer updates
     tickIntervalRef.current = setInterval(() => {
@@ -141,6 +176,139 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     }
   }
 
+  async function loadTotalComponentHours() {
+    try {
+      // Only count component-level time entries (not job clock-in/out)
+      const { data, error } = await supabase
+        .from('time_entries')
+        .select('total_hours, crew_count')
+        .eq('job_id', job.id)
+        .not('component_id', 'is', null) // Only component time
+        .not('total_hours', 'is', null);
+
+      if (error) throw error;
+
+      const totalManHours = (data || []).reduce((sum, entry) => 
+        sum + ((entry.total_hours || 0) * (entry.crew_count || 1)), 0
+      );
+
+      setTotalComponentHours(totalManHours);
+    } catch (error) {
+      console.error('Error loading total component hours:', error);
+    }
+  }
+
+  async function loadTotalClockInHours() {
+    try {
+      // Only count clock-in hours (where component_id IS NULL)
+      const { data, error } = await supabase
+        .from('time_entries')
+        .select('total_hours, crew_count')
+        .eq('job_id', job.id)
+        .is('component_id', null) // Only clock-in time
+        .not('total_hours', 'is', null);
+
+      if (error) throw error;
+
+      const totalManHours = (data || []).reduce((sum, entry) => 
+        sum + ((entry.total_hours || 0) * (entry.crew_count || 1)), 0
+      );
+
+      setTotalClockInHours(totalManHours);
+    } catch (error) {
+      console.error('Error loading total clock-in hours:', error);
+    }
+  }
+
+  async function loadCompletedTasks() {
+    try {
+      const { data, error } = await supabase
+        .from('completed_tasks')
+        .select('*')
+        .eq('job_id', job.id);
+
+      if (error) throw error;
+      setCompletedTasks(data || []);
+    } catch (error) {
+      console.error('Error loading completed tasks:', error);
+    }
+  }
+
+  function isComponentCompleted(componentId: string): boolean {
+    return completedTasks.some(task => task.component_id === componentId);
+  }
+
+  function getComponentCompletionDate(componentId: string): string | null {
+    const task = completedTasks.find(task => task.component_id === componentId);
+    return task ? task.completed_date : null;
+  }
+
+  function openCompleteTaskDialog(component: Component) {
+    setCompletingTask(component);
+    setCompletionDate(getLocalDateString());
+    setCompletionNotes('');
+  }
+
+  async function markTaskComplete() {
+    if (!completingTask) return;
+
+    setSavingCompletion(true);
+
+    try {
+      const { error } = await supabase
+        .from('completed_tasks')
+        .insert({
+          job_id: job.id,
+          component_id: completingTask.id,
+          completed_date: completionDate,
+          marked_by: userId,
+          notes: completionNotes || null,
+        });
+
+      if (error) throw error;
+
+      toast.success(`${completingTask.name} marked as complete`);
+      await loadCompletedTasks();
+      setCompletingTask(null);
+
+      // Create notification
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'task_completed',
+        brief: `Task completed: ${completingTask.name} on ${new Date(completionDate).toLocaleDateString()}`,
+        referenceId: completingTask.id,
+        referenceData: {
+          componentName: completingTask.name,
+          completedDate: completionDate,
+        },
+      });
+    } catch (error: any) {
+      toast.error('Failed to mark task as complete');
+      console.error(error);
+    } finally {
+      setSavingCompletion(false);
+    }
+  }
+
+  async function unmarkTaskComplete(componentId: string) {
+    try {
+      const { error } = await supabase
+        .from('completed_tasks')
+        .delete()
+        .eq('job_id', job.id)
+        .eq('component_id', componentId);
+
+      if (error) throw error;
+
+      toast.success('Task unmarked as complete');
+      await loadCompletedTasks();
+    } catch (error: any) {
+      toast.error('Failed to unmark task');
+      console.error(error);
+    }
+  }
+
   async function loadComponents() {
     // Load components assigned to this job
     const jobComponents = Array.isArray(job.components) ? job.components : [];
@@ -161,7 +329,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         return;
       }
 
-      setComponents(data || []);
+      // Sort components: tasks first, then alphabetically
+      const sortedComponents = (data || []).sort((a, b) => {
+        const aIsTask = jobComponents.find(jc => jc.id === a.id)?.isTask || false;
+        const bIsTask = jobComponents.find(jc => jc.id === b.id)?.isTask || false;
+        
+        if (aIsTask && !bIsTask) return -1;
+        if (!aIsTask && bIsTask) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      setComponents(sortedComponents);
     } else {
       // Fallback: load all active components if job has no components assigned
       const { data, error } = await supabase
@@ -179,6 +357,11 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     }
   }
 
+  function isComponentTask(componentId: string): boolean {
+    const jobComponents = Array.isArray(job.components) ? job.components : [];
+    return jobComponents.find(c => c.id === componentId)?.isTask || false;
+  }
+
   function startTimer() {
     if (!selectedComponent) {
       toast.error('Please select a component');
@@ -188,6 +371,21 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     const component = components.find(c => c.id === selectedComponent);
     if (!component) return;
 
+    // Determine crew count and worker names based on mode
+    let finalCrewCount: number;
+    let finalWorkerNames: string[];
+    
+    if (timerMode === 'workers') {
+      // If no workers selected, default to just the user (crew count = 1)
+      finalWorkerNames = timerSelectedWorkers
+        .map(workerId => workers.find(w => w.id === workerId)?.name)
+        .filter((name): name is string => !!name);
+      finalCrewCount = finalWorkerNames.length + 1; // +1 for the person logging
+    } else {
+      finalCrewCount = (parseInt(timerCrewCount) || 0) + 1; // +1 for the person logging
+      finalWorkerNames = [];
+    }
+
     const newTimer: LocalTimer = {
       id: crypto.randomUUID(),
       jobId: job.id,
@@ -196,8 +394,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       startTime: new Date().toISOString(),
       pauseTime: null,
       totalElapsedMs: 0,
-      crewCount: (parseInt(crewCount) || 0) + 1, // +1 for the person logging
+      crewCount: finalCrewCount,
       state: 'running',
+      workerNames: finalWorkerNames,
     };
 
     const updatedTimers = [...localTimers, newTimer];
@@ -205,7 +404,8 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     
     toast.success(`Timer started for ${component.name}`);
     setSelectedComponent('');
-    setCrewCount('0');
+    setTimerCrewCount('0');
+    setTimerSelectedWorkers([]);
     onTimerUpdate();
   }
 
@@ -263,9 +463,22 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     };
     
     setReviewTimer(timerWithFinalTime);
-    setReviewMode('count');
-    setReviewCrewCount(timer.crewCount.toString());
-    setReviewSelectedWorkers([]);
+    
+    // Pre-populate with timer's worker data
+    if (timer.workerNames && timer.workerNames.length > 0) {
+      setReviewMode('workers');
+      // Convert worker names back to IDs
+      const workerIds = timer.workerNames
+        .map(name => workers.find(w => w.name === name)?.id)
+        .filter((id): id is string => !!id);
+      setReviewSelectedWorkers(workerIds);
+      setReviewCrewCount('0');
+    } else {
+      setReviewMode('count');
+      setReviewCrewCount((timer.crewCount - 1).toString()); // -1 to show additional crew
+      setReviewSelectedWorkers([]);
+    }
+    
     setReviewNotes('');
   }
 
@@ -288,7 +501,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     
     try {
       const totalHours = reviewTimer.totalElapsedMs / (1000 * 60 * 60);
-      const roundedHours = Math.round(totalHours * 100) / 100; // Round to 2 decimals
+      const roundedHours = Math.round(totalHours * 4) / 4; // Round to nearest 0.25 hour
       
       // Determine crew count and worker names based on mode
       let finalCrewCount: number;
@@ -323,12 +536,29 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
       if (error) throw error;
 
+      // Create notification for office
+      const component = components.find(c => c.id === reviewTimer.componentId);
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'time_entry',
+        brief: `Time entry: ${roundedHours.toFixed(2)}h on ${component?.name || 'Unknown Component'} with ${finalCrewCount} crew member${finalCrewCount > 1 ? 's' : ''}`,
+        referenceId: reviewTimer.id,
+        referenceData: {
+          componentName: component?.name,
+          hours: roundedHours,
+          crewCount: finalCrewCount,
+        },
+      });
+
       // Remove timer from local storage
       const updatedTimers = localTimers.filter(t => t.id !== reviewTimer.id);
       saveLocalTimers(updatedTimers);
       
       toast.success(`Time entry saved: ${roundedHours.toFixed(2)} hours`);
       setReviewTimer(null);
+      loadTotalComponentHours(); // Reload component time
+      loadTotalClockInHours(); // Reload clock-in time
       onTimerUpdate();
     } catch (error: any) {
       toast.error('Failed to save time entry');
@@ -370,44 +600,97 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
       let finalWorkerNames: string[];
       
       if (manualMode === 'workers') {
-        // Get worker names from selected IDs
+        // Get worker names from selected IDs (do NOT include the user)
         finalWorkerNames = manualSelectedWorkers
           .map(workerId => workers.find(w => w.id === workerId)?.name)
           .filter((name): name is string => !!name);
-        // +1 for the person logging the time
-        finalCrewCount = finalWorkerNames.length + 1;
+        // Crew count is just the selected workers
+        finalCrewCount = finalWorkerNames.length;
       } else {
-        // Use crew count mode: add +1 for the person logging
-        finalCrewCount = (parseInt(manualCrewCount) || 0) + 1;
+        // Use crew count mode (do NOT add +1 for the person logging)
+        finalCrewCount = parseInt(manualCrewCount) || 0;
         finalWorkerNames = [];
       }
       
-      const { error } = await supabase.from('time_entries').insert({
+      const { data: timeEntry, error } = await supabase.from('time_entries').insert({
         job_id: job.id,
         component_id: manualComponent,
         user_id: userId,
         start_time: entryDate.toISOString(),
         end_time: entryDate.toISOString(),
-        total_hours: Math.round(hours * 100) / 100,
+        total_hours: Math.round(hours * 4) / 4,
         crew_count: finalCrewCount,
         is_manual: true,
         is_active: false,
         notes: manualNotes || null,
         worker_names: finalWorkerNames,
-      });
+      }).select().single();
 
       if (error) throw error;
 
-      toast.success(`Manual entry saved: ${hours.toFixed(2)} hours`);
-      setShowManualEntry(false);
+      // Upload photos if any
+      if (manualPhotos.length > 0 && timeEntry) {
+        for (const photo of manualPhotos) {
+          const fileExt = photo.name.split('.').pop();
+          const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const filePath = `${job.id}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('job-files')
+            .upload(filePath, photo);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('job-files')
+            .getPublicUrl(filePath);
+
+          // Create photo record linked to time entry
+          await supabase.from('photos').insert({
+            job_id: job.id,
+            time_entry_id: timeEntry.id,
+            component_id: manualComponent,
+            photo_url: publicUrl,
+            photo_date: manualDate,
+            uploaded_by: userId,
+            caption: `Time entry photo - ${hours.toFixed(2)}h`,
+          });
+        }
+      }
+
+      // Create notification for office
+      const component = components.find(c => c.id === manualComponent);
+      const photoText = manualPhotos.length > 0 ? ` with ${manualPhotos.length} photo${manualPhotos.length > 1 ? 's' : ''}` : '';
+      await createNotification({
+        jobId: job.id,
+        createdBy: userId,
+        type: 'time_entry',
+        brief: `Manual time entry: ${hours.toFixed(2)}h on ${component?.name || 'Unknown Component'} with ${finalCrewCount} crew member${finalCrewCount > 1 ? 's' : ''}${photoText}`,
+        referenceData: {
+          componentName: component?.name,
+          hours: Math.round(hours * 100) / 100,
+          crewCount: finalCrewCount,
+          manual: true,
+          photoCount: manualPhotos.length,
+        },
+      });
+
+      toast.success(`Manual entry saved: ${hours.toFixed(2)} hours${photoText}`);
+      setEntryMode('none');
+      setManualStep(1); // Reset wizard
       setManualComponent('');
-      setManualDate(new Date().toISOString().split('T')[0]);
+      setManualComponentSearch('');
+      setManualDate(getLocalDateString());
       setManualHours('0');
       setManualMinutes('0');
-      setManualMode('count');
+      setManualMode('workers');
       setManualCrewCount('0');
       setManualSelectedWorkers([]);
       setManualNotes('');
+      setManualPhotos([]);
+      setManualPhotoUrls([]);
+      loadTotalComponentHours(); // Reload component time
+      loadTotalClockInHours(); // Reload clock-in time
       onTimerUpdate();
     } catch (error: any) {
       toast.error('Failed to save manual entry');
@@ -415,6 +698,22 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     } finally {
       setLoading(false);
     }
+  }
+
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Create preview URLs
+    const urls = files.map(file => URL.createObjectURL(file));
+    setManualPhotoUrls(prev => [...prev, ...urls]);
+    setManualPhotos(prev => [...prev, ...files]);
+  }
+
+  function removePhoto(index: number) {
+    URL.revokeObjectURL(manualPhotoUrls[index]);
+    setManualPhotoUrls(prev => prev.filter((_, i) => i !== index));
+    setManualPhotos(prev => prev.filter((_, i) => i !== index));
   }
 
   function formatElapsedTime(timer: LocalTimer): string {
@@ -439,48 +738,216 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
     return hours.toFixed(2);
   }
 
+  // Calculate progress based on clock-in time (matches office project progress)
+  const estimatedHours = job.estimated_hours || 0;
+  const progressPercent = estimatedHours > 0 ? Math.min((totalClockInHours / estimatedHours) * 100, 100) : 0;
+  const isOverBudget = totalClockInHours > estimatedHours && estimatedHours > 0;
+  const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
+
+  // If showing time history, render that instead
+  if (showTimeHistory) {
+    return (
+      <MyTimeHistory
+        userId={userId}
+        onBack={() => {
+          setShowTimeHistory(false);
+          loadTotalComponentHours(); // Reload in case they edited entries
+          loadTotalClockInHours();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* Manual Entry Button - Prominent with light green */}
-      <Button
-        onClick={() => setShowManualEntry(true)}
-        size="lg"
-        className="w-full touch-target border-2 bg-green-800/30 hover:bg-green-800/40 text-green-900 border-green-600/40"
-      >
-        <Edit className="w-5 h-5 mr-2" />
-        Manual Time Entry
-      </Button>
+      {/* Time Tracking Summary */}
+      <Card className="border-2 border-green-900 rounded-none bg-white">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Target className="w-4 h-4 text-green-900" />
+            Project Progress (Clock-In Hours)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Progress Bar (Clock-In Hours) */}
+          {estimatedHours > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Budget Progress</span>
+                <span className={`font-bold text-lg ${
+                  isOverBudget ? 'text-orange-500' : 'text-green-900'
+                }`}>
+                  {progressPercent.toFixed(0)}%
+                </span>
+              </div>
+              <Progress value={progressPercent} className="h-3 rounded-none" />
+              {isOverBudget ? (
+                <div className="bg-orange-50 border-2 border-orange-500 rounded-none p-3 text-center">
+                  <p className="text-sm text-orange-600 font-bold flex items-center justify-center gap-1">
+                    <TrendingUp className="w-4 h-4" />
+                    Over budget by {(totalClockInHours - estimatedHours).toFixed(2)}h
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-green-50 border-2 border-green-900 rounded-none p-3 text-center">
+                  <p className="text-sm text-green-900 font-bold">
+                    {remainingHours.toFixed(2)}h remaining
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add Component Button - Show at top when no mode selected */}
+      {entryMode === 'none' && (
+        <Card className="border-2 border-green-900 shadow-md rounded-none bg-white">
+          <CardContent className="py-6">
+            <Button
+              onClick={() => {
+                setShowManualEntry(true);
+                setManualStep(1);
+              }}
+              size="lg"
+              className="w-full h-16 text-lg bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
+            >
+              <Plus className="w-6 h-6 mr-2" />
+              Add Component
+            </Button>
+            <p className="text-sm text-muted-foreground text-center mt-3">
+              Track time worked on job components
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Task Components - Show Prominently */}
+      {entryMode === 'none' && components.some(c => isComponentTask(c.id)) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ListChecks className="w-5 h-5 text-green-900" />
+            <h3 className="font-bold text-lg">Active Tasks</h3>
+          </div>
+          {components
+            .filter(c => isComponentTask(c.id))
+            .map((component) => (
+              <Card key={component.id} className="border-2 border-green-900 shadow-md rounded-none bg-slate-50">
+                <CardContent className="py-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-lg">{component.name}</p>
+                        {component.description && (
+                          <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
+                        )}
+                        {isComponentCompleted(component.id) && (
+                          <div className="flex items-center gap-2 text-success mt-2">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="font-semibold">Completed</span>
+                            <span className="text-sm">- {new Date(getComponentCompletionDate(component.id)!).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                      </div>
+                      <Badge className="bg-green-900 text-white rounded-none">Task</Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {!isComponentCompleted(component.id) ? (
+                        <>
+                          <Button
+                            onClick={() => {
+                              setManualComponent(component.id);
+                              setShowManualEntry(true);
+                              setManualStep(1);
+                            }}
+                            className="w-full h-12 bg-green-900 text-white hover:bg-green-800 rounded-none font-bold"
+                          >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Log Time
+                          </Button>
+                          <Button
+                            onClick={() => openCompleteTaskDialog(component)}
+                            variant="outline"
+                            className="w-full h-12 border-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white rounded-none font-bold"
+                          >
+                            <CheckCircle2 className="w-5 h-5 mr-2" />
+                            Mark Complete
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="bg-green-50 border-2 border-green-600 rounded-none p-4 text-center">
+                            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-600" />
+                            <p className="font-bold text-green-600">Task Completed</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {new Date(getComponentCompletionDate(component.id)!).toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })}
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => unmarkTaskComplete(component.id)}
+                            variant="outline"
+                            className="w-full h-10 text-sm"
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            Unmark
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+        </div>
+      )}
 
       {/* Active Timers */}
       {localTimers.map((timer) => (
         <Card 
           key={timer.id} 
-          className={timer.state === 'running' ? 'border-success' : 'border-warning'}
+          className={timer.state === 'running' ? 'border-2 border-orange-500 shadow-lg rounded-none bg-orange-50' : 'border-2 border-slate-300 rounded-none bg-white'}
         >
-          <CardHeader className="pb-3">
+          <CardHeader className={timer.state === 'running' ? 'pb-3 bg-orange-500 border-b-2 border-orange-600' : 'pb-3 bg-slate-50 border-b-2 border-slate-300'}>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'text-success' : 'text-warning'}`} />
+              <CardTitle className={`text-lg flex items-center gap-2 font-bold ${timer.state === 'running' ? 'text-white' : 'text-green-900'}`}>
+                <Clock className={`w-5 h-5 ${timer.state === 'running' ? 'animate-pulse' : ''}`} />
                 {timer.componentName}
               </CardTitle>
-              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'}>
-                {timer.state === 'running' ? 'Running' : 'Paused'}
+              <Badge variant={timer.state === 'running' ? 'default' : 'secondary'} className={`rounded-none font-bold ${timer.state === 'running' ? 'bg-white text-orange-500' : 'bg-slate-200 text-black'}`}>
+                {timer.state === 'running' ? 'ACTIVE' : 'Paused'}
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-center py-4">
-              <div className="text-5xl font-mono font-bold tabular-nums">
+          <CardContent className="space-y-3 pt-4">
+            <div className={`text-center py-6 rounded-none border-2 ${timer.state === 'running' ? 'bg-white border-orange-500' : 'bg-slate-50 border-slate-300'}`}>
+              <div className={`text-6xl font-mono font-bold tabular-nums tracking-tight ${timer.state === 'running' ? 'text-orange-500' : 'text-green-900'}`}>
                 {formatElapsedTime(timer)}
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                {formatHoursDecimal(timer.totalElapsedMs + (timer.state === 'running' ? Date.now() - new Date(timer.startTime).getTime() : 0))} hours
+              <p className="text-sm text-black font-bold mt-3">
+                {formatHoursDecimal(timer.totalElapsedMs + (timer.state === 'running' ? Date.now() - new Date(timer.startTime).getTime() : 0))} hours total
               </p>
             </div>
             
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Users className="w-4 h-4" />
-              <span>{timer.crewCount} crew member{timer.crewCount > 1 ? 's' : ''}</span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Users className="w-4 h-4" />
+                <span>{timer.crewCount} crew member{timer.crewCount > 1 ? 's' : ''}</span>
+              </div>
+              
+              {timer.workerNames && timer.workerNames.length > 0 && (
+                <div className="flex flex-wrap gap-1 justify-center">
+                  {timer.workerNames.map((name, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-xs">
+                      {name}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="grid grid-cols-2 gap-2">
@@ -489,17 +956,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="outline"
                     onClick={() => pauseTimer(timer.id)}
-                    className="touch-target"
+                    className="touch-target rounded-none border-2 border-slate-300 bg-white hover:bg-slate-100 font-bold h-12"
                   >
-                    <Pause className="w-4 h-4 mr-2" />
+                    <Pause className="w-5 h-5 mr-2" />
                     Pause
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target"
+                    className="touch-target rounded-none font-bold h-12"
                   >
-                    <StopCircle className="w-4 h-4 mr-2" />
+                    <StopCircle className="w-5 h-5 mr-2" />
                     Stop
                   </Button>
                 </>
@@ -508,17 +975,17 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   <Button
                     variant="default"
                     onClick={() => resumeTimer(timer.id)}
-                    className="touch-target gradient-primary"
+                    className="touch-target bg-orange-500 text-white hover:bg-orange-600 rounded-none font-bold h-12"
                   >
-                    <Play className="w-4 h-4 mr-2" />
+                    <Play className="w-5 h-5 mr-2" />
                     Resume
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={() => openReviewModal(timer)}
-                    className="touch-target"
+                    className="touch-target rounded-none font-bold h-12"
                   >
-                    <StopCircle className="w-4 h-4 mr-2" />
+                    <StopCircle className="w-5 h-5 mr-2" />
                     Stop
                   </Button>
                 </>
@@ -528,61 +995,9 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </Card>
       ))}
 
-      {/* Start New Timer - Condensed */}
-      <Card>
-        <CardContent className="pt-6 space-y-3">
-          {components.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground py-4">
-              No components available for this job. Office staff can assign components.
-            </p>
-          ) : (
-            <>
-              <Select value={selectedComponent} onValueChange={setSelectedComponent}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select component to track" />
-                </SelectTrigger>
-                <SelectContent>
-                  {components.map((comp) => (
-                    <SelectItem key={comp.id} value={comp.id}>
-                      {comp.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Select value={crewCount} onValueChange={setCrewCount}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Additional Crew" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Just me (1 person)</SelectItem>
-                      {[...Array(19)].map((_, i) => (
-                        <SelectItem key={i + 1} value={(i + 1).toString()}>
-                          +{i + 1} crew ({i + 2} total)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  onClick={startTimer}
-                  disabled={loading || !selectedComponent}
-                  className="flex-[2] touch-target gradient-primary"
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Start Timer
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Review & Save Modal */}
       <Dialog open={!!reviewTimer} onOpenChange={() => setReviewTimer(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-none border-slate-300">
           <DialogHeader>
             <DialogTitle>Review Time Entry</DialogTitle>
           </DialogHeader>
@@ -633,7 +1048,7 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">You are always included in the count</p>
+                  <p className="text-sm text-muted-foreground">You are always included</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -641,31 +1056,56 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
                   {workers.length === 0 ? (
                     <p className="text-sm text-muted-foreground py-2">No workers available. Office staff can add workers.</p>
                   ) : (
-                    <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
-                      {workers.map((worker) => (
-                        <div key={worker.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`review-worker-${worker.id}`}
-                            checked={reviewSelectedWorkers.includes(worker.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setReviewSelectedWorkers([...reviewSelectedWorkers, worker.id]);
-                              } else {
-                                setReviewSelectedWorkers(reviewSelectedWorkers.filter(id => id !== worker.id));
-                              }
-                            }}
-                          />
-                          <Label htmlFor={`review-worker-${worker.id}`} className="cursor-pointer">
-                            {worker.name}
-                          </Label>
+                    <>
+                      {/* Toggle Button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowReviewWorkers(!showReviewWorkers)}
+                        className="w-full h-12 justify-between"
+                      >
+                        <span>
+                          {reviewSelectedWorkers.length > 0 
+                            ? `${reviewSelectedWorkers.length} worker${reviewSelectedWorkers.length > 1 ? 's' : ''} selected`
+                            : 'Select workers'}
+                        </span>
+                        {showReviewWorkers ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </Button>
+
+                      {/* Dropdown List */}
+                      {showReviewWorkers && (
+                        <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
+                          {workers.map((worker) => (
+                            <div key={worker.id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`review-worker-${worker.id}`}
+                                checked={reviewSelectedWorkers.includes(worker.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setReviewSelectedWorkers([...reviewSelectedWorkers, worker.id]);
+                                  } else {
+                                    setReviewSelectedWorkers(reviewSelectedWorkers.filter(id => id !== worker.id));
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={`review-worker-${worker.id}`} className="cursor-pointer">
+                                {worker.name}
+                              </Label>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {reviewSelectedWorkers.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {reviewSelectedWorkers.length} additional + you = {reviewSelectedWorkers.length + 1} total
-                    </p>
+                      )}
+                      
+                      {reviewSelectedWorkers.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {reviewSelectedWorkers.length} additional + you = {reviewSelectedWorkers.length + 1} total
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -709,80 +1149,264 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
         </DialogContent>
       </Dialog>
 
-      {/* Manual Entry Modal */}
-      <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
-        <DialogContent>
+      {/* Mark Task Complete Dialog */}
+      <Dialog open={!!completingTask} onOpenChange={() => setCompletingTask(null)}>
+        <DialogContent className="max-w-md rounded-none border-slate-300">
           <DialogHeader>
-            <DialogTitle>Manual Time Entry</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-success" />
+              Mark Task Complete
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="manual-component">Component *</Label>
-              <Select value={manualComponent} onValueChange={setManualComponent}>
-                <SelectTrigger id="manual-component">
-                  <SelectValue placeholder="Select component" />
-                </SelectTrigger>
-                <SelectContent>
-                  {components.map((comp) => (
-                    <SelectItem key={comp.id} value={comp.id}>
-                      {comp.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="manual-date">Date *</Label>
-              <Input
-                id="manual-date"
-                type="date"
-                value={manualDate}
-                onChange={(e) => setManualDate(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Time *</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="manual-hours" className="text-xs text-muted-foreground">Hours</Label>
-                  <Select value={manualHours} onValueChange={setManualHours}>
-                    <SelectTrigger id="manual-hours" className="text-center text-2xl font-mono h-16">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[...Array(25)].map((_, i) => (
-                        <SelectItem key={i} value={i.toString()}>
-                          {i.toString().padStart(2, '0')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="manual-minutes" className="text-xs text-muted-foreground">Minutes</Label>
-                  <Select value={manualMinutes} onValueChange={setManualMinutes}>
-                    <SelectTrigger id="manual-minutes" className="text-center text-2xl font-mono h-16">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => (
-                        <SelectItem key={min} value={min.toString()}>
-                          {min.toString().padStart(2, '0')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+          
+          {completingTask && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-none p-4 border-2 border-green-900">
+                <p className="font-bold text-lg">{completingTask.name}</p>
+                {completingTask.description && (
+                  <p className="text-sm text-muted-foreground mt-1">{completingTask.description}</p>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground text-center">Scroll to select hours and minutes</p>
+
+              <div className="space-y-2">
+                <Label htmlFor="completion-date" className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Completion Date *
+                </Label>
+                <Input
+                  id="completion-date"
+                  type="date"
+                  value={completionDate}
+                  onChange={(e) => setCompletionDate(e.target.value)}
+                  max={getLocalDateString()}
+                  className="h-12 text-base"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="completion-notes">Notes (Optional)</Label>
+                <Textarea
+                  id="completion-notes"
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  placeholder="Add any notes about completion..."
+                  rows={3}
+                  className="resize-none text-base"
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4 border-t">
+                <Button
+                  onClick={markTaskComplete}
+                  disabled={savingCompletion}
+                  className="h-12 text-base gradient-primary"
+                >
+                  {savingCompletion ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 mr-2" />
+                      Mark as Complete
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setCompletingTask(null)}
+                  disabled={savingCompletion}
+                  className="h-12 text-base"
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-            
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* My Time History Button - Small, at bottom */}
+      <div className="pb-4">
+        <Button
+          onClick={() => setShowTimeHistory(true)}
+          variant="ghost"
+          size="sm"
+          className="w-full text-muted-foreground hover:text-primary"
+        >
+          <History className="w-4 h-4 mr-2" />
+          View & Edit My Time History
+        </Button>
+      </div>
+
+      {/* Manual Entry Dialog - Multi-Step Wizard */}
+      <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
+        <DialogContent className="max-w-4xl max-h-[98vh] overflow-y-auto rounded-none border-slate-300">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5" />
+              Add Component Time - Step {manualStep} of 4
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Step 1: Select Component */}
+          {manualStep === 1 && (
             <div className="space-y-4">
               <div className="space-y-3">
-                <Label>Entry Mode</Label>
+                <Label htmlFor="manual-component" className="text-base font-semibold">Select Component *</Label>
+                <div className="border rounded-lg bg-card shadow-lg max-h-[75vh] overflow-y-auto">
+                  {components.map((component) => (
+                    <button
+                      key={component.id}
+                      type="button"
+                      className={`w-full text-left p-4 hover:bg-muted transition-colors border-b last:border-b-0 ${
+                        manualComponent === component.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''
+                      }`}
+                      onClick={() => {
+                        setManualComponent(component.id);
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{component.name}</p>
+                          {component.description && (
+                            <p className="text-sm text-muted-foreground mt-1">{component.description}</p>
+                          )}
+                        </div>
+                        {isComponentTask(component.id) && (
+                          <Badge className="bg-primary">Task</Badge>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  {components.length === 0 && (
+                    <div className="p-4 text-center text-muted-foreground">
+                      No components found
+                    </div>
+                  )}
+                </div>
+                {manualComponent && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                    <p className="text-sm text-muted-foreground">Selected:</p>
+                    <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowManualEntry(false);
+                    setManualStep(1);
+                    setManualComponent('');
+                    setManualComponentSearch('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => setManualStep(2)}
+                  disabled={!manualComponent}
+                  className="gradient-primary"
+                >
+                  Next: Set Time
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Set Date & Time */}
+          {manualStep === 2 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="manual-date" className="text-base font-semibold">Date *</Label>
+                <Input
+                  id="manual-date"
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  max={getLocalDateString()}
+                  className="h-12 text-base"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Time Worked *</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-hours">Hours</Label>
+                    <Select value={manualHours} onValueChange={setManualHours}>
+                      <SelectTrigger id="manual-hours" className="h-12 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...Array(13)].map((_, i) => (
+                          <SelectItem key={i} value={i.toString()}>
+                            {i} {i === 1 ? 'hour' : 'hours'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-minutes">Minutes</Label>
+                    <Select value={manualMinutes} onValueChange={setManualMinutes}>
+                      <SelectTrigger id="manual-minutes" className="h-12 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[0, 15, 30, 45].map((m) => (
+                          <SelectItem key={m} value={m.toString()}>
+                            {m} min
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Total: {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours
+                </p>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(1)}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => setManualStep(3)}
+                  disabled={(parseInt(manualHours) + parseInt(manualMinutes) / 60) <= 0}
+                  className="gradient-primary"
+                >
+                  Next: Set Crew
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Set Crew/Workers */}
+          {manualStep === 3 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Time: {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours on {new Date(manualDate).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Entry Mode</Label>
                 <RadioGroup value={manualMode} onValueChange={(v) => setManualMode(v as 'count' | 'workers')}>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="count" id="manual-mode-count" />
@@ -797,86 +1421,192 @@ export function TimeTracker({ job, userId, onBack, onTimerUpdate }: TimeTrackerP
 
               {manualMode === 'count' ? (
                 <div className="space-y-2">
-                  <Label htmlFor="manual-crew">Additional Crew</Label>
+                  <Label htmlFor="manual-crew">Number of Workers</Label>
                   <Select value={manualCrewCount} onValueChange={setManualCrewCount}>
-                    <SelectTrigger id="manual-crew">
+                    <SelectTrigger id="manual-crew" className="h-12 text-base">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Just me (1 person total)</SelectItem>
-                      {[...Array(19)].map((_, i) => (
+                      <SelectItem value="0">No workers (0 total)</SelectItem>
+                      {[...Array(20)].map((_, i) => (
                         <SelectItem key={i + 1} value={(i + 1).toString()}>
-                          +{i + 1} crew ({i + 2} total)
+                          {i + 1} worker{i + 1 > 1 ? 's' : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">You are always included in the count</p>
+                  <p className="text-sm text-muted-foreground">
+                    Select the total number of workers for this time entry
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label>Select Workers</Label>
+                  <Label className="text-base">Select Workers</Label>
                   {workers.length === 0 ? (
                     <p className="text-sm text-muted-foreground py-2">No workers available. Office staff can add workers.</p>
                   ) : (
-                    <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
-                      {workers.map((worker) => (
-                        <div key={worker.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`manual-worker-${worker.id}`}
-                            checked={manualSelectedWorkers.includes(worker.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
-                              } else {
-                                setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
-                              }
-                            }}
-                          />
-                          <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer">
-                            {worker.name}
-                          </Label>
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowManualWorkers(!showManualWorkers)}
+                        className="w-full h-12 justify-between"
+                      >
+                        <span>
+                          {manualSelectedWorkers.length > 0 
+                            ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length > 1 ? 's' : ''} selected`
+                            : 'Select workers'}
+                        </span>
+                        {showManualWorkers ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </Button>
+
+                      {showManualWorkers && (
+                        <div className="border rounded-lg p-3 max-h-[400px] overflow-y-auto space-y-2">
+                          {workers.map((worker) => (
+                            <div key={worker.id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`manual-worker-${worker.id}`}
+                                checked={manualSelectedWorkers.includes(worker.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setManualSelectedWorkers([...manualSelectedWorkers, worker.id]);
+                                  } else {
+                                    setManualSelectedWorkers(manualSelectedWorkers.filter(id => id !== worker.id));
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={`manual-worker-${worker.id}`} className="cursor-pointer">
+                                {worker.name}
+                              </Label>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {manualSelectedWorkers.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {manualSelectedWorkers.length} additional + you = {manualSelectedWorkers.length + 1} total
-                    </p>
+                      )}
+
+                      {manualSelectedWorkers.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {manualSelectedWorkers.length} worker{manualSelectedWorkers.length > 1 ? 's' : ''} selected
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(2)}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => setManualStep(4)}
+                  className="gradient-primary"
+                >
+                  Next: Add Notes
+                </Button>
+              </div>
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="manual-notes">Notes (Optional)</Label>
-              <Textarea
-                id="manual-notes"
-                value={manualNotes}
-                onChange={(e) => setManualNotes(e.target.value)}
-                placeholder="Add any notes..."
-                rows={3}
-              />
+          )}
+
+          {/* Step 4: Notes & Photos */}
+          {manualStep === 4 && (
+            <div className="space-y-4">
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4">
+                <p className="text-sm text-muted-foreground">Component:</p>
+                <p className="font-semibold">{components.find(c => c.id === manualComponent)?.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {parseInt(manualHours) + (parseInt(manualMinutes) / 60).toFixed(2)} hours • {' '}
+                  {manualMode === 'workers' 
+                    ? `${manualSelectedWorkers.length} worker${manualSelectedWorkers.length !== 1 ? 's' : ''}`
+                    : `${parseInt(manualCrewCount)} worker${parseInt(manualCrewCount) !== 1 ? 's' : ''}`}
+                  {' '} • {new Date(manualDate).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="manual-notes" className="text-base font-semibold">Notes (Optional)</Label>
+                <Textarea
+                  id="manual-notes"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="Add notes about this work..."
+                  rows={3}
+                  className="resize-none text-base"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Photos (Optional)</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-12"
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Add Photos
+                </Button>
+                {manualPhotoUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {manualPhotoUrls.map((url, index) => (
+                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden border">
+                        <img
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(index)}
+                          className="absolute top-1 right-1 bg-destructive text-white rounded-full p-1 hover:bg-destructive/90"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setManualStep(3)}
+                  disabled={loading}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={saveManualEntry}
+                  disabled={loading}
+                  className="gradient-primary"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Entry'
+                  )}
+                </Button>
+              </div>
             </div>
-            
-            <div className="flex gap-2 justify-end pt-4 border-t">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowManualEntry(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={saveManualEntry}
-                disabled={loading || !manualComponent}
-                className="gradient-primary"
-              >
-                {loading ? 'Saving...' : 'Save Entry'}
-              </Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

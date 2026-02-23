@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase } from 'lucide-react';
+import { User, Plus, Pencil, Trash2, ArrowLeft, Shield, Briefcase, DollarSign, Users, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserProfile } from '@/types';
 
@@ -22,7 +22,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [formData, setFormData] = useState({
     username: '',
-    role: 'crew' as 'crew' | 'office',
+    role: 'crew' as any,
   });
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
     setEditingUser(null);
     setFormData({
       username: '',
-      role: 'crew',
+      role: 'crew' as any,
     });
     setShowDialog(true);
   }
@@ -79,7 +79,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .from('user_profiles')
           .update({
             username: formData.username.trim(),
-            role: formData.role,
+            role: formData.role as any,
           })
           .eq('id', editingUser.id);
 
@@ -92,7 +92,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
           .insert({
             username: formData.username.trim(),
             email: null,
-            role: formData.role,
+            role: formData.role as any,
           });
 
         if (error) throw error;
@@ -189,16 +189,22 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                       {user.role === 'office' ? (
                         <Shield className="w-6 h-6 text-primary" />
+                      ) : user.role === 'payroll' ? (
+                        <DollarSign className="w-6 h-6 text-primary" />
+                      ) : user.role === 'shop' ? (
+                        <Package className="w-6 h-6 text-primary" />
                       ) : (
                         <Briefcase className="w-6 h-6 text-primary" />
                       )}
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold">{user.username || 'Unnamed User'}</p>
-                      <p className="text-sm text-muted-foreground capitalize">{user.role} Member</p>
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : user.role} Member
+                      </p>
                     </div>
-                    <Badge variant={user.role === 'office' ? 'default' : 'secondary'}>
-                      {user.role === 'office' ? 'Office' : 'Crew'}
+                    <Badge variant={user.role === 'office' ? 'default' : user.role === 'payroll' ? 'outline' : 'secondary'}>
+                      {user.role === 'office' ? 'Office' : user.role === 'payroll' ? 'Payroll' : user.role === 'shop' ? 'Shop' : 'Crew'}
                     </Badge>
                     <div className="flex gap-2">
                       <Button
@@ -255,7 +261,7 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <Label htmlFor="role">Role *</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'crew' | 'office') =>
+                onValueChange={(value: 'crew' | 'shop' | 'office' | 'payroll') =>
                   setFormData({ ...formData, role: value })
                 }
               >
@@ -269,10 +275,22 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
                       <span>Crew (Field User)</span>
                     </div>
                   </SelectItem>
+                  <SelectItem value="shop">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4" />
+                      <span>Shop</span>
+                    </div>
+                  </SelectItem>
                   <SelectItem value="office">
                     <div className="flex items-center gap-2">
                       <Shield className="w-4 h-4" />
                       <span>Office (Admin)</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="payroll">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      <span>Payroll</span>
                     </div>
                   </SelectItem>
                 </SelectContent>
@@ -280,6 +298,10 @@ export function AdminSetup({ onBack }: AdminSetupProps) {
               <p className="text-xs text-muted-foreground">
                 {formData.role === 'crew'
                   ? 'Crew users can track time, upload photos, and create daily logs'
+                  : formData.role === 'shop'
+                  ? 'Shop users can process materials, manage packages, and prepare items for job sites'
+                  : formData.role === 'payroll'
+                  ? 'Payroll users can view and export time entries for payroll processing'
                   : 'Office users have full access to manage jobs, users, and view all data'}
               </p>
             </div>

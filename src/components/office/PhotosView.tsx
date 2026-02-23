@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
 import { formatCoordinates } from '@/lib/geolocation';
 
 export function PhotosView() {
@@ -88,7 +87,14 @@ export function PhotosView() {
                 )}
                 <div className="flex items-center text-xs text-muted-foreground pt-2 border-t">
                   <Calendar className="w-3 h-3 mr-1" />
-                  {format(new Date(photo.timestamp), 'MMM d, yyyy h:mm a')}
+                  {new Date(photo.timestamp).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
                 </div>
                 {photo.gps_lat && photo.gps_lng && (
                   <div className="flex items-center text-xs text-muted-foreground">
