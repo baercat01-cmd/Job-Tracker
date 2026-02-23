@@ -40,6 +40,8 @@ import {
   CheckCircle,
   ShoppingCart,
   FileText,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -176,6 +178,11 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   const [showAddSheetDialog, setShowAddSheetDialog] = useState(false);
   const [newSheetName, setNewSheetName] = useState('');
   const [addingSheet, setAddingSheet] = useState(false);
+
+  // Zoho sync state
+  const [syncingZoho, setSyncingZoho] = useState(false);
+  const [showSyncResults, setShowSyncResults] = useState(false);
+  const [syncResults, setSyncResults] = useState<any>(null);
 
   useEffect(() => {
     loadWorkbook();
@@ -997,6 +1004,35 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       toast.error('Failed to add sheet');
     } finally {
       setAddingSheet(false);
+    }
+  }
+
+  async function syncMaterialsFromZoho() {
+    setSyncingZoho(true);
+    
+    try {
+      console.log('🔄 Starting Zoho Books material sync...');
+      
+      const { data, error } = await supabase.functions.invoke('zoho-sync', {
+        body: { action: 'sync_materials' },
+      });
+
+      if (error) throw error;
+
+      console.log('✅ Sync completed:', data);
+      
+      setSyncResults(data);
+      setShowSyncResults(true);
+      
+      // Reload catalog materials to show updated data
+      await loadCatalogMaterials();
+      
+      toast.success(`✅ Synced ${data.itemsSynced || 0} materials from Zoho Books`);
+    } catch (error: any) {
+      console.error('❌ Sync error:', error);
+      toast.error(`Failed to sync materials: ${error.message || 'Unknown error'}`);
+    } finally {
+      setSyncingZoho(false);
     }
   }
 
@@ -2024,15 +2060,37 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Add Material to {activeSheet?.sheet_name}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDatabaseSearch(!showDatabaseSearch)}
-                className="border-blue-500 text-blue-700 hover:bg-blue-50"
-              >
-                <Search className="w-4 h-4 mr-2" />
-                {showDatabaseSearch ? 'Hide' : 'Search'} Database
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={syncMaterialsFromZoho}
+                  disabled={syncingZoho}
+                  className="border-purple-500 text-purple-700 hover:bg-purple-50"
+                  title="Sync materials from Zoho Books"
+                >
+                  {syncingZoho ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-purple-700 border-t-transparent rounded-full animate-spin mr-2" />
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Sync Zoho
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDatabaseSearch(!showDatabaseSearch)}
+                  className="border-blue-500 text-blue-700 hover:bg-blue-50"
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  {showDatabaseSearch ? 'Hide' : 'Search'} Database
+                </Button>
+              </div>
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -2611,6 +2669,138 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         open={showDocumentViewer}
         onClose={() => setShowDocumentViewer(false)}
       />
+
+      {/* Zoho Sync Results Dialog */}
+      <Dialog open={showSyncResults} onOpenChange={setShowSyncResults}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              Zoho Books Sync Complete
+            </DialogTitle>
+          </DialogHeader>
+          
+          {syncResults && (
+            <div className="space-y-4">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Total Synced</div>
+                  <div className="text-2xl font-bold text-blue-700">{syncResults.itemsSynced || 0}</div>
+                </div>
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">New Materials</div>
+                  <div className="text-2xl font-bold text-green-700">{syncResults.itemsInserted || 0}</div>
+                </div>
+                <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Updated</div>
+                  <div className="text-2xl font-bold text-orange-700">{syncResults.itemsUpdated || 0}</div>
+                </div>
+                <div className="bg-slate-50 border-2 border-slate-300 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Skipped</div>
+                  <div className="text-2xl font-bold text-slate-700">{syncResults.itemsSkipped || 0}</div>
+                </div>
+              </div>
+
+              {/* Success Message */}
+              {syncResults.message && (
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-green-900 mb-1">Sync Summary</h4>
+                      <p className="text-sm text-green-800">{syncResults.message}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Skipped Items Warning */}
+              {syncResults.skippedItems && syncResults.skippedItems.length > 0 && (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-yellow-900 mb-2">Skipped Materials (No SKU)</h4>
+                      <p className="text-sm text-yellow-800 mb-3">
+                        The following {syncResults.skippedItems.length} material{syncResults.skippedItems.length !== 1 ? 's were' : ' was'} skipped because they don't have a valid SKU in Zoho Books:
+                      </p>
+                      <div className="bg-white rounded border border-yellow-200 p-3 max-h-40 overflow-y-auto">
+                        <ul className="text-sm space-y-1">
+                          {syncResults.skippedItems.slice(0, 20).map((item: string, idx: number) => (
+                            <li key={idx} className="flex items-center gap-2">
+                              <X className="w-3 h-3 text-yellow-600 flex-shrink-0" />
+                              <span className="text-yellow-900">{item}</span>
+                            </li>
+                          ))}
+                          {syncResults.skippedItems.length > 20 && (
+                            <li className="text-xs text-yellow-700 pt-2 border-t border-yellow-200">
+                              ... and {syncResults.skippedItems.length - 20} more
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                      <p className="text-xs text-yellow-700 mt-2">
+                        💡 To sync these materials, add SKUs to them in Zoho Books and run the sync again.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* What Changed */}
+              <div className="border-2 rounded-lg p-4">
+                <h4 className="font-semibold text-slate-900 mb-3">What Changed?</h4>
+                <div className="space-y-2 text-sm">
+                  {syncResults.itemsInserted > 0 && (
+                    <div className="flex items-center gap-2 text-green-700">
+                      <CheckCircle className="w-4 h-4" />
+                      <span><strong>{syncResults.itemsInserted}</strong> new material{syncResults.itemsInserted !== 1 ? 's' : ''} added to catalog</span>
+                    </div>
+                  )}
+                  {syncResults.itemsUpdated > 0 && (
+                    <div className="flex items-start gap-2 text-orange-700">
+                      <RefreshCw className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <div><strong>{syncResults.itemsUpdated}</strong> material{syncResults.itemsUpdated !== 1 ? 's' : ''} updated with latest Zoho Books data</div>
+                        <div className="text-xs text-orange-600 mt-1">
+                          ℹ️ Updated fields: Name, Category, Prices (unit_price, purchase_cost), Length/Unit, and Metadata
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {syncResults.vendorsSynced > 0 && (
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <CheckCircle className="w-4 h-4" />
+                      <span><strong>{syncResults.vendorsSynced}</strong> vendor{syncResults.vendorsSynced !== 1 ? 's' : ''} synced</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Info Box */}
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <FileText className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-900">
+                    <h5 className="font-semibold mb-1">Zoho Books is Now the Source of Truth</h5>
+                    <p className="text-blue-800">
+                      All material information (names, categories, prices, SKUs) has been updated to match Zoho Books. 
+                      Any price changes or material updates in Zoho Books will be reflected here after syncing.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button onClick={() => setShowSyncResults(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

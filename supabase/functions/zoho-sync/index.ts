@@ -223,33 +223,25 @@ serve(async (req) => {
           }
 
           if (existing) {
-            // Material exists - UPDATE only if prices changed
-            const priceChanged = 
-              existing.unit_price !== materialData.unit_price ||
-              existing.purchase_cost !== materialData.purchase_cost;
-            
-            if (priceChanged) {
-              const { error: updateError } = await supabase
-                .from('materials_catalog')
-                .update({
-                  material_name: materialData.material_name,
-                  category: materialData.category,
-                  unit_price: materialData.unit_price,
-                  purchase_cost: materialData.purchase_cost,
-                  part_length: materialData.part_length,
-                  raw_metadata: materialData.raw_metadata,
-                  updated_at: materialData.updated_at,
-                })
-                .eq('sku', sku);
+            // Material exists - UPDATE ALL FIELDS from Zoho Books (Zoho is source of truth)
+            const { error: updateError } = await supabase
+              .from('materials_catalog')
+              .update({
+                material_name: materialData.material_name,
+                category: materialData.category,
+                unit_price: materialData.unit_price,
+                purchase_cost: materialData.purchase_cost,
+                part_length: materialData.part_length,
+                raw_metadata: materialData.raw_metadata,
+                updated_at: materialData.updated_at,
+              })
+              .eq('sku', sku);
 
-              if (!updateError) {
-                itemsUpdated++;
-                console.log(`✅ Updated material ${sku} with new prices`);
-              } else {
-                console.error(`❌ Failed to update material ${sku}:`, updateError);
-              }
+            if (!updateError) {
+              itemsUpdated++;
+              console.log(`✅ Updated material ${sku} - Name: ${materialData.material_name}, Price: $${materialData.unit_price}, Cost: $${materialData.purchase_cost}`);
             } else {
-              console.log(`⏭️ Material ${sku} unchanged - skipping`);
+              console.error(`❌ Failed to update material ${sku}:`, updateError);
             }
             itemsSynced++;
           } else {
