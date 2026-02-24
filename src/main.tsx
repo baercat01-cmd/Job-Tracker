@@ -88,18 +88,12 @@ if ('serviceWorker' in navigator) {
         console.log('✅ Service Worker registered:', registration.scope);
         console.log('🎯 PWA Mode: Auto-updates enabled');
         
-        // Check for updates every 30 seconds (more frequent)
-        setInterval(() => {
-          console.log('🔍 Checking for updates...');
-          registration.update();
-        }, 30000);
+        // Check for updates every 30 seconds (no console spam)
+        setInterval(() => registration.update(), 30000);
         
         // Also check for updates when page becomes visible
         document.addEventListener('visibilitychange', () => {
-          if (!document.hidden) {
-            console.log('📱 Page visible - checking for updates');
-            registration.update();
-          }
+          if (!document.hidden) registration.update();
         });
         
         // Handle service worker updates

@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar, FileText, Settings } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, Lock, FileText, Settings } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -54,6 +54,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+/** Safe number for totals (avoids NaN when data shape differs, e.g. historical snapshot) */
+function toNum(x: any): number {
+  if (x == null) return 0;
+  const v = Number(x);
+  return Number.isNaN(v) ? 0 : v;
+}
 
 interface CustomFinancialRow {
   id: string;
@@ -179,50 +186,39 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
       const linkedRowsTotal = linkedRows.reduce((rowSum: number, row: any) => {
         const lineItems = customRowLineItems[row.id] || [];
         const baseCost = lineItems.length > 0
-          ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-          : row.total_cost;
-        return rowSum + (baseCost * (1 + row.markup_percent / 100));
+          ? lineItems.reduce((itemSum: number, item: any) => itemSum + toNum(item.total_cost), 0)
+          : toNum(row.total_cost);
+        return rowSum + (baseCost * (1 + toNum(row.markup_percent) / 100));
       }, 0);
       
-      // Calculate linked subcontractors - taxable only for base cost
       const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
         const lineItems = subcontractorLineItems[sub.id] || [];
         const taxableTotal = lineItems
           .filter((item: any) => !item.excluded && item.taxable)
-          .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-        const estMarkup = sub.markup_percent || 0;
-        return sum + (taxableTotal * (1 + estMarkup / 100));
+          .reduce((itemSum: number, item: any) => itemSum + toNum(item.total_price), 0);
+        return sum + (taxableTotal * (1 + toNum(sub.markup_percent) / 100));
       }, 0);
       
-      // Calculate linked subcontractors - non-taxable (labor)
       const linkedSubsNonTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
         const lineItems = subcontractorLineItems[sub.id] || [];
         const nonTaxableTotal = lineItems
           .filter((item: any) => !item.excluded && !item.taxable)
-          .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-        const estMarkup = sub.markup_percent || 0;
-        return sum + (nonTaxableTotal * (1 + estMarkup / 100));
+          .reduce((itemSum: number, item: any) => itemSum + toNum(item.total_price), 0);
+        return sum + (nonTaxableTotal * (1 + toNum(sub.markup_percent) / 100));
       }, 0);
       
-      // Calculate sheet labor
-      const sheetLaborTotal = sheetLabor[sheet.sheetId] ? sheetLabor[sheet.sheetId].total_labor_cost : 0;
-      
-      // Calculate labor from sheet line items
+      const sheetLaborTotal = sheetLabor[sheet.sheetId] ? toNum(sheetLabor[sheet.sheetId].total_labor_cost) : 0;
       const sheetLaborItems = customRowLineItems[sheet.sheetId]?.filter((item: any) => (item.item_type || 'material') === 'labor') || [];
-      const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + item.total_cost, 0);
+      const sheetLaborLineItemsTotal = sheetLaborItems.reduce((sum: number, item: any) => sum + toNum(item.total_cost), 0);
       
-      // Calculate total materials with category markups (NO sheet-level markup)
       const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
         const categoryKey = `${sheet.sheetId}_${cat.name}`;
         const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-        const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+        const categoryPriceWithMarkup = toNum(cat.totalCost) * (1 + categoryMarkup / 100);
         return sum + categoryPriceWithMarkup;
       }, 0) || 0;
       
-      // Final price = (materials with category markups) + (linked rows with their own markup) + (linked subs)
       const sheetFinalPrice = categoryTotals + linkedRowsTotal + linkedSubsTaxableTotal;
-      
-      // Total labor for display (legacy sheet labor + sheet labor line items + non-taxable subcontractor)
       const totalLaborCost = sheetLaborTotal + sheetLaborLineItemsTotal + linkedSubsNonTaxableTotal;
 
       return (
@@ -357,11 +353,11 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
             {/* Pricing column (narrow) */}
             <div className="w-[240px] flex-shrink-0 text-right">
               <p className="text-sm text-slate-500">Materials</p>
-              <p className="text-base font-bold text-blue-700">${sheetFinalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              {totalLaborCost > 0 && (
+              <p className="text-base font-bold text-blue-700">${toNum(sheetFinalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              {toNum(totalLaborCost) > 0 && (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-base font-bold text-amber-700">${toNum(totalLaborCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </>
               )}
             </div>
@@ -388,7 +384,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                           <div className="flex items-center gap-3 text-xs">
                             <div className="text-right">
                               <p className="text-slate-500">Cost</p>
-                              <p className="font-semibold text-slate-900">${category.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                              <p className="font-semibold text-slate-900">${toNum(category.totalCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-slate-500">+</span>
@@ -481,8 +477,8 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                   </p>
                   {linkedRows.map((row: any) => {
                     const isLabor = row.category === 'labor';
-                    const itemMarkup = row.markup_percent || 0;
-                    const itemCost = row.total_cost;
+                    const itemMarkup = toNum(row.markup_percent);
+                    const itemCost = toNum(row.total_cost);
                     const itemPrice = itemCost * (1 + itemMarkup / 100);
                     
                     return (
@@ -606,12 +602,12 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-slate-900">{sheetLabor[sheet.sheetId].description}</p>
                       <p className="text-xs text-slate-600">
-                        {sheetLabor[sheet.sheetId].estimated_hours}h × ${sheetLabor[sheet.sheetId].hourly_rate}/hr
+                        {sheetLabor[sheet.sheetId].estimated_hours}h × ${toNum(sheetLabor[sheet.sheetId].hourly_rate)}/hr
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-bold text-slate-900">
-                        ${sheetLabor[sheet.sheetId].total_labor_cost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${toNum(sheetLabor[sheet.sheetId].total_labor_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </p>
                       <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => openLaborDialog(sheet.sheetId)}>
                         <Edit className="w-3 h-3" />
@@ -628,8 +624,8 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                 const lineItems = subcontractorLineItems[sub.id] || [];
                 const includedTotal = lineItems
                   .filter((item: any) => !item.excluded)
-                  .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
+                  .reduce((sum: number, item: any) => sum + toNum(item.total_price), 0);
+                const totalWithMarkup = includedTotal * (1 + toNum(sub.markup_percent) / 100);
 
                 return (
                   <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -644,7 +640,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                           <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1 text-xs">
-                              <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span className="text-slate-600">Base: ${toNum(includedTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                               <span className="text-slate-500">+</span>
                               <Input
                                 type="number"
@@ -661,7 +657,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                               <span className="text-slate-500">%</span>
                             </div>
                             <p className="text-xs font-bold text-slate-900">
-                              ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              ${toNum(totalWithMarkup).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </p>
                             {sub.pdf_url && (
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
@@ -786,53 +782,41 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
       const materialLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'material');
       const laborLineItems = lineItems.filter((item: any) => (item.item_type || 'material') === 'labor');
       
-      // Calculate material line items total WITH individual markups
       const materialLineItemsTotal = materialLineItems.reduce((sum: number, item: any) => {
-        const itemMarkup = item.markup_percent || 0;
-        return sum + (item.total_cost * (1 + itemMarkup / 100));
+        return sum + (toNum(item.total_cost) * (1 + toNum(item.markup_percent) / 100));
       }, 0);
       
-      // Calculate labor line items total WITH individual markups
       const laborLineItemsTotal = laborLineItems.reduce((sum: number, item: any) => {
-        const itemMarkup = item.markup_percent || 0;
-        return sum + (item.total_cost * (1 + itemMarkup / 100));
+        return sum + (toNum(item.total_cost) * (1 + toNum(item.markup_percent) / 100));
       }, 0);
       
-      // Calculate linked subcontractors - taxable (materials)
       const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
         const subLineItems = subcontractorLineItems[sub.id] || [];
         const taxableTotal = subLineItems
           .filter((item: any) => !item.excluded && item.taxable)
-          .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-        const estMarkup = sub.markup_percent || 0;
-        return sum + (taxableTotal * (1 + estMarkup / 100));
+          .reduce((itemSum: number, item: any) => itemSum + toNum(item.total_price), 0);
+        return sum + (taxableTotal * (1 + toNum(sub.markup_percent) / 100));
       }, 0);
       
-      // Calculate linked subcontractors - non-taxable (labor)
       const linkedSubsNonTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
         const subLineItems = subcontractorLineItems[sub.id] || [];
         const nonTaxableTotal = subLineItems
           .filter((item: any) => !item.excluded && !item.taxable)
-          .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-        const estMarkup = sub.markup_percent || 0;
-        return sum + (nonTaxableTotal * (1 + estMarkup / 100));
+          .reduce((itemSum: number, item: any) => itemSum + toNum(item.total_price), 0);
+        return sum + (nonTaxableTotal * (1 + toNum(sub.markup_percent) / 100));
       }, 0);
       
-      // Calculate custom row labor
-      const customLaborTotal = customRowLabor[row.id] 
-        ? (customRowLabor[row.id].estimated_hours * customRowLabor[row.id].hourly_rate)
+      const customLaborTotal = customRowLabor[row.id]
+        ? (toNum(customRowLabor[row.id].estimated_hours) * toNum(customRowLabor[row.id].hourly_rate))
         : 0;
       
-      // When line items exist, use their marked-up totals directly (NO row-level markup)
-      // When no line items, use row total with row markup
       const finalPrice = lineItems.length > 0
         ? materialLineItemsTotal + linkedSubsTaxableTotal
-        : (row.total_cost + linkedSubsTaxableTotal) * (1 + row.markup_percent / 100);
+        : (toNum(row.total_cost) + linkedSubsTaxableTotal) * (1 + toNum(row.markup_percent) / 100);
       
-      // Base cost for display (without markup)
       const baseCost = lineItems.length > 0
-        ? lineItems.reduce((sum: number, item: any) => sum + item.total_cost, 0) + linkedSubsTaxableTotal
-        : row.total_cost + linkedSubsTaxableTotal;
+        ? lineItems.reduce((sum: number, item: any) => sum + toNum(item.total_cost), 0) + linkedSubsTaxableTotal
+        : toNum(row.total_cost) + linkedSubsTaxableTotal;
       
       // Total labor for display (labor line items + custom labor + non-taxable subcontractor)
       const totalLaborCost = laborLineItemsTotal + customLaborTotal + linkedSubsNonTaxableTotal;
@@ -981,7 +965,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
               {/* Only show row-level markup if NO line items exist */}
               {lineItems.length === 0 && (
                 <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
-                  <span>Base: ${baseCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span>Base: ${toNum(baseCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   <span>+</span>
                   <Input
                     type="number"
@@ -999,11 +983,11 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                 </div>
               )}
               <p className="text-sm text-slate-500">Materials</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-base font-bold text-blue-700">${toNum(finalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
               {totalLaborCost > 0 && (
                 <>
                   <p className="text-sm text-slate-500 mt-2">Labor</p>
-                  <p className="text-base font-bold text-amber-700">${totalLaborCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-base font-bold text-amber-700">${toNum(totalLaborCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </>
               )}
             </div>
@@ -1021,8 +1005,8 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                     </p>
                     {lineItems.map((lineItem: any) => {
                       const isLabor = (lineItem as any).item_type === 'labor';
-                      const itemMarkup = lineItem.markup_percent || 0;
-                      const itemCost = lineItem.total_cost;
+                      const itemMarkup = toNum(lineItem.markup_percent);
+                      const itemCost = toNum(lineItem.total_cost);
                       const itemPrice = itemCost * (1 + itemMarkup / 100);
                       
                       return (
@@ -1100,8 +1084,8 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                   const subLineItems = subcontractorLineItems[sub.id] || [];
                   const includedTotal = subLineItems
                     .filter((item: any) => !item.excluded)
-                    .reduce((sum: number, item: any) => sum + item.total_price, 0);
-                  const totalWithMarkup = includedTotal * (1 + (sub.markup_percent || 0) / 100);
+                    .reduce((sum: number, item: any) => sum + toNum(item.total_price), 0);
+                  const totalWithMarkup = includedTotal * (1 + toNum(sub.markup_percent) / 100);
 
                   return (
                     <Collapsible key={sub.id} className="bg-purple-50 border border-purple-200 rounded p-2">
@@ -1116,7 +1100,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                             <p className="text-xs font-semibold text-slate-900">{sub.company_name}</p>
                             <div className="flex items-center gap-2">
                               <div className="flex items-center gap-1 text-xs">
-                                <span className="text-slate-600">Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-slate-600">Base: ${toNum(includedTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 <span className="text-slate-500">+</span>
                                 <Input
                                   type="number"
@@ -1132,7 +1116,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                                 <span className="text-slate-500">%</span>
                               </div>
                               <p className="text-xs font-bold text-slate-900">
-                                ${totalWithMarkup.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                ${toNum(totalWithMarkup).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                               </p>
                               {sub.pdf_url && (
                                 <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => window.open(sub.pdf_url, '_blank')}>
@@ -1254,8 +1238,8 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
       const lineItems = subcontractorLineItems[est.id] || [];
       const includedTotal = lineItems
         .filter((item: any) => !item.excluded)
-        .reduce((itemSum: number, item: any) => itemSum + (item.total_price || 0), 0);
-      const estMarkup = est.markup_percent || 0;
+        .reduce((itemSum: number, item: any) => itemSum + toNum(item.total_price), 0);
+      const estMarkup = toNum(est.markup_percent);
       const finalPrice = includedTotal * (1 + estMarkup / 100);
 
       return (
@@ -1368,7 +1352,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
             {/* Pricing column (narrow) */}
             <div className="w-[240px] flex-shrink-0 text-right">
               <div className="flex items-center justify-end gap-2 text-xs text-slate-600 mb-1">
-                <span>Base: ${includedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span>Base: ${toNum(includedTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 <span>+</span>
                 <Input
                   type="number"
@@ -1385,7 +1369,7 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
                 <span>%</span>
               </div>
               <p className="text-sm text-slate-500">Total</p>
-              <p className="text-base font-bold text-blue-700">${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              <p className="text-base font-bold text-blue-700">${toNum(finalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
 
@@ -1489,6 +1473,322 @@ function SortableRow({ item, isReadOnly, ...props }: any) {
   return (
     <div ref={setNodeRef} style={style} className="group">
       {content}
+    </div>
+  );
+}
+
+interface ComparisonItem {
+  name: string;
+  sku?: string;
+  lockedQty: number;
+  lockedCost: number;
+  lockedPrice: number;
+  workingQty: number;
+  workingCost: number;
+  workingPrice: number;
+  status: 'added' | 'removed' | 'changed' | 'unchanged';
+}
+
+interface SheetComparison {
+  sheetName: string;
+  items: ComparisonItem[];
+  lockedTotal: number;
+  workingTotal: number;
+}
+
+function ContractComparison({ quoteId, jobId }: { quoteId: string; jobId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [sheets, setSheets] = useState<SheetComparison[]>([]);
+  const [overallLocked, setOverallLocked] = useState(0);
+  const [overallWorking, setOverallWorking] = useState(0);
+
+  useEffect(() => {
+    loadComparison();
+  }, [quoteId]);
+
+  async function loadComparison() {
+    setLoading(true);
+    try {
+      let lockedWb: { id: string } | null = null;
+      let workingWb: { id: string } | null = null;
+      const { data: locked1 } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('quote_id', quoteId)
+        .eq('status', 'locked')
+        .maybeSingle();
+      if (locked1) lockedWb = locked1;
+      else {
+        const { data: lockedF } = await supabase.from('material_workbooks').select('id').eq('status', 'locked').limit(1);
+        if (lockedF?.[0]) lockedWb = lockedF[0];
+      }
+      const { data: working1 } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('quote_id', quoteId)
+        .eq('status', 'working')
+        .maybeSingle();
+      if (working1) workingWb = working1;
+      else {
+        const { data: workingF } = await supabase.from('material_workbooks').select('id').eq('status', 'working').limit(1);
+        if (workingF?.[0]) workingWb = workingF[0];
+      }
+
+      if (!lockedWb || !workingWb) {
+        setSheets([]);
+        setLoading(false);
+        return;
+      }
+
+      // Load all sheets and items for both workbooks
+      const [lockedSheets, workingSheets] = await Promise.all([
+        supabase.from('material_sheets').select('*').eq('workbook_id', lockedWb.id).order('order_index'),
+        supabase.from('material_sheets').select('*').eq('workbook_id', workingWb.id).order('order_index'),
+      ]);
+
+      const lockedSheetList = lockedSheets.data || [];
+      const workingSheetList = workingSheets.data || [];
+
+      const allLockedIds = lockedSheetList.map(s => s.id);
+      const allWorkingIds = workingSheetList.map(s => s.id);
+
+      const [lockedItemsRes, workingItemsRes] = await Promise.all([
+        allLockedIds.length > 0
+          ? supabase.from('material_items').select('*').in('sheet_id', allLockedIds)
+          : { data: [] },
+        allWorkingIds.length > 0
+          ? supabase.from('material_items').select('*').in('sheet_id', allWorkingIds)
+          : { data: [] },
+      ]);
+
+      const lockedItems = lockedItemsRes.data || [];
+      const workingItems = workingItemsRes.data || [];
+
+      // Match sheets by name
+      const allSheetNames = new Set([
+        ...lockedSheetList.map(s => s.sheet_name),
+        ...workingSheetList.map(s => s.sheet_name),
+      ]);
+
+      let totalLocked = 0;
+      let totalWorking = 0;
+      const comparisons: SheetComparison[] = [];
+
+      for (const name of allSheetNames) {
+        const lockedSheet = lockedSheetList.find(s => s.sheet_name === name);
+        const workingSheet = workingSheetList.find(s => s.sheet_name === name);
+
+        const lItems = lockedSheet
+          ? lockedItems.filter(i => i.sheet_id === lockedSheet.id)
+          : [];
+        const wItems = workingSheet
+          ? workingItems.filter(i => i.sheet_id === workingSheet.id)
+          : [];
+
+        // Build lookup by SKU or name
+        const lMap = new Map<string, any>();
+        lItems.forEach(i => lMap.set(i.sku || i.material_name, i));
+        const wMap = new Map<string, any>();
+        wItems.forEach(i => wMap.set(i.sku || i.material_name, i));
+
+        const allKeys = new Set([...lMap.keys(), ...wMap.keys()]);
+        const items: ComparisonItem[] = [];
+        let sheetLocked = 0;
+        let sheetWorking = 0;
+
+        for (const key of allKeys) {
+          const l = lMap.get(key);
+          const w = wMap.get(key);
+
+          const lQty = l ? toNum(l.quantity) : 0;
+          const lCost = l ? toNum(l.cost_per_unit) * lQty : 0;
+          const lPrice = l ? toNum(l.price_per_unit) * lQty : 0;
+          const wQty = w ? toNum(w.quantity) : 0;
+          const wCost = w ? toNum(w.cost_per_unit) * wQty : 0;
+          const wPrice = w ? toNum(w.price_per_unit) * wQty : 0;
+
+          let status: ComparisonItem['status'] = 'unchanged';
+          if (!l) status = 'added';
+          else if (!w) status = 'removed';
+          else if (lQty !== wQty || lCost !== wCost || lPrice !== wPrice) status = 'changed';
+
+          sheetLocked += lPrice;
+          sheetWorking += wPrice;
+
+          items.push({
+            name: (l || w).material_name,
+            sku: (l || w).sku,
+            lockedQty: lQty,
+            lockedCost: lCost,
+            lockedPrice: lPrice,
+            workingQty: wQty,
+            workingCost: wCost,
+            workingPrice: wPrice,
+            status,
+          });
+        }
+
+        totalLocked += sheetLocked;
+        totalWorking += sheetWorking;
+
+        comparisons.push({
+          sheetName: name,
+          items: items.sort((a, b) => {
+            const order = { removed: 0, changed: 1, added: 2, unchanged: 3 };
+            return order[a.status] - order[b.status];
+          }),
+          lockedTotal: sheetLocked,
+          workingTotal: sheetWorking,
+        });
+      }
+
+      setSheets(comparisons);
+      setOverallLocked(totalLocked);
+      setOverallWorking(totalWorking);
+    } catch (err: any) {
+      console.error('Error loading comparison:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="py-8 text-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-muted-foreground">Loading comparison...</p>
+      </div>
+    );
+  }
+
+  if (sheets.length === 0) {
+    return (
+      <div className="py-8 text-center text-muted-foreground">
+        No workbook data available for comparison.
+      </div>
+    );
+  }
+
+  const diff = overallWorking - overallLocked;
+  const diffPct = overallLocked > 0 ? (diff / overallLocked) * 100 : 0;
+
+  const statusColors: Record<string, string> = {
+    added: 'bg-green-50 text-green-800',
+    removed: 'bg-red-50 text-red-800 line-through',
+    changed: 'bg-amber-50 text-amber-900',
+    unchanged: '',
+  };
+
+  const statusLabels: Record<string, string> = {
+    added: 'Added',
+    removed: 'Removed',
+    changed: 'Changed',
+    unchanged: '',
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Overall Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="py-3 text-center">
+            <p className="text-xs text-blue-700 font-medium">Contract Price</p>
+            <p className="text-lg font-bold text-blue-900">
+              ${toNum(overallLocked).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-purple-200 bg-purple-50">
+          <CardContent className="py-3 text-center">
+            <p className="text-xs text-purple-700 font-medium">Actual Price</p>
+            <p className="text-lg font-bold text-purple-900">
+              ${toNum(overallWorking).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className={`border ${diff > 0 ? 'border-red-200 bg-red-50' : diff < 0 ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+          <CardContent className="py-3 text-center">
+            <p className={`text-xs font-medium ${diff > 0 ? 'text-red-700' : diff < 0 ? 'text-green-700' : 'text-gray-700'}`}>Difference</p>
+            <p className={`text-lg font-bold ${diff > 0 ? 'text-red-900' : diff < 0 ? 'text-green-900' : 'text-gray-900'}`}>
+              {diff >= 0 ? '+' : ''}${toNum(diff).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="text-sm font-normal ml-1">({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%)</span>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Per-sheet breakdown */}
+      {sheets.map((sheet) => {
+        const sDiff = sheet.workingTotal - sheet.lockedTotal;
+        const changedCount = sheet.items.filter(i => i.status !== 'unchanged').length;
+        return (
+          <div key={sheet.sheetName} className="border rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-100 border-b">
+              <span className="font-semibold text-sm">{sheet.sheetName}</span>
+              <div className="flex items-center gap-3 text-xs">
+                {changedCount > 0 && (
+                  <Badge variant="outline" className="text-amber-700 border-amber-300">
+                    {changedCount} change{changedCount > 1 ? 's' : ''}
+                  </Badge>
+                )}
+                <span className="text-slate-600">
+                  Contract: ${toNum(sheet.lockedTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-slate-600">
+                  Actual: ${toNum(sheet.workingTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+                <span className={sDiff > 0 ? 'text-red-700 font-semibold' : sDiff < 0 ? 'text-green-700 font-semibold' : 'text-slate-500'}>
+                  {sDiff >= 0 ? '+' : ''}${toNum(sDiff).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b text-left">
+                  <th className="px-3 py-1.5 font-medium text-slate-600">Item</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-right">Contract Qty</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-right">Contract Price</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-right">Actual Qty</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-right">Actual Price</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-right">Diff</th>
+                  <th className="px-3 py-1.5 font-medium text-slate-600 text-center w-20">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sheet.items.map((item, idx) => {
+                  const itemDiff = item.workingPrice - item.lockedPrice;
+                  return (
+                    <tr key={idx} className={`border-b last:border-0 ${statusColors[item.status]}`}>
+                      <td className="px-3 py-1.5">
+                        {item.name}
+                        {item.sku && <span className="text-slate-400 ml-1">({item.sku})</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">{item.lockedQty}</td>
+                      <td className="px-3 py-1.5 text-right">${toNum(item.lockedPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-3 py-1.5 text-right">{item.workingQty}</td>
+                      <td className="px-3 py-1.5 text-right">${toNum(item.workingPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      <td className={`px-3 py-1.5 text-right font-medium ${itemDiff > 0 ? 'text-red-700' : itemDiff < 0 ? 'text-green-700' : ''}`}>
+                        {itemDiff !== 0 ? `${itemDiff >= 0 ? '+' : ''}$${toNum(itemDiff).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        {item.status !== 'unchanged' && (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            item.status === 'added' ? 'bg-green-200 text-green-900' :
+                            item.status === 'removed' ? 'bg-red-200 text-red-900' :
+                            'bg-amber-200 text-amber-900'
+                          }`}>
+                            {statusLabels[item.status]}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1609,19 +1909,41 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Use ref to track user's selected quote ID (persists across polling cycles)
   const userSelectedQuoteIdRef = useRef<string | null>(null);
+
+  // Backend may not have quote_id on these tables (OnSpace). When we get 400, stop using quote_id so proposals don't spam errors.
+  const quoteIdSupport = useRef({ material_workbooks: true, custom_financial_rows: true, subcontractor_estimates: true });
+  function isQuoteIdError(e: any) {
+    const msg = String(e?.message || '');
+    return e && (e?.code === '42703' || msg.includes('quote_id') || (e as any)?.status === 400);
+  }
+
+  // Per-quote in-memory cache so editing one proposal does not change another (isolation without backend quote_id).
+  type ProposalCache = {
+    customRows: CustomFinancialRow[];
+    materialSheets: any[];
+    subcontractorEstimates: any[];
+    customRowLineItems: Record<string, CustomRowLineItem[]>;
+    sheetLabor: Record<string, any>;
+    sheetMarkups: Record<string, number>;
+    categoryMarkups: Record<string, number>;
+    materialsBreakdown: MaterialsBreakdown;
+    linkedSubcontractors: Record<string, any[]>;
+    subcontractorLineItems: Record<string, any[]>;
+    customRowLabor: Record<string, any>;
+  };
+  const proposalCacheRef = useRef<Record<string, ProposalCache>>({});
+  const previousQuoteIdRef = useRef<string | null>(null);
+  const [cachePendingForQuoteId, setCachePendingForQuoteId] = useState<string | null>(null);
   
-  // Proposal versioning state
-  const [proposalVersions, setProposalVersions] = useState<any[]>([]);
-  const [viewingProposalNumber, setViewingProposalNumber] = useState<number | null>(null);
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [showCreateVersionDialog, setShowCreateVersionDialog] = useState(false);
-  const [versionChangeNotes, setVersionChangeNotes] = useState('');
-  const [creatingVersion, setCreatingVersion] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [initializingVersions, setInitializingVersions] = useState(false);
+  // Contract comparison state
+  const [showComparisonView, setShowComparisonView] = useState(false);
+  // Source quote ID for "Create from This" flow
+  const [createFromQuoteId, setCreateFromQuoteId] = useState<string | null>(null);
   
-  // Computed: Read-only mode when viewing historical proposal (not the most recent)
-  const isReadOnly = quote && allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id;
+  const n = toNum;
+
+  // A proposal is read-only only when it has been signed as a contract
+  const isReadOnly = !!(quote?.is_signed);
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -1640,26 +1962,95 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   );
 
   useEffect(() => {
-    loadData(false); // Initial load with spinner
-    loadQuoteData(); // Load proposal/quote data
-    
-    // Set up polling for real-time updates (every 5 seconds)
+    // Clear previous job's data so we don't briefly show it when switching jobs
+    setCustomRows([]);
+    setCustomRowLabor({});
+    setCustomRowLineItems({});
+    setSubcontractorEstimates([]);
+    setSubcontractorLineItems({});
+    setLinkedSubcontractors({});
+    setMaterialsBreakdown({
+      sheetBreakdowns: [],
+      totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 },
+    });
+    setMaterialSheets([]);
+    setSheetLabor({});
+    setSheetMarkups({});
+    setCategoryMarkups({});
+    setQuote(null);
+    userSelectedQuoteIdRef.current = null;
+    previousQuoteIdRef.current = null;
+    proposalCacheRef.current = {};
+
+    loadQuoteData(); // Load proposal/quote first so quote is set before we load financial data
+
+    // Poll only refreshes quote list; do NOT call loadData here — it would use a stale quote and overwrite historical view
     const pollInterval = setInterval(() => {
-        loadData(true); // Silent updates during polling
-        loadQuoteData(); // Also refresh quote data
+      loadQuoteData();
     }, 5000);
-    
+
     return () => clearInterval(pollInterval);
   }, [job.id]);
 
-  // Load proposal versions when quote changes
+  // Load financial data when a quote is selected. Use per-quote cache so editing one proposal does not change another.
   useEffect(() => {
-    if (quote) {
-      loadProposalVersions();
-    } else {
-      setProposalVersions([]);
+    if (!quote?.id) return;
+    const prevId = previousQuoteIdRef.current;
+    // Save current state to previous quote's cache before switching
+    if (prevId && prevId !== quote.id) {
+      proposalCacheRef.current[prevId] = {
+        customRows,
+        materialSheets,
+        subcontractorEstimates,
+        customRowLineItems,
+        sheetLabor,
+        sheetMarkups,
+        categoryMarkups,
+        materialsBreakdown,
+        linkedSubcontractors,
+        subcontractorLineItems,
+        customRowLabor,
+      };
     }
+    previousQuoteIdRef.current = quote.id;
+
+    const cached = proposalCacheRef.current[quote.id];
+    if (cached) {
+      setCustomRows(cached.customRows ?? []);
+      setMaterialSheets(cached.materialSheets ?? []);
+      setSubcontractorEstimates(cached.subcontractorEstimates ?? []);
+      setCustomRowLineItems(cached.customRowLineItems ?? {});
+      setSheetLabor(cached.sheetLabor ?? {});
+      setSheetMarkups(cached.sheetMarkups ?? {});
+      setCategoryMarkups(cached.categoryMarkups ?? {});
+      setMaterialsBreakdown(cached.materialsBreakdown ?? { sheetBreakdowns: [], totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 } });
+      setLinkedSubcontractors(cached.linkedSubcontractors ?? {});
+      setSubcontractorLineItems(cached.subcontractorLineItems ?? {});
+      setCustomRowLabor(cached.customRowLabor ?? {});
+      return;
+    }
+
+    loadData(false).then(() => setCachePendingForQuoteId(quote.id));
   }, [quote?.id]);
+
+  // After loadData completes, write current state to this quote's cache
+  useEffect(() => {
+    if (!cachePendingForQuoteId || !quote?.id || quote.id !== cachePendingForQuoteId) return;
+    proposalCacheRef.current[quote.id] = {
+      customRows,
+      materialSheets,
+      subcontractorEstimates,
+      customRowLineItems,
+      sheetLabor,
+      sheetMarkups,
+      categoryMarkups,
+      materialsBreakdown,
+      linkedSubcontractors,
+      subcontractorLineItems,
+      customRowLabor,
+    };
+    setCachePendingForQuoteId(null);
+  }, [cachePendingForQuoteId, quote?.id, customRows, materialSheets, subcontractorEstimates, customRowLineItems, sheetLabor, sheetMarkups, categoryMarkups, materialsBreakdown, linkedSubcontractors, subcontractorLineItems, customRowLabor]);
 
   // Auto-create first proposal (with -1 suffix) for new jobs
   useEffect(() => {
@@ -1671,125 +2062,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return () => clearTimeout(timer);
     }
   }, [loading, quote]);
-
-  // This effect has been replaced by the simpler loading-based auto-create above
-
-  async function initializeVersioning() {
-    if (!quote) return;
-    
-    setInitializingVersions(true);
-    try {
-      console.log('🚀 Initializing versioning system for quote:', quote.id);
-      
-      // Create initial snapshot using Edge Function
-      const { data, error } = await supabase.functions.invoke('create-proposal-version', {
-        body: { quoteId: quote.id }
-      });
-      
-      if (error) throw error;
-      
-      toast.success('Version 1 created successfully!');
-      await loadProposalVersions();
-    } catch (error: any) {
-      console.error('Error initializing versioning:', error);
-      toast.error('Failed to initialize versioning: ' + error.message);
-    } finally {
-      setInitializingVersions(false);
-    }
-  }
-
-  async function loadProposalVersions() {
-    if (!quote) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('proposal_versions')
-        .select('*')
-        .eq('quote_id', quote.id)
-        .order('version_number', { ascending: false });
-      
-      if (error) throw error;
-      setProposalVersions(data || []);
-    } catch (error: any) {
-      console.error('Error loading proposal versions:', error);
-    }
-  }
-
-  async function createNewProposalVersion() {
-    setCreatingVersion(true);
-    try {
-      // Build change notes
-      let changeNotes = versionChangeNotes.trim();
-      if (viewingProposalNumber !== null) {
-        const baseNote = `Based on version ${viewingProposalNumber}`;
-        changeNotes = changeNotes ? `${baseNote}. ${changeNotes}` : baseNote;
-      }
-      
-      // Call database function with either quote_id OR job_id
-      // If no quote exists, the function will create one automatically
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote?.id || null,
-        p_job_id: quote ? null : job.id,
-        p_user_id: profile?.id || null,
-        p_change_notes: changeNotes || null
-      });
-      
-      if (error) throw error;
-      
-      console.log('✅ Version created:', data);
-      
-      toast.success('Proposal version created successfully!');
-      
-      // If we just created the first quote/version, reload quote data
-      if (!quote) {
-        await loadQuoteData();
-      }
-      
-      // Reset state and reload
-      setShowCreateVersionDialog(false);
-      setVersionChangeNotes('');
-      setViewingProposalNumber(null);
-      await loadProposalVersions();
-    } catch (error: any) {
-      console.error('Error creating proposal version:', error);
-      toast.error('Failed to create version: ' + error.message);
-    } finally {
-      setCreatingVersion(false);
-    }
-  }
-
-  async function signAndLockVersion(versionId: string) {
-    if (!confirm('Sign and lock this version? This cannot be undone.')) return;
-    
-    try {
-      const { error } = await supabase
-        .from('proposal_versions')
-        .update({
-          is_signed: true,
-          signed_at: new Date().toISOString(),
-          signed_by: profile?.id
-        })
-        .eq('id', versionId);
-      
-      if (error) throw error;
-      
-      // Update quote to mark this version as signed
-      const version = proposalVersions.find(v => v.id === versionId);
-      if (version) {
-        await supabase
-          .from('quotes')
-          .update({ signed_version: version.version_number })
-          .eq('id', quote.id);
-      }
-      
-      toast.success('Version signed and locked!');
-      await loadProposalVersions();
-      await loadQuoteData();
-    } catch (error: any) {
-      console.error('Error signing version:', error);
-      toast.error('Failed to sign version');
-    }
-  }
 
   async function loadQuoteData() {
     try {
@@ -1898,16 +2170,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           // User has navigated to a specific quote - keep it selected
           const selectedQuote = allQuotes.find(q => q.id === userSelectedQuoteIdRef.current);
           if (selectedQuote) {
-            // Keep the user's selected quote
             quoteData = selectedQuote;
             setQuote(quoteData);
             console.log('Keeping user-selected quote:', quoteData.proposal_number);
           } else {
-            // User's selected quote no longer exists, switch to most recent
-            quoteData = allQuotes[0];
-            setQuote(quoteData);
-            userSelectedQuoteIdRef.current = quoteData.id;
-            console.log('Selected quote not found, switched to most recent:', quoteData.proposal_number);
+            // Selected quote not in list (e.g. transient): keep current quote so historical view doesn't disappear
+            userSelectedQuoteIdRef.current = null;
+            if (quote) {
+              quoteData = quote;
+              console.log('Selected quote not in list, keeping current view');
+            } else {
+              quoteData = allQuotes[0];
+              setQuote(quoteData);
+              userSelectedQuoteIdRef.current = quoteData.id;
+            }
           }
         } else if (!quote) {
           // No user selection and no current quote, use the most recent
@@ -1922,7 +2198,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         }
       } else {
         console.log('No quotes found for job');
-        setQuote(null);
+        // Only clear selection when we have no quotes; if ref is set, keep current quote to avoid flicker from transient empty response
+        if (!userSelectedQuoteIdRef.current) {
+          setQuote(null);
+        }
         userSelectedQuoteIdRef.current = null;
       }
     } catch (error: any) {
@@ -1930,63 +2209,275 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function createNewProposal() {
-    if (!quote || !profile) return;
+  async function createNewProposal(sourceQuoteId?: string) {
+    if (!profile) return;
+
+    const srcId = sourceQuoteId || createFromQuoteId || quote?.id;
+    if (!srcId) {
+      toast.error('No source proposal to duplicate from');
+      return;
+    }
 
     setCreatingProposal(true);
     
     try {
-      console.log('🚀 Creating new proposal - this will:');
-      console.log('  1. Lock current proposal:', quote.proposal_number);
-      console.log('  2. Create full snapshot of all data');
-      console.log('  3. Duplicate ALL data for new proposal (complete air gap)');
-      console.log('  4. Create new proposal with incremented number');
-      
-      // Create new version using database function
-      // This will create a complete copy of all data:
-      // - Material workbooks, sheets, items
-      // - Custom financial rows and line items
-      // - Subcontractor estimates and line items
-      // - Category markups and sheet labor
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote.id,
-        p_job_id: job.id,
-        p_user_id: profile.id,
-        p_change_notes: proposalChangeNotes || 'New proposal version'
-      });
+      // Determine next proposal number
+      const maxSuffix = allJobQuotes.reduce((max, q) => {
+        const parts = (q.proposal_number || '').split('-');
+        const num = parseInt(parts[parts.length - 1], 10);
+        return isNaN(num) ? max : Math.max(max, num);
+      }, 0);
+      const nextSuffix = maxSuffix + 1;
 
-      if (error) {
-        console.error('❌ Error creating new proposal:', error);
-        throw error;
-      }
-
-      console.log('✅ New proposal created with duplicated data:', data);
-      const newQuoteId = data.quote_id;
-      
-      // Load the newly created quote and switch to it
-      const { data: newQuote, error: fetchError } = await supabase
+      // Load the source quote for metadata
+      const { data: srcQuote, error: srcErr } = await supabase
         .from('quotes')
         .select('*')
-        .eq('id', newQuoteId)
+        .eq('id', srcId)
         .single();
-      
-      if (fetchError) {
-        console.error('❌ Error loading new quote:', fetchError);
-        throw fetchError;
+      if (srcErr || !srcQuote) throw srcErr || new Error('Source proposal not found');
+
+      // Build the new proposal number: keep prefix, bump suffix
+      const prefix = (srcQuote.proposal_number || '').split('-').slice(0, -1).join('-');
+      const newProposalNumber = prefix ? `${prefix}-${nextSuffix}` : `${job.id.slice(0, 6)}-${nextSuffix}`;
+
+      // 1. Create new quote row
+      const { data: newQuote, error: quoteErr } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          customer_name: srcQuote.customer_name,
+          customer_address: srcQuote.customer_address,
+          customer_email: srcQuote.customer_email,
+          customer_phone: srcQuote.customer_phone,
+          project_name: srcQuote.project_name,
+          building_description: srcQuote.building_description,
+          width: srcQuote.width,
+          length: srcQuote.length,
+          status: 'draft',
+          proposal_number: newProposalNumber,
+          created_by: profile.id,
+        })
+        .select()
+        .single();
+      if (quoteErr || !newQuote) throw quoteErr || new Error('Failed to create new proposal');
+
+      // 2. Duplicate material workbooks (working copy from source)
+      const { data: srcWorkbooks } = await supabase
+        .from('material_workbooks')
+        .select('*')
+        .eq('quote_id', srcId)
+        .eq('status', 'working');
+
+      for (const wb of srcWorkbooks || []) {
+        const { data: newWb, error: wbErr } = await supabase
+          .from('material_workbooks')
+          .insert({
+            job_id: wb.job_id,
+            quote_id: newQuote.id,
+            name: wb.name,
+            status: 'working',
+          })
+          .select()
+          .single();
+        if (wbErr || !newWb) continue;
+
+        // 3. Duplicate sheets
+        const { data: srcSheets } = await supabase
+          .from('material_sheets')
+          .select('*')
+          .eq('workbook_id', wb.id)
+          .order('order_index');
+
+        const sheetIdMap: Record<string, string> = {};
+        for (const sheet of srcSheets || []) {
+          const { data: newSheet, error: sheetErr } = await supabase
+            .from('material_sheets')
+            .insert({
+              workbook_id: newWb.id,
+              sheet_name: sheet.sheet_name,
+              description: sheet.description,
+              order_index: sheet.order_index,
+            })
+            .select()
+            .single();
+          if (sheetErr || !newSheet) continue;
+          sheetIdMap[sheet.id] = newSheet.id;
+
+          // 4. Duplicate items
+          const { data: srcItems } = await supabase
+            .from('material_items')
+            .select('*')
+            .eq('sheet_id', sheet.id);
+          if (srcItems && srcItems.length > 0) {
+            await supabase.from('material_items').insert(
+              srcItems.map(item => ({
+                sheet_id: newSheet.id,
+                material_name: item.material_name,
+                sku: item.sku,
+                category: item.category,
+                quantity: item.quantity,
+                unit: item.unit,
+                cost_per_unit: item.cost_per_unit,
+                price_per_unit: item.price_per_unit,
+                notes: item.notes,
+                order_index: item.order_index,
+              }))
+            );
+          }
+
+          // 5. Duplicate sheet labor
+          const { data: srcLabor } = await supabase
+            .from('material_sheet_labor')
+            .select('*')
+            .eq('sheet_id', sheet.id);
+          if (srcLabor && srcLabor.length > 0) {
+            await supabase.from('material_sheet_labor').insert(
+              srcLabor.map(l => ({
+                sheet_id: newSheet.id,
+                description: l.description,
+                estimated_hours: l.estimated_hours,
+                hourly_rate: l.hourly_rate,
+                notes: l.notes,
+              }))
+            );
+          }
+
+          // 6. Duplicate category markups
+          const { data: srcMarkups } = await supabase
+            .from('material_category_markups')
+            .select('*')
+            .eq('sheet_id', sheet.id);
+          if (srcMarkups && srcMarkups.length > 0) {
+            await supabase.from('material_category_markups').insert(
+              srcMarkups.map(m => ({
+                sheet_id: newSheet.id,
+                category_name: m.category_name,
+                markup_percent: m.markup_percent,
+              }))
+            );
+          }
+        }
       }
-      
-      console.log('✅ Switching to new proposal:', newQuote.proposal_number);
-      console.log('   Old and new proposals now have completely separate data');
-      
-      // Set the new quote as current
+
+      // 7. Duplicate custom financial rows
+      const { data: srcRows } = await supabase
+        .from('custom_financial_rows')
+        .select('*')
+        .eq('quote_id', srcId)
+        .order('order_index');
+
+      const rowIdMap: Record<string, string> = {};
+      for (const row of srcRows || []) {
+        const { data: newRow, error: rowErr } = await supabase
+          .from('custom_financial_rows')
+          .insert({
+            job_id: job.id,
+            quote_id: newQuote.id,
+            category: row.category,
+            description: row.description,
+            quantity: row.quantity,
+            unit_cost: row.unit_cost,
+            total_cost: row.total_cost,
+            markup_percent: row.markup_percent,
+            selling_price: row.selling_price,
+            notes: row.notes,
+            order_index: row.order_index,
+            taxable: row.taxable,
+            sheet_id: row.sheet_id,
+          })
+          .select()
+          .single();
+        if (rowErr || !newRow) continue;
+        rowIdMap[row.id] = newRow.id;
+
+        // 8. Duplicate row line items
+        const { data: srcLineItems } = await supabase
+          .from('custom_financial_row_items')
+          .select('*')
+          .eq('row_id', row.id)
+          .order('order_index');
+        if (srcLineItems && srcLineItems.length > 0) {
+          await supabase.from('custom_financial_row_items').insert(
+            srcLineItems.map(li => ({
+              row_id: newRow.id,
+              sheet_id: li.sheet_id,
+              description: li.description,
+              quantity: li.quantity,
+              unit_cost: li.unit_cost,
+              total_cost: li.total_cost,
+              notes: li.notes,
+              order_index: li.order_index,
+              taxable: li.taxable,
+              markup_percent: li.markup_percent,
+              item_type: li.item_type,
+            }))
+          );
+        }
+      }
+
+      // 9. Duplicate subcontractor estimates
+      const { data: srcEstimates } = await supabase
+        .from('subcontractor_estimates')
+        .select('*')
+        .eq('quote_id', srcId)
+        .order('order_index');
+
+      for (const est of srcEstimates || []) {
+        const { data: newEst, error: estErr } = await supabase
+          .from('subcontractor_estimates')
+          .insert({
+            job_id: job.id,
+            quote_id: newQuote.id,
+            company_name: est.company_name,
+            contact_name: est.contact_name,
+            email: est.email,
+            phone: est.phone,
+            total_amount: est.total_amount,
+            markup_percent: est.markup_percent,
+            notes: est.notes,
+            exclusions: est.exclusions,
+            order_index: est.order_index,
+            sheet_id: est.sheet_id,
+            row_id: est.row_id,
+          })
+          .select()
+          .single();
+        if (estErr || !newEst) continue;
+
+        // 10. Duplicate estimate line items
+        const { data: srcSubItems } = await supabase
+          .from('subcontractor_estimate_line_items')
+          .select('*')
+          .eq('estimate_id', est.id)
+          .order('order_index');
+        if (srcSubItems && srcSubItems.length > 0) {
+          await supabase.from('subcontractor_estimate_line_items').insert(
+            srcSubItems.map(si => ({
+              estimate_id: newEst.id,
+              description: si.description,
+              quantity: si.quantity,
+              unit_price: si.unit_price,
+              total_price: si.total_price,
+              notes: si.notes,
+              order_index: si.order_index,
+              excluded: si.excluded,
+              taxable: si.taxable,
+              item_type: si.item_type,
+              markup_percent: si.markup_percent,
+            }))
+          );
+        }
+      }
+
       setQuote(newQuote);
       userSelectedQuoteIdRef.current = newQuote.id;
       
       toast.success(`New proposal ${newQuote.proposal_number} created with independent data`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
+      setCreateFromQuoteId(null);
       
-      // Reload all data with the new quote
       await loadQuoteData();
       await loadData(false);
     } catch (error: any) {
@@ -1998,13 +2489,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function autoCreateFirstProposal() {
-    // Only run if we don't have a quote yet
     if (quote) return;
     
     try {
-      console.log('🔍 Auto-creating first proposal for job:', job.id);
-
-      // Check if a quote already exists for this job
       const { data: existingQuote, error: fetchError } = await supabase
         .from('quotes')
         .select('*')
@@ -2013,43 +2500,182 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         .limit(1)
         .maybeSingle();
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        console.error('❌ Error fetching existing quote:', fetchError);
-        throw fetchError;
-      }
+      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
       if (existingQuote) {
-        console.log('✅ Found existing quote:', existingQuote.proposal_number);
         setQuote(existingQuote);
         return;
       }
 
-      console.log('📝 Creating first proposal with -1 suffix...');
+      // Create first proposal directly (no RPC)
+      const { data: newQuote, error: createError } = await supabase
+        .from('quotes')
+        .insert({
+          job_id: job.id,
+          customer_name: job.client_name,
+          customer_address: job.address,
+          project_name: job.name,
+          status: 'draft',
+          width: 0,
+          length: 0,
+          proposal_number: `${job.id.slice(0, 6)}-1`,
+          created_by: profile?.id,
+        })
+        .select()
+        .single();
 
-      // Create first proposal using the database function
-      // This will auto-generate proposal number with -1 suffix
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: null,
-        p_job_id: job.id,
-        p_user_id: profile?.id || null,
-        p_change_notes: 'Initial proposal'
-      });
+      if (createError) throw createError;
 
-      if (error) {
-        console.error('❌ Error auto-creating first proposal:', error);
-        throw error;
-      }
-
-      console.log('✅ Auto-created first proposal');
-      
-      // Reload quote data to get the newly created quote
+      setQuote(newQuote);
+      userSelectedQuoteIdRef.current = newQuote.id;
       await loadQuoteData();
-      
       toast.success('First proposal created automatically');
     } catch (error: any) {
-      console.error('❌ Error in autoCreateFirstProposal:', error);
-      // Silent failure - user can create manually if needed
-      console.log('Will show manual create button instead');
+      console.error('Error in autoCreateFirstProposal:', error);
+    }
+  }
+
+  async function signAsContract() {
+    if (!quote || quote.is_signed) return;
+    if (!confirm('Sign this proposal as a contract? The workbook will be locked and a working copy created.')) return;
+
+    try {
+      // 1. Mark the quote as signed
+      const { error: signErr } = await supabase
+        .from('quotes')
+        .update({ is_signed: true, signed_at: new Date().toISOString() })
+        .eq('id', quote.id);
+      if (signErr) throw signErr;
+
+      // 2. Find the current working workbook and lock it
+      let currentWb: any = null;
+      if (quoteIdSupport.current.material_workbooks) {
+        const { data: cwb1 } = await supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('quote_id', quote.id)
+          .eq('status', 'working')
+          .maybeSingle();
+        if (cwb1) currentWb = cwb1;
+      }
+      if (!currentWb) {
+        const { data: cwbF } = await supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('job_id', job.id)
+          .eq('status', 'working')
+          .limit(1);
+        if (cwbF?.[0]) currentWb = cwbF[0];
+      }
+
+      if (currentWb) {
+        await supabase
+          .from('material_workbooks')
+          .update({ status: 'locked' })
+          .eq('id', currentWb.id);
+
+        // 3. Duplicate the workbook as a new working copy
+        const newWbPayload: Record<string, unknown> = {
+          job_id: currentWb.job_id,
+          name: currentWb.name,
+          status: 'working',
+        };
+        if (quoteIdSupport.current.material_workbooks && quote?.id) newWbPayload.quote_id = quote.id;
+        const { data: newWb, error: wbErr } = await supabase
+          .from('material_workbooks')
+          .insert(newWbPayload)
+          .select()
+          .single();
+
+        if (!wbErr && newWb) {
+          const { data: srcSheets } = await supabase
+            .from('material_sheets')
+            .select('*')
+            .eq('workbook_id', currentWb.id)
+            .order('order_index');
+
+          for (const sheet of srcSheets || []) {
+            const { data: newSheet } = await supabase
+              .from('material_sheets')
+              .insert({
+                workbook_id: newWb.id,
+                sheet_name: sheet.sheet_name,
+                description: sheet.description,
+                order_index: sheet.order_index,
+              })
+              .select()
+              .single();
+            if (!newSheet) continue;
+
+            const { data: srcItems } = await supabase
+              .from('material_items')
+              .select('*')
+              .eq('sheet_id', sheet.id);
+            if (srcItems && srcItems.length > 0) {
+              await supabase.from('material_items').insert(
+                srcItems.map(item => ({
+                  sheet_id: newSheet.id,
+                  material_name: item.material_name,
+                  sku: item.sku,
+                  category: item.category,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  cost_per_unit: item.cost_per_unit,
+                  price_per_unit: item.price_per_unit,
+                  notes: item.notes,
+                  order_index: item.order_index,
+                }))
+              );
+            }
+
+            const { data: srcLabor } = await supabase
+              .from('material_sheet_labor')
+              .select('*')
+              .eq('sheet_id', sheet.id);
+            if (srcLabor && srcLabor.length > 0) {
+              await supabase.from('material_sheet_labor').insert(
+                srcLabor.map(l => ({
+                  sheet_id: newSheet.id,
+                  description: l.description,
+                  estimated_hours: l.estimated_hours,
+                  hourly_rate: l.hourly_rate,
+                  notes: l.notes,
+                }))
+              );
+            }
+
+            const { data: srcMarkups } = await supabase
+              .from('material_category_markups')
+              .select('*')
+              .eq('sheet_id', sheet.id);
+            if (srcMarkups && srcMarkups.length > 0) {
+              await supabase.from('material_category_markups').insert(
+                srcMarkups.map(m => ({
+                  sheet_id: newSheet.id,
+                  category_name: m.category_name,
+                  markup_percent: m.markup_percent,
+                }))
+              );
+            }
+          }
+        }
+      }
+
+      // Refresh quote to pick up is_signed flag
+      const { data: updatedQuote } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', quote.id)
+        .single();
+      if (updatedQuote) {
+        setQuote(updatedQuote);
+      }
+
+      toast.success('Proposal signed as contract! Working copy created for tracking.');
+      await loadData(false);
+    } catch (error: any) {
+      console.error('Error signing as contract:', error);
+      toast.error('Failed to sign as contract: ' + error.message);
     }
   }
 
@@ -2093,7 +2719,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       if (createError) throw createError;
 
       setQuote(newQuote);
-      setProposalVersions([]);
       
       toast.success(`Proposal #${newQuote.proposal_number} created!`);
     } catch (error: any) {
@@ -2102,31 +2727,25 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  // Proposal navigation functions
-  async function navigateToPreviousProposal() {
+  // Proposal navigation: set quote and ref; the effect (quote?.id) will load data for the selected quote
+  function navigateToPreviousProposal() {
     if (allJobQuotes.length === 0) return;
-    
     const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
     if (currentIndex < allJobQuotes.length - 1) {
       const olderQuote = allJobQuotes[currentIndex + 1];
-      setQuote(olderQuote);
-      // Track user's selection in ref so polling doesn't override it
       userSelectedQuoteIdRef.current = olderQuote.id;
-      await loadData(false);
+      setQuote(olderQuote);
       toast.info(`📖 Viewing proposal ${olderQuote.proposal_number}`);
     }
   }
 
-  async function navigateToNextProposal() {
+  function navigateToNextProposal() {
     if (allJobQuotes.length === 0) return;
-    
     const currentIndex = allJobQuotes.findIndex(q => q.id === quote?.id);
     if (currentIndex > 0) {
       const newerQuote = allJobQuotes[currentIndex - 1];
-      setQuote(newerQuote);
-      // Track user's selection in ref so polling doesn't override it
       userSelectedQuoteIdRef.current = newerQuote.id;
-      await loadData(false);
+      setQuote(newerQuote);
       const isNowCurrent = currentIndex === 1;
       if (isNowCurrent) {
         toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
@@ -2137,18 +2756,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function loadData(silent = false) {
-    // Only show loading spinner on initial load, not during polling
     if (!silent) {
       setLoading(true);
     }
     try {
-      await Promise.all([
+      const results = await Promise.allSettled([
         loadCustomRows(),
         loadLaborPricing(),
         loadLaborHours(),
         loadMaterialsData(),
         loadSubcontractorEstimates(),
       ]);
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        failures.forEach(f => console.error('Loader failed:', (f as PromiseRejectedResult).reason));
+        if (!silent) {
+          toast.error('Some financial data failed to load – check console for details');
+        }
+      }
     } catch (error) {
       console.error('Error loading financial data:', error);
       if (!silent) {
@@ -2163,84 +2788,134 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function loadSubcontractorEstimates() {
     try {
-      // Check if we're viewing a historical proposal (read-only mode)
-      if (isReadOnly && quote) {
-        console.log('📖 Loading subcontractors from historical snapshot for proposal:', quote.proposal_number);
-        
-        // Find the proposal version for this quote
-        const { data: versionData, error: versionError } = await supabase
-          .from('proposal_versions')
-          .select('subcontractor_snapshot')
-          .eq('quote_id', quote.id)
-          .order('version_number', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (versionError) {
-          console.error('Error loading proposal version for subcontractors:', versionError);
-          throw versionError;
-        }
-        
-        if (!versionData || !versionData.subcontractor_snapshot) {
-          console.log('No subcontractor snapshot found for this proposal');
-          setSubcontractorEstimates([]);
-          setSubcontractorLineItems({});
-          setLinkedSubcontractors({});
-          return;
-        }
-        
-        // Parse and use the snapshot data
-        const snapshot = versionData.subcontractor_snapshot;
-        const estimatesData = Array.isArray(snapshot) ? snapshot : [];
-        
-        // Update subcontractor estimates from snapshot
-        if (JSON.stringify(estimatesData) !== JSON.stringify(subcontractorEstimates)) {
-          setSubcontractorEstimates(estimatesData);
-        }
-        
-        // Separate standalone vs linked subcontractors
-        const linkedMap: Record<string, any[]> = {};
-        const lineItemsMap: Record<string, any[]> = {};
-        
-        estimatesData.forEach((est: any) => {
-          if (est.sheet_id) {
-            if (!linkedMap[est.sheet_id]) linkedMap[est.sheet_id] = [];
-            linkedMap[est.sheet_id].push(est);
-          } else if (est.row_id) {
-            if (!linkedMap[est.row_id]) linkedMap[est.row_id] = [];
-            linkedMap[est.row_id].push(est);
-          }
-          
-          // Line items are stored in the snapshot
-          if (est.line_items && Array.isArray(est.line_items)) {
-            lineItemsMap[est.id] = est.line_items;
-          }
-        });
-        
-        setLinkedSubcontractors(linkedMap);
-        setSubcontractorLineItems(lineItemsMap);
-        
-        console.log('✅ Loaded subcontractors from snapshot');
+      if (!quote?.id) {
+        setSubcontractorEstimates([]);
+        setSubcontractorLineItems({});
+        setLinkedSubcontractors({});
         return;
       }
-      
-      // Normal flow: Load live data for current/editable proposals
-      const { data, error } = await supabase
+
+      // Load all estimates for this job to find this quote's data or a source to duplicate from
+      let allEstimates: any[] | null = null;
+      const { data: est1, error: estErr1 } = await supabase
         .from('subcontractor_estimates')
         .select('*')
         .eq('job_id', job.id)
         .order('order_index');
+      if (estErr1) {
+        console.warn('subcontractor_estimates query with job_id failed, trying select all:', estErr1.message || estErr1);
+        const { data: est2, error: estErr2 } = await supabase
+          .from('subcontractor_estimates')
+          .select('*')
+          .order('order_index');
+        if (estErr2) throw estErr2;
+        allEstimates = (est2 || []).filter((e: any) => e.job_id === job.id);
+      } else {
+        allEstimates = est1;
+      }
+      if (!allEstimates) allEstimates = [];
 
-      if (error) throw error;
-      const newData = data || [];
-      // Only update if data actually changed
-      if (JSON.stringify(newData) !== JSON.stringify(subcontractorEstimates)) {
-        setSubcontractorEstimates(newData);
+      let rowsForQuote = (allEstimates || []).filter((r: any) => r.quote_id === quote.id);
+      // Do NOT reuse legacy (quote_id null) estimates as this quote's — duplicate so edits only affect this proposal.
+
+      // Find best source estimates to fill from (legacy null first, then the quote with the most estimates)
+      const otherEstimates = (allEstimates || []).filter((r: any) => r.quote_id !== quote.id);
+      let sourceEstimates: any[] = [];
+      if (otherEstimates.length > 0) {
+        const legacyEsts = otherEstimates.filter((r: any) => r.quote_id == null);
+        if (legacyEsts.length > 0) {
+          sourceEstimates = legacyEsts;
+        } else {
+          const bestQid = otherEstimates.reduce((best: { id: string; count: number } | null, r: any) => {
+            const qid = r.quote_id;
+            if (!qid) return best;
+            const cnt = otherEstimates.filter((x: any) => x.quote_id === qid).length;
+            if (!best || cnt > best.count) return { id: qid, count: cnt };
+            return best;
+          }, null)?.id;
+          if (bestQid) sourceEstimates = otherEstimates.filter((r: any) => r.quote_id === bestQid);
+        }
       }
 
-      // Separate standalone vs linked subcontractors
+      // Copy missing estimates (match by company_name to avoid duplicates); only when backend supports quote_id
+      if (sourceEstimates.length > 0 && quoteIdSupport.current.subcontractor_estimates) {
+        try {
+          const existingNames = new Set(rowsForQuote.map((e: any) => e.company_name));
+          const missingEsts = sourceEstimates.filter((e: any) => !existingNames.has(e.company_name));
+          if (missingEsts.length > 0) {
+            const newEstimates: any[] = [];
+            for (const est of missingEsts) {
+              const estPayload: Record<string, unknown> = {
+                job_id: job.id,
+                company_name: est.company_name,
+                contact_name: est.contact_name,
+                email: est.email,
+                phone: est.phone,
+                total_amount: est.total_amount,
+                markup_percent: est.markup_percent,
+                notes: est.notes,
+                exclusions: est.exclusions,
+                order_index: est.order_index,
+                sheet_id: null,
+                row_id: null,
+              };
+              if (quoteIdSupport.current.subcontractor_estimates && quote?.id) estPayload.quote_id = quote.id;
+              const { data: newEst, error: estErr } = await supabase
+                .from('subcontractor_estimates')
+                .insert(estPayload)
+                .select()
+                .single();
+              if (estErr) {
+                if (isQuoteIdError(estErr)) quoteIdSupport.current.subcontractor_estimates = false;
+                continue;
+              }
+              if (!newEst) continue;
+              newEstimates.push(newEst);
+              const { data: srcSubItems } = await supabase
+                .from('subcontractor_estimate_line_items')
+                .select('*')
+                .eq('estimate_id', est.id)
+                .order('order_index');
+              if (srcSubItems?.length) {
+                await supabase.from('subcontractor_estimate_line_items').insert(
+                  srcSubItems.map((si: any) => ({
+                    estimate_id: newEst.id,
+                    description: si.description,
+                    quantity: si.quantity,
+                    unit_price: si.unit_price,
+                    total_price: si.total_price,
+                    notes: si.notes,
+                    order_index: si.order_index,
+                    excluded: si.excluded,
+                    taxable: si.taxable,
+                    item_type: si.item_type,
+                    markup_percent: si.markup_percent,
+                  }))
+                );
+              }
+            }
+            rowsForQuote = [...rowsForQuote, ...newEstimates];
+          }
+        } catch (dupErr: any) {
+          console.error('Subcontractor estimates fill failed:', dupErr);
+          if (isQuoteIdError(dupErr)) quoteIdSupport.current.subcontractor_estimates = false;
+          if (rowsForQuote.length === 0 && sourceEstimates.length > 0) {
+            rowsForQuote = [...sourceEstimates];
+          }
+        }
+      }
+      if (rowsForQuote.length === 0 && sourceEstimates.length > 0 && !quoteIdSupport.current.subcontractor_estimates) {
+        rowsForQuote = [...sourceEstimates];
+      }
+
+      const newData = rowsForQuote;
+      const deduped = newData.filter((e: any, i: number, a: any[]) => a.findIndex((x: any) => x.id === e.id) === i);
+      if (JSON.stringify(deduped) !== JSON.stringify(subcontractorEstimates)) {
+        setSubcontractorEstimates(deduped);
+      }
+
       const linkedMap: Record<string, any[]> = {};
-      newData.forEach(est => {
+      deduped.forEach(est => {
         if (est.sheet_id) {
           if (!linkedMap[est.sheet_id]) linkedMap[est.sheet_id] = [];
           linkedMap[est.sheet_id].push(est);
@@ -2251,9 +2926,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       });
       setLinkedSubcontractors(linkedMap);
 
-      // Load line items for all estimates
-      if (newData.length > 0) {
-        const estimateIds = newData.map(e => e.id);
+      if (deduped.length > 0) {
+        const estimateIds = deduped.map(e => e.id);
         const { data: lineItemsData, error: lineItemsError } = await supabase
           .from('subcontractor_estimate_line_items')
           .select('*')
@@ -2270,171 +2944,290 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           });
           setSubcontractorLineItems(lineItemsMap);
         }
+      } else {
+        setSubcontractorLineItems({});
       }
     } catch (error: any) {
       console.error('Error loading subcontractor estimates:', error);
-      if (subcontractorEstimates.length > 0) {
-        setSubcontractorEstimates([]);
-      }
     }
   }
 
   async function loadMaterialsData() {
     try {
-      // Check if we're viewing a historical proposal (read-only mode)
-      if (isReadOnly && quote) {
-        console.log('📖 Loading materials from historical snapshot for proposal:', quote.proposal_number);
-        
-        // Find the proposal version for this quote
-        const { data: versionData, error: versionError } = await supabase
-          .from('proposal_versions')
-          .select('workbook_snapshot')
-          .eq('quote_id', quote.id)
-          .order('version_number', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (versionError) {
-          console.error('Error loading proposal version:', versionError);
-          throw versionError;
-        }
-        
-        if (!versionData || !versionData.workbook_snapshot) {
-          console.log('No snapshot found for this proposal');
-          setMaterialsBreakdown({
-            sheetBreakdowns: [],
-            totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 }
-          });
-          setMaterialSheets([]);
-          setSheetLabor({});
-          setCategoryMarkups({});
-          return;
-        }
-        
-        // Parse and use the snapshot data
-        const snapshot = versionData.workbook_snapshot;
-        const sheetsData = snapshot.sheets || [];
-        
-        // Store sheets data
-        setMaterialSheets(sheetsData);
-        
-        // Load category markups from snapshot
-        const categoryMarkupsMap: Record<string, number> = {};
-        if (snapshot.category_markups) {
-          Object.entries(snapshot.category_markups).forEach(([key, value]) => {
-            categoryMarkupsMap[key] = value as number;
-          });
-        }
-        setCategoryMarkups(categoryMarkupsMap);
-        
-        // Load sheet labor from snapshot
-        const laborMap: Record<string, any> = {};
-        if (snapshot.sheet_labor) {
-          snapshot.sheet_labor.forEach((labor: any) => {
-            laborMap[labor.sheet_id] = labor;
-          });
-        }
-        setSheetLabor(laborMap);
-        
-        // Build materials breakdown from snapshot
-        const breakdowns = sheetsData.map((sheet: any) => {
-          const sheetItems = sheet.items || [];
-          
-          // Group by category
-          const categoryMap = new Map<string, any[]>();
-          sheetItems.forEach((item: any) => {
-            const category = item.category || 'Uncategorized';
-            if (!categoryMap.has(category)) {
-              categoryMap.set(category, []);
-            }
-            categoryMap.get(category)!.push(item);
-          });
-          
-          // Calculate totals per category
-          const categories = Array.from(categoryMap.entries()).map(([categoryName, items]) => {
-            const totalCost = items.reduce((sum, item) => {
-              const cost = (item.cost_per_unit || 0) * (item.quantity || 0);
-              return sum + cost;
-            }, 0);
-            
-            const totalPrice = items.reduce((sum, item) => {
-              const price = (item.price_per_unit || 0) * (item.quantity || 0);
-              return sum + price;
-            }, 0);
-            
-            const profit = totalPrice - totalCost;
-            const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
-            
-            return {
-              name: categoryName,
-              itemCount: items.length,
-              items: items.map((item: any) => ({
-                material_name: item.material_name,
-                sku: item.sku,
-                quantity: item.quantity || 0,
-                cost_per_unit: item.cost_per_unit || 0,
-                price_per_unit: item.price_per_unit || 0,
-                extended_cost: (item.cost_per_unit || 0) * (item.quantity || 0),
-                extended_price: (item.price_per_unit || 0) * (item.quantity || 0),
-              })),
-              totalCost,
-              totalPrice,
-              profit,
-              margin,
-            };
-          }).sort((a, b) => a.name.localeCompare(b.name));
-          
-          // Calculate sheet totals
-          const sheetTotalCost = categories.reduce((sum, cat) => sum + cat.totalCost, 0);
-          const sheetTotalPrice = categories.reduce((sum, cat) => sum + cat.totalPrice, 0);
-          const sheetProfit = sheetTotalPrice - sheetTotalCost;
-          const sheetMargin = sheetTotalPrice > 0 ? (sheetProfit / sheetTotalPrice) * 100 : 0;
-          
-          return {
-            sheetId: sheet.id,
-            sheetName: sheet.sheet_name,
-            sheetDescription: sheet.description || '',
-            orderIndex: sheet.order_index,
-            categories,
-            totalCost: sheetTotalCost,
-            totalPrice: sheetTotalPrice,
-            profit: sheetProfit,
-            margin: sheetMargin,
-          };
-        });
-        
-        // Calculate grand totals
-        const grandTotalCost = breakdowns.reduce((sum, sheet) => sum + sheet.totalCost, 0);
-        const grandTotalPrice = breakdowns.reduce((sum, sheet) => sum + sheet.totalPrice, 0);
-        const grandProfit = grandTotalPrice - grandTotalCost;
-        const grandMargin = grandTotalPrice > 0 ? (grandProfit / grandTotalPrice) * 100 : 0;
-        
-        setMaterialsBreakdown({
-          sheetBreakdowns: breakdowns,
-          totals: {
-            totalCost: grandTotalCost,
-            totalPrice: grandTotalPrice,
-            totalProfit: grandProfit,
-            profitMargin: grandMargin,
-          }
-        });
-        
-        console.log('✅ Loaded materials from snapshot');
+      if (!quote?.id) {
+        setMaterialsBreakdown({ sheetBreakdowns: [], totals: { totalCost: 0, totalPrice: 0, totalProfit: 0, profitMargin: 0 } });
+        setMaterialSheets([]);
+        setSheetLabor({});
+        setSheetMarkups({});
         return;
       }
-      
-      // Normal flow: Load live data for current/editable proposals
-      console.log('📝 Loading live materials data');
-      
-      // Get the working workbook for this job
-      const { data: workbookData, error: workbookError } = await supabase
-        .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
 
-      if (workbookError) throw workbookError;
+      // Load the working workbook for this quote; if multiple exist, use the one with the most sheets
+      let workbookData: { id: string } | undefined;
+      let wbForQuoteList: { id: string }[] | null = null;
+      let wbErr1: any = null;
+      let wbData1: { id: string }[] | null = null;
+      if (quoteIdSupport.current.material_workbooks) {
+        const res = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('status', 'working')
+          .eq('quote_id', quote.id);
+        wbErr1 = res.error;
+        wbData1 = res.data;
+      }
+      const useFallback = wbErr1 || !quoteIdSupport.current.material_workbooks;
+      if (useFallback) {
+        if (wbErr1 && isQuoteIdError(wbErr1)) quoteIdSupport.current.material_workbooks = false;
+        if (wbErr1) console.warn('material_workbooks query failed, trying without quote_id:', wbErr1.message || wbErr1);
+        const { data: fallbackList } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('status', 'working');
+        if (fallbackList?.length) {
+          if (fallbackList.length === 1) {
+            wbForQuoteList = fallbackList;
+          } else {
+            const wbIds = fallbackList.map((w: any) => w.id);
+            const { data: sheetRows } = await supabase
+              .from('material_sheets')
+              .select('id, workbook_id')
+              .in('workbook_id', wbIds);
+            const countByWb: Record<string, number> = {};
+            (sheetRows || []).forEach((s: any) => { countByWb[s.workbook_id] = (countByWb[s.workbook_id] || 0) + 1; });
+            const sheetIdsAll = (sheetRows || []).map((s: any) => s.id);
+            let laborCountByWb: Record<string, number> = {};
+            if (sheetIdsAll.length > 0) {
+              const { data: laborRows } = await supabase
+                .from('material_sheet_labor')
+                .select('sheet_id')
+                .in('sheet_id', sheetIdsAll);
+              const sheetToWb: Record<string, string> = {};
+              (sheetRows || []).forEach((s: any) => { sheetToWb[s.id] = s.workbook_id; });
+              (laborRows || []).forEach((l: any) => {
+                const wbId = sheetToWb[l.sheet_id];
+                if (wbId) laborCountByWb[wbId] = (laborCountByWb[wbId] || 0) + 1;
+              });
+            }
+            const best = fallbackList.reduce((a: any, b: any) => {
+              const scoreA = (countByWb[a.id] || 0) + (laborCountByWb[a.id] || 0);
+              const scoreB = (countByWb[b.id] || 0) + (laborCountByWb[b.id] || 0);
+              return scoreA >= scoreB ? a : b;
+            });
+            wbForQuoteList = [best];
+          }
+        } else {
+          wbForQuoteList = null;
+        }
+      } else if (wbData1?.length) {
+        wbForQuoteList = wbData1;
+      }
+
+      if (wbForQuoteList?.length) {
+        if (wbForQuoteList.length === 1) {
+          workbookData = wbForQuoteList[0];
+        } else {
+          const { data: allSheetsForJob } = await supabase
+            .from('material_sheets')
+            .select('workbook_id')
+            .in('workbook_id', wbForQuoteList.map((w: any) => w.id));
+          const countByWb: Record<string, number> = {};
+          (allSheetsForJob || []).forEach((s: any) => { countByWb[s.workbook_id] = (countByWb[s.workbook_id] || 0) + 1; });
+          const best = wbForQuoteList.reduce((a: any, b: any) => (countByWb[a.id] || 0) >= (countByWb[b.id] || 0) ? a : b);
+          workbookData = best;
+        }
+      }
+      if (!workbookData) {
+        // No workbook for this quote yet. Find the workbook for this job that has the MOST sheets and duplicate from it.
+        try {
+          let allJobWbs: { id: string; job_id: string; name?: string }[] | null = null;
+          const { data: jobWbs1, error: jobWbsErr } = await supabase
+            .from('material_workbooks')
+            .select('id, job_id, name')
+            .eq('job_id', job.id);
+          if (jobWbsErr) {
+            const { data: jobWbs2 } = await supabase.from('material_workbooks').select('id, job_id, name');
+            allJobWbs = (jobWbs2 || []).filter((w: any) => w.job_id === job.id);
+          } else {
+            allJobWbs = jobWbs1;
+          }
+          if (!allJobWbs?.length) { /* no workbooks at all */ } else {
+            const { data: allSheets } = await supabase
+              .from('material_sheets')
+              .select('workbook_id')
+              .in('workbook_id', allJobWbs.map((w: any) => w.id));
+            const sheetCountByWb: Record<string, number> = {};
+            (allSheets || []).forEach((s: any) => { sheetCountByWb[s.workbook_id] = (sheetCountByWb[s.workbook_id] || 0) + 1; });
+            const fullestWb = allJobWbs.reduce((a: any, b: any) => (sheetCountByWb[a.id] || 0) >= (sheetCountByWb[b.id] || 0) ? a : b);
+            const sourceWb = fullestWb;
+
+          if (sourceWb) {
+            const wbPayload: Record<string, unknown> = {
+              job_id: sourceWb.job_id,
+              name: sourceWb.name ?? undefined,
+              status: 'working',
+            };
+            if (quoteIdSupport.current.material_workbooks && quote?.id) wbPayload.quote_id = quote.id;
+            const { data: newWb, error: wbErr } = await supabase
+              .from('material_workbooks')
+              .insert(wbPayload)
+              .select('id')
+              .single();
+            if (wbErr) {
+              if (isQuoteIdError(wbErr)) quoteIdSupport.current.material_workbooks = false;
+              throw wbErr;
+            }
+            if (newWb) {
+              const { data: srcSheets } = await supabase
+                .from('material_sheets')
+                .select('*')
+                .eq('workbook_id', sourceWb.id)
+                .order('order_index');
+              for (const sheet of srcSheets || []) {
+                const { data: newSheet, error: sheetErr } = await supabase
+                  .from('material_sheets')
+                  .insert({
+                    workbook_id: newWb.id,
+                    sheet_name: sheet.sheet_name,
+                    description: sheet.description,
+                    order_index: sheet.order_index,
+                  })
+                  .select('id')
+                  .single();
+                if (sheetErr || !newSheet) continue;
+                const { data: srcItems } = await supabase.from('material_items').select('*').eq('sheet_id', sheet.id);
+                if (srcItems?.length) {
+                  await supabase.from('material_items').insert(
+                    srcItems.map((item: any) => ({
+                      sheet_id: newSheet.id,
+                      material_name: item.material_name,
+                      sku: item.sku,
+                      category: item.category,
+                      quantity: item.quantity,
+                      unit: item.unit,
+                      cost_per_unit: item.cost_per_unit,
+                      price_per_unit: item.price_per_unit,
+                      notes: item.notes,
+                      order_index: item.order_index,
+                    }))
+                  );
+                }
+                const { data: srcLabor } = await supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id);
+                if (srcLabor?.length) {
+                  await supabase.from('material_sheet_labor').insert(
+                    srcLabor.map((l: any) => ({
+                      sheet_id: newSheet.id,
+                      description: l.description,
+                      estimated_hours: l.estimated_hours,
+                      hourly_rate: l.hourly_rate,
+                      notes: l.notes,
+                    }))
+                  );
+                }
+                const { data: srcMarkups } = await supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id);
+                if (srcMarkups?.length) {
+                  await supabase.from('material_category_markups').insert(
+                    srcMarkups.map((m: any) => ({
+                      sheet_id: newSheet.id,
+                      category_name: m.category_name,
+                      markup_percent: m.markup_percent,
+                    }))
+                  );
+                }
+              }
+              workbookData = { id: newWb.id };
+            }
+          }
+          }
+        } catch (dupErr: any) {
+          console.error('Workbook duplicate failed:', dupErr);
+        }
+      }
+
+      // If we used fallback (e.g. no quote_id on backend), duplicate the shared workbook for this quote so edits only affect this proposal (only when backend supports quote_id)
+      if (workbookData && wbErr1 && quoteIdSupport.current.material_workbooks) {
+        try {
+          const { data: wbRow } = await supabase.from('material_workbooks').select('id, job_id, name').eq('id', workbookData.id).single();
+          if (wbRow) {
+            const { data: newWb, error: wbErr } = await supabase
+              .from('material_workbooks')
+              .insert({
+                job_id: wbRow.job_id,
+                quote_id: quote.id,
+                name: wbRow.name ?? undefined,
+                status: 'working',
+              })
+              .select('id')
+              .single();
+            if (!wbErr && newWb) {
+              const { data: srcSheets } = await supabase
+                .from('material_sheets')
+                .select('*')
+                .eq('workbook_id', wbRow.id)
+                .order('order_index');
+              for (const sheet of srcSheets || []) {
+                const { data: newSheet, error: sheetErr } = await supabase
+                  .from('material_sheets')
+                  .insert({
+                    workbook_id: newWb.id,
+                    sheet_name: sheet.sheet_name,
+                    description: sheet.description,
+                    order_index: sheet.order_index,
+                  })
+                  .select('id')
+                  .single();
+                if (sheetErr || !newSheet) continue;
+                const { data: srcItems } = await supabase.from('material_items').select('*').eq('sheet_id', sheet.id);
+                if (srcItems?.length) {
+                  await supabase.from('material_items').insert(
+                    srcItems.map((item: any) => ({
+                      sheet_id: newSheet.id,
+                      material_name: item.material_name,
+                      sku: item.sku,
+                      category: item.category,
+                      quantity: item.quantity,
+                      unit: item.unit,
+                      cost_per_unit: item.cost_per_unit,
+                      price_per_unit: item.price_per_unit,
+                      notes: item.notes,
+                      order_index: item.order_index,
+                    }))
+                  );
+                }
+                const { data: srcLabor } = await supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id);
+                if (srcLabor?.length) {
+                  await supabase.from('material_sheet_labor').insert(
+                    srcLabor.map((l: any) => ({
+                      sheet_id: newSheet.id,
+                      description: l.description,
+                      estimated_hours: l.estimated_hours,
+                      hourly_rate: l.hourly_rate,
+                      notes: l.notes,
+                    }))
+                  );
+                }
+                const { data: srcMarkups } = await supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id);
+                if (srcMarkups?.length) {
+                  await supabase.from('material_category_markups').insert(
+                    srcMarkups.map((m: any) => ({
+                      sheet_id: newSheet.id,
+                      category_name: m.category_name,
+                      markup_percent: m.markup_percent,
+                    }))
+                  );
+                }
+              }
+              workbookData = { id: newWb.id };
+            }
+          }
+        } catch (e: any) {
+          if (isQuoteIdError(e)) quoteIdSupport.current.material_workbooks = false;
+          console.warn('Duplicate fallback workbook for quote failed (backend may not have quote_id):', e?.message || e);
+        }
+      }
+
       if (!workbookData) {
         setMaterialsBreakdown({
           sheetBreakdowns: [],
@@ -2444,6 +3237,107 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         setSheetLabor({});
         setSheetMarkups({});
         return;
+      }
+
+      // Self-healing: copy any sheets from the job's FULLEST workbook that this workbook is missing
+      try {
+        const { data: currentSheets } = await supabase
+          .from('material_sheets')
+          .select('sheet_name')
+          .eq('workbook_id', workbookData.id);
+        const currentSheetNames = new Set((currentSheets || []).map((s: any) => s.sheet_name));
+
+        let allJobWbs2: { id: string }[] | null = null;
+        const { data: otherWbs1, error: otherWbsErr } = await supabase
+          .from('material_workbooks')
+          .select('id')
+          .eq('job_id', job.id)
+          .neq('id', workbookData.id);
+        if (otherWbsErr) {
+          const { data: otherWbs2 } = await supabase.from('material_workbooks').select('id, job_id');
+          allJobWbs2 = (otherWbs2 || []).filter((w: any) => w.id !== workbookData.id && w.job_id === job.id).map(w => ({ id: w.id }));
+        } else {
+          allJobWbs2 = otherWbs1;
+        }
+        if (!allJobWbs2?.length) { /* no other workbooks */ } else {
+          const { data: otherSheetsAll } = await supabase
+            .from('material_sheets')
+            .select('workbook_id')
+            .in('workbook_id', allJobWbs2.map((w: any) => w.id));
+          const countByWb: Record<string, number> = {};
+          (otherSheetsAll || []).forEach((s: any) => { countByWb[s.workbook_id] = (countByWb[s.workbook_id] || 0) + 1; });
+          const fullestOtherId = Object.entries(countByWb).sort((a, b) => b[1] - a[1])[0]?.[0];
+          if (fullestOtherId) {
+            const { data: sourceSheets } = await supabase
+              .from('material_sheets')
+              .select('*')
+              .eq('workbook_id', fullestOtherId)
+              .order('order_index');
+
+            for (const sheet of sourceSheets || []) {
+              if (currentSheetNames.has(sheet.sheet_name)) continue;
+              const { data: newSheet, error: sheetInsertErr } = await supabase
+                .from('material_sheets')
+                .insert({
+                  workbook_id: workbookData.id,
+                  sheet_name: sheet.sheet_name,
+                  description: sheet.description,
+                  order_index: sheet.order_index,
+                })
+                .select('id')
+                .single();
+              if (sheetInsertErr) {
+                console.warn('Fill sheet insert failed:', sheet.sheet_name, sheetInsertErr);
+                continue;
+              }
+              if (!newSheet) continue;
+              currentSheetNames.add(sheet.sheet_name);
+
+              const { data: srcItems } = await supabase.from('material_items').select('*').eq('sheet_id', sheet.id);
+              if (srcItems?.length) {
+                const { error: itemsErr } = await supabase.from('material_items').insert(
+                  srcItems.map((item: any) => ({
+                    sheet_id: newSheet.id,
+                    material_name: item.material_name,
+                    sku: item.sku,
+                    category: item.category,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    cost_per_unit: item.cost_per_unit,
+                    price_per_unit: item.price_per_unit,
+                    notes: item.notes,
+                    order_index: item.order_index,
+                  }))
+                );
+                if (itemsErr) console.warn('Fill material_items failed:', sheet.sheet_name, itemsErr);
+              }
+              const { data: srcLabor } = await supabase.from('material_sheet_labor').select('*').eq('sheet_id', sheet.id);
+              if (srcLabor?.length) {
+                await supabase.from('material_sheet_labor').insert(
+                  srcLabor.map((l: any) => ({
+                    sheet_id: newSheet.id,
+                    description: l.description,
+                    estimated_hours: l.estimated_hours,
+                    hourly_rate: l.hourly_rate,
+                    notes: l.notes,
+                  }))
+                );
+              }
+              const { data: srcMarkups } = await supabase.from('material_category_markups').select('*').eq('sheet_id', sheet.id);
+              if (srcMarkups?.length) {
+                await supabase.from('material_category_markups').insert(
+                  srcMarkups.map((m: any) => ({
+                    sheet_id: newSheet.id,
+                    category_name: m.category_name,
+                    markup_percent: m.markup_percent,
+                  }))
+                );
+              }
+            }
+          }
+        }
+      } catch (fillErr: any) {
+        console.error('Fill missing sheets failed:', fillErr);
       }
 
       // Get all sheets for this workbook
@@ -2481,9 +3375,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
       if (itemsError) throw itemsError;
 
-      // Store sheets data for editing
-      if (JSON.stringify(sheetsData || []) !== JSON.stringify(materialSheets)) {
-        setMaterialSheets(sheetsData || []);
+      // Store sheets data for editing (dedupe by id to avoid duplicate sections)
+      const sheetsList = sheetsData || [];
+      const dedupedSheets = sheetsList.filter((s: any, i: number, a: any[]) => a.findIndex((x: any) => x.id === s.id) === i);
+      if (JSON.stringify(dedupedSheets) !== JSON.stringify(materialSheets)) {
+        setMaterialSheets(dedupedSheets);
       }
 
       // Load category markups (but don't overwrite values currently being saved)
@@ -2619,91 +3515,148 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function loadCustomRows() {
-    // Check if we're viewing a historical proposal (read-only mode)
-    if (isReadOnly && quote) {
-      console.log('📖 Loading custom rows from historical snapshot for proposal:', quote.proposal_number);
-      
-      // Find the proposal version for this quote
-      const { data: versionData, error: versionError } = await supabase
-        .from('proposal_versions')
-        .select('financial_rows_snapshot')
-        .eq('quote_id', quote.id)
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (versionError) {
-        console.error('Error loading proposal version for custom rows:', versionError);
-        return;
-      }
-      
-      if (!versionData || !versionData.financial_rows_snapshot) {
-        console.log('No custom rows snapshot found for this proposal');
-        setCustomRows([]);
-        setCustomRowLineItems({});
-        setCustomRowLabor({});
-        return;
-      }
-      
-      // Parse and use the snapshot data
-      const snapshot = versionData.financial_rows_snapshot;
-      const rowsData = Array.isArray(snapshot) ? snapshot : [];
-      
-      // Update custom rows from snapshot
-      if (JSON.stringify(rowsData) !== JSON.stringify(customRows)) {
-        setCustomRows(rowsData);
-      }
-      
-      // Extract labor and line items from snapshot
-      const laborMap: Record<string, any> = {};
-      const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-      
-      rowsData.forEach((row: any) => {
-        if (row.notes) {
-          try {
-            const parsed = JSON.parse(row.notes);
-            if (parsed.labor) {
-              laborMap[row.id] = parsed.labor;
-            }
-          } catch {
-            // Not JSON, skip
-          }
-        }
-        
-        // Line items are stored in the snapshot
-        if (row.line_items && Array.isArray(row.line_items)) {
-          lineItemsMap[row.id] = row.line_items;
-        }
-      });
-      
-      setCustomRowLabor(laborMap);
-      setCustomRowLineItems(lineItemsMap);
-      
-      console.log('✅ Loaded custom rows from snapshot');
+    if (!quote?.id) {
+      setCustomRows([]);
+      setCustomRowLabor({});
+      setCustomRowLineItems({});
       return;
     }
-    
-    // Normal flow: Load live data for current/editable proposals
-    const { data, error } = await supabase
+
+    // Load all rows for this job to find this quote's rows or a source to duplicate from
+    let allRows: any[] | null = null;
+    const { data: rows1, error: err1 } = await supabase
       .from('custom_financial_rows')
       .select('*')
       .eq('job_id', job.id)
       .order('order_index');
+    if (err1) {
+      console.warn('custom_financial_rows query with job_id failed, trying select all:', err1.message || err1);
+      const { data: rows2, error: err2 } = await supabase
+        .from('custom_financial_rows')
+        .select('*')
+        .order('order_index');
+      if (err2) {
+        console.error('Error loading custom rows:', err2);
+        return;
+      }
+      allRows = (rows2 || []).filter((r: any) => r.job_id === job.id);
+    } else {
+      allRows = rows1;
+    }
 
-    if (error) {
-      console.error('Error loading custom rows:', error);
+    if (allRows === null) {
+      setCustomRows([]);
+      setCustomRowLabor({});
+      setCustomRowLineItems({});
       return;
     }
-    
-    // Only update if data actually changed to prevent unnecessary re-renders
-    const newData = data || [];
-    if (JSON.stringify(newData) !== JSON.stringify(customRows)) {
-      setCustomRows(newData);
+
+    let rowsForQuote = (allRows || []).filter((r: any) => r.quote_id === quote.id);
+    // Do NOT reuse legacy (quote_id null) rows as this quote's rows — duplicate them so edits only affect this proposal.
+
+    // Find the best source rows to duplicate from (legacy null first, then any other quote)
+    const otherRows = (allRows || []).filter((r: any) => r.quote_id !== quote.id);
+    let sourceRows: any[] = [];
+    if (otherRows.length > 0) {
+      const legacyRows = otherRows.filter((r: any) => r.quote_id == null);
+      if (legacyRows.length > 0) {
+        sourceRows = legacyRows;
+      } else {
+        const bestQuoteId = otherRows.reduce((best: { id: string; count: number } | null, r: any) => {
+          const qid = r.quote_id;
+          if (!qid) return best;
+          const cnt = otherRows.filter((x: any) => x.quote_id === qid).length;
+          if (!best || cnt > best.count) return { id: qid, count: cnt };
+          return best;
+        }, null)?.id;
+        if (bestQuoteId) {
+          sourceRows = otherRows.filter((r: any) => r.quote_id === bestQuoteId);
+        }
+      }
     }
 
-    // Load labor data for custom rows (store in notes field as JSON)
+    // If no rows for this quote at all, duplicate everything from source (only when backend supports quote_id)
+    // If this quote has FEWER rows than the source, copy missing ones (match by description+category)
+    if (sourceRows.length > 0 && quoteIdSupport.current.custom_financial_rows) {
+      try {
+        const existingDescs = new Set(rowsForQuote.map((r: any) => `${r.category}|||${r.description}`));
+        const missingRows = sourceRows.filter((r: any) => !existingDescs.has(`${r.category}|||${r.description}`));
+
+        if (missingRows.length > 0) {
+          const newRows: any[] = [];
+          for (const row of missingRows) {
+            const rowPayload: Record<string, unknown> = {
+              job_id: job.id,
+              category: row.category,
+              description: row.description,
+              quantity: row.quantity,
+              unit_cost: row.unit_cost,
+              total_cost: row.total_cost,
+              markup_percent: row.markup_percent,
+              selling_price: row.selling_price,
+              notes: row.notes,
+              order_index: row.order_index,
+              taxable: row.taxable,
+              sheet_id: null,
+            };
+            if (quoteIdSupport.current.custom_financial_rows && quote?.id) rowPayload.quote_id = quote.id;
+            const { data: newRow, error: rowErr } = await supabase
+              .from('custom_financial_rows')
+              .insert(rowPayload)
+              .select()
+              .single();
+            if (rowErr) {
+              if (isQuoteIdError(rowErr)) quoteIdSupport.current.custom_financial_rows = false;
+              continue;
+            }
+            if (!newRow) continue;
+            newRows.push(newRow);
+            const { data: srcLineItems } = await supabase
+              .from('custom_financial_row_items')
+              .select('*')
+              .eq('row_id', row.id)
+              .order('order_index');
+            if (srcLineItems?.length) {
+              await supabase.from('custom_financial_row_items').insert(
+                srcLineItems.map((li: any) => ({
+                  row_id: newRow.id,
+                  sheet_id: null,
+                  description: li.description,
+                  quantity: li.quantity,
+                  unit_cost: li.unit_cost,
+                  total_cost: li.total_cost,
+                  notes: li.notes,
+                  order_index: li.order_index,
+                  taxable: li.taxable,
+                  markup_percent: li.markup_percent,
+                  item_type: li.item_type,
+                }))
+              );
+            }
+          }
+          rowsForQuote = [...rowsForQuote, ...newRows];
+        }
+      } catch (dupErr: any) {
+        console.error('Custom rows fill failed:', dupErr);
+        if (isQuoteIdError(dupErr)) quoteIdSupport.current.custom_financial_rows = false;
+        // Backend may not have quote_id; show shared rows so UI still works
+        if (rowsForQuote.length === 0 && sourceRows.length > 0) {
+          rowsForQuote = [...sourceRows];
+        }
+      }
+    }
+    if (rowsForQuote.length === 0 && sourceRows.length > 0 && !quoteIdSupport.current.custom_financial_rows) {
+      rowsForQuote = [...sourceRows];
+    }
+
+    const newData = rowsForQuote;
+    const deduped = newData.filter((r: any, i: number, a: any[]) => a.findIndex((x: any) => x.id === r.id) === i);
+    if (JSON.stringify(deduped) !== JSON.stringify(customRows)) {
+      setCustomRows(deduped);
+    }
+
     const laborMap: Record<string, any> = {};
-    newData.forEach(row => {
+    deduped.forEach(row => {
       if (row.notes) {
         try {
           const parsed = JSON.parse(row.notes);
@@ -2718,61 +3671,70 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCustomRowLabor(laborMap);
 
     // Load line items for custom rows AND material sheets
-    const rowIds = newData.map(r => r.id);
-    
-    // Query material sheets directly instead of using state to avoid race conditions
-    const { data: sheetsData } = await supabase
-      .from('material_workbooks')
-      .select('id')
-      .eq('job_id', job.id)
-      .eq('status', 'working')
-      .maybeSingle();
-    
+    const rowIds = deduped.map(r => r.id);
+
+    let wbData: { id: string } | null = null;
+    if (quoteIdSupport.current.material_workbooks && quote?.id) {
+      const { data: wbList, error: wbErr } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('quote_id', quote.id)
+        .eq('status', 'working')
+        .limit(1);
+      if (!wbErr && wbList?.[0]) wbData = wbList[0];
+    }
+    if (!wbData) {
+      const { data: wbFallback } = await supabase
+        .from('material_workbooks')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('status', 'working')
+        .limit(1);
+      if (wbFallback?.[0]) wbData = wbFallback[0];
+    }
+
     let sheetIds: string[] = [];
-    if (sheetsData) {
+    if (wbData) {
       const { data: sheets } = await supabase
         .from('material_sheets')
         .select('id')
-        .eq('workbook_id', sheetsData.id);
-      
+        .eq('workbook_id', wbData.id);
       if (sheets) {
         sheetIds = sheets.map(s => s.id);
       }
     }
-    
-    const allIds = [...rowIds, ...sheetIds];
-    
-    if (allIds.length > 0) {
-      // Build the OR condition dynamically to avoid invalid SQL when one array is empty
-      const orConditions: string[] = [];
-      if (rowIds.length > 0) {
-        orConditions.push(`row_id.in.(${rowIds.join(',')})`);
-      }
-      if (sheetIds.length > 0) {
-        orConditions.push(`sheet_id.in.(${sheetIds.join(',')})`);
-      }
-      
-      if (orConditions.length > 0) {
-        const { data: lineItemsData, error: lineItemsError } = await supabase
-          .from('custom_financial_row_items')
-          .select('*')
-          .or(orConditions.join(','))
-          .order('order_index');
 
-        if (!lineItemsError && lineItemsData) {
-          const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-          lineItemsData.forEach(item => {
-            const parentId = item.row_id || item.sheet_id;
-            if (parentId) {
-              if (!lineItemsMap[parentId]) {
-                lineItemsMap[parentId] = [];
-              }
-              lineItemsMap[parentId].push(item);
+    const orConditions: string[] = [];
+    if (rowIds.length > 0) {
+      orConditions.push(`row_id.in.(${rowIds.join(',')})`);
+    }
+    if (sheetIds.length > 0) {
+      orConditions.push(`sheet_id.in.(${sheetIds.join(',')})`);
+    }
+
+    if (orConditions.length > 0) {
+      const { data: lineItemsData, error: lineItemsError } = await supabase
+        .from('custom_financial_row_items')
+        .select('*')
+        .or(orConditions.join(','))
+        .order('order_index');
+
+      if (!lineItemsError && lineItemsData) {
+        const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
+        lineItemsData.forEach(item => {
+          const parentId = item.row_id || item.sheet_id;
+          if (parentId) {
+            if (!lineItemsMap[parentId]) {
+              lineItemsMap[parentId] = [];
             }
-          });
-          setCustomRowLineItems(lineItemsMap);
-        }
+            lineItemsMap[parentId].push(item);
+          }
+        });
+        setCustomRowLineItems(lineItemsMap);
       }
+    } else {
+      setCustomRowLineItems({});
     }
   }
 
@@ -2917,19 +3879,21 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           ? Math.max(...subcontractorEstimates.map(s => s.order_index))
           : -1;
         
-        // Create subcontractor estimate
+        // Create subcontractor estimate (scoped to current proposal)
+        const subPayload: Record<string, unknown> = {
+          job_id: job.id,
+          company_name: description,
+          total_amount: totalCost,
+          markup_percent: markup,
+          scope_of_work: notes || null,
+          order_index: maxOrderIndex + 1,
+          sheet_id: linkedSheetId || null,
+          extraction_status: 'completed',
+        };
+        if (quote?.id && quoteIdSupport.current.subcontractor_estimates) subPayload.quote_id = quote.id;
         const { data: estData, error: estError } = await supabase
           .from('subcontractor_estimates')
-          .insert([{
-            job_id: job.id,
-            company_name: description,
-            total_amount: totalCost,
-            markup_percent: markup,
-            scope_of_work: notes || null,
-            order_index: maxOrderIndex + 1,
-            sheet_id: linkedSheetId || null,
-            extraction_status: 'completed',
-          }])
+          .insert([subPayload])
           .select()
           .single();
 
@@ -2970,7 +3934,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         targetOrderIndex = maxOrderIndex + 1;
       }
 
-      const rowData = {
+      const rowData: Record<string, unknown> = {
         job_id: job.id,
         category,
         description,
@@ -2984,6 +3948,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         order_index: targetOrderIndex,
         sheet_id: linkedSheetId || null,
       };
+      if (quote?.id && quoteIdSupport.current.custom_financial_rows) rowData.quote_id = quote.id;
 
       if (editingRow) {
         const { data, error } = await supabase
@@ -3802,13 +4767,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   function getCustomRowTotal(row: CustomFinancialRow): number {
     const lineItems = customRowLineItems[row.id] || [];
     if (lineItems.length > 0) {
-      // If has line items, sum their totals
-      const itemsTotal = lineItems.reduce((sum, item) => sum + item.total_cost, 0);
-      return itemsTotal * (1 + row.markup_percent / 100);
-    } else {
-      // Otherwise use the row's own selling price
-      return row.selling_price;
+      const itemsTotal = lineItems.reduce((sum, item) => sum + n(item.total_cost), 0);
+      return itemsTotal * (1 + n(row.markup_percent) / 100);
     }
+    return n(row.selling_price) || n(row.total_cost);
   }
 
   // Filter labor rows and calculate total labor hours
@@ -3822,14 +4784,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const grandTotalCost = customRows.reduce((sum, row) => {
     const lineItems = customRowLineItems[row.id] || [];
     if (lineItems.length > 0) {
-      return sum + lineItems.reduce((itemSum, item) => itemSum + item.total_cost, 0);
+      return sum + lineItems.reduce((itemSum, item) => itemSum + n(item.total_cost), 0);
     }
-    return sum + row.total_cost;
+    return sum + n(row.total_cost);
   }, 0);
 
-  const grandTotalPrice = customRows.reduce((sum, row) => {
-    return sum + getCustomRowTotal(row);
-  }, 0);
+  const grandTotalPrice = customRows.reduce((sum, row) => sum + getCustomRowTotal(row), 0);
 
   // Labor calculations (no markup) - use TOTAL LABOR HOURS from labor rows for pricing
   const laborRate = parseFloat(hourlyRate) || 60;
@@ -3838,9 +4798,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   const laborPrice = totalLaborHours * billableRate;
   const laborProfit = 0;
 
-  // Overall totals (including materials)
-  const totalCost = materialsBreakdown.totals.totalCost + grandTotalCost + laborCost;
-  const totalPrice = materialsBreakdown.totals.totalPrice + grandTotalPrice + laborPrice;
+  // Overall totals (including materials) - use n() so historical view never shows NaN
+  const totalCost = n(materialsBreakdown.totals.totalCost) + grandTotalCost + laborCost;
+  const totalPrice = n(materialsBreakdown.totals.totalPrice) + grandTotalPrice + laborPrice;
   const totalProfit = totalPrice - totalCost;
   const profitMargin = totalPrice > 0 ? (totalProfit / totalPrice) * 100 : 0;
 
@@ -4034,19 +4994,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       linkedSubsMaterialsTaxableOnly += materialsTaxableOnly * (1 + estMarkup / 100);
     });
     
-    // Calculate category totals with individual markups (NO sheet-level markup)
     const categoryTotals = sheet.categories?.reduce((sum: number, cat: any) => {
       const categoryKey = `${sheet.sheetId}_${cat.name}`;
       const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-      const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+      const categoryPriceWithMarkup = n(cat.totalCost) * (1 + categoryMarkup / 100);
       return sum + categoryPriceWithMarkup;
     }, 0) || 0;
     
-    // For taxable calculation, all category materials are taxable by default
     const categoryTaxableOnly = sheet.categories?.reduce((sum: number, cat: any) => {
       const categoryKey = `${sheet.sheetId}_${cat.name}`;
       const categoryMarkup = categoryMarkups[categoryKey] ?? 10;
-      const categoryPriceWithMarkup = cat.totalCost * (1 + categoryMarkup / 100);
+      const categoryPriceWithMarkup = n(cat.totalCost) * (1 + categoryMarkup / 100);
       return sum + categoryPriceWithMarkup;
     }, 0) || 0;
     
@@ -4148,7 +5106,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }, 0);
   
   const totalCustomRowLaborCost = Object.values(customRowLabor).reduce((sum: number, labor: any) => {
-    return sum + (labor.estimated_hours * labor.hourly_rate);
+    return sum + (n(labor?.estimated_hours) * n(labor?.hourly_rate));
   }, 0);
   
   const proposalLaborPrice = totalSheetLaborCost + totalCustomRowLaborCost + customRowsLaborTotal + subcontractorLaborPrice;
@@ -4279,52 +5237,95 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       
       {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
-        <Card className="mb-4 border-blue-200 bg-blue-50">
+        <Card className={`mb-4 ${quote.is_signed ? 'border-emerald-300 bg-emerald-50' : 'border-blue-200 bg-blue-50'}`}>
           <CardContent className="py-3">
             <div className="flex items-center justify-between">
               {/* Left: Current Proposal Info */}
               <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-blue-900">
+                <FileSpreadsheet className={`w-4 h-4 ${quote.is_signed ? 'text-emerald-600' : 'text-blue-600'}`} />
+                <span className={`text-sm font-semibold ${quote.is_signed ? 'text-emerald-900' : 'text-blue-900'}`}>
                   Proposal #{quote.proposal_number || quote.quote_number}
                 </span>
-                {isReadOnly && (
-                  <Badge className="text-xs bg-amber-100 border-amber-300 text-amber-900">
-                    Historical View
+                {quote.is_signed && (
+                  <Badge className="text-xs bg-emerald-100 border-emerald-400 text-emerald-900">
+                    <Lock className="w-3 h-3 mr-1" />
+                    Signed Contract
                   </Badge>
                 )}
               </div>
 
-              {/* Right: Navigation Controls (only show if multiple proposals exist) */}
-              {allJobQuotes.length > 1 && (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-blue-700 font-medium">
-                    {allJobQuotes.findIndex(q => q.id === quote.id) + 1} of {allJobQuotes.length}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={navigateToPreviousProposal}
-                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === allJobQuotes.length - 1}
-                      className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
-                      title="Previous Proposal (Older)"
-                    >
-                      <ChevronDown className="w-4 h-4 rotate-90" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={navigateToNextProposal}
-                      disabled={allJobQuotes.findIndex(q => q.id === quote.id) === 0}
-                      className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
-                      title="Next Proposal (Newer)"
-                    >
-                      <ChevronDown className="w-4 h-4 -rotate-90" />
-                    </Button>
+              {/* Right: Navigation + Actions */}
+              <div className="flex items-center gap-2">
+                {/* Create from This button */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCreateFromQuoteId(quote.id);
+                    setShowCreateProposalDialog(true);
+                  }}
+                  className="h-7 text-xs border-blue-300 hover:bg-blue-100"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Create from This
+                </Button>
+
+                {/* Sign as Contract button (only for unsigned proposals) */}
+                {!quote.is_signed && (
+                  <Button
+                    size="sm"
+                    onClick={signAsContract}
+                    className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <Lock className="w-3 h-3 mr-1" />
+                    Sign as Contract
+                  </Button>
+                )}
+
+                {/* View Contract Comparison (only for signed proposals) */}
+                {quote.is_signed && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowComparisonView(true)}
+                    className="h-7 text-xs border-emerald-400 hover:bg-emerald-100"
+                  >
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    Compare Contract vs Actual
+                  </Button>
+                )}
+
+                {/* Navigation Controls */}
+                {allJobQuotes.length > 1 && (
+                  <div className="flex items-center gap-2 ml-2 pl-2 border-l border-blue-200">
+                    <span className="text-xs text-blue-700 font-medium">
+                      {allJobQuotes.findIndex(q => q.id === quote.id) + 1} of {allJobQuotes.length}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={navigateToPreviousProposal}
+                        disabled={allJobQuotes.findIndex(q => q.id === quote.id) === allJobQuotes.length - 1}
+                        className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
+                        title="Previous Proposal (Older)"
+                      >
+                        <ChevronDown className="w-4 h-4 rotate-90" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={navigateToNextProposal}
+                        disabled={allJobQuotes.findIndex(q => q.id === quote.id) === 0}
+                        className="h-7 w-7 p-0 border-blue-300 hover:bg-blue-100"
+                        title="Next Proposal (Newer)"
+                      >
+                        <ChevronDown className="w-4 h-4 -rotate-90" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -4347,20 +5348,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 {buildingDescription ? 'Edit Building Description' : 'Add Building Description'}
               </Button>
               <div className="h-6 w-px bg-border" />
-              {/* Versioning Buttons - Always show "Create Version" */}
               <Button
                 size="sm"
                 onClick={() => {
                   if (quote) {
+                    setCreateFromQuoteId(quote.id);
                     setShowCreateProposalDialog(true);
                   } else {
                     autoCreateFirstProposal();
                   }
                 }}
-                disabled={creatingVersion || isReadOnly}
+                disabled={creatingProposal}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {creatingVersion ? (
+                {creatingProposal ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                     Creating...
@@ -4372,20 +5373,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   </>
                 )}
               </Button>
-              {/* Show Sign & Lock for current version only */}
-              {quote && proposalVersions.length > 0 && !quote.signed_version && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const currentVersion = proposalVersions.find(v => v.version_number === quote.current_version);
-                    if (currentVersion) signAndLockVersion(currentVersion.id);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Lock className="w-3 h-3 mr-2" />
-                  Set as Contract
-                </Button>
-              )}
               <div className="h-6 w-px bg-border" />
               <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className="bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
                 <Settings className="w-4 h-4 mr-2" />
@@ -4483,29 +5470,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between py-2 border-b border-slate-200">
                       <span className="font-semibold text-slate-700">Materials</span>
-                      <span className="font-bold text-slate-900">${proposalMaterialsTotalWithSubcontractors.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="font-bold text-slate-900">${n(proposalMaterialsTotalWithSubcontractors).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {proposalLaborPrice > 0 && (
+                    {n(proposalLaborPrice) > 0 && (
                       <div className="flex justify-between py-2 border-b border-slate-200">
                         <span className="font-semibold text-slate-700">Labor</span>
-                        <span className="font-bold text-slate-900">${proposalLaborPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <span className="font-bold text-slate-900">${n(proposalLaborPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Totals */}
+                  {/* Totals - n() ensures historical view never shows NaN */}
                   <div className="space-y-3 pt-4 border-t-2 border-slate-200">
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600">Subtotal</span>
-                      <span className="font-semibold text-lg text-slate-900">${proposalSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="font-semibold text-lg text-slate-900">${n(proposalSubtotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600">Sales Tax (7%)</span>
-                      <span className="font-semibold text-lg text-amber-700">${proposalTotalTax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="font-semibold text-lg text-amber-700">${n(proposalTotalTax).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between items-center pt-3 border-t-2 border-amber-400 bg-gradient-to-r from-green-50 to-emerald-50 -mx-6 px-6 py-4 mt-4">
                       <span className="text-xl font-bold text-slate-900">GRAND TOTAL</span>
-                      <span className="text-3xl font-bold text-green-700">${proposalGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-3xl font-bold text-green-700">${n(proposalGrandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 </div>
@@ -5289,25 +6276,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       </Dialog>
 
       {/* Create New Proposal Dialog */}
-      <Dialog open={showCreateProposalDialog} onOpenChange={setShowCreateProposalDialog}>
+      <Dialog open={showCreateProposalDialog} onOpenChange={(open) => {
+        setShowCreateProposalDialog(open);
+        if (!open) setCreateFromQuoteId(null);
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Proposal</DialogTitle>
             <DialogDescription>
-              This will lock the current proposal (saving a snapshot of all materials and pricing) and create a new proposal with an incremented number that you can continue editing.
+              {createFromQuoteId
+                ? `This will create a new proposal duplicated from ${allJobQuotes.find(q => q.id === createFromQuoteId)?.proposal_number || 'the selected proposal'}.`
+                : 'This will create a new proposal with all data duplicated from the current one.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-sm">
               <div className="flex items-start gap-2">
-                <Lock className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <Plus className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-blue-900 mb-1">What happens:</p>
                   <ul className="text-blue-800 space-y-1 list-disc list-inside">
-                    <li>Current proposal ({quote?.proposal_number}) will be locked with a snapshot</li>
-                    <li>All data will be <strong>fully duplicated</strong> for the new proposal</li>
-                    <li>New proposal gets its own independent materials, rows, and estimates</li>
-                    <li>Old proposal remains frozen and cannot be changed</li>
+                    <li>All materials, rows, and estimates are <strong>fully duplicated</strong></li>
+                    <li>New proposal gets its own independent data</li>
+                    <li>Source proposal is not modified</li>
                     <li>Complete "air gap" - zero interference between proposals</li>
                   </ul>
                 </div>
@@ -5318,12 +6309,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
               <Textarea
                 value={proposalChangeNotes}
                 onChange={(e) => setProposalChangeNotes(e.target.value)}
-                placeholder="e.g., Updated pricing per customer request, Added garage door options, Changed roof color..."
+                placeholder="e.g., Updated pricing per customer request, Added garage door options..."
                 rows={3}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Document what changed in this new proposal version
-              </p>
             </div>
             <div className="flex justify-end gap-2">
               <Button
@@ -5331,12 +6319,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 onClick={() => {
                   setShowCreateProposalDialog(false);
                   setProposalChangeNotes('');
+                  setCreateFromQuoteId(null);
                 }}
                 disabled={creatingProposal}
               >
                 Cancel
               </Button>
-              <Button onClick={createNewProposal} disabled={creatingProposal}>
+              <Button onClick={() => createNewProposal(createFromQuoteId || undefined)} disabled={creatingProposal}>
                 {creatingProposal ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
@@ -5354,129 +6343,20 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Proposal Version History Dialog */}
-      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      {/* Contract vs Working Comparison Dialog */}
+      <Dialog open={showComparisonView} onOpenChange={setShowComparisonView}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              Proposal Version History
+              <TrendingUp className="w-5 h-5" />
+              Contract vs Actual Comparison
             </DialogTitle>
             <DialogDescription>
-              View all versions of this proposal. Signed versions are locked and cannot be modified.
+              Detailed breakdown of differences between the original signed contract and the current working version.
             </DialogDescription>
           </DialogHeader>
-
-          {loadingVersions ? (
-            <div className="py-12 text-center">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-muted-foreground">Loading version history...</p>
-            </div>
-          ) : proposalVersions.length === 0 ? (
-            <div className="py-12 text-center">
-              <History className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">No versions found</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Versions are automatically created when proposals are modified
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {proposalVersions.map((version) => (
-                <Card key={version.id} className={version.is_signed ? 'border-emerald-300 bg-emerald-50' : ''}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-lg">Version {version.version_number}</CardTitle>
-                          {version.is_signed && (
-                            <Badge className="bg-emerald-600">
-                              <Lock className="w-3 h-3 mr-1" />
-                              Signed
-                            </Badge>
-                          )}
-                          {version.version_number === quote?.current_version && !version.is_signed && (
-                            <Badge variant="outline" className="bg-blue-100 text-blue-700">
-                              Current
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          <span>
-                            {new Date(version.created_at).toLocaleDateString('en-US', {
-                              month: 'long',
-                              day: 'numeric',
-                              year: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-                        {version.is_signed && version.signed_at && (
-                          <div className="flex items-center gap-2 mt-1 text-sm text-emerald-700 font-medium">
-                            <Lock className="w-3 h-3" />
-                            <span>
-                              Signed on {new Date(version.signed_at).toLocaleDateString('en-US', {
-                                month: 'long',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        {!version.is_signed && version.version_number === quote?.current_version && (
-                          <Button
-                            size="sm"
-                            onClick={() => signAndLockVersion(version.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            <Lock className="w-3 h-3 mr-2" />
-                            Sign & Lock
-                          </Button>
-                        )}
-                        <Button size="sm" variant="outline">
-                          <Eye className="w-3 h-3 mr-2" />
-                          View Details
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Customer</Label>
-                        <p className="font-medium">{version.customer_name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Project</Label>
-                        <p className="font-medium">{version.project_name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Size</Label>
-                        <p className="font-medium">
-                          {version.width}' × {version.length}'
-                        </p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Estimated Price</Label>
-                        <p className="font-medium text-green-700">
-                          {version.estimated_price ? `$${version.estimated_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'N/A'}
-                        </p>
-                      </div>
-                    </div>
-                    {version.change_notes && (
-                      <div className="pt-3 border-t">
-                        <Label className="text-xs text-muted-foreground">Notes</Label>
-                        <p className="text-sm mt-1">{version.change_notes}</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+          {quote?.is_signed && (
+            <ContractComparison quoteId={quote.id} jobId={job.id} />
           )}
         </DialogContent>
       </Dialog>
