@@ -18,6 +18,7 @@ import { PhotoUpload } from '@/components/foreman/PhotoUpload';
 import { DailyLogForm } from '@/components/foreman/DailyLogForm';
 import { JobLogsView } from '@/components/foreman/JobLogsView';
 import { JobDetails } from '@/components/foreman/JobDetails';
+import { DocumentsView } from '@/components/foreman/DocumentsView';
 import { ComponentHistory } from '@/components/foreman/ComponentHistory';
 import { MyTimeHistory } from '@/components/foreman/MyTimeHistory';
 import { JobComponents } from '@/components/office/JobComponents';
@@ -726,11 +727,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
           )}
 
           {activeTab === 'documents' && (
-            <JobDetails
-              job={selectedJob}
-              onBack={handleBackToJobs}
-              defaultTab="documents"
-            />
+            <DocumentsView job={selectedJob} userId={profile?.id || ''} />
           )}
 
           {activeTab === 'materials' && (
@@ -738,6 +735,7 @@ export function ForemanDashboard({ hideHeader = false }: ForemanDashboardProps =
               job={selectedJob}
               onBack={handleBackToJobs}
               defaultTab={documentTab}
+              showDocumentsTab={false}
             />
           )}
 

@@ -146,15 +146,17 @@ export function ShopClockIn({ userId, shopJob }: ShopClockInProps) {
     setLoading(true);
 
     try {
-      const endTime = new Date();
-      const totalHours = (endTime.getTime() - new Date(clockedInEntry.start_time).getTime()) / (1000 * 60 * 60);
-      const roundedHours = Math.round(totalHours * 4) / 4;
+      const startMs = new Date(clockedInEntry.start_time).getTime();
+      const endMs = Date.now();
+      const exactMinutes = (endMs - startMs) / (1000 * 60);
+      const roundedMinutes = Math.round(exactMinutes / 15) * 15;
+      const roundedHours = roundedMinutes / 60;
+      const endTimeRounded = new Date(startMs + roundedMinutes * 60 * 1000);
 
-      // Update the time entry
       const { error } = await supabase
         .from('time_entries')
         .update({
-          end_time: endTime.toISOString(),
+          end_time: endTimeRounded.toISOString(),
           total_hours: roundedHours,
           is_active: false,
           notes: 'Shop - Clock out',

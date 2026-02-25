@@ -32,6 +32,12 @@ import {
 import { toast } from 'sonner';
 import type { Job, Component } from '@/types';
 
+/** Round duration to nearest 15 minutes for payroll. Returns hours in quarter-hour increments (.25, .5, .75, .00). */
+function roundToQuarterHours(exactMinutes: number): number {
+  const roundedMinutes = Math.round(exactMinutes / 15) * 15;
+  return roundedMinutes / 60;
+}
+
 interface TimeDropdownPickerProps {
   value: string; // "HH:MM" format
   onChange: (value: string) => void;
@@ -147,9 +153,13 @@ interface QuickTimeEntryProps {
   onSuccess?: () => void;
   onBack?: () => void;
   allowedJobs?: Job[]; // Optional: restrict to specific jobs only
+  /** When 'shop', hide Existing Job/Misc Job tabs and lock to internal Shop job (1-click like crew). */
+  userRole?: string;
+  /** Pre-resolved Shop job when userRole is 'shop'. If not provided, component will fetch it. */
+  shopJobId?: string | null;
 }
 
-export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: QuickTimeEntryProps) {
+export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs, userRole, shopJobId: shopJobIdProp }: QuickTimeEntryProps) {
   const [loading, setLoading] = useState(false);
   const [clockedInEntry, setClockedInEntry] = useState<ClockInEntry | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -180,6 +190,9 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     hours: string;
     minutes: string;
   }>>([]);
+  const [shopJob, setShopJob] = useState<Job | null>(null);
+
+  const isShopUser = userRole === 'shop';
 
   // Check if selected job is snowplowing (for overnight shift feature)
   const isSnowplowingJob = selectedJobId && jobs.find(j => j.id === selectedJobId)?.name?.toLowerCase().includes('snowplow');
@@ -189,6 +202,39 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     loadClockedInStatus();
     loadOrCreateMiscJobsCategory();
   }, [userId]);
+
+  useEffect(() => {
+    if (!isShopUser) return;
+    if (shopJobIdProp) {
+      setSelectedJobId(shopJobIdProp);
+      const fromAllowed = allowedJobs?.find(j => j.id === shopJobIdProp);
+      if (fromAllowed) {
+        setShopJob(fromAllowed);
+        setJobs([fromAllowed]);
+      } else {
+        supabase.from('jobs').select('*').eq('id', shopJobIdProp).single().then(({ data }) => {
+          if (data) {
+            setShopJob(data);
+            setJobs([data]);
+          }
+        });
+      }
+    } else {
+      supabase
+        .from('jobs')
+        .select('*')
+        .eq('is_internal', true)
+        .ilike('name', '%shop%')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setShopJob(data);
+            setJobs([data]);
+            setSelectedJobId(data.id);
+          }
+        });
+    }
+  }, [isShopUser, shopJobIdProp, allowedJobs]);
 
   useEffect(() => {
     if (selectedJobId) {
@@ -231,6 +277,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
   async function loadJobs() {
     try {
+      if (isShopUser) return;
+
       // If allowedJobs is provided, use those instead of loading from database
       if (allowedJobs) {
         setJobs(allowedJobs);
@@ -464,7 +512,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
     
-    const totalHours = (endTotalMinutes - startTotalMinutes) / 60;
+    const exactMinutes = endTotalMinutes - startTotalMinutes;
+    const totalHours = roundToQuarterHours(exactMinutes);
 
     // Validate component times if any components are selected
     if (jobComponents.length > 0) {
@@ -485,18 +534,11 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
     try {
       const startDateTime = createUTCTimestamp(manualData.date, manualData.startTime);
-      
-      // For overnight shifts, end date is the next day
-      let endDate = manualData.date;
-      if (manualData.isOvernightShift) {
-        const nextDay = new Date(manualData.date);
-        nextDay.setDate(nextDay.getDate() + 1);
-        endDate = nextDay.toISOString().split('T')[0];
-      }
-      
-      const endDateTime = createUTCTimestamp(endDate, manualData.endTime);
+      const startMs = new Date(startDateTime).getTime();
+      const endMs = startMs + totalHours * 60 * 60 * 1000;
+      const endDateTime = new Date(endMs).toISOString();
 
-      // Save job-level time entry
+      // Save job-level time entry (quarter-hour rounded for payroll)
       const { error } = await supabase
         .from('time_entries')
         .insert({
@@ -505,7 +547,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
           user_id: userId,
           start_time: startDateTime,
           end_time: endDateTime,
-          total_hours: Math.round(totalHours * 4) / 4,
+          total_hours: totalHours,
           crew_count: 1,
           is_manual: true,
           is_active: false,
@@ -515,17 +557,19 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
 
       if (error) throw error;
 
-      // Save component time entries if any components are selected
+      // Save component time entries if any components are selected (quarter-hour rounded)
       if (jobComponents.length > 0) {
         const componentEntries = jobComponents.map(comp => {
-          const compHours = parseInt(comp.hours) + parseInt(comp.minutes) / 60;
+          const compExactMinutes = parseInt(comp.hours) * 60 + parseInt(comp.minutes);
+          const compHours = roundToQuarterHours(compExactMinutes);
+          const compEndMs = startMs + compHours * 60 * 60 * 1000;
           return {
             job_id: selectedJobId,
             component_id: comp.componentId,
             user_id: userId,
             start_time: startDateTime,
-            end_time: endDateTime,
-            total_hours: Math.round(compHours * 4) / 4,
+            end_time: new Date(compEndMs).toISOString(),
+            total_hours: compHours,
             crew_count: 1,
             is_manual: true,
             is_active: false,
@@ -611,22 +655,16 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
       return;
     }
     
-    const totalHours = (endTotalMinutes - startTotalMinutes) / 60;
+    const exactMinutes = endTotalMinutes - startTotalMinutes;
+    const totalHours = roundToQuarterHours(exactMinutes);
 
     setLoading(true);
 
     try {
       const startDateTime = createUTCTimestamp(miscJobData.date, miscJobData.startTime);
-      
-      // For overnight shifts, end date is the next day
-      let endDate = miscJobData.date;
-      if (miscJobData.isOvernightShift) {
-        const nextDay = new Date(miscJobData.date);
-        nextDay.setDate(nextDay.getDate() + 1);
-        endDate = nextDay.toISOString().split('T')[0];
-      }
-      
-      const endDateTime = createUTCTimestamp(endDate, miscJobData.endTime);
+      const startMs = new Date(startDateTime).getTime();
+      const endMs = startMs + totalHours * 60 * 60 * 1000;
+      const endDateTime = new Date(endMs).toISOString();
 
       // Create structured notes with job details
       const notesData = {
@@ -644,7 +682,7 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
           user_id: userId,
           start_time: startDateTime,
           end_time: endDateTime,
-          total_hours: Math.round(totalHours * 4) / 4,
+          total_hours: totalHours,
           crew_count: 1,
           is_manual: true,
           is_active: false,
@@ -683,15 +721,17 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
     setLoading(true);
 
     try {
-      const endTime = new Date();
-      const totalHours = (endTime.getTime() - new Date(clockedInEntry.start_time).getTime()) / (1000 * 60 * 60);
-      const roundedHours = Math.round(totalHours * 4) / 4;
+      const startMs = new Date(clockedInEntry.start_time).getTime();
+      const endMs = Date.now();
+      const exactMinutes = (endMs - startMs) / (1000 * 60);
+      const roundedHours = roundToQuarterHours(exactMinutes);
+      const roundedMs = Math.round(roundedHours * 60 * 60 * 1000);
+      const endTimeRounded = new Date(startMs + roundedMs);
 
-      // Update the time entry
       const { error } = await supabase
         .from('time_entries')
         .update({
-          end_time: endTime.toISOString(),
+          end_time: endTimeRounded.toISOString(),
           total_hours: roundedHours,
           is_active: false,
           notes: 'Clock out',
@@ -823,37 +863,58 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
             </DialogTitle>
           </DialogHeader>
 
-          {/* Job Type Selection */}
-          <div className="grid grid-cols-2 gap-2 p-1.5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border-2 border-black">
-            <Button
-              variant={jobType === 'existing' ? 'default' : 'ghost'}
-              onClick={() => setJobType('existing')}
-              className={`h-10 text-sm font-bold transition-all rounded-none border-2 ${
-                jobType === 'existing' 
-                  ? 'bg-black text-yellow-600 border-yellow-600 shadow-md' 
-                  : 'border-black hover:bg-white hover:shadow-sm'
-              }`}
-            >
-              <Briefcase className="w-4 h-4 mr-2" />
-              Existing Job
-            </Button>
-            <Button
-              variant={jobType === 'misc' ? 'default' : 'ghost'}
-              onClick={() => setJobType('misc')}
-              className={`h-10 text-sm font-bold transition-all rounded-none border-2 ${
-                jobType === 'misc' 
-                  ? 'bg-black text-yellow-600 border-yellow-600 shadow-md' 
-                  : 'border-black hover:bg-white hover:shadow-sm'
-              }`}
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Misc Job
-            </Button>
-          </div>
+          {/* Job Type Selection - hidden for shop users (locked to Shop job) */}
+          {!isShopUser && (
+            <div className="grid grid-cols-2 gap-2 p-1.5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border-2 border-black">
+              <Button
+                variant={jobType === 'existing' ? 'default' : 'ghost'}
+                onClick={() => setJobType('existing')}
+                className={`h-10 text-sm font-bold transition-all rounded-none border-2 ${
+                  jobType === 'existing' 
+                    ? 'bg-black text-yellow-600 border-yellow-600 shadow-md' 
+                    : 'border-black hover:bg-white hover:shadow-sm'
+                }`}
+              >
+                <Briefcase className="w-4 h-4 mr-2" />
+                Existing Job
+              </Button>
+              <Button
+                variant={jobType === 'misc' ? 'default' : 'ghost'}
+                onClick={() => setJobType('misc')}
+                className={`h-10 text-sm font-bold transition-all rounded-none border-2 ${
+                  jobType === 'misc' 
+                    ? 'bg-black text-yellow-600 border-yellow-600 shadow-md' 
+                    : 'border-black hover:bg-white hover:shadow-sm'
+                }`}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Misc Job
+              </Button>
+            </div>
+          )}
 
           <div className="space-y-3">
-            {/* Existing Job Flow */}
-            {jobType === 'existing' && (
+            {/* Shop user: 1-click Clock In to Shop (no job/misc tabs) */}
+            {isShopUser && (
+              <div className="p-3 border-2 border-black rounded-lg bg-gradient-to-br from-green-50 to-green-100 shadow-md">
+                <p className="font-semibold text-green-900 mb-2">Clocking in to Shop</p>
+                {selectedJobId ? (
+                  <Button
+                    onClick={() => handleTimerClockIn()}
+                    disabled={loading}
+                    className="w-full h-12 bg-black text-yellow-600 hover:bg-gray-900 text-base font-bold border-2 border-yellow-600 rounded-none"
+                  >
+                    <LogIn className="w-5 h-5 mr-2" />
+                    {loading ? 'Clocking In...' : 'Clock In to Shop'}
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Loading Shop job...</p>
+                )}
+              </div>
+            )}
+
+            {/* Existing Job Flow - hidden for shop users */}
+            {!isShopUser && jobType === 'existing' && (
               <>
                 {/* Mode Toggle */}
                 <div className="grid grid-cols-2 gap-2 p-1.5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border-2 border-black">
@@ -1157,8 +1218,8 @@ export function QuickTimeEntry({ userId, onSuccess, onBack, allowedJobs }: Quick
               </>
             )}
 
-            {/* Misc Job Flow */}
-            {jobType === 'misc' && (
+            {/* Misc Job Flow - hidden for shop users */}
+            {!isShopUser && jobType === 'misc' && (
               <>
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-black rounded-lg p-3 shadow-sm">
                   <div className="flex items-start gap-2">

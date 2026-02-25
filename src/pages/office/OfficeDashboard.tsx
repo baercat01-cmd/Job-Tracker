@@ -343,6 +343,7 @@ export function OfficeDashboard() {
             <div className="hidden sm:block">
               <QuickTimeEntry 
                 userId={profile?.id || ''} 
+                userRole={profile?.role}
                 onSuccess={() => {
                   toast.success('Time logged successfully');
                 }}

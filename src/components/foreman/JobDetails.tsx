@@ -16,20 +16,26 @@ import { MaterialsByBundle } from './MaterialsByBundle';
 import { CrewOrderedMaterials } from './CrewOrderedMaterials';
 import type { Job, DocumentFolder } from '@/types';
 
+const MATERIAL_TAB_VALUES = ['pull_from_shop', 'ready_for_job', 'all_materials', 'bundles', 'crew_orders'] as const;
+
 interface JobDetailsProps {
   job: Job;
   onBack: () => void;
   defaultTab?: string;
+  /** When false, only show material tabs (Pull, Ready, All, Pkgs, Orders). Used when bottom nav is Matl. */
+  showDocumentsTab?: boolean;
 }
 
-export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetailsProps) {
+export function JobDetails({ job, onBack, defaultTab = 'documents', showDocumentsTab = true }: JobDetailsProps) {
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const effectiveDefault = showDocumentsTab ? defaultTab : (MATERIAL_TAB_VALUES.includes(defaultTab as any) ? defaultTab : 'pull_from_shop');
+  const [activeTab, setActiveTab] = useState(effectiveDefault);
 
   // Update active tab when defaultTab changes (for navigation from status tags)
   useEffect(() => {
-    setActiveTab(defaultTab);
-  }, [defaultTab]);
+    const next = showDocumentsTab ? defaultTab : (MATERIAL_TAB_VALUES.includes(defaultTab as any) ? defaultTab : 'pull_from_shop');
+    setActiveTab(next);
+  }, [defaultTab, showDocumentsTab]);
   const [pullFromShopCount, setPullFromShopCount] = useState(0);
   const [readyForJobCount, setReadyForJobCount] = useState(0);
   const [bundlesCount, setBundlesCount] = useState(0);
@@ -167,12 +173,14 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6 gap-1 mb-6">
-          <TabsTrigger value="documents" className="flex items-center gap-1 text-xs sm:text-sm">
-            <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span className="hidden lg:inline">Docs</span>
-            <span className="lg:hidden">Docs</span>
-          </TabsTrigger>
+        <TabsList className={`grid w-full gap-1 mb-6 ${showDocumentsTab ? 'grid-cols-6' : 'grid-cols-5'}`}>
+          {showDocumentsTab && (
+            <TabsTrigger value="documents" className="flex items-center gap-1 text-xs sm:text-sm">
+              <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden lg:inline">Docs</span>
+              <span className="lg:hidden">Docs</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="pull_from_shop" className="flex items-center gap-1 text-xs sm:text-sm">
             <Package className="w-3 h-3 sm:w-4 sm:h-4" />
             <span className="hidden lg:inline">Pull</span>
@@ -220,9 +228,11 @@ export function JobDetails({ job, onBack, defaultTab = 'documents' }: JobDetails
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="documents">
-          <DocumentsView job={job} userId={profile?.id || ''} />
-        </TabsContent>
+        {showDocumentsTab && (
+          <TabsContent value="documents">
+            <DocumentsView job={job} userId={profile?.id || ''} />
+          </TabsContent>
+        )}
 
         <TabsContent value="pull_from_shop">
           <JobMaterialsByStatus job={job} status="pull_from_shop" />

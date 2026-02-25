@@ -9,9 +9,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger, // This was the missing comma
 } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight, Package, CheckCircle2, Truck } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, CheckCircle2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
+
+/** DB-approved value for "at job site". Must match material_items_status_check constraint. */
+const MATERIAL_STATUS_AT_JOB = 'at_job';
 
 interface MaterialItem {
   id: string;
@@ -237,45 +240,43 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
   }
 
   async function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
-    console.log('🎯 CREW updateMaterialStatus called:', { materialId, newStatus, isProcessing: processingMaterials.has(materialId) });
-    
-    if (processingMaterials.has(materialId)) {
-      console.log('⚠️ CREW Material is already being processed, skipping');
-      return;
-    }
-    
+    if (processingMaterials.has(materialId)) return;
     setProcessingMaterials(prev => new Set(prev).add(materialId));
 
     try {
-      console.log(`🔄 CREW Updating material ${materialId} from current status to ${newStatus}`);
-      
-      // Update material status
-      const { data, error: materialError } = await supabase
+      const statusValue = newStatus === 'at_job' ? MATERIAL_STATUS_AT_JOB : newStatus;
+      const { error: materialError } = await supabase
         .from('material_items')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString() 
+        .update({
+          status: statusValue,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', materialId)
         .select();
 
       if (materialError) {
-        console.error('❌ CREW Database error:', materialError);
+        console.error('CREW material_items update error:', materialError);
         throw materialError;
       }
 
-      console.log('✅ CREW Material updated successfully:', data);
       toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
 
-      loadMaterials();
+      setPackages((prev) => {
+        return prev
+          .map((pkg) => ({
+            ...pkg,
+            items: pkg.items.filter((item) => item.id !== materialId),
+          }))
+          .filter((pkg) => pkg.items.length > 0);
+      });
     } catch (error: any) {
-      console.error('❌ CREW Error updating material:', error);
+      console.error('CREW Error updating material:', error);
       toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
     } finally {
-      setProcessingMaterials(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(materialId);
-        return newSet;
+      setProcessingMaterials((prev) => {
+        const next = new Set(prev);
+        next.delete(materialId);
+        return next;
       });
     }
   }
@@ -408,7 +409,6 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                   <Button
                                     size="sm"
                                     onClick={(e) => {
-                                      console.log('🖱️ CREW Ready for Job button clicked for material:', item.id);
                                       e.preventDefault();
                                       e.stopPropagation();
                                       updateMaterialStatus(item.id, 'at_job');
@@ -420,7 +420,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
                                     {processingMaterials.has(item.id) ? (
                                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                     ) : (
-                                      <Truck className="w-5 h-5" />
+                                      <Check className="w-5 h-5" />
                                     )}
                                   </Button>
                                 )}
