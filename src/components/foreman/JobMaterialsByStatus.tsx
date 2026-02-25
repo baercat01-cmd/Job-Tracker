@@ -251,22 +251,22 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
     setProcessingMaterials((prev) => new Set(prev).add(materialId));
     const statusValue = newStatus === 'at_job' ? MATERIAL_STATUS_AT_JOB : newStatus;
 
-    supabase
-      .from('material_items')
-      .update({
-        status: statusValue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', materialId)
-      .select()
-      .then(({ error: materialError }) => {
+    async function persistInBackground() {
+      try {
+        const { error: materialError } = await supabase
+          .from('material_items')
+          .update({
+            status: statusValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', materialId)
+          .select();
         if (materialError) {
           console.error('CREW material_items update error:', materialError);
           throw materialError;
         }
         toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
-      })
-      .catch((error: any) => {
+      } catch (error: any) {
         console.error('CREW Error updating material:', error);
         toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
         if (removedItem && removedPackage) {
@@ -282,14 +282,15 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
             return [...prev, removedPackage!];
           });
         }
-      })
-      .finally(() => {
+      } finally {
         setProcessingMaterials((prev) => {
           const next = new Set(prev);
           next.delete(materialId);
           return next;
         });
-      });
+      }
+    }
+    void persistInBackground();
   }
 
   if (loading) {
