@@ -49,21 +49,7 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
 
   useEffect(() => {
     loadMaterials();
-
-    // Subscribe to material changes
-    const itemsChannel = supabase
-      .channel('job_materials_status_changes')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'material_items' },
-        () => {
-          loadMaterials();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(itemsChannel);
-    };
+    // No realtime subscription here — checkmark uses optimistic UI to avoid refetch/scroll jump
   }, [job.id, status]);
 
   async function loadMaterials() {
@@ -239,46 +225,71 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
     setExpandedMaterials(newSet);
   }
 
-  async function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
+  function updateMaterialStatus(materialId: string, newStatus: 'ready_for_job' | 'at_job') {
     if (processingMaterials.has(materialId)) return;
-    setProcessingMaterials(prev => new Set(prev).add(materialId));
 
-    try {
-      const statusValue = newStatus === 'at_job' ? MATERIAL_STATUS_AT_JOB : newStatus;
-      const { error: materialError } = await supabase
-        .from('material_items')
-        .update({
-          status: statusValue,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', materialId)
-        .select();
-
-      if (materialError) {
-        console.error('CREW material_items update error:', materialError);
-        throw materialError;
+    // Capture item and package for possible revert (package may be removed if it was the last item)
+    let removedItem: MaterialItem | null = null;
+    let removedPackage: MaterialBundle | null = null;
+    setPackages((prev) => {
+      for (const pkg of prev) {
+        const item = pkg.items.find((i) => i.id === materialId);
+        if (item) {
+          removedItem = item;
+          removedPackage = { ...pkg, items: pkg.items };
+          break;
+        }
       }
+      return prev
+        .map((pkg) => ({
+          ...pkg,
+          items: pkg.items.filter((item) => item.id !== materialId),
+        }))
+        .filter((pkg) => pkg.items.length > 0);
+    });
 
-      toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
+    setProcessingMaterials((prev) => new Set(prev).add(materialId));
+    const statusValue = newStatus === 'at_job' ? MATERIAL_STATUS_AT_JOB : newStatus;
 
-      setPackages((prev) => {
-        return prev
-          .map((pkg) => ({
-            ...pkg,
-            items: pkg.items.filter((item) => item.id !== materialId),
-          }))
-          .filter((pkg) => pkg.items.length > 0);
+    supabase
+      .from('material_items')
+      .update({
+        status: statusValue,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', materialId)
+      .select()
+      .then(({ error: materialError }) => {
+        if (materialError) {
+          console.error('CREW material_items update error:', materialError);
+          throw materialError;
+        }
+        toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
+      })
+      .catch((error: any) => {
+        console.error('CREW Error updating material:', error);
+        toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
+        if (removedItem && removedPackage) {
+          setPackages((prev) => {
+            const stillHasPackage = prev.some((p) => p.id === removedPackage!.id);
+            if (stillHasPackage) {
+              return prev.map((pkg) =>
+                pkg.id === removedPackage!.id
+                  ? { ...pkg, items: [...pkg.items, removedItem!] }
+                  : pkg
+              );
+            }
+            return [...prev, removedPackage!];
+          });
+        }
+      })
+      .finally(() => {
+        setProcessingMaterials((prev) => {
+          const next = new Set(prev);
+          next.delete(materialId);
+          return next;
+        });
       });
-    } catch (error: any) {
-      console.error('CREW Error updating material:', error);
-      toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
-    } finally {
-      setProcessingMaterials((prev) => {
-        const next = new Set(prev);
-        next.delete(materialId);
-        return next;
-      });
-    }
   }
 
   if (loading) {
