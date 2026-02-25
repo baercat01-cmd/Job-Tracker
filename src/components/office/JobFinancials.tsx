@@ -1507,6 +1507,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   // Line item dialog state
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
   const [editingLineItem, setEditingLineItem] = useState<CustomRowLineItem | null>(null);
+  const [savingLineItem, setSavingLineItem] = useState(false);
+  const savingLineItemRef = useRef(false);
   const [lineItemParentRowId, setLineItemParentRowId] = useState<string | null>(null);
   const [lineItemType, setLineItemType] = useState<'material' | 'labor' | 'combined'>('material');
   const [lineItemForm, setLineItemForm] = useState({
@@ -2618,12 +2620,47 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  // Frontend dedupe: group by description, keep single oldest (by created_at). Used so duplicate DB rows don't affect UI or totals.
+  function dedupeRowsByDescription<T extends { description?: string; created_at?: string; id?: string; order_index?: number }>(rows: T[]): T[] {
+    const byDesc = new Map<string, T>();
+    rows.forEach(row => {
+      const desc = (row.description ?? '').trim();
+      const existing = byDesc.get(desc);
+      const rowCreated = row.created_at ?? '';
+      const existingCreated = existing?.created_at ?? '';
+      if (!existing || rowCreated < existingCreated || (rowCreated === existingCreated && (row.id ?? '') < (existing.id ?? ''))) {
+        byDesc.set(desc, row);
+      }
+    });
+    return Array.from(byDesc.values()).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+  }
+
+  // Dedupe line items by (parentId, description) so the same description can exist in different sections.
+  function dedupeLineItemsByParentAndDescription(
+    items: CustomRowLineItem[],
+    getEffectiveParentId: (item: CustomRowLineItem) => string | null
+  ): CustomRowLineItem[] {
+    const byKey = new Map<string, CustomRowLineItem>();
+    items.forEach(item => {
+      const parentId = getEffectiveParentId(item);
+      if (parentId == null) return;
+      const desc = (item.description ?? '').trim();
+      const key = `${parentId}_${desc}`;
+      const existing = byKey.get(key);
+      const itemCreated = item.created_at ?? '';
+      const existingCreated = existing?.created_at ?? '';
+      if (!existing || itemCreated < existingCreated || (itemCreated === existingCreated && (item.id ?? '') < (existing.id ?? ''))) {
+        byKey.set(key, item);
+      }
+    });
+    return Array.from(byKey.values());
+  }
+
   async function loadCustomRows() {
     // Check if we're viewing a historical proposal (read-only mode)
     if (isReadOnly && quote) {
       console.log('📖 Loading custom rows from historical snapshot for proposal:', quote.proposal_number);
       
-      // Find the proposal version for this quote
       const { data: versionData, error: versionError } = await supabase
         .from('proposal_versions')
         .select('financial_rows_snapshot')
@@ -2645,45 +2682,55 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return;
       }
       
-      // Parse and use the snapshot data
       const snapshot = versionData.financial_rows_snapshot;
       const rowsData = Array.isArray(snapshot) ? snapshot : [];
-      
-      // Update custom rows from snapshot
-      if (JSON.stringify(rowsData) !== JSON.stringify(customRows)) {
-        setCustomRows(rowsData);
-      }
-      
-      // Extract labor and line items from snapshot
-      const laborMap: Record<string, any> = {};
-      const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-      
+      const dedupedRows = dedupeRowsByDescription(rowsData);
+      const descToRow = new Map<string, any>();
+      dedupedRows.forEach((r: any) => descToRow.set((r.description ?? '').trim(), r));
+      const duplicateToSurviving: Record<string, string> = {};
       rowsData.forEach((row: any) => {
+        const surviving = descToRow.get((row.description ?? '').trim());
+        if (surviving) duplicateToSurviving[row.id] = surviving.id;
+      });
+
+      const laborMap: Record<string, any> = {};
+      dedupedRows.forEach((row: any) => {
         if (row.notes) {
           try {
             const parsed = JSON.parse(row.notes);
-            if (parsed.labor) {
-              laborMap[row.id] = parsed.labor;
-            }
-          } catch {
-            // Not JSON, skip
-          }
-        }
-        
-        // Line items are stored in the snapshot
-        if (row.line_items && Array.isArray(row.line_items)) {
-          lineItemsMap[row.id] = row.line_items;
+            if (parsed.labor) laborMap[row.id] = parsed.labor;
+          } catch { /* skip */ }
         }
       });
-      
+
+      const allLineItems: CustomRowLineItem[] = [];
+      rowsData.forEach((row: any) => {
+        if (row.line_items && Array.isArray(row.line_items)) {
+          row.line_items.forEach((li: any) => allLineItems.push(li));
+        }
+      });
+      const getEffectiveParentId = (item: CustomRowLineItem) => {
+        if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
+        return item.sheet_id ?? null;
+      };
+      const dedupedLineItems = dedupeLineItemsByParentAndDescription(allLineItems, getEffectiveParentId);
+      const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
+      dedupedLineItems.forEach(item => {
+        const parentId = getEffectiveParentId(item);
+        if (parentId) {
+          if (!lineItemsMap[parentId]) lineItemsMap[parentId] = [];
+          lineItemsMap[parentId].push(item);
+        }
+      });
+
+      if (JSON.stringify(dedupedRows) !== JSON.stringify(customRows)) setCustomRows(dedupedRows);
       setCustomRowLabor(laborMap);
       setCustomRowLineItems(lineItemsMap);
-      
-      console.log('✅ Loaded custom rows from snapshot');
+      console.log('✅ Loaded custom rows from snapshot (deduped)');
       return;
     }
     
-    // Normal flow: Load live data for current/editable proposals
+    // Normal flow: Load live data, then apply frontend dedupe so duplicates don't affect UI or totals
     const { data, error } = await supabase
       .from('custom_financial_rows')
       .select('*')
@@ -2695,29 +2742,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
     
-    // Only update if data actually changed to prevent unnecessary re-renders
     const newData = data || [];
-    if (JSON.stringify(newData) !== JSON.stringify(customRows)) {
-      setCustomRows(newData);
-    }
-
-    // Load labor data for custom rows (store in notes field as JSON)
-    const laborMap: Record<string, any> = {};
+    const dedupedRows = dedupeRowsByDescription(newData);
+    const descToRow = new Map<string, CustomFinancialRow>();
+    dedupedRows.forEach(r => descToRow.set((r.description ?? '').trim(), r));
+    const duplicateToSurviving: Record<string, string> = {};
     newData.forEach(row => {
+      const surviving = descToRow.get((row.description ?? '').trim());
+      if (surviving) duplicateToSurviving[row.id] = surviving.id;
+    });
+
+    const laborMap: Record<string, any> = {};
+    dedupedRows.forEach(row => {
       if (row.notes) {
         try {
           const parsed = JSON.parse(row.notes);
-          if (parsed.labor) {
-            laborMap[row.id] = parsed.labor;
-          }
-        } catch {
-          // Not JSON, skip
-        }
+          if (parsed.labor) laborMap[row.id] = parsed.labor;
+        } catch { /* skip */ }
       }
     });
     setCustomRowLabor(laborMap);
 
-    // Load line items for custom rows AND material sheets
+    if (JSON.stringify(dedupedRows) !== JSON.stringify(customRows)) {
+      setCustomRows(dedupedRows);
+    }
+
     const rowIds = newData.map(r => r.id);
     
     // Query material sheets directly instead of using state to avoid race conditions
@@ -2742,38 +2791,37 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     
     const allIds = [...rowIds, ...sheetIds];
     
-    if (allIds.length > 0) {
-      // Build the OR condition dynamically to avoid invalid SQL when one array is empty
-      const orConditions: string[] = [];
-      if (rowIds.length > 0) {
-        orConditions.push(`row_id.in.(${rowIds.join(',')})`);
-      }
-      if (sheetIds.length > 0) {
-        orConditions.push(`sheet_id.in.(${sheetIds.join(',')})`);
-      }
-      
-      if (orConditions.length > 0) {
-        const { data: lineItemsData, error: lineItemsError } = await supabase
-          .from('custom_financial_row_items')
-          .select('*')
-          .or(orConditions.join(','))
-          .order('order_index');
-
-        if (!lineItemsError && lineItemsData) {
-          const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
-          lineItemsData.forEach(item => {
-            const parentId = item.row_id || item.sheet_id;
-            if (parentId) {
-              if (!lineItemsMap[parentId]) {
-                lineItemsMap[parentId] = [];
-              }
-              lineItemsMap[parentId].push(item);
-            }
-          });
-          setCustomRowLineItems(lineItemsMap);
-        }
-      }
+    if (allIds.length === 0) {
+      setCustomRowLineItems({});
+      return;
     }
+    const orConditions: string[] = [];
+    if (rowIds.length > 0) orConditions.push(`row_id.in.(${rowIds.join(',')})`);
+    if (sheetIds.length > 0) orConditions.push(`sheet_id.in.(${sheetIds.join(',')})`);
+    if (orConditions.length === 0) return;
+
+    const { data: lineItemsData, error: lineItemsError } = await supabase
+      .from('custom_financial_row_items')
+      .select('*')
+      .or(orConditions.join(','))
+      .order('order_index');
+
+    if (lineItemsError || !lineItemsData) return;
+
+    const getEffectiveParentId = (item: CustomRowLineItem) => {
+      if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
+      return item.sheet_id ?? null;
+    };
+    const dedupedLineItems = dedupeLineItemsByParentAndDescription(lineItemsData as CustomRowLineItem[], getEffectiveParentId);
+    const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
+    dedupedLineItems.forEach(item => {
+      const parentId = getEffectiveParentId(item);
+      if (parentId) {
+        if (!lineItemsMap[parentId]) lineItemsMap[parentId] = [];
+        lineItemsMap[parentId].push(item);
+      }
+    });
+    setCustomRowLineItems(lineItemsMap);
   }
 
   async function loadLaborPricing() {
@@ -3334,6 +3382,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.error('Please fill in description');
       return;
     }
+    if (savingLineItemRef.current) return;
+    savingLineItemRef.current = true;
+    setSavingLineItem(true);
 
     // Determine if this is for a sheet or a custom row
     const isSheet = materialSheets.some(s => s.id === lineItemParentRowId);
@@ -3417,12 +3468,32 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         if (error) throw error;
         toast.success('Line item updated');
       } else {
-        const { error } = await supabase
+        // Strict upsert: only INSERT if no row exists with same parent + key fields
+        const parentCol = isSheet ? 'sheet_id' : 'row_id';
+        const { data: existing } = await supabase
           .from('custom_financial_row_items')
-          .insert([itemData]);
+          .select('id')
+          .eq(parentCol, lineItemParentRowId)
+          .eq('description', itemData.description)
+          .eq('quantity', itemData.quantity)
+          .eq('unit_cost', itemData.unit_cost)
+          .limit(1)
+          .maybeSingle();
 
-        if (error) throw error;
-        toast.success('Line item added');
+        if (existing?.id) {
+          const { error } = await supabase
+            .from('custom_financial_row_items')
+            .update(itemData)
+            .eq('id', existing.id);
+          if (error) throw error;
+          toast.success('Line item updated');
+        } else {
+          const { error } = await supabase
+            .from('custom_financial_row_items')
+            .insert([itemData]);
+          if (error) throw error;
+          toast.success('Line item added');
+        }
       }
 
       await loadCustomRows();
@@ -3456,6 +3527,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } catch (error: any) {
       console.error('Error saving line item:', error);
       toast.error('Failed to save line item');
+    } finally {
+      savingLineItemRef.current = false;
+      setSavingLineItem(false);
     }
   }
 
@@ -4276,7 +4350,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   return (
     <div className="w-full">
 
-      
       {/* Proposal Info Banner - Show if quote exists */}
       {quote && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
@@ -5123,12 +5196,12 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 Cancel
               </Button>
               {!editingLineItem && (
-                <Button variant="outline" onClick={() => saveLineItem(true)}>
+                <Button variant="outline" onClick={() => saveLineItem(true)} disabled={savingLineItem}>
                   <Plus className="w-4 h-4 mr-2" />
                   Save & Add Another
                 </Button>
               )}
-              <Button onClick={() => saveLineItem(false)}>
+              <Button onClick={() => saveLineItem(false)} disabled={savingLineItem}>
                 {editingLineItem ? 'Update' : 'Save'} Line Item
               </Button>
             </div>

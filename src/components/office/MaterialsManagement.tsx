@@ -1455,6 +1455,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
                               <Package className="w-5 h-5 mx-auto" />
                             </th>
+                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">SKU</th>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
                             <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
                             <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
@@ -1472,7 +1473,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
                               <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={packageSelectionMode ? 12 : 11} className="p-3">
+                                <td colSpan={packageSelectionMode ? 13 : 12} className="p-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
@@ -1610,6 +1611,11 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             )}
                                           </SelectContent>
                                         </Select>
+                                      </div>
+                                    </td>
+                                    <td className="p-1 border-r whitespace-nowrap">
+                                      <div className="font-mono text-sm text-muted-foreground p-2 min-h-[32px]">
+                                        {item.sku || '–'}
                                       </div>
                                     </td>
                                     <td className="p-1 border-r whitespace-nowrap">
