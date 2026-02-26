@@ -146,17 +146,17 @@ export function UserManagement() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="w-6 h-6" />
+          <h2 className="text-xl font-bold flex items-center gap-2 md:text-2xl">
+            <Users className="w-6 h-6 shrink-0" />
             User Management
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Add and manage field crew and office staff
           </p>
         </div>
-        <Button onClick={openAddDialog} className="gradient-primary">
+        <Button onClick={openAddDialog} className="gradient-primary w-full md:w-auto min-h-[44px] md:min-h-0">
           <UserPlus className="w-4 h-4 mr-2" />
           Add User
         </Button>
@@ -166,53 +166,58 @@ export function UserManagement() {
         {users.map((user) => (
           <Card key={user.id}>
             <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  {user.role === 'office' ? (
-                    <Shield className="w-6 h-6 text-primary" />
-                  ) : user.role === 'shop' ? (
-                    <Package className="w-6 h-6 text-purple-600" />
-                  ) : user.role === 'payroll' ? (
-                    <DollarSign className="w-6 h-6 text-green-600" />
-                  ) : (
-                    <Briefcase className="w-6 h-6 text-primary" />
-                  )}
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
+                    {user.role === 'office' ? (
+                      <Shield className="w-6 h-6 text-primary" />
+                    ) : user.role === 'shop' ? (
+                      <Package className="w-6 h-6 text-purple-600" />
+                    ) : user.role === 'payroll' ? (
+                      <DollarSign className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <Briefcase className="w-6 h-6 text-primary" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{user.username || 'Unnamed User'}</p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {user.role === 'crew' ? 'Field Crew' : 
+                       user.role === 'office' ? 'Office Staff' : 
+                       user.role === 'shop' ? 'Shop User' : 
+                       user.role === 'payroll' ? 'Payroll' : user.role}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-semibold">{user.username || 'Unnamed User'}</p>
-                  <p className="text-sm text-muted-foreground capitalize">
-                    {user.role === 'crew' ? 'Field Crew' : 
-                     user.role === 'office' ? 'Office Staff' : 
-                     user.role === 'shop' ? 'Shop User' : 
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge variant={user.role === 'office' ? 'default' : 'secondary'} 
+                    className={
+                      user.role === 'shop' ? 'bg-purple-100 text-purple-700 border-purple-300' : 
+                      user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : ''
+                    }>
+                    {user.role === 'crew' ? 'Crew' : 
+                     user.role === 'office' ? 'Office' : 
+                     user.role === 'shop' ? 'Shop' : 
                      user.role === 'payroll' ? 'Payroll' : user.role}
-                  </p>
-                </div>
-                <Badge variant={user.role === 'office' ? 'default' : 'secondary'} 
-                  className={
-                    user.role === 'shop' ? 'bg-purple-100 text-purple-700 border-purple-300' : 
-                    user.role === 'payroll' ? 'bg-green-100 text-green-700 border-green-300' : ''
-                  }>
-                  {user.role === 'crew' ? 'Crew' : 
-                   user.role === 'office' ? 'Office' : 
-                   user.role === 'shop' ? 'Shop' : 
-                   user.role === 'payroll' ? 'Payroll' : user.role}
-                </Badge>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEditDialog(user)}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(user.id)}
-                    className="text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  </Badge>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditDialog(user)}
+                      className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 p-0 md:px-3"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(user.id)}
+                      className="text-destructive hover:bg-destructive/10 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 p-0 md:px-3"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -221,7 +226,7 @@ export function UserManagement() {
       </div>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingUser ? 'Edit User' : 'Add New User'}

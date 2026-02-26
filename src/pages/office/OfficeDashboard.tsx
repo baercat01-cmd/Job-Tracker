@@ -178,19 +178,19 @@ export function OfficeDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
-      {/* Header with Navigation */}
+    <div className="min-h-[100dvh] md:min-h-screen bg-slate-50 overflow-x-hidden">
+      {/* Header with Navigation - mobile: larger touch targets and padding; desktop: unchanged */}
       <header className="bg-white border-b-4 border-yellow-500 shadow-lg sticky top-0 z-50">
-        <div className="w-full px-1 sm:px-2 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Logo */}
+        <div className="w-full px-3 py-2 flex items-center justify-between gap-2 md:px-2 md:py-3 md:gap-4">
+          {/* Logo - mobile: compact; desktop: unchanged */}
           <img 
             src="https://cdn-ai.onspace.ai/onspace/files/EvPiYskzE4vCidikEdjr5Z/MB_Logo_Green_192x64_12.9kb.png" 
             alt="Martin Builder" 
-            className="h-8 sm:h-10 w-auto flex-shrink-0"
+            className="h-8 w-auto flex-shrink-0 sm:h-10"
           />
           
-          {/* Navigation Tabs */}
-          <div className="flex items-center gap-0.5 sm:gap-1 flex-1 overflow-x-auto scrollbar-hide">
+          {/* Navigation Tabs - mobile: 44px touch targets, smooth scroll; desktop: unchanged */}
+          <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto scrollbar-hide overflow-y-hidden py-1 -my-1 md:gap-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x [&>button]:min-h-[44px] [&>button]:min-w-[44px] md:[&>button]:min-h-0 md:[&>button]:min-w-0">
             <Button
               variant={activeTab === 'jobs' ? 'default' : 'ghost'}
               size="sm"
@@ -422,11 +422,10 @@ export function OfficeDashboard() {
         onCloseCreateDialog={() => setShowCreateTaskDialog(false)}
       />
 
-      {/* Main Content */}
-      <main className="w-full px-1 sm:px-2 py-3 sm:py-6">
+      {/* Main Content - mobile: more padding for thumbs; desktop: unchanged */}
+      <main className="w-full px-4 py-4 md:px-2 md:py-6">
         {activeTab === 'jobs' && (
           <div className="space-y-6">
-            {/* Active Jobs Cards */}
             <JobsView 
               selectedJobId={selectedJobId} 
               openMaterialsTab={openMaterialsTab}

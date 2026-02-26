@@ -4,6 +4,7 @@
 import { supabase } from './supabase';
 import { createPhoto } from './offline-mutations';
 import { isOnline } from './offline-manager';
+import { normalizeImageOrientation } from './image-utils';
 
 export interface QueuedPhoto {
   id: string;
@@ -150,6 +151,10 @@ async function uploadQueuedPhoto(
   savePhotoQueue();
 
   try {
+    // Normalize EXIF orientation before upload — bakes rotation into pixel data
+    // so Supabase CDN (which strips EXIF) always serves correctly-oriented images
+    const orientedFile = await normalizeImageOrientation(queuedPhoto.file);
+
     // Upload to Supabase Storage
     const fileName = `${Date.now()}_${queuedPhoto.file.name}`;
     const filePath = `${queuedPhoto.metadata.uploadedBy}/${fileName}`;
@@ -158,7 +163,7 @@ async function uploadQueuedPhoto(
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('job-files')
-      .upload(filePath, queuedPhoto.file, {
+      .upload(filePath, orientedFile, {
         cacheControl: '3600',
         upsert: false,
       });

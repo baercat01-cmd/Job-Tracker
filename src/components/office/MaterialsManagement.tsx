@@ -147,6 +147,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   const [catalogMaterials, setCatalogMaterials] = useState<any[]>([]);
   const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [catalogSearchCategory, setCatalogSearchCategory] = useState<string>('all');
+  const [catalogSearchPage, setCatalogSearchPage] = useState(0);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   
@@ -2140,13 +2141,13 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     <Input
                       placeholder="Search by name, SKU, or category..."
                       value={catalogSearchQuery}
-                      onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                      onChange={(e) => { setCatalogSearchQuery(e.target.value); setCatalogSearchPage(0); }}
                       className="pl-9"
                     />
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   </div>
                   
-                  <Select value={catalogSearchCategory} onValueChange={setCatalogSearchCategory}>
+                  <Select value={catalogSearchCategory} onValueChange={(v) => { setCatalogSearchCategory(v); setCatalogSearchPage(0); }}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Categories" />
                     </SelectTrigger>
@@ -2190,9 +2191,14 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                       );
                     }
 
+                    const PAGE_SIZE = 10;
+                    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+                    const safePage = Math.min(catalogSearchPage, totalPages - 1);
+                    const pageItems = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
                     return (
                       <div className="divide-y">
-                        {filtered.slice(0, 10).map((material) => (
+                        {pageItems.map((material) => (
                           <button
                             key={material.sku}
                             onClick={() => selectMaterialFromCatalog(material)}
@@ -2220,9 +2226,25 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                             </div>
                           </button>
                         ))}
-                        {filtered.length > 10 && (
-                          <div className="p-2 text-center bg-slate-50">
-                            <p className="text-xs text-muted-foreground">Showing 10 of {filtered.length} results - refine search to see more</p>
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t">
+                            <button
+                              onClick={() => setCatalogSearchPage(p => Math.max(0, p - 1))}
+                              disabled={safePage === 0}
+                              className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed px-2 py-1 rounded hover:bg-slate-200 transition-colors"
+                            >
+                              ← Prev
+                            </button>
+                            <p className="text-xs text-muted-foreground">
+                              {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length} results
+                            </p>
+                            <button
+                              onClick={() => setCatalogSearchPage(p => Math.min(totalPages - 1, p + 1))}
+                              disabled={safePage >= totalPages - 1}
+                              className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed px-2 py-1 rounded hover:bg-slate-200 transition-colors"
+                            >
+                              Next →
+                            </button>
                           </div>
                         )}
                       </div>

@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, Calendar, X, ExternalLink, Camera, Upload, Trash2 } from 'lucide-react';
+import { MapPin, Calendar, X, ExternalLink, Camera, Upload, Trash2, RotateCw, RotateCcw } from 'lucide-react';
 import { formatCoordinates } from '@/lib/geolocation';
+import { rotateImageByUrl } from '@/lib/image-utils';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
@@ -27,6 +28,7 @@ interface Photo {
   timestamp: string;
   components: { name: string } | null;
   user_profiles: { username: string } | null;
+  rotation_degrees?: number | null;
 }
 
 export function JobPhotosView({ job }: JobPhotosViewProps) {
@@ -41,6 +43,7 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadCaptions, setUploadCaptions] = useState<Record<string, string>>({});
+  const [rotatingPhotoId, setRotatingPhotoId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
@@ -251,6 +254,42 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
     }
   }
 
+  /** Rotate photo 90° and save by re-uploading the rotated image (no DB column needed). */
+  async function rotatePhoto(photo: Photo, deltaDegrees: 90 | -90) {
+    setRotatingPhotoId(photo.id);
+    const baseUrl = photo.photo_url.replace(/\?.*$/, '');
+    try {
+      const blob = await rotateImageByUrl(baseUrl, deltaDegrees);
+      const pathMatch = baseUrl.match(/\/job-files\/(.+)$/);
+      const storagePath = pathMatch ? pathMatch[1] : null;
+      if (!storagePath) {
+        toast.error('Could not determine photo path');
+        return;
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from('job-files')
+        .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) {
+        toast.error(uploadError.message || 'Failed to save rotated photo');
+        return;
+      }
+
+      const cacheBust = `${photo.photo_url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+      const newUrl = photo.photo_url.replace(/\?.*$/, '') + cacheBust;
+      const updated = { ...photo, photo_url: newUrl };
+      setPhotos((prev) => prev.map((p) => (p.id === photo.id ? updated : p)));
+      if (selectedPhoto?.id === photo.id) setSelectedPhoto(updated);
+      toast.success('Photo rotated 90°');
+    } catch (err: any) {
+      console.error('Error rotating photo:', err);
+      toast.error(err?.message || 'Failed to rotate photo');
+    } finally {
+      setRotatingPhotoId(null);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -337,12 +376,13 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
               className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => setSelectedPhoto(photo)}
             >
-              <div className="aspect-video bg-muted relative">
+              <div className="bg-muted relative overflow-hidden flex items-center justify-center min-h-[200px]">
                 <img
                   src={photo.photo_url}
                   alt={photo.caption || 'Job photo'}
-                  className="w-full h-full object-cover"
+                  className="max-w-full max-h-[280px] w-auto h-auto object-contain block"
                   loading="lazy"
+                  style={{ imageOrientation: 'from-image' }}
                 />
                 {photo.gps_lat && photo.gps_lng && (
                   <Badge className="absolute top-2 right-2" variant="secondary">
@@ -392,6 +432,28 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                 </div>
                 <div className="flex gap-2">
                   <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => rotatePhoto(selectedPhoto, -90)}
+                    disabled={rotatingPhotoId === selectedPhoto.id}
+                    title="Rotate left 90°"
+                  >
+                    {rotatingPhotoId === selectedPhoto.id ? (
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => rotatePhoto(selectedPhoto, 90)}
+                    disabled={rotatingPhotoId === selectedPhoto.id}
+                    title="Rotate right 90°"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => deletePhoto(selectedPhoto.id, selectedPhoto.photo_url)}
@@ -415,6 +477,7 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                   src={selectedPhoto.photo_url}
                   alt={selectedPhoto.caption || 'Job photo'}
                   className="max-w-full max-h-full object-contain rounded-lg"
+                  style={{ imageOrientation: 'from-image' }}
                 />
               </div>
 
@@ -511,6 +574,7 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                             src={URL.createObjectURL(file)}
                             alt={file.name}
                             className="w-full h-full object-cover"
+                            style={{ imageOrientation: 'from-image' }}
                           />
                         </div>
                         <div className="flex-1 space-y-2">

@@ -59,11 +59,12 @@ export function PhotosView() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {photos.map((photo) => (
             <Card key={photo.id} className="overflow-hidden">
-              <div className="aspect-video bg-muted relative">
+              <div className="bg-muted relative overflow-hidden">
                 <img
                   src={photo.photo_url}
                   alt={photo.caption || 'Job photo'}
-                  className="w-full h-full object-cover"
+                  className="w-full h-auto block"
+                  style={{ imageOrientation: 'from-image' }}
                 />
                 {photo.gps_lat && photo.gps_lng && (
                   <Badge className="absolute top-2 right-2" variant="secondary">

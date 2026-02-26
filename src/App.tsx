@@ -6,6 +6,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { PinSetupPage } from '@/pages/PinSetupPage';
 import { ForemanDashboard } from '@/pages/foreman/ForemanDashboard';
 import { OfficeDashboard } from '@/pages/office/OfficeDashboard';
+import { DailyReportPage } from '@/pages/office/DailyReportPage';
 import { PayrollDashboard } from '@/pages/payroll/PayrollDashboard';
 import { ShopDashboard } from '@/pages/shop/ShopDashboard';
 import { QuoteIntakePage } from '@/pages/office/QuoteIntakePage';
@@ -135,6 +136,7 @@ function AppContent() {
         <Route path="/office/quotes/:quoteId" element={<QuoteIntakePage />} />
         <Route path="/office/estimator" element={<BuildingEstimatorPage />} />
         <Route path="/office/zoho-settings" element={<ZohoSettingsPage />} />
+        <Route path="/office/daily-report" element={<DailyReportPage />} />
         <Route path="*" element={<Navigate to="/office?tab=jobs" replace />} />
       </Routes>
     );

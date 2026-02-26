@@ -1627,7 +1627,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
-  const [buildingDescription, setBuildingDescription] = useState(job.description || '');
+  const [buildingDescription, setBuildingDescription] = useState((quote as any)?.description || '');
   const [editingDescription, setEditingDescription] = useState(false);
   
   // Template editor state
@@ -1661,6 +1661,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     } else {
       setProposalVersions([]);
     }
+  }, [quote?.id]);
+
+  // Sync building description whenever the active proposal changes
+  useEffect(() => {
+    setBuildingDescription((quote as any)?.description || '');
   }, [quote?.id]);
 
   // Auto-create first proposal (with -1 suffix) for new jobs
@@ -1934,66 +1939,242 @@ export function JobFinancials({ job }: JobFinancialsProps) {
 
   async function createNewProposal() {
     if (!quote || !profile) return;
-
     setCreatingProposal(true);
-    
+
+    const oldQuoteId = quote.id;
+
     try {
-      console.log('🚀 Creating new proposal - this will:');
-      console.log('  1. Lock current proposal:', quote.proposal_number);
-      console.log('  2. Create full snapshot of all data');
-      console.log('  3. Duplicate ALL data for new proposal (complete air gap)');
-      console.log('  4. Create new proposal with incremented number');
-      
-      // Create new version using database function
-      // This will create a complete copy of all data:
-      // - Material workbooks, sheets, items
-      // - Custom financial rows and line items
-      // - Subcontractor estimates and line items
-      // - Category markups and sheet labor
-      const { data, error } = await supabase.rpc('create_proposal_version', {
-        p_quote_id: quote.id,
-        p_job_id: job.id,
-        p_user_id: profile.id,
-        p_change_notes: proposalChangeNotes || 'New proposal version'
-      });
-
-      if (error) {
-        console.error('❌ Error creating new proposal:', error);
-        throw error;
-      }
-
-      console.log('✅ New proposal created with duplicated data:', data);
-      const newQuoteId = data.quote_id;
-      
-      // Load the newly created quote and switch to it
-      const { data: newQuote, error: fetchError } = await supabase
+      // ── Step 1: Create the new quotes row ──
+      // The DB trigger auto-assigns the incremented proposal_number (YYNNN-Z)
+      const { data: newQuoteRow, error: quoteErr } = await supabase
         .from('quotes')
-        .select('*')
-        .eq('id', newQuoteId)
+        .insert({
+          job_id: job.id,
+          customer_name:    (quote as any).customer_name    ?? null,
+          customer_address: (quote as any).customer_address ?? null,
+          customer_email:   (quote as any).customer_email   ?? null,
+          customer_phone:   (quote as any).customer_phone   ?? null,
+          project_name:     (quote as any).project_name     ?? null,
+          width:            (quote as any).width             ?? 0,
+          length:           (quote as any).length            ?? 0,
+          description:      (quote as any).description      ?? null,
+          status:           'draft',
+          created_by:       profile.id,
+        })
+        .select()
         .single();
-      
-      if (fetchError) {
-        console.error('❌ Error loading new quote:', fetchError);
-        throw fetchError;
+      if (quoteErr) throw new Error(`Step 1 (create quote): ${quoteErr.message}`);
+      const newQuoteId: string = newQuoteRow.id;
+      console.log('✅ Step 1 — new quote row created:', newQuoteRow.proposal_number);
+
+      // ── Step 2: Copy material_workbooks → sheets → items / labor / markups ──
+      const sheetIdMap: Record<string, string> = {};
+      const snapshotSheets: any[]                          = [];
+      const snapshotCategoryMarkups: Record<string, number> = {};
+      const snapshotSheetLabor: any[]                      = [];
+
+      const { data: oldWorkbooks, error: wbFetchErr } = await supabase
+        .from('material_workbooks').select('*').eq('quote_id', oldQuoteId);
+      if (wbFetchErr) throw new Error(`Step 2 (fetch workbooks): ${wbFetchErr.message}`);
+
+      // Find the highest version_number already used for this job so new workbooks don't collide
+      const { data: maxWbRow } = await supabase
+        .from('material_workbooks')
+        .select('version_number')
+        .eq('job_id', job.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      let nextWbVersion = (maxWbRow?.version_number ?? 0) + 1;
+
+      for (const wb of (oldWorkbooks || [])) {
+        const { data: newWb, error: wbErr } = await supabase
+          .from('material_workbooks')
+          .insert({ job_id: job.id, quote_id: newQuoteId, version_number: nextWbVersion++, status: 'working', created_by: profile.id })
+          .select('id').single();
+        if (wbErr) throw new Error(`Step 2 (insert workbook): ${wbErr.message}`);
+
+        const { data: oldSheets, error: shFetchErr } = await supabase
+          .from('material_sheets').select('*').eq('workbook_id', wb.id).order('order_index');
+        if (shFetchErr) throw new Error(`Step 2 (fetch sheets): ${shFetchErr.message}`);
+
+        for (const sheet of (oldSheets || [])) {
+          const { data: newSheet, error: shErr } = await supabase
+            .from('material_sheets')
+            .insert({ workbook_id: newWb.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index, is_option: sheet.is_option, description: sheet.description })
+            .select('id').single();
+          if (shErr) throw new Error(`Step 2 (insert sheet): ${shErr.message}`);
+          sheetIdMap[sheet.id] = newSheet.id;
+
+          // Items
+          const { data: items, error: iFetchErr } = await supabase
+            .from('material_items').select('*').eq('sheet_id', sheet.id).order('order_index');
+          if (iFetchErr) throw new Error(`Step 2 (fetch items): ${iFetchErr.message}`);
+          if (items?.length) {
+            const { error: iErr } = await supabase.from('material_items').insert(
+              items.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
+            );
+            if (iErr) throw new Error(`Step 2 (insert items): ${iErr.message}`);
+          }
+
+          // Labor
+          const { data: labor, error: lFetchErr } = await supabase
+            .from('material_sheet_labor').select('*').eq('sheet_id', sheet.id);
+          if (lFetchErr) throw new Error(`Step 2 (fetch labor): ${lFetchErr.message}`);
+          if (labor?.length) {
+            const { error: lErr } = await supabase.from('material_sheet_labor').insert(
+              labor.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
+            );
+            if (lErr) throw new Error(`Step 2 (insert labor): ${lErr.message}`);
+            labor.forEach(l => snapshotSheetLabor.push({ ...l, sheet_id: sheet.id }));
+          }
+
+          // Category markups
+          const { data: markups, error: mFetchErr } = await supabase
+            .from('material_category_markups').select('*').eq('sheet_id', sheet.id);
+          if (mFetchErr) throw new Error(`Step 2 (fetch markups): ${mFetchErr.message}`);
+          if (markups?.length) {
+            const { error: mErr } = await supabase.from('material_category_markups').insert(
+              markups.map(({ id: _id, sheet_id: _sid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, sheet_id: newSheet.id }))
+            );
+            if (mErr) throw new Error(`Step 2 (insert markups): ${mErr.message}`);
+            markups.forEach(m => { snapshotCategoryMarkups[`${sheet.id}_${m.category_name}`] = m.markup_percent; });
+          }
+
+          snapshotSheets.push({
+            id: sheet.id, sheet_name: sheet.sheet_name, order_index: sheet.order_index,
+            is_option: sheet.is_option, description: sheet.description,
+            items: (items || []),
+          });
+        }
       }
-      
-      console.log('✅ Switching to new proposal:', newQuote.proposal_number);
-      console.log('   Old and new proposals now have completely separate data');
-      
-      // Set the new quote as current
+      console.log(`✅ Step 2 — copied ${Object.keys(sheetIdMap).length} sheets`);
+
+      // ── Step 3: Copy custom_financial_rows and their line items ──
+      const rowIdMap: Record<string, string> = {};
+      const snapshotFinancialRows: any[] = [];
+
+      const { data: oldRows, error: rowFetchErr } = await supabase
+        .from('custom_financial_rows').select('*').eq('quote_id', oldQuoteId).order('order_index');
+      if (rowFetchErr) throw new Error(`Step 3 (fetch rows): ${rowFetchErr.message}`);
+
+      for (const row of (oldRows || [])) {
+        const { data: newRow, error: rErr } = await supabase
+          .from('custom_financial_rows')
+          .insert({
+            job_id: job.id, quote_id: newQuoteId,
+            category: row.category, description: row.description,
+            quantity: row.quantity, unit_cost: row.unit_cost, total_cost: row.total_cost,
+            markup_percent: row.markup_percent, selling_price: row.selling_price,
+            notes: row.notes, order_index: row.order_index, taxable: row.taxable,
+            sheet_id: row.sheet_id ? (sheetIdMap[row.sheet_id] ?? null) : null,
+          })
+          .select('id').single();
+        if (rErr) throw new Error(`Step 3 (insert row): ${rErr.message}`);
+        rowIdMap[row.id] = newRow.id;
+
+        const { data: rItems, error: riFetchErr } = await supabase
+          .from('custom_financial_row_items').select('*').eq('row_id', row.id).order('order_index');
+        if (riFetchErr) throw new Error(`Step 3 (fetch row items): ${riFetchErr.message}`);
+        if (rItems?.length) {
+          const { error: riErr } = await supabase.from('custom_financial_row_items').insert(
+            rItems.map(({ id: _id, row_id: _rid, sheet_id: oldSid, created_at: _ca, updated_at: _ua, ...r }) => ({
+              ...r, row_id: newRow.id, sheet_id: oldSid ? (sheetIdMap[oldSid] ?? null) : null,
+            }))
+          );
+          if (riErr) throw new Error(`Step 3 (insert row items): ${riErr.message}`);
+        }
+        snapshotFinancialRows.push({ ...row, line_items: rItems || [] });
+      }
+
+      // Sheet-linked line items (row_id IS NULL, sheet_id IS NOT NULL)
+      const oldSheetIdList = Object.keys(sheetIdMap);
+      if (oldSheetIdList.length > 0) {
+        const { data: sItems, error: siFetchErr } = await supabase
+          .from('custom_financial_row_items').select('*').in('sheet_id', oldSheetIdList).is('row_id', null);
+        if (siFetchErr) throw new Error(`Step 3 (fetch sheet items): ${siFetchErr.message}`);
+        if (sItems?.length) {
+          const { error: siErr } = await supabase.from('custom_financial_row_items').insert(
+            sItems.map(({ id: _id, row_id: _rid, sheet_id: oldSid, created_at: _ca, updated_at: _ua, ...r }) => ({
+              ...r, row_id: null, sheet_id: oldSid ? (sheetIdMap[oldSid] ?? null) : null,
+            }))
+          );
+          if (siErr) throw new Error(`Step 3 (insert sheet items): ${siErr.message}`);
+        }
+      }
+      console.log(`✅ Step 3 — copied ${oldRows?.length ?? 0} financial rows`);
+
+      // ── Step 4: Copy subcontractor_estimates and their line items ──
+      const snapshotSubcontractors: any[] = [];
+
+      const { data: oldEstimates, error: estFetchErr } = await supabase
+        .from('subcontractor_estimates').select('*').eq('quote_id', oldQuoteId).order('order_index');
+      if (estFetchErr) throw new Error(`Step 4 (fetch estimates): ${estFetchErr.message}`);
+
+      for (const est of (oldEstimates || [])) {
+        const { id: _id, job_id: _jid, quote_id: _qid, sheet_id: estOldSheetId, row_id: estOldRowId, created_at: _ca, updated_at: _ua, ...estRest } = est;
+        const { data: newEst, error: eErr } = await supabase
+          .from('subcontractor_estimates')
+          .insert({
+            ...estRest,
+            job_id: job.id, quote_id: newQuoteId,
+            sheet_id: estOldSheetId ? (sheetIdMap[estOldSheetId] ?? null) : null,
+            row_id:   estOldRowId   ? (rowIdMap[estOldRowId]     ?? null) : null,
+          })
+          .select('id').single();
+        if (eErr) throw new Error(`Step 4 (insert estimate): ${eErr.message}`);
+
+        const { data: sItems, error: slFetchErr } = await supabase
+          .from('subcontractor_estimate_line_items').select('*').eq('estimate_id', est.id).order('order_index');
+        if (slFetchErr) throw new Error(`Step 4 (fetch sub line items): ${slFetchErr.message}`);
+        if (sItems?.length) {
+          const { error: slErr } = await supabase.from('subcontractor_estimate_line_items').insert(
+            sItems.map(({ id: _id, estimate_id: _eid, created_at: _ca, updated_at: _ua, ...r }) => ({ ...r, estimate_id: newEst.id }))
+          );
+          if (slErr) throw new Error(`Step 4 (insert sub line items): ${slErr.message}`);
+        }
+        snapshotSubcontractors.push({ ...estRest, id: est.id, line_items: sItems || [] });
+      }
+      console.log(`✅ Step 4 — copied ${oldEstimates?.length ?? 0} subcontractor estimates`);
+
+      // ── Step 5: Save frozen snapshot of the OLD proposal to proposal_versions ──
+      const nextVersion = (proposalVersions?.length ?? 0) + 1;
+      const { error: snapErr } = await supabase.from('proposal_versions').insert({
+        quote_id:                  oldQuoteId,
+        version_number:            nextVersion,
+        customer_name:             (quote as any).customer_name    ?? null,
+        customer_address:          (quote as any).customer_address ?? null,
+        customer_email:            (quote as any).customer_email   ?? null,
+        customer_phone:            (quote as any).customer_phone   ?? null,
+        project_name:              (quote as any).project_name     ?? null,
+        width:                     (quote as any).width             ?? 0,
+        length:                    (quote as any).length            ?? 0,
+        estimated_price:           (quote as any).estimated_price  ?? null,
+        workbook_snapshot:         { sheets: snapshotSheets, category_markups: snapshotCategoryMarkups, sheet_labor: snapshotSheetLabor },
+        financial_rows_snapshot:   snapshotFinancialRows,
+        subcontractor_snapshot:    snapshotSubcontractors,
+        change_notes:              proposalChangeNotes || 'New proposal version',
+        created_by:                profile.id,
+      });
+      if (snapErr) console.warn('⚠️ Snapshot save failed (non-fatal):', snapErr.message);
+      else console.log('✅ Step 5 — snapshot saved to proposal_versions');
+
+      // ── Step 6: Reload and switch UI to the new proposal ──
+      const { data: newQuote, error: fetchError } = await supabase
+        .from('quotes').select('*').eq('id', newQuoteId).single();
+      if (fetchError) throw new Error(`Step 6 (load new quote): ${fetchError.message}`);
+
       setQuote(newQuote);
       userSelectedQuoteIdRef.current = newQuote.id;
-      
       toast.success(`New proposal ${newQuote.proposal_number} created with independent data`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
-      
-      // Reload all data with the new quote
       await loadQuoteData();
-      await loadData(false);
+      await loadData(false, newQuote);
+
     } catch (error: any) {
-      console.error('Error creating new proposal:', error);
-      toast.error('Failed to create new proposal: ' + error.message);
+      console.error('❌ createNewProposal error:', error?.message);
+      toast.error('Failed to create new proposal: ' + (error?.message ?? 'Unknown error'));
     } finally {
       setCreatingProposal(false);
     }
@@ -2112,9 +2293,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (currentIndex < allJobQuotes.length - 1) {
       const olderQuote = allJobQuotes[currentIndex + 1];
       setQuote(olderQuote);
-      // Track user's selection in ref so polling doesn't override it
       userSelectedQuoteIdRef.current = olderQuote.id;
-      await loadData(false);
+      // Pass olderQuote explicitly — avoids stale closure on quote state
+      await loadData(false, olderQuote);
       toast.info(`📖 Viewing proposal ${olderQuote.proposal_number}`);
     }
   }
@@ -2126,9 +2307,9 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     if (currentIndex > 0) {
       const newerQuote = allJobQuotes[currentIndex - 1];
       setQuote(newerQuote);
-      // Track user's selection in ref so polling doesn't override it
       userSelectedQuoteIdRef.current = newerQuote.id;
-      await loadData(false);
+      // Pass newerQuote explicitly — avoids stale closure on quote state
+      await loadData(false, newerQuote);
       const isNowCurrent = currentIndex === 1;
       if (isNowCurrent) {
         toast.info(`✏️ Viewing current proposal ${newerQuote.proposal_number} - editing enabled`);
@@ -2138,18 +2319,31 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function loadData(silent = false) {
-    // Only show loading spinner on initial load, not during polling
+  async function loadData(silent = false, targetQuote?: any) {
+    // targetQuote must be passed explicitly from navigation functions to avoid
+    // the stale-closure bug: setQuote() is async, so `quote` state hasn't
+    // committed by the time the load functions run. When undefined (polling),
+    // we fall back to the current `quote` state — which is acceptable for
+    // polling since no navigation is in flight.
+    const effectiveQuote = targetQuote !== undefined ? targetQuote : quote;
+    const targetQuoteId: string | null = effectiveQuote?.id ?? null;
+
+    // Compute isHistorical using allJobQuotes — this is safe because allJobQuotes
+    // is only updated by loadQuoteData() and doesn't change during navigation.
+    const isHistorical = !!effectiveQuote
+      && allJobQuotes.length > 0
+      && effectiveQuote.id !== allJobQuotes[0]?.id;
+
     if (!silent) {
       setLoading(true);
     }
     try {
       await Promise.all([
-        loadCustomRows(),
+        loadCustomRows(targetQuoteId, isHistorical),
         loadLaborPricing(),
         loadLaborHours(),
-        loadMaterialsData(),
-        loadSubcontractorEstimates(),
+        loadMaterialsData(targetQuoteId, isHistorical),
+        loadSubcontractorEstimates(targetQuoteId, isHistorical),
       ]);
     } catch (error) {
       console.error('Error loading financial data:', error);
@@ -2163,17 +2357,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function loadSubcontractorEstimates() {
+  async function loadSubcontractorEstimates(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     try {
-      // Check if we're viewing a historical proposal (read-only mode)
-      if (isReadOnly && quote) {
-        console.log('📖 Loading subcontractors from historical snapshot for proposal:', quote.proposal_number);
+      // Historical path: serve data from the frozen snapshot only
+      if (isHistorical && targetQuoteId) {
+        console.log('📖 Loading subcontractors from historical snapshot');
         
-        // Find the proposal version for this quote
         const { data: versionData, error: versionError } = await supabase
           .from('proposal_versions')
           .select('subcontractor_snapshot')
-          .eq('quote_id', quote.id)
+          .eq('quote_id', targetQuoteId)
           .order('version_number', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -2191,16 +2384,13 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           return;
         }
         
-        // Parse and use the snapshot data
         const snapshot = versionData.subcontractor_snapshot;
         const estimatesData = Array.isArray(snapshot) ? snapshot : [];
         
-        // Update subcontractor estimates from snapshot
         if (JSON.stringify(estimatesData) !== JSON.stringify(subcontractorEstimates)) {
           setSubcontractorEstimates(estimatesData);
         }
         
-        // Separate standalone vs linked subcontractors
         const linkedMap: Record<string, any[]> = {};
         const lineItemsMap: Record<string, any[]> = {};
         
@@ -2212,8 +2402,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
             if (!linkedMap[est.row_id]) linkedMap[est.row_id] = [];
             linkedMap[est.row_id].push(est);
           }
-          
-          // Line items are stored in the snapshot
           if (est.line_items && Array.isArray(est.line_items)) {
             lineItemsMap[est.id] = est.line_items;
           }
@@ -2221,28 +2409,35 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         
         setLinkedSubcontractors(linkedMap);
         setSubcontractorLineItems(lineItemsMap);
-        
         console.log('✅ Loaded subcontractors from snapshot');
         return;
       }
       
-      // Normal flow: Load live data for current/editable proposals
-      const { data, error } = await supabase
+      // Live path: single nested query — no .in() needed
+      let estimatesQuery = supabase
         .from('subcontractor_estimates')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('order_index');
+        .select('*, subcontractor_estimate_line_items(*)');
+      estimatesQuery = targetQuoteId
+        ? estimatesQuery.eq('quote_id', targetQuoteId)
+        : estimatesQuery.eq('job_id', job.id);
+      const { data, error } = await estimatesQuery.order('order_index');
 
       if (error) throw error;
-      const newData = data || [];
-      // Only update if data actually changed
-      if (JSON.stringify(newData) !== JSON.stringify(subcontractorEstimates)) {
-        setSubcontractorEstimates(newData);
+      const rawData = data || [];
+
+      // Strip the nested relation out so state only holds flat estimate objects
+      const estimatesOnly = rawData.map((est: any) => {
+        const { subcontractor_estimate_line_items: _items, ...estimateData } = est;
+        return estimateData;
+      });
+
+      if (JSON.stringify(estimatesOnly) !== JSON.stringify(subcontractorEstimates)) {
+        setSubcontractorEstimates(estimatesOnly);
       }
 
-      // Separate standalone vs linked subcontractors
+      // Build linked-subcontractors map
       const linkedMap: Record<string, any[]> = {};
-      newData.forEach(est => {
+      estimatesOnly.forEach((est: any) => {
         if (est.sheet_id) {
           if (!linkedMap[est.sheet_id]) linkedMap[est.sheet_id] = [];
           linkedMap[est.sheet_id].push(est);
@@ -2253,26 +2448,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       });
       setLinkedSubcontractors(linkedMap);
 
-      // Load line items for all estimates
-      if (newData.length > 0) {
-        const estimateIds = newData.map(e => e.id);
-        const { data: lineItemsData, error: lineItemsError } = await supabase
-          .from('subcontractor_estimate_line_items')
-          .select('*')
-          .in('estimate_id', estimateIds)
-          .order('order_index');
-
-        if (!lineItemsError && lineItemsData) {
-          const lineItemsMap: Record<string, any[]> = {};
-          lineItemsData.forEach(item => {
-            if (!lineItemsMap[item.estimate_id]) {
-              lineItemsMap[item.estimate_id] = [];
-            }
-            lineItemsMap[item.estimate_id].push(item);
-          });
-          setSubcontractorLineItems(lineItemsMap);
+      // Build line-items map directly from the nested response
+      const lineItemsMap: Record<string, any[]> = {};
+      rawData.forEach((est: any) => {
+        if (est.subcontractor_estimate_line_items?.length > 0) {
+          lineItemsMap[est.id] = est.subcontractor_estimate_line_items;
         }
-      }
+      });
+      setSubcontractorLineItems(lineItemsMap);
     } catch (error: any) {
       console.error('Error loading subcontractor estimates:', error);
       if (subcontractorEstimates.length > 0) {
@@ -2281,17 +2464,16 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function loadMaterialsData() {
+  async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     try {
-      // Check if we're viewing a historical proposal (read-only mode)
-      if (isReadOnly && quote) {
-        console.log('📖 Loading materials from historical snapshot for proposal:', quote.proposal_number);
+      // Historical path: serve data from the frozen snapshot only
+      if (isHistorical && targetQuoteId) {
+        console.log('📖 Loading materials from historical snapshot');
         
-        // Find the proposal version for this quote
         const { data: versionData, error: versionError } = await supabase
           .from('proposal_versions')
           .select('workbook_snapshot')
-          .eq('quote_id', quote.id)
+          .eq('quote_id', targetQuoteId)
           .order('version_number', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -2425,16 +2607,26 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return;
       }
       
-      // Normal flow: Load live data for current/editable proposals
+      // Normal flow: one nested query fetches the workbook, all sheets, all items,
+      // all labor rows, and all category markups — no .in() needed.
       console.log('📝 Loading live materials data');
-      
-      // Get the working workbook for this job
-      const { data: workbookData, error: workbookError } = await supabase
+
+      let wbQuery = supabase
         .from('material_workbooks')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('status', 'working')
-        .maybeSingle();
+        .select(`
+          id,
+          material_sheets (
+            *,
+            material_items (*),
+            material_sheet_labor (*),
+            material_category_markups (*)
+          )
+        `)
+        .eq('status', 'working');
+      wbQuery = targetQuoteId
+        ? wbQuery.eq('quote_id', targetQuoteId)
+        : wbQuery.eq('job_id', job.id);
+      const { data: workbookData, error: workbookError } = await wbQuery.maybeSingle();
 
       if (workbookError) throw workbookError;
       if (!workbookData) {
@@ -2448,76 +2640,43 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         return;
       }
 
-      // Get all sheets for this workbook
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('*')
-        .eq('workbook_id', workbookData.id)
-        .order('order_index');
+      const sheetsData: any[] = (workbookData.material_sheets || [])
+        .slice()
+        .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
 
-      if (sheetsError) throw sheetsError;
+      // Build flat sheet objects (strip nested children for state storage)
+      const sheetsFlat = sheetsData.map(({ material_items: _i, material_sheet_labor: _l, material_category_markups: _m, ...s }: any) => s);
+      if (JSON.stringify(sheetsFlat) !== JSON.stringify(materialSheets)) {
+        setMaterialSheets(sheetsFlat);
+      }
 
-      const sheetIds = (sheetsData || []).map(s => s.id);
-
-      // Get labor data for all sheets
-      const { data: laborData, error: laborError } = await supabase
-        .from('material_sheet_labor')
-        .select('*')
-        .in('sheet_id', sheetIds);
-
-      if (!laborError && laborData) {
-        const laborMap: Record<string, any> = {};
-        laborData.forEach(labor => {
+      // Build labor map from nested data
+      const laborMap: Record<string, any> = {};
+      sheetsData.forEach((sheet: any) => {
+        (sheet.material_sheet_labor || []).forEach((labor: any) => {
           laborMap[labor.sheet_id] = labor;
         });
-        if (JSON.stringify(laborMap) !== JSON.stringify(sheetLabor)) {
-          setSheetLabor(laborMap);
-        }
+      });
+      if (JSON.stringify(laborMap) !== JSON.stringify(sheetLabor)) {
+        setSheetLabor(laborMap);
       }
 
-      // Get all items for these sheets
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('material_items')
-        .select('*')
-        .in('sheet_id', sheetIds);
-
-      if (itemsError) throw itemsError;
-
-      // Store sheets data for editing
-      if (JSON.stringify(sheetsData || []) !== JSON.stringify(materialSheets)) {
-        setMaterialSheets(sheetsData || []);
+      // Build category markups map, preserving any in-progress saves
+      const freshMarkups: Record<string, number> = {};
+      sheetsData.forEach((sheet: any) => {
+        (sheet.material_category_markups || []).forEach((cm: any) => {
+          freshMarkups[`${cm.sheet_id}_${cm.category_name}`] = cm.markup_percent;
+        });
+      });
+      savingMarkupsRef.current.forEach(key => {
+        if (categoryMarkups[key] !== undefined) freshMarkups[key] = categoryMarkups[key];
+      });
+      if (JSON.stringify(freshMarkups) !== JSON.stringify(categoryMarkups)) {
+        setCategoryMarkups(freshMarkups);
       }
 
-      // Load category markups (but don't overwrite values currently being saved)
-      if (sheetIds.length > 0) {
-        const { data: categoryMarkupsData, error: categoryMarkupsError } = await supabase
-          .from('material_category_markups')
-          .select('*')
-          .in('sheet_id', sheetIds);
-
-        if (!categoryMarkupsError && categoryMarkupsData) {
-          // Build final markups: start with fresh database values
-          const finalMarkups: Record<string, number> = {};
-          
-          // Add all database values
-          categoryMarkupsData.forEach(cm => {
-            const key = `${cm.sheet_id}_${cm.category_name}`;
-            finalMarkups[key] = cm.markup_percent;
-          });
-          
-          // Override with in-progress values that are currently being saved
-          savingMarkupsRef.current.forEach(key => {
-            if (categoryMarkups[key] !== undefined) {
-              finalMarkups[key] = categoryMarkups[key];
-            }
-          });
-          
-          // Only update state if values actually changed
-          if (JSON.stringify(finalMarkups) !== JSON.stringify(categoryMarkups)) {
-            setCategoryMarkups(finalMarkups);
-          }
-        }
-      }
+      // itemsData is still needed for breakdown calculation below — collect from nested sheets
+      const itemsData: any[] = sheetsData.flatMap((sheet: any) => sheet.material_items || []);
       
       // Calculate breakdown by sheet and category
       const breakdowns = (sheetsData || []).map(sheet => {
@@ -2656,15 +2815,15 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     return Array.from(byKey.values());
   }
 
-  async function loadCustomRows() {
+  async function loadCustomRows(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     // Check if we're viewing a historical proposal (read-only mode)
-    if (isReadOnly && quote) {
-      console.log('📖 Loading custom rows from historical snapshot for proposal:', quote.proposal_number);
+    if (isHistorical && targetQuoteId) {
+      console.log('📖 Loading custom rows from historical snapshot for proposal:', targetQuoteId);
       
       const { data: versionData, error: versionError } = await supabase
         .from('proposal_versions')
         .select('financial_rows_snapshot')
-        .eq('quote_id', quote.id)
+        .eq('quote_id', targetQuoteId)
         .order('version_number', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -2730,19 +2889,29 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       return;
     }
     
-    // Normal flow: Load live data, then apply frontend dedupe so duplicates don't affect UI or totals
-    const { data, error } = await supabase
+    // Normal flow: nested select fetches rows + their line items in one request.
+    // Sheet-linked items (row_id IS NULL) are fetched in a separate focused query.
+    let rowsQuery = supabase
       .from('custom_financial_rows')
-      .select('*')
-      .eq('job_id', job.id)
-      .order('order_index');
+      .select('*, custom_financial_row_items(*)');
+    rowsQuery = targetQuoteId
+      ? rowsQuery.eq('quote_id', targetQuoteId)
+      : rowsQuery.eq('job_id', job.id);
+    const { data, error } = await rowsQuery.order('order_index');
 
     if (error) {
       console.error('Error loading custom rows:', error);
       return;
     }
-    
-    const newData = data || [];
+
+    const rawRows = data || [];
+
+    // Strip nested line items out of the row objects for state
+    const newData: CustomFinancialRow[] = rawRows.map((row: any) => {
+      const { custom_financial_row_items: _items, ...rowData } = row;
+      return rowData as CustomFinancialRow;
+    });
+
     const dedupedRows = dedupeRowsByDescription(newData);
     const descToRow = new Map<string, CustomFinancialRow>();
     dedupedRows.forEach(r => descToRow.set((r.description ?? '').trim(), r));
@@ -2767,52 +2936,42 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       setCustomRows(dedupedRows);
     }
 
-    const rowIds = newData.map(r => r.id);
-    
-    // Query material sheets directly instead of using state to avoid race conditions
-    const { data: sheetsData } = await supabase
+    // Collect row-linked line items from the nested response
+    const rowLinkedItems: CustomRowLineItem[] = rawRows.flatMap((row: any) =>
+      (row.custom_financial_row_items || []) as CustomRowLineItem[]
+    );
+
+    // Fetch sheet-linked items (row_id IS NULL) via a focused workbook lookup
+    let sheetLinkedItems: CustomRowLineItem[] = [];
+    let wbQuery = supabase
       .from('material_workbooks')
-      .select('id')
-      .eq('job_id', job.id)
-      .eq('status', 'working')
-      .maybeSingle();
-    
-    let sheetIds: string[] = [];
-    if (sheetsData) {
-      const { data: sheets } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .eq('workbook_id', sheetsData.id);
-      
-      if (sheets) {
-        sheetIds = sheets.map(s => s.id);
+      .select('id, material_sheets(id)')
+      .eq('status', 'working');
+    wbQuery = targetQuoteId
+      ? wbQuery.eq('quote_id', targetQuoteId)
+      : wbQuery.eq('job_id', job.id);
+    const { data: wbData } = await wbQuery.maybeSingle();
+
+    if (wbData) {
+      const sheetIds: string[] = ((wbData as any).material_sheets || []).map((s: any) => s.id);
+      if (sheetIds.length > 0) {
+        const { data: sheetItems } = await supabase
+          .from('custom_financial_row_items')
+          .select('*')
+          .in('sheet_id', sheetIds)
+          .is('row_id', null)
+          .order('order_index');
+        sheetLinkedItems = (sheetItems || []) as CustomRowLineItem[];
       }
     }
-    
-    const allIds = [...rowIds, ...sheetIds];
-    
-    if (allIds.length === 0) {
-      setCustomRowLineItems({});
-      return;
-    }
-    const orConditions: string[] = [];
-    if (rowIds.length > 0) orConditions.push(`row_id.in.(${rowIds.join(',')})`);
-    if (sheetIds.length > 0) orConditions.push(`sheet_id.in.(${sheetIds.join(',')})`);
-    if (orConditions.length === 0) return;
 
-    const { data: lineItemsData, error: lineItemsError } = await supabase
-      .from('custom_financial_row_items')
-      .select('*')
-      .or(orConditions.join(','))
-      .order('order_index');
-
-    if (lineItemsError || !lineItemsData) return;
+    const allLineItems = [...rowLinkedItems, ...sheetLinkedItems];
 
     const getEffectiveParentId = (item: CustomRowLineItem) => {
       if (item.row_id) return duplicateToSurviving[item.row_id] ?? item.row_id;
       return item.sheet_id ?? null;
     };
-    const dedupedLineItems = dedupeLineItemsByParentAndDescription(lineItemsData as CustomRowLineItem[], getEffectiveParentId);
+    const dedupedLineItems = dedupeLineItemsByParentAndDescription(allLineItems, getEffectiveParentId);
     const lineItemsMap: Record<string, CustomRowLineItem[]> = {};
     dedupedLineItems.forEach(item => {
       const parentId = getEffectiveParentId(item);
@@ -3689,13 +3848,19 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   }
 
   async function saveBuildingDescription() {
+    if (!quote) {
+      toast.error('No active proposal to save description to');
+      return;
+    }
     try {
       const { error } = await supabase
-        .from('jobs')
+        .from('quotes')
         .update({ description: buildingDescription })
-        .eq('id', job.id);
+        .eq('id', quote.id);
 
       if (error) throw error;
+      // Keep local quote object in sync without a full reload
+      (quote as any).description = buildingDescription;
       toast.success('Building description saved');
       setEditingDescription(false);
     } catch (error: any) {
@@ -5595,7 +5760,7 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                 variant="outline"
                 onClick={() => {
                   setEditingDescription(false);
-                  setBuildingDescription(job.description || '');
+                  setBuildingDescription((quote as any)?.description || '');
                 }}
               >
                 Cancel

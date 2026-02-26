@@ -3,6 +3,7 @@
 
 import { supabase } from './supabase';
 import { withRetry, logError, showErrorToast } from './error-handler';
+import { normalizeImageOrientation } from './image-utils';
 
 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 const MAX_PARALLEL_CHUNKS = 2; // Limit parallel uploads on mobile
@@ -211,10 +212,13 @@ export async function uploadPhotoChunked(
 ): Promise<{ url: string; path: string }> {
   const timestamp = Date.now();
   const fileName = `${metadata.jobId}/${timestamp}_${file.name}`;
-  
+
   try {
+    // Normalize EXIF orientation before upload — bakes rotation into pixel data
+    const orientedFile = await normalizeImageOrientation(file);
+
     const path = await uploadFileChunked(
-      file,
+      orientedFile,
       'job-files',
       fileName,
       onProgress

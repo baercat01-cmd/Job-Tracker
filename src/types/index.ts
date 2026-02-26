@@ -179,6 +179,8 @@ export interface Photo {
   uploaded_by: string;
   caption: string | null;
   created_at: string;
+  /** Display rotation in degrees (0, 90, 180, 270). Persisted so photo stays rotated. */
+  rotation_degrees?: number | null;
 }
 
 export interface CompletedTask {

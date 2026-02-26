@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -411,6 +412,17 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                 Orders
               </Button>
               <Button 
+                asChild
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-initial bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white"
+              >
+                <Link to="/office/daily-report" className="flex items-center gap-1.5">
+                  <ScrollText className="w-4 h-4" />
+                  Daily Report
+                </Link>
+              </Button>
+              <Button 
                 onClick={() => setShowCreateDialog(true)} 
                 size="sm"
                 className="flex-1 sm:flex-initial bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black font-semibold shadow-lg border-2 border-yellow-400"
@@ -627,8 +639,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             setSelectedTab('materials');
                           }}
                         >
-                          <Package className="w-3 h-3 mr-1" />
-                          Materials
+                          <Package className="w-3 h-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Materials</span>
                         </Button>
                         <Button
                           variant="ghost"
@@ -640,8 +652,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                             setSelectedTab('schedule');
                           }}
                         >
-                          <CalendarIcon className="w-3 h-3 mr-1" />
-                          Schedule
+                          <CalendarIcon className="w-3 h-3 sm:mr-1" />
+                          <span className="hidden sm:inline">Schedule</span>
                         </Button>
                       </div>
                       <Button
@@ -910,8 +922,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('financials');
                               }}
                             >
-                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
-                              Proposal
+                              <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Proposal</span>
                             </Button>
                             <Button
                               variant="ghost"
@@ -923,8 +935,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('materials');
                               }}
                             >
-                              <Package className="w-2.5 h-2.5 mr-0.5" />
-                              Materials
+                              <Package className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Materials</span>
                               {crewOrderCounts[job.id] > 0 && (
                                 <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
                                   {crewOrderCounts[job.id]}
@@ -941,8 +953,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('schedule');
                               }}
                             >
-                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
-                              Schedule
+                              <CalendarIcon className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Schedule</span>
                             </Button>
                           </div>
 
@@ -1138,8 +1150,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('financials');
                               }}
                             >
-                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
-                              Proposal
+                              <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Proposal</span>
                             </Button>
                             <Button
                               variant="ghost"
@@ -1151,8 +1163,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('materials');
                               }}
                             >
-                              <Package className="w-2.5 h-2.5 mr-0.5" />
-                              Materials
+                              <Package className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Materials</span>
                               {crewOrderCounts[job.id] > 0 && (
                                 <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
                                   {crewOrderCounts[job.id]}
@@ -1169,8 +1181,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('schedule');
                               }}
                             >
-                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
-                              Schedule
+                              <CalendarIcon className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Schedule</span>
                             </Button>
                           </div>
                         </CardContent>
@@ -1357,8 +1369,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('financials');
                               }}
                             >
-                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
-                              Proposal
+                              <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Proposal</span>
                             </Button>
                             <Button
                               variant="ghost"
@@ -1370,8 +1382,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('materials');
                               }}
                             >
-                              <Package className="w-2.5 h-2.5 mr-0.5" />
-                              Materials
+                              <Package className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Materials</span>
                               {crewOrderCounts[job.id] > 0 && (
                                 <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
                                   {crewOrderCounts[job.id]}
@@ -1388,8 +1400,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('schedule');
                               }}
                             >
-                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
-                              Schedule
+                              <CalendarIcon className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Schedule</span>
                             </Button>
                           </div>
                         </CardContent>
@@ -1576,8 +1588,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('financials');
                               }}
                             >
-                              <ScrollText className="w-2.5 h-2.5 mr-0.5" />
-                              Proposal
+                              <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Proposal</span>
                             </Button>
                             <Button
                               variant="ghost"
@@ -1589,8 +1601,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('materials');
                               }}
                             >
-                              <Package className="w-2.5 h-2.5 mr-0.5" />
-                              Materials
+                              <Package className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Materials</span>
                               {crewOrderCounts[job.id] > 0 && (
                                 <Badge variant="secondary" className="ml-1 bg-orange-500 text-white text-[8px] py-0 px-1 h-3.5 leading-none">
                                   {crewOrderCounts[job.id]}
@@ -1607,8 +1619,8 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 setSelectedTab('schedule');
                               }}
                             >
-                              <CalendarIcon className="w-2.5 h-2.5 mr-0.5" />
-                              Schedule
+                              <CalendarIcon className="w-2.5 h-2.5 sm:mr-0.5" />
+                              <span className="hidden sm:inline">Schedule</span>
                             </Button>
                           </div>
                         </CardContent>
