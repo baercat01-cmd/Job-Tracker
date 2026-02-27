@@ -1230,7 +1230,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
               className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
             >
               <DollarSign className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Financials</span>
+              <span className="hidden sm:inline">Proposal</span>
             </TabsTrigger>
             <TabsTrigger 
               value="components" 

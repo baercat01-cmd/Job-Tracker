@@ -33,9 +33,11 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  Edit2
+  Edit2,
+  Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 import { EventDetailsDialog } from './EventDetailsDialog';
 import { parseDateLocal } from '@/lib/date-utils';
 import {
@@ -80,6 +82,7 @@ function getJobColor(jobName: string): string {
 }
 
 export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
+  const { profile } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +103,12 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
   const [newEventDate, setNewEventDate] = useState('');
   const [savingDate, setSavingDate] = useState(false);
   const [completingEvent, setCompletingEvent] = useState(false);
+  const [showAddEventDialog, setShowAddEventDialog] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventDescription, setNewEventDescription] = useState('');
+  const [newEventJobId, setNewEventJobId] = useState('');
+  const [newEventType, setNewEventType] = useState<'material_order_reminder' | 'material_pickup' | 'material_delivery'>('material_order_reminder');
+  const [addingEvent, setAddingEvent] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -510,6 +519,48 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   }
 
+  async function addCalendarEventForDate() {
+    if (!selectedDate || !newEventTitle.trim()) {
+      toast.error('Please enter a title');
+      return;
+    }
+    if (!newEventJobId) {
+      toast.error('Please select a job');
+      return;
+    }
+    if (!profile?.id) {
+      toast.error('You must be logged in to add events');
+      return;
+    }
+    setAddingEvent(true);
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .insert({
+          job_id: newEventJobId,
+          title: newEventTitle.trim(),
+          description: newEventDescription.trim() || null,
+          event_date: selectedDate,
+          event_type: newEventType,
+          all_day: true,
+          created_by: profile.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      if (error) throw error;
+      toast.success('Event added to this date');
+      setShowAddEventDialog(false);
+      setNewEventTitle('');
+      setNewEventDescription('');
+      await loadCalendarEvents();
+    } catch (error: any) {
+      console.error('Error adding calendar event:', error);
+      toast.error('Failed to add event: ' + (error?.message ?? 'Unknown error'));
+    } finally {
+      setAddingEvent(false);
+    }
+  }
+
   function goToToday() {
     setCurrentDate(new Date());
   }
@@ -627,11 +678,9 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                     unavailableUsers.length > 0 ? 'bg-orange-50 border-orange-300' : ''
                   }`}
                   onClick={() => {
-                    if (dayEvents.length > 0 || unavailableUsers.length > 0) {
-                      setSelectedDate(dateStr);
-                      setExpandedEventId(null); // Don't auto-expand any event
-                      setShowDayDialog(true);
-                    }
+                    setSelectedDate(dateStr);
+                    setExpandedEventId(null);
+                    setShowDayDialog(true);
                   }}
                   title={unavailableUsers.length > 0 ? `Off: ${unavailableUsers.join(', ')}` : undefined}
                 >
@@ -1068,14 +1117,33 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
       <Dialog open={showDayDialog} onOpenChange={setShowDayDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none border-slate-300">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5" />
-              {selectedDate && parseDateLocal(selectedDate).toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5" />
+                {selectedDate && parseDateLocal(selectedDate).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </span>
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setNewEventTitle('');
+                  setNewEventDescription('');
+                  const defaultJobId = filterJob !== 'all' && jobs.some(j => j.id === filterJob)
+                    ? filterJob
+                    : (jobs.length > 0 ? jobs[0].id : '');
+                  setNewEventJobId(defaultJobId);
+                  setNewEventType('material_order_reminder');
+                  setShowAddEventDialog(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add to this date
+              </Button>
             </DialogTitle>
           </DialogHeader>
           <div className="mt-4">
@@ -1342,6 +1410,75 @@ export function MasterCalendar({ onJobSelect, jobId }: MasterCalendarProps) {
                 })}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add event to date dialog */}
+      <Dialog open={showAddEventDialog} onOpenChange={setShowAddEventDialog}>
+        <DialogContent className="sm:max-w-md rounded-none border-slate-300">
+          <DialogHeader>
+            <DialogTitle>Add to {selectedDate && parseDateLocal(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>Job</Label>
+              <Select value={newEventJobId} onValueChange={setNewEventJobId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select job" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map(job => (
+                    <SelectItem key={job.id} value={job.id}>{job.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select value={newEventType} onValueChange={(v: 'material_order_reminder' | 'material_pickup' | 'material_delivery') => setNewEventType(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="material_order_reminder">Order reminder</SelectItem>
+                  <SelectItem value="material_pickup">Material pickup</SelectItem>
+                  <SelectItem value="material_delivery">Material delivery</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Title *</Label>
+              <Input
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                placeholder="e.g., Order lumber, Delivery scheduled"
+              />
+            </div>
+            <div>
+              <Label>Description (optional)</Label>
+              <Input
+                value={newEventDescription}
+                onChange={(e) => setNewEventDescription(e.target.value)}
+                placeholder="Notes or details"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddEventDialog(false)} disabled={addingEvent}>Cancel</Button>
+              <Button onClick={addCalendarEventForDate} disabled={addingEvent || !newEventTitle.trim() || !newEventJobId}>
+                {addingEvent ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add event
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

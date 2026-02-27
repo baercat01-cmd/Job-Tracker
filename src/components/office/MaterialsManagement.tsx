@@ -101,6 +101,13 @@ interface MaterialWorkbook {
   sheets: MaterialSheet[];
 }
 
+interface JobQuote {
+  id: string;
+  proposal_number: string | null;
+  quote_number: string | null;
+  created_at: string;
+}
+
 interface MaterialsManagementProps {
   job: Job;
   userId: string;
@@ -113,6 +120,8 @@ interface CategoryGroup {
 }
 
 export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsManagementProps) {
+  const [jobQuotes, setJobQuotes] = useState<JobQuote[]>([]);
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'comparison' | 'upload'>('manage');
@@ -144,12 +153,17 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   
   // Database search state for add dialog
   const [showDatabaseSearch, setShowDatabaseSearch] = useState(false);
+  const [addMaterialDialogMode, setAddMaterialDialogMode] = useState<'search' | 'custom'>('search');
   const [catalogMaterials, setCatalogMaterials] = useState<any[]>([]);
   const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [catalogSearchCategory, setCatalogSearchCategory] = useState<string>('all');
   const [catalogSearchPage, setCatalogSearchPage] = useState(0);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [selectedCatalogMaterials, setSelectedCatalogMaterials] = useState<any[]>([]);
+  const [addingCatalogBatch, setAddingCatalogBatch] = useState(false);
+  const [catalogAddQuantity, setCatalogAddQuantity] = useState('1');
+  const [catalogAddColor, setCatalogAddColor] = useState('');
   
   // Package state
   const [packages, setPackages] = useState<any[]>([]);
@@ -186,6 +200,33 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   const [showSyncResults, setShowSyncResults] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
 
+  // Load job quotes (proposals) so we can scope materials per proposal
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('id, proposal_number, quote_number, created_at')
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false });
+      if (!mounted) return;
+      if (error) {
+        console.error('Error loading job quotes:', error);
+        setJobQuotes([]);
+        setSelectedQuoteId(null);
+        return;
+      }
+      const quotes = (data || []) as JobQuote[];
+      setJobQuotes(quotes);
+      setSelectedQuoteId(prev => {
+        if (quotes.length === 0) return null;
+        if (!prev || !quotes.some(q => q.id === prev)) return quotes[0].id;
+        return prev;
+      });
+    })();
+    return () => { mounted = false; };
+  }, [job.id]);
+
   useEffect(() => {
     loadWorkbook();
     loadPackages();
@@ -217,7 +258,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       supabase.removeChannel(itemsChannel);
       supabase.removeChannel(packagesChannel);
     };
-  }, [job.id]);
+  }, [job.id, selectedQuoteId]);
 
   async function loadPackages() {
     try {
@@ -251,16 +292,45 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   async function loadWorkbook() {
     try {
       setLoading(true);
-      
-      const { data: workbookData, error: workbookError } = await supabase
+      // When a proposal is selected, load workbook for that quote so materials are per-proposal
+      const baseQuery = supabase
         .from('material_workbooks')
         .select('*')
-        .eq('job_id', job.id)
+        .eq('job_id', job.id);
+      if (selectedQuoteId) {
+        baseQuery.eq('quote_id', selectedQuoteId);
+      }
+      let { data: workbookData, error: workbookError } = await baseQuery
         .eq('status', 'working')
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (workbookError) throw workbookError;
-
+      if (!workbookData) {
+        const fallbackQuery = supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('job_id', job.id);
+        if (selectedQuoteId) fallbackQuery.eq('quote_id', selectedQuoteId);
+        const { data: fallback, error: fallbackErr } = await fallbackQuery
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!fallbackErr && fallback) workbookData = fallback;
+      }
+      // Legacy: if a proposal is selected but no workbook for that quote, show job-level workbook (quote_id null)
+      if (!workbookData && selectedQuoteId) {
+        const { data: legacy } = await supabase
+          .from('material_workbooks')
+          .select('*')
+          .eq('job_id', job.id)
+          .is('quote_id', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (legacy) workbookData = legacy;
+      }
       if (!workbookData) {
         setWorkbook(null);
         setLoading(false);
@@ -308,7 +378,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       }
     } catch (error: any) {
       console.error('Error loading workbook:', error);
-      toast.error('Failed to load materials');
+      const msg = error?.message || 'Unknown error';
+      toast.error(msg.includes('schema') || msg.includes('relation') ? `Failed to load materials: ${msg}` : 'Failed to load materials');
     } finally {
       setLoading(false);
     }
@@ -910,10 +981,123 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     }
   }
 
+  function catalogItemKey(item: any) {
+    return `${item.sku ?? ''}|${item.material_name ?? ''}`;
+  }
+
+  /** Read cost (purchase) and price (selling) from Zoho/catalog. Cost → cost_per_unit, price → price_per_unit.
+   * When only one value exists, use it for both so the workbook gets both columns. */
+  function getCatalogCostAndPrice(item: any): { cost: number; price: number } {
+    if (!item) return { cost: 0, price: 0 };
+    const raw = item.raw_metadata ?? item;
+    const num = (v: any) => {
+      const n = Number(v);
+      return typeof n === 'number' && !isNaN(n) ? n : 0;
+    };
+    // Cost: purchase_cost / purchase_rate / cost_price / cost (from Zoho Books)
+    let cost = num(item.purchase_cost) || num(raw.purchase_cost) || num(raw.purchase_rate) || num(raw.cost_price) || num(raw.cost);
+    // Price: unit_price / rate / selling_price / sales_rate / price (from Zoho Books)
+    let price = num(item.unit_price) || num(raw.unit_price) || num(raw.rate) || num(raw.selling_price) || num(raw.sales_rate) || num(raw.price);
+    // When only one value is present, use it for both
+    if (cost > 0 && price === 0) price = cost;
+    if (price > 0 && cost === 0) cost = price;
+    return { cost, price };
+  }
+
+  function toggleCatalogMaterialSelection(catalogItem: any) {
+    const key = catalogItemKey(catalogItem);
+    setSelectedCatalogMaterials(prev => {
+      const exists = prev.some(p => catalogItemKey(p) === key);
+      if (exists) return prev.filter(p => catalogItemKey(p) !== key);
+      return [...prev, catalogItem];
+    });
+  }
+
+  function isCatalogMaterialSelected(catalogItem: any) {
+    const key = catalogItemKey(catalogItem);
+    return selectedCatalogMaterials.some(p => catalogItemKey(p) === key);
+  }
+
+  async function addMaterialsFromCatalogSelection() {
+    if (selectedCatalogMaterials.length === 0) {
+      toast.error('Select at least one material');
+      return;
+    }
+    if (!activeSheetId) {
+      toast.error('No sheet selected');
+      return;
+    }
+    if (!addToCategory.trim()) {
+      toast.error('Choose an "Add to category" for the materials');
+      return;
+    }
+    setAddingCatalogBatch(true);
+    try {
+      let orderIndex = 0;
+      const { data: maxData } = await supabase
+        .from('material_items')
+        .select('order_index')
+        .eq('sheet_id', activeSheetId)
+        .eq('category', addToCategory.trim())
+        .order('order_index', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      orderIndex = (maxData?.order_index ?? -1) + 1;
+
+      const quantity = Math.max(0.01, parseFloat(catalogAddQuantity) || 1);
+      const colorValue = catalogAddColor.trim() || null;
+
+      for (const item of selectedCatalogMaterials) {
+        const { cost, price } = getCatalogCostAndPrice(item);
+        const costNum = typeof cost === 'number' && !isNaN(cost) ? cost : null;
+        const priceNum = typeof price === 'number' && !isNaN(price) ? price : null;
+        const markupDecimal = (costNum != null && costNum > 0 && priceNum != null)
+          ? (priceNum - costNum) / costNum
+          : 0;
+        const extendedCost = costNum != null ? costNum * quantity : null;
+        const extendedPrice = priceNum != null ? priceNum * quantity : null;
+
+        const { error } = await supabase
+          .from('material_items')
+          .insert({
+            sheet_id: activeSheetId,
+            category: addToCategory.trim(),
+            usage: null,
+            sku: item.sku ?? null,
+            material_name: item.material_name ?? 'Unnamed',
+            quantity,
+            length: item.part_length ?? null,
+            color: colorValue,
+            cost_per_unit: costNum,
+            markup_percent: markupDecimal,
+            price_per_unit: priceNum,
+            extended_cost: extendedCost,
+            extended_price: extendedPrice,
+            taxable: true,
+            notes: null,
+            order_index: orderIndex++,
+            status: 'not_ordered',
+          });
+        if (error) throw error;
+      }
+
+      toast.success(`Added ${selectedCatalogMaterials.length} material(s) to ${activeSheet?.sheet_name}`);
+      setSelectedCatalogMaterials([]);
+      setCatalogAddQuantity('1');
+      setCatalogAddColor('');
+      await loadWorkbook();
+      setShowAddDialog(false);
+    } catch (error: any) {
+      console.error('Error adding materials from catalog:', error);
+      toast.error('Failed to add materials: ' + (error?.message ?? 'Unknown error'));
+    } finally {
+      setAddingCatalogBatch(false);
+    }
+  }
+
   function selectMaterialFromCatalog(catalogItem: any) {
-    // Auto-fill form with catalog data - use Zoho Books prices directly
-    const cost = catalogItem.purchase_cost || 0;
-    const price = catalogItem.unit_price || 0;
+    // Auto-fill form with catalog data - use Zoho Books cost/price (correct columns: cost → cost_per_unit, price → price_per_unit)
+    const { cost, price } = getCatalogCostAndPrice(catalogItem);
     
     // Calculate markup percentage from Zoho Books prices (for display/reference only)
     let calculatedMarkup = '';
@@ -931,9 +1115,10 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     setNewMarkup(calculatedMarkup); // Display calculated markup (reference only)
     setAddToCategory(catalogItem.category || addToCategory);
     
-    setShowDatabaseSearch(false);
+    setAddMaterialDialogMode('custom'); // Switch to custom form so user can edit and click Add Material
+    setShowDatabaseSearch(true);
     setCatalogSearchQuery('');
-    toast.success(`Material "${catalogItem.material_name}" loaded from Zoho Books`);
+    toast.success(`Material "${catalogItem.material_name}" loaded — edit if needed and click Add Material`);
   }
 
   function openZohoOrderDialogForMaterial(item: MaterialItem) {
@@ -962,9 +1147,13 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     setNewPricePerUnit(''); // Reset price from catalog
     setNewMarkup(''); // Reset markup (no default)
     setNewNotes('');
-    setShowDatabaseSearch(false);
+    setAddMaterialDialogMode('search'); // Default: Search Database
+    setShowDatabaseSearch(true);
     setCatalogSearchQuery('');
     setCatalogSearchCategory('all');
+    setSelectedCatalogMaterials([]);
+    setCatalogAddQuantity('1');
+    setCatalogAddColor('');
     setShowAddDialog(true);
     loadCatalogMaterials();
   }
@@ -1213,18 +1402,45 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     );
   }
 
+  const selectedQuote = jobQuotes.find(q => q.id === selectedQuoteId);
+  const proposalLabel = selectedQuote
+    ? (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`)
+    : (proposalNumber || 'Proposal');
+
   return (
     <div className="w-full px-4">
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
           <div className="relative w-full">
-            {proposalNumber && (
+            {jobQuotes.length > 1 ? (
+              <div className="flex items-center gap-2 mb-2">
+                <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
+                <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
+                  <SelectTrigger className="w-[200px] h-9 bg-white border-2">
+                    <SelectValue placeholder="Select proposal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {jobQuotes.map((q) => (
+                      <SelectItem key={q.id} value={q.id}>
+                        {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : jobQuotes.length === 1 ? (
+              <div className="absolute -top-1 right-2 z-20">
+                <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
+                  Proposal #{proposalLabel}
+                </Badge>
+              </div>
+            ) : proposalNumber ? (
               <div className="absolute -top-1 right-2 z-20">
                 <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
                   Proposal #{proposalNumber}
                 </Badge>
               </div>
-            )}
+            ) : null}
             <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm">
             <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
               <FileSpreadsheet className="w-5 h-5" />
@@ -1796,26 +2012,22 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                       ) : (
                                         <div
                                           onClick={() => {
-                                            // Use stored markup_percent if available, otherwise calculate from cost/price
-                                            const currentMarkup = item.markup_percent !== null 
-                                              ? (item.markup_percent * 100) 
-                                              : markupPercent;
-                                            console.log('Starting markup edit:', { 
-                                              stored: item.markup_percent, 
-                                              calculated: markupPercent, 
-                                              using: currentMarkup 
-                                            });
-                                            startCellEdit(item.id, 'markup_percent', currentMarkup.toFixed(1));
+                                            // When both cost and price exist, use calculated % difference; else use stored
+                                            const displayMarkup = (item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
+                                              ? calculateMarkupPercent(item.cost_per_unit, item.price_per_unit)
+                                              : (item.markup_percent != null ? item.markup_percent * 100 : 0);
+                                            startCellEdit(item.id, 'markup_percent', displayMarkup.toFixed(1));
                                           }}
                                           className="cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] flex items-center justify-center"
-                                          title="Click to edit markup percentage"
+                                          title="Click to edit markup % (difference between cost and price)"
                                         >
-                                          {(item.markup_percent !== null && item.markup_percent > 0) || markupPercent > 0 ? (
+                                          {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null) || (item.markup_percent != null && item.markup_percent > 0) || markupPercent > 0 ? (
                                             <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold">
                                               <Percent className="w-3 h-3 mr-1" />
-                                              {item.markup_percent !== null 
-                                                ? (item.markup_percent * 100).toFixed(1)
-                                                : markupPercent.toFixed(1)
+                                              {/* Always show % difference between cost and price when both exist */}
+                                              {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
+                                                ? markupPercent.toFixed(1)
+                                                : (item.markup_percent != null ? (item.markup_percent * 100).toFixed(1) : markupPercent.toFixed(1))
                                               }%
                                             </Badge>
                                           ) : (
@@ -2084,7 +2296,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">
-          <MaterialWorkbookManager jobId={job.id} />
+          <MaterialWorkbookManager jobId={job.id} quoteId={selectedQuoteId ?? undefined} onWorkbookCreated={loadWorkbook} />
         </TabsContent>
       </Tabs>
 
@@ -2115,21 +2327,33 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     </>
                   )}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDatabaseSearch(!showDatabaseSearch)}
-                  className="border-blue-500 text-blue-700 hover:bg-blue-50"
-                >
-                  <Search className="w-4 h-4 mr-2" />
-                  {showDatabaseSearch ? 'Hide' : 'Search'} Database
-                </Button>
+                {addMaterialDialogMode === 'search' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAddMaterialDialogMode('custom')}
+                    className="border-slate-500 text-slate-700 hover:bg-slate-50"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Custom Material
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAddMaterialDialogMode('search')}
+                    className="border-blue-500 text-blue-700 hover:bg-blue-50"
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    Search Database
+                  </Button>
+                )}
               </div>
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Database Search Section */}
-            {showDatabaseSearch && (
+            {/* Search Database (default) */}
+            {addMaterialDialogMode === 'search' && (
               <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Search className="w-5 h-5 text-blue-700" />
@@ -2158,6 +2382,59 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium text-blue-900">Add to category:</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={allCategories.includes(addToCategory) ? addToCategory : '__other__'}
+                      onValueChange={(v) => setAddToCategory(v === '__other__' ? addToCategory : v)}
+                    >
+                      <SelectTrigger className="w-[200px] bg-white">
+                        <SelectValue placeholder="Select or type below..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__other__">Other (type below)</SelectItem>
+                        {allCategories.map(cat => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={addToCategory}
+                      onChange={(e) => setAddToCategory(e.target.value)}
+                      placeholder="Category name"
+                      className="w-[180px] bg-white"
+                    />
+                    {addToCategory && (
+                      <span className="text-xs text-muted-foreground">Adding to &quot;{addToCategory}&quot;</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-blue-900">Quantity (for selected items)</Label>
+                    <Input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={catalogAddQuantity}
+                      onChange={(e) => setCatalogAddQuantity(e.target.value)}
+                      placeholder="1"
+                      className="bg-white max-w-[120px]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-blue-900">Color (optional)</Label>
+                    <Input
+                      value={catalogAddColor}
+                      onChange={(e) => setCatalogAddColor(e.target.value)}
+                      placeholder="e.g., Red, White"
+                      className="bg-white max-w-[180px]"
+                    />
+                  </div>
                 </div>
 
                 {/* Search Results */}
@@ -2198,34 +2475,49 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
 
                     return (
                       <div className="divide-y">
-                        {pageItems.map((material) => (
-                          <button
-                            key={material.sku}
-                            onClick={() => selectMaterialFromCatalog(material)}
-                            className="w-full text-left p-3 hover:bg-blue-50 transition-colors flex items-center justify-between group"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm truncate">{material.material_name}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-muted-foreground font-mono">{material.sku}</span>
-                                {material.category && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {material.category}
-                                  </Badge>
-                                )}
-                                {material.part_length && (
-                                  <span className="text-xs text-muted-foreground">{material.part_length}</span>
-                                )}
+                        {pageItems.map((material) => {
+                          const selected = isCatalogMaterialSelected(material);
+                          const { cost, price } = getCatalogCostAndPrice(material);
+                          return (
+                            <button
+                              key={catalogItemKey(material)}
+                              type="button"
+                              onClick={() => toggleCatalogMaterialSelection(material)}
+                              className={`w-full text-left p-3 transition-colors flex items-center gap-3 group ${selected ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-blue-50'}`}
+                            >
+                              <Checkbox checked={selected} onCheckedChange={() => toggleCatalogMaterialSelection(material)} onClick={e => e.stopPropagation()} />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm truncate">{material.material_name}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-muted-foreground font-mono">{material.sku}</span>
+                                  {material.category && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {material.category}
+                                    </Badge>
+                                  )}
+                                  {material.part_length && (
+                                    <span className="text-xs text-muted-foreground">{material.part_length}</span>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                            <div className="text-right ml-4">
-                              {material.purchase_cost && (
-                                <p className="text-sm font-semibold">${material.purchase_cost.toFixed(2)}</p>
-                              )}
-                              <span className="text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to use</span>
-                            </div>
-                          </button>
-                        ))}
+                              <div className="text-right ml-4 flex flex-col items-end gap-0.5">
+                                {price > 0 && (
+                                  <>
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Price</p>
+                                    <p className="text-sm font-semibold">${price.toFixed(2)}</p>
+                                  </>
+                                )}
+                                {cost > 0 && price === 0 && (
+                                  <>
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Cost</p>
+                                    <p className="text-sm font-semibold">${cost.toFixed(2)}</p>
+                                  </>
+                                )}
+                                <span className="text-xs text-blue-600">{selected ? 'Selected' : 'Click to select'}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
                         {totalPages > 1 && (
                           <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t">
                             <button
@@ -2251,8 +2543,36 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     );
                   })()}
                 </div>
+
+                {selectedCatalogMaterials.length > 0 && (
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-blue-300">
+                    <span className="text-sm font-medium text-blue-900">
+                      {selectedCatalogMaterials.length} material(s) selected
+                    </span>
+                    <Button
+                      onClick={addMaterialsFromCatalogSelection}
+                      disabled={addingCatalogBatch || !activeSheetId || !addToCategory.trim()}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {addingCatalogBatch ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add {selectedCatalogMaterials.length} to {activeSheet?.sheet_name ?? 'sheet'}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
+            {/* Custom material form (optional) */}
+            {addMaterialDialogMode === 'custom' && (
+            <>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="add-material-name">Material Name *</Label>
@@ -2506,6 +2826,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                 Cancel
               </Button>
             </div>
+            </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

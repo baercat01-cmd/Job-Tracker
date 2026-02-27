@@ -39,9 +39,11 @@ interface MaterialWorkbook {
 
 interface MaterialWorkbookManagerProps {
   jobId: string;
+  quoteId?: string;
+  onWorkbookCreated?: () => void;
 }
 
-export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps) {
+export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: MaterialWorkbookManagerProps) {
   const { profile } = useAuth();
   const [workbooks, setWorkbooks] = useState<MaterialWorkbook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     loadWorkbooks();
     loadJob();
     loadQuote();
-  }, [jobId]);
+  }, [jobId, quoteId]);
 
   async function loadJob() {
     try {
@@ -98,11 +100,12 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
   async function loadWorkbooks() {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('material_workbooks')
         .select('*')
-        .eq('job_id', jobId)
-        .order('version_number', { ascending: false });
+        .eq('job_id', jobId);
+      if (quoteId) query = query.eq('quote_id', quoteId);
+      const { data, error } = await query.order('version_number', { ascending: false });
 
       if (error) throw error;
       setWorkbooks(data || []);
@@ -138,26 +141,30 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
     try {
       setCreatingWorkbook(true);
 
-      // Get next version number
-      const { data: latestVersion } = await supabase
+      // Get next version number (per job, or per quote when proposal-scoped)
+      let versionQuery = supabase
         .from('material_workbooks')
         .select('version_number')
-        .eq('job_id', jobId)
+        .eq('job_id', jobId);
+      if (quoteId) versionQuery = versionQuery.eq('quote_id', quoteId);
+      const { data: latestVersion } = await versionQuery
         .order('version_number', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       const nextVersion = (latestVersion?.version_number || 0) + 1;
 
-      // Create empty workbook
+      // Create empty workbook (tied to proposal when quoteId is set)
+      const insertPayload: Record<string, unknown> = {
+        job_id: jobId,
+        version_number: nextVersion,
+        status: 'working',
+        created_by: profile.id,
+      };
+      if (quoteId) insertPayload.quote_id = quoteId;
       const { data: newWorkbook, error: workbookError } = await supabase
         .from('material_workbooks')
-        .insert({
-          job_id: jobId,
-          version_number: nextVersion,
-          status: 'working',
-          created_by: profile.id,
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
@@ -180,6 +187,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       setShowCreateDialog(false);
       setWorkbookName('');
       await loadWorkbooks();
+      onWorkbookCreated?.();
     } catch (error: any) {
       console.error('Error creating workbook:', error);
       toast.error('Failed to create workbook: ' + error.message);
@@ -211,26 +219,30 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
 
       toast.info(`Found ${workbook.sheets.length} sheets. Uploading...`);
 
-      // Get next version number
-      const { data: latestVersion } = await supabase
+      // Get next version number (per job, or per quote when proposal-scoped)
+      let versionQuery = supabase
         .from('material_workbooks')
         .select('version_number')
-        .eq('job_id', jobId)
+        .eq('job_id', jobId);
+      if (quoteId) versionQuery = versionQuery.eq('quote_id', quoteId);
+      const { data: latestVersion } = await versionQuery
         .order('version_number', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       const nextVersion = (latestVersion?.version_number || 0) + 1;
 
-      // Create workbook record
+      // Create workbook record (tied to proposal when quoteId is set)
+      const uploadPayload: Record<string, unknown> = {
+        job_id: jobId,
+        version_number: nextVersion,
+        status: 'working',
+        created_by: profile.id,
+      };
+      if (quoteId) uploadPayload.quote_id = quoteId;
       const { data: newWorkbook, error: workbookError } = await supabase
         .from('material_workbooks')
-        .insert({
-          job_id: jobId,
-          version_number: nextVersion,
-          status: 'working',
-          created_by: profile.id,
-        })
+        .insert(uploadPayload)
         .select()
         .single();
 
@@ -344,6 +356,7 @@ export function MaterialWorkbookManager({ jobId }: MaterialWorkbookManagerProps)
       setShowUploadDialog(false);
       setSelectedFile(null);
       await loadWorkbooks();
+      onWorkbookCreated?.();
     } catch (error: any) {
       console.error('Error uploading workbook:', error);
       toast.error('Failed to upload workbook: ' + error.message);

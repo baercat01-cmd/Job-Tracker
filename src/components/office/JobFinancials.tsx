@@ -1642,16 +1642,24 @@ export function JobFinancials({ job }: JobFinancialsProps) {
   );
 
   useEffect(() => {
-    loadData(false); // Initial load with spinner
-    loadQuoteData(); // Load proposal/quote data
-    
-    // Set up polling for real-time updates (every 5 seconds)
-    const pollInterval = setInterval(() => {
-        loadData(true); // Silent updates during polling
-        loadQuoteData(); // Also refresh quote data
-    }, 5000);
-    
-    return () => clearInterval(pollInterval);
+    let cancelled = false;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      // Load quote first so we have the correct proposal; then load financials once with that quote
+      const selectedQuote = await loadQuoteData();
+      if (cancelled) return;
+      await loadData(false, selectedQuote ?? undefined);
+      if (cancelled) return;
+      pollInterval = setInterval(async () => {
+        if (cancelled) return;
+        await loadQuoteData();
+        loadData(true); // silent refresh
+      }, 5000);
+    })();
+    return () => {
+      cancelled = true;
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [job.id]);
 
   // Load proposal versions when quote changes
@@ -1798,11 +1806,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
-  async function loadQuoteData() {
+  async function loadQuoteData(): Promise<any> {
     try {
-      let quoteData = null;
+      let quoteData: any = null;
       
-      // Load ALL quotes for this job (for navigation)
+      // Single query: load ALL quotes for this job (for navigation + selected quote)
       const { data: allQuotes, error: allQuotesError } = await supabase
         .from('quotes')
         .select('*')
@@ -1811,29 +1819,30 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       
       if (allQuotesError) {
         console.error('Error loading all quotes:', allQuotesError);
-        return;
+        return undefined;
       }
       
-      // Store all quotes for navigation
-      setAllJobQuotes(allQuotes || []);
-      
-      // Try 1: Direct job_id match (get the most recent one)
-      const { data: directMatch, error: directError } = await supabase
-        .from('quotes')
-        .select('*')
-        .eq('job_id', job.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const quotesList = allQuotes || [];
+      setAllJobQuotes(quotesList);
 
-      if (directError && directError.code !== 'PGRST116') {
-        console.error('Error loading quote by job_id:', directError);
+      // When job already has quotes, use that list (no second query)
+      if (quotesList.length > 0) {
+        if (userSelectedQuoteIdRef.current) {
+          const selectedQuote = quotesList.find((q: any) => q.id === userSelectedQuoteIdRef.current);
+          quoteData = selectedQuote ?? quotesList[0];
+          if (!selectedQuote) userSelectedQuoteIdRef.current = quoteData.id;
+        } else if (!quote) {
+          quoteData = quotesList[0];
+          userSelectedQuoteIdRef.current = quoteData.id;
+        } else {
+          quoteData = quote;
+        }
+        setQuote(quoteData);
+        return quoteData;
       }
 
-      if (directMatch) {
-        quoteData = directMatch;
-        console.log('Found quote by job_id:', quoteData.id);
-      } else {
+      // No quotes linked to job yet — try to find an unlinked quote to link
+      {
         // Try 2: Exact customer name and address match
         const { data: exactMatches, error: exactError } = await supabase
           .from('quotes')
@@ -1895,45 +1904,17 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           } else {
             console.log('Successfully linked quote to job');
           }
-        }
-      }
-
-      // If we have quotes, use the most recent one by default (unless user navigated to a different one)
-      if (allQuotes && allQuotes.length > 0) {
-        // Check if user has manually selected a specific quote
-        if (userSelectedQuoteIdRef.current) {
-          // User has navigated to a specific quote - keep it selected
-          const selectedQuote = allQuotes.find(q => q.id === userSelectedQuoteIdRef.current);
-          if (selectedQuote) {
-            // Keep the user's selected quote
-            quoteData = selectedQuote;
-            setQuote(quoteData);
-            console.log('Keeping user-selected quote:', quoteData.proposal_number);
-          } else {
-            // User's selected quote no longer exists, switch to most recent
-            quoteData = allQuotes[0];
-            setQuote(quoteData);
-            userSelectedQuoteIdRef.current = quoteData.id;
-            console.log('Selected quote not found, switched to most recent:', quoteData.proposal_number);
-          }
-        } else if (!quote) {
-          // No user selection and no current quote, use the most recent
-          quoteData = allQuotes[0];
           setQuote(quoteData);
           userSelectedQuoteIdRef.current = quoteData.id;
-          console.log('Loaded most recent quote:', quoteData.proposal_number);
         } else {
-          // No user selection but quote exists, keep current quote
-          quoteData = quote;
-          console.log('Keeping current quote:', quoteData.proposal_number);
+          setQuote(null);
+          userSelectedQuoteIdRef.current = null;
         }
-      } else {
-        console.log('No quotes found for job');
-        setQuote(null);
-        userSelectedQuoteIdRef.current = null;
       }
+      return quoteData;
     } catch (error: any) {
       console.error('Error loading quote data:', error);
+      return undefined;
     }
   }
 
@@ -1942,6 +1923,11 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     setCreatingProposal(true);
 
     const oldQuoteId = quote.id;
+    const safetyTimeoutMs = 90000; // 90s max so loading never sticks forever
+    const safetyTimer = setTimeout(() => {
+      setCreatingProposal(false);
+      toast.error('Proposal create took too long; you may need to refresh.');
+    }, safetyTimeoutMs);
 
     try {
       // ── Step 1: Create the new quotes row ──
@@ -1957,7 +1943,6 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           project_name:     (quote as any).project_name     ?? null,
           width:            (quote as any).width             ?? 0,
           length:           (quote as any).length            ?? 0,
-          description:      (quote as any).description      ?? null,
           status:           'draft',
           created_by:       profile.id,
         })
@@ -2049,6 +2034,14 @@ export function JobFinancials({ job }: JobFinancialsProps) {
         }
       }
       console.log(`✅ Step 2 — copied ${Object.keys(sheetIdMap).length} sheets`);
+
+      // ── Step 2b: Lock the old proposal's workbooks so edits only affect the new proposal ──
+      const { error: lockErr } = await supabase
+        .from('material_workbooks')
+        .update({ status: 'locked', updated_at: new Date().toISOString() })
+        .eq('quote_id', oldQuoteId);
+      if (lockErr) console.warn('⚠️ Could not lock old workbooks (non-fatal):', lockErr.message);
+      else console.log('✅ Step 2b — locked old proposal workbooks');
 
       // ── Step 3: Copy custom_financial_rows and their line items ──
       const rowIdMap: Record<string, string> = {};
@@ -2169,13 +2162,27 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       toast.success(`New proposal ${newQuote.proposal_number} created with independent data`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
-      await loadQuoteData();
-      await loadData(false, newQuote);
+      setCreatingProposal(false); // Clear loading so dialog/button don't hang if reload is slow
 
+      // Reload quote list and financials in background (with timeout so we never hang indefinitely)
+      const reloadTimeout = 30000; // 30s
+      await Promise.race([
+        (async () => {
+          await loadQuoteData();
+          await loadData(false, newQuote);
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Reload timeout')), reloadTimeout)),
+      ]).catch((err) => {
+        console.warn('Proposal created but reload failed or timed out:', err?.message);
+        toast.error('Proposal created but data may need a refresh.');
+        void loadQuoteData();
+        void loadData(false, newQuote);
+      });
     } catch (error: any) {
       console.error('❌ createNewProposal error:', error?.message);
       toast.error('Failed to create new proposal: ' + (error?.message ?? 'Unknown error'));
     } finally {
+      clearTimeout(safetyTimer);
       setCreatingProposal(false);
     }
   }
@@ -2464,6 +2471,110 @@ export function JobFinancials({ job }: JobFinancialsProps) {
     }
   }
 
+  /** Copy a job's existing material workbook into this proposal so materials appear in the proposal by default. */
+  async function copyJobWorkbookToQuote(jobId: string, quoteId: string): Promise<any | null> {
+    if (!profile?.id) return null;
+    // Find any workbook for this job that isn't already for this quote (prefer working)
+    const { data: sourceWb, error: srcErr } = await supabase
+      .from('material_workbooks')
+      .select('id')
+      .eq('job_id', jobId)
+      .or(`quote_id.is.null,quote_id.neq.${quoteId}`)
+      .order('status', { ascending: false }) // 'working' > 'locked' if we use enum ordering
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (srcErr || !sourceWb) return null;
+
+    const { data: fullWb, error: fullErr } = await supabase
+      .from('material_workbooks')
+      .select(`
+        id,
+        material_sheets (
+          *,
+          material_items (*),
+          material_sheet_labor (*),
+          material_category_markups (*)
+        )
+      `)
+      .eq('id', sourceWb.id)
+      .single();
+    if (fullErr || !fullWb?.material_sheets?.length) return null;
+
+    const { data: maxRow } = await supabase
+      .from('material_workbooks')
+      .select('version_number')
+      .eq('job_id', jobId)
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextVersion = (maxRow?.version_number ?? 0) + 1;
+
+    const { data: newWb, error: insErr } = await supabase
+      .from('material_workbooks')
+      .insert({
+        job_id: jobId,
+        quote_id: quoteId,
+        version_number: nextVersion,
+        status: 'working',
+        created_by: profile.id,
+      })
+      .select('id')
+      .single();
+    if (insErr || !newWb) return null;
+
+    const sheetIdMap: Record<string, string> = {};
+    const sheets = (fullWb.material_sheets || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+    for (const sheet of sheets) {
+      const { data: newSheet, error: shErr } = await supabase
+        .from('material_sheets')
+        .insert({
+          workbook_id: newWb.id,
+          sheet_name: sheet.sheet_name,
+          order_index: sheet.order_index ?? 0,
+          is_option: sheet.is_option ?? false,
+          description: sheet.description ?? null,
+        })
+        .select('id')
+        .single();
+      if (shErr || !newSheet) continue;
+      sheetIdMap[sheet.id] = newSheet.id;
+
+      const items = (sheet.material_items || []).slice().sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      if (items.length) {
+        const itemRows = items.map(({ id: _id, sheet_id: _s, created_at: _ca, updated_at: _ua, ...r }: any) => ({ ...r, sheet_id: newSheet.id }));
+        await supabase.from('material_items').insert(itemRows);
+      }
+      const labor = sheet.material_sheet_labor || [];
+      if (labor.length) {
+        const laborRows = labor.map(({ id: _id, sheet_id: _s, created_at: _ca, updated_at: _ua, ...r }: any) => ({ ...r, sheet_id: newSheet.id }));
+        await supabase.from('material_sheet_labor').insert(laborRows);
+      }
+      const markups = sheet.material_category_markups || [];
+      if (markups.length) {
+        const markupRows = markups.map(({ id: _id, sheet_id: _s, created_at: _ca, updated_at: _ua, ...r }: any) => ({ ...r, sheet_id: newSheet.id }));
+        await supabase.from('material_category_markups').insert(markupRows);
+      }
+    }
+
+    const { data: created, error: fetchErr } = await supabase
+      .from('material_workbooks')
+      .select(`
+        id,
+        material_sheets (
+          *,
+          material_items (*),
+          material_sheet_labor (*),
+          material_category_markups (*)
+        )
+      `)
+      .eq('id', newWb.id)
+      .single();
+    if (fetchErr || !created) return null;
+    return created;
+  }
+
   async function loadMaterialsData(targetQuoteId: string | null = null, isHistorical: boolean = false) {
     try {
       // Historical path: serve data from the frozen snapshot only
@@ -2609,7 +2720,10 @@ export function JobFinancials({ job }: JobFinancialsProps) {
       
       // Normal flow: one nested query fetches the workbook, all sheets, all items,
       // all labor rows, and all category markups — no .in() needed.
+      // When the job has multiple proposals, always load by quote_id so we never
+      // edit another proposal's data; fall back to job_id only when there's no quote.
       console.log('📝 Loading live materials data');
+      const materialsQuoteId = targetQuoteId ?? (allJobQuotes.length > 0 ? allJobQuotes[0].id : null);
 
       let wbQuery = supabase
         .from('material_workbooks')
@@ -2623,12 +2737,56 @@ export function JobFinancials({ job }: JobFinancialsProps) {
           )
         `)
         .eq('status', 'working');
-      wbQuery = targetQuoteId
-        ? wbQuery.eq('quote_id', targetQuoteId)
+      wbQuery = materialsQuoteId
+        ? wbQuery.eq('quote_id', materialsQuoteId)
         : wbQuery.eq('job_id', job.id);
-      const { data: workbookData, error: workbookError } = await wbQuery.maybeSingle();
+      let { data: workbookData, error: workbookError } = await wbQuery.maybeSingle();
 
       if (workbookError) throw workbookError;
+      // Fallback: for this quote, try any workbook (e.g. locked) so proposal still shows materials
+      if (!workbookData && materialsQuoteId) {
+        const { data: fallbackForQuote } = await supabase
+          .from('material_workbooks')
+          .select(`
+            id,
+            material_sheets (
+              *,
+              material_items (*),
+              material_sheet_labor (*),
+              material_category_markups (*)
+            )
+          `)
+          .eq('job_id', job.id)
+          .eq('quote_id', materialsQuoteId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackForQuote) workbookData = fallbackForQuote;
+      }
+      // If this proposal still has no workbook but the job has materials, copy job materials into this proposal
+      if (!workbookData && materialsQuoteId) {
+        const copied = await copyJobWorkbookToQuote(job.id, materialsQuoteId);
+        if (copied) workbookData = copied;
+      }
+      // Last resort: show job-level workbook (quote_id null or any) so materials appear in proposal
+      if (!workbookData && materialsQuoteId) {
+        const { data: jobLevelWb } = await supabase
+          .from('material_workbooks')
+          .select(`
+            id,
+            material_sheets (
+              *,
+              material_items (*),
+              material_sheet_labor (*),
+              material_category_markups (*)
+            )
+          `)
+          .eq('job_id', job.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (jobLevelWb) workbookData = jobLevelWb;
+      }
       if (!workbookData) {
         setMaterialsBreakdown({
           sheetBreakdowns: [],
@@ -5545,8 +5703,8 @@ export function JobFinancials({ job }: JobFinancialsProps) {
                     <li>Current proposal ({quote?.proposal_number}) will be locked with a snapshot</li>
                     <li>All data will be <strong>fully duplicated</strong> for the new proposal</li>
                     <li>New proposal gets its own independent materials, rows, and estimates</li>
-                    <li>Old proposal remains frozen and cannot be changed</li>
-                    <li>Complete "air gap" - zero interference between proposals</li>
+                    <li>Current proposal&apos;s workbook is locked so edits never affect it again</li>
+                    <li>You will be switched to the new proposal; changes apply only to the new one</li>
                   </ul>
                 </div>
               </div>
