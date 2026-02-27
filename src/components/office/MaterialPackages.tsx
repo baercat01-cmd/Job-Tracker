@@ -53,8 +53,11 @@ interface MaterialItem {
   material_name: string;
   quantity: number;
   length: string | null;
+  part_length?: string | null;
+  color: string | null;
   usage: string | null;
   cost_per_unit: number | null;
+  price_per_unit?: number | null;
   sku?: string | null;
   zoho_sales_order_id?: string | null;
   zoho_sales_order_number?: string | null;
@@ -233,6 +236,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
               material_name,
               quantity,
               length,
+              color,
               usage,
               sku,
               cost_per_unit,
@@ -284,7 +288,7 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
       // Get all material items
       const { data: itemsData } = await supabase
         .from('material_items')
-        .select('id, sheet_id, category, material_name, quantity, length, usage, sku, cost_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
+        .select('id, sheet_id, category, material_name, quantity, length, color, usage, sku, cost_per_unit, price_per_unit, zoho_sales_order_id, zoho_sales_order_number, zoho_purchase_order_id, zoho_purchase_order_number, ordered_at')
         .in('sheet_id', sheetIds)
         .order('material_name');
 

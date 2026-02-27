@@ -44,6 +44,8 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadCaptions, setUploadCaptions] = useState<Record<string, string>>({});
   const [rotatingPhotoId, setRotatingPhotoId] = useState<string | null>(null);
+  /** Object URL for rotated image so it flips on screen immediately before upload finishes */
+  const [rotatedPreviewUrl, setRotatedPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
@@ -254,15 +256,20 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
     }
   }
 
-  /** Rotate photo 90° and save by re-uploading the rotated image (no DB column needed). */
+  /** Rotate photo 90° and save by re-uploading the rotated image. Show rotated image immediately via object URL. */
   async function rotatePhoto(photo: Photo, deltaDegrees: 90 | -90) {
     setRotatingPhotoId(photo.id);
     const baseUrl = photo.photo_url.replace(/\?.*$/, '');
     try {
       const blob = await rotateImageByUrl(baseUrl, deltaDegrees);
+      const objectUrl = URL.createObjectURL(blob);
+      setRotatedPreviewUrl(objectUrl);
+
       const pathMatch = baseUrl.match(/\/job-files\/(.+)$/);
       const storagePath = pathMatch ? pathMatch[1] : null;
       if (!storagePath) {
+        URL.revokeObjectURL(objectUrl);
+        setRotatedPreviewUrl(null);
         toast.error('Could not determine photo path');
         return;
       }
@@ -272,6 +279,8 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
         .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true });
 
       if (uploadError) {
+        URL.revokeObjectURL(objectUrl);
+        setRotatedPreviewUrl(null);
         toast.error(uploadError.message || 'Failed to save rotated photo');
         return;
       }
@@ -281,8 +290,14 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
       const updated = { ...photo, photo_url: newUrl };
       setPhotos((prev) => prev.map((p) => (p.id === photo.id ? updated : p)));
       if (selectedPhoto?.id === photo.id) setSelectedPhoto(updated);
+      URL.revokeObjectURL(objectUrl);
+      setRotatedPreviewUrl(null);
       toast.success('Photo rotated 90°');
     } catch (err: any) {
+      setRotatedPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       console.error('Error rotating photo:', err);
       toast.error(err?.message || 'Failed to rotate photo');
     } finally {
@@ -416,7 +431,18 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
       )}
 
       {/* Photo Viewer Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
+      <Dialog
+        open={!!selectedPhoto}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedPhoto(null);
+            setRotatedPreviewUrl((p) => {
+              if (p) URL.revokeObjectURL(p);
+              return null;
+            });
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl w-full h-[90vh] p-0 overflow-hidden">
           {selectedPhoto && (
             <div className="relative w-full h-full flex flex-col">
@@ -471,10 +497,10 @@ export function JobPhotosView({ job }: JobPhotosViewProps) {
                 </div>
               </div>
 
-              {/* Image */}
+              {/* Image — use rotated preview immediately when rotating, then real URL after save */}
               <div className="flex-1 overflow-auto bg-muted/30 flex items-center justify-center p-4">
                 <img
-                  src={selectedPhoto.photo_url}
+                  src={rotatingPhotoId === selectedPhoto.id && rotatedPreviewUrl ? rotatedPreviewUrl : selectedPhoto.photo_url}
                   alt={selectedPhoto.caption || 'Job photo'}
                   className="max-w-full max-h-full object-contain rounded-lg"
                   style={{ imageOrientation: 'from-image' }}

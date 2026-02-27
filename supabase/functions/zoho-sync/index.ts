@@ -366,7 +366,8 @@ serve(async (req) => {
           // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
-            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Length:', item.length);
+            const partLength = item.part_length ?? item.length ?? '';
+            console.log('📦 Processing material for Sales Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', partLength, '- Color:', item.color);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -374,12 +375,23 @@ serve(async (req) => {
               item
             );
             
+            // Description: material name first, then usage/category, then color (for Description column)
+            const descParts = [item.material_name];
+            if (item.usage || item.category) {
+              descParts.push(item.usage || item.category || '');
+            }
+            if (item.color && String(item.color).trim()) {
+              descParts.push(`Color: ${String(item.color).trim()}`);
+            }
+            const description = descParts.filter(Boolean).join(' | ');
+            
             lineItems.push({
               item_id: itemId,
+              name: item.material_name, // Item column in sales order
               quantity: item.quantity,
               rate: item.price_per_unit || item.cost_per_unit || 0,
-              unit: item.length || undefined, // Part length goes in unit field
-              description: item.usage || item.category || item.material_name,
+              unit: partLength || undefined, // Part length from workbook → Part Length column in Zoho Books
+              description, // Description column in sales order
             });
           }
           
@@ -429,7 +441,8 @@ serve(async (req) => {
           // SKU is the defining factor - ensure material has SKU attached from catalog
           const lineItems = [];
           for (const item of materialItems) {
-            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Length:', item.length);
+            const partLength = item.part_length ?? item.length ?? '';
+            console.log('📦 Processing material for Purchase Order - SKU:', item.sku, '- Name:', item.material_name, '- Part Length:', partLength, '- Color:', item.color);
             
             const itemId = await ensurePurchasableItem(
               accessToken,
@@ -437,12 +450,23 @@ serve(async (req) => {
               item
             );
             
+            // Description: material name first, then usage/category, then color (for Description column in PO)
+            const descParts = [item.material_name];
+            if (item.usage || item.category) {
+              descParts.push(item.usage || item.category || '');
+            }
+            if (item.color && String(item.color).trim()) {
+              descParts.push(`Color: ${String(item.color).trim()}`);
+            }
+            const description = descParts.filter(Boolean).join(' | ');
+            
             lineItems.push({
               item_id: itemId,
+              name: item.material_name, // Item column in purchase order
               quantity: item.quantity,
               rate: item.cost_per_unit || item.price_per_unit || 0,
-              unit: item.length || undefined, // Part length goes in unit field
-              description: item.usage || item.category || item.material_name,
+              unit: partLength || undefined, // Part length from workbook
+              description, // Description column in purchase order
             });
           }
           
@@ -980,13 +1004,14 @@ async function ensurePurchasableItem(
   // Item with this SKU doesn't exist in Zoho - create new one
   console.log('📝 Creating new item in Zoho Books - SKU:', sku, '- Name:', itemName);
   
+  const partLength = materialItem.part_length ?? materialItem.length ?? '';
   const itemData = {
     name: itemName,
     sku: sku, // SKU is the defining factor for item identification
     description: materialItem.usage || materialItem.category || '',
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
-    unit: materialItem.length || '', // Include length/unit from catalog
+    unit: partLength, // Part length from workbook → Part Length in Zoho Books
     // CRITICAL: Mark as both purchasable and sellable
     is_taxable: materialItem.taxable !== false,
     tax_id: '', // Empty for now, can be configured later
@@ -1227,12 +1252,13 @@ async function updateItemPurchasable(
   console.log('🔄 Updating item to be purchasable:', itemId, '- SKU:', materialItem.sku);
   
   // Update with ALL information from the SKU in materials_catalog
+  const partLength = materialItem.part_length ?? materialItem.length ?? '';
   const updateData = {
     name: materialItem.material_name,
     sku: materialItem.sku, // Ensure SKU is set
     rate: materialItem.price_per_unit || materialItem.cost_per_unit || 0,
     purchase_rate: materialItem.cost_per_unit || materialItem.price_per_unit || 0,
-    unit: materialItem.length || '', // Include length/unit from catalog
+    unit: partLength, // Part length from workbook
     description: materialItem.usage || materialItem.category || '',
     item_type: 'sales_and_purchases', // Ensure it's both purchasable and sellable
   };

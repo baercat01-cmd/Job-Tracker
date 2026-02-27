@@ -17,16 +17,7 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // 1. Service Worker Registration (Immediate)
-        if ('serviceWorker' in navigator && !window.location.href.startsWith('blob:')) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => console.log('PWA: Service Worker Active'))
-                    .catch(err => console.log('PWA: SW Error', err));
-            });
-        }
-
-        // 2. Install Logic
+        // PWA install prompt (SW is registered by vite-plugin-pwa with precache for offline)
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();

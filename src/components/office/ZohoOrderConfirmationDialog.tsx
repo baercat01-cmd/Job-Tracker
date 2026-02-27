@@ -19,6 +19,11 @@ interface MaterialItem {
   category?: string;
   cost_per_unit?: number | null;
   price_per_unit?: number | null;
+  /** Length from workbook sheet (maps to Part Length in Zoho Books sales order) */
+  length?: string | null;
+  part_length?: string | null;
+  /** Color from workbook sheet (maps to Color in Zoho Books sales order) */
+  color?: string | null;
   zoho_sales_order_id?: string | null;
   zoho_purchase_order_id?: string | null;
 }
