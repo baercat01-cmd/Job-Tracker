@@ -49,6 +49,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB (main chunk exceeds 2 MiB default)
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/[^/]*\/(api|rest|supabase|functions)/,
