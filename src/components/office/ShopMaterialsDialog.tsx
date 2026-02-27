@@ -77,6 +77,8 @@ function getStatusColor(status: string): string {
       return 'bg-purple-100 text-purple-800 border-purple-300';
     case 'ready_for_job':
       return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    case 'at_job':
+      return 'bg-teal-100 text-teal-800 border-teal-300';
     default:
       return 'bg-slate-100 text-slate-800 border-slate-300';
   }
@@ -336,6 +338,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                           <SelectItem value="received">Received</SelectItem>
                                           <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
                                           <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                                          <SelectItem value="at_job">At Job</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </div>
@@ -448,6 +451,7 @@ export function ShopMaterialsDialog({ open, onClose, onJobSelect }: ShopMaterial
                                           <SelectItem value="received">Received</SelectItem>
                                           <SelectItem value="pull_from_shop">Pull from Shop</SelectItem>
                                           <SelectItem value="ready_for_job">Ready for Job</SelectItem>
+                                          <SelectItem value="at_job">At Job</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </div>

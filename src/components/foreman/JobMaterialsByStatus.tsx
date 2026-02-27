@@ -268,7 +268,16 @@ export function JobMaterialsByStatus({ job, status }: JobMaterialsByStatusProps)
         toast.success(`Material marked as ${newStatus === 'ready_for_job' ? 'Ready for Job' : 'At Job'}`);
       } catch (error: any) {
         console.error('CREW Error updating material:', error);
-        toast.error(`Failed to update material: ${error.message || 'Unknown error'}`);
+        const msg = error?.message || 'Unknown error';
+        const isConstraintError = /material_items_status_check/i.test(msg);
+        if (isConstraintError) {
+          toast.error(
+            `Database rejected "At Job" status. Make sure the fix script was run in the same Supabase project as your app (check .env VITE_SUPABASE_URL). Error: ${msg}`,
+            { duration: 10000 }
+          );
+        } else {
+          toast.error(`Failed to update material: ${msg}`);
+        }
         if (removedItem && removedPackage) {
           setPackages((prev) => {
             const stillHasPackage = prev.some((p) => p.id === removedPackage!.id);
