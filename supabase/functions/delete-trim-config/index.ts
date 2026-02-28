@@ -34,7 +34,7 @@ serve(async (req) => {
       .select('id');
 
     if (error) {
-      console.error('Delete error:', error);
+      console.error('❌ Error deleting trim config:', error);
       return new Response(
         JSON.stringify({ error: error.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -48,12 +48,13 @@ serve(async (req) => {
       );
     }
 
+    console.log('✅ Trim config deleted:', data[0].id);
     return new Response(
       JSON.stringify({ deleted_id: data[0].id }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (e) {
-    console.error('delete-trim-config error:', e);
+    console.error('❌ Unexpected error:', e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
