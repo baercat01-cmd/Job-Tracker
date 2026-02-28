@@ -70,6 +70,7 @@ interface EditMode {
 
 interface HemPreviewMode {
   segmentId: string;
+  hemAtStart: boolean; // true = hem at segment start, false = at segment end
 }
 
 interface TrimType {
@@ -128,6 +129,7 @@ export function TrimPricingCalculator() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
 
   // Drawing feature states
   const [showDrawing, setShowDrawing] = useState(true); // Always show drawing
@@ -187,125 +189,53 @@ export function TrimPricingCalculator() {
     const perpLeftX = unitY;
     const perpLeftY = -unitX;
     
-    // Determine which side to use
+    // Determine which side to use (left/right swapped so selection matches visual side)
     const side = isPreview ? previewSide : segment.hemSide || 'right';
-    const perpX = side === 'right' ? perpRightX : perpLeftX;
-    const perpY = side === 'right' ? perpRightY : perpLeftY;
+    const perpX = side === 'right' ? perpLeftX : perpRightX;
+    const perpY = side === 'right' ? perpLeftY : perpRightY;
     
-    // Hem dimensions
-    const hemDepth = 0.5; // 1/2" hem depth
-    const steelThickness = 0.0625; // 1/16" steel thickness offset
-    const bendRadius = 0.125; // 1/8" rounded bend radius for smooth U-shape
+    // Hem: 1/2" along the trim, 180° double back; offset from trim by 2 line widths; ends connected
+    const hemDepth = 0.5; // 1/2"
+    const oneLineWidth = 0.03125; // 1/32"
+    const lineWidthOffset = oneLineWidth * 2; // offset more by one line width (2 total)
+    const alongX = unitX;
+    const alongY = unitY;
     
-    // Create true U-shaped hem with smooth 180-degree return bend:
-    // 1. Go perpendicular out from endpoint by (hem depth - bend radius)
-    // 2. Add smooth 180-degree arc
-    // 3. Return parallel, offset by steel thickness
+    const baseX = hemPoint.x + perpX * lineWidthOffset;
+    const baseY = hemPoint.y + perpY * lineWidthOffset;
     
-    // P1: Starting point (endpoint of segment) - outer edge
-    const p1x = hemPoint.x * scale;
-    const p1y = hemPoint.y * scale;
+    // p0 = trim line end (segment end), p1 = hem base, p2 = tip of 0.5" out
+    const p0x = hemPoint.x * scale;
+    const p0y = hemPoint.y * scale;
+    const p1x = baseX * scale;
+    const p1y = baseY * scale;
+    const p2x = (baseX + alongX * hemDepth) * scale;
+    const p2y = (baseY + alongY * hemDepth) * scale;
     
-    // P2: End of outward perpendicular leg (before bend starts)
-    const outwardLength = hemDepth - bendRadius;
-    const p2x = (hemPoint.x + perpX * outwardLength) * scale;
-    const p2y = (hemPoint.y + perpY * outwardLength) * scale;
-    
-    // Bend center point for smooth 180-degree arc
-    const bendCenterX = (hemPoint.x + perpX * hemDepth) * scale;
-    const bendCenterY = (hemPoint.y + perpY * hemDepth) * scale;
-    
-    // P3: Start of return leg (after bend) - offset by steel thickness
-    const inwardLength = hemDepth - bendRadius - steelThickness;
-    const p3x = (hemPoint.x + perpX * inwardLength) * scale;
-    const p3y = (hemPoint.y + perpY * inwardLength) * scale;
-    
-    // P4: End of return leg - back near segment, offset by steel thickness
-    const p4x = (hemPoint.x + perpX * steelThickness) * scale;
-    const p4y = (hemPoint.y + perpY * steelThickness) * scale;
-    
-    // Drawing style
     if (isPreview) {
-      ctx.strokeStyle = '#9333ea'; // Purple outline
+      ctx.strokeStyle = '#9333ea';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.2)'; // Purple preview fill
     } else {
-      ctx.strokeStyle = '#dc2626'; // Red outline
+      ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
       ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(220, 38, 38, 0.15)'; // Light red fill
     }
     
-    // Calculate angle for the arc
-    const startAngle = Math.atan2(perpY, perpX);
-    const endAngle = startAngle + Math.PI;
-    
-    // Draw outer hem leg (going out)
+    // Connect trim end to hem, then 1/2" out and back (ends connected)
     ctx.beginPath();
-    ctx.moveTo(p1x, p1y);
+    ctx.moveTo(p0x, p0y);
+    ctx.lineTo(p1x, p1y);
     ctx.lineTo(p2x, p2y);
-    
-    // Draw smooth 180-degree outer arc
-    ctx.arc(
-      bendCenterX,
-      bendCenterY,
-      bendRadius * scale,
-      startAngle - Math.PI / 2,
-      endAngle - Math.PI / 2,
-      false
-    );
-    
-    // Connect to return leg
-    ctx.lineTo(p4x, p4y);
+    ctx.lineTo(p1x, p1y);
     ctx.stroke();
     ctx.setLineDash([]);
     
-    // Draw inner return leg (showing doubled-back metal) - slightly thinner
-    ctx.lineWidth = isPreview ? 1.5 : 2;
-    ctx.strokeStyle = isPreview ? 'rgba(147, 51, 234, 0.6)' : 'rgba(220, 38, 38, 0.6)';
-    
-    const innerBendRadius = bendRadius - steelThickness;
-    ctx.beginPath();
-    ctx.moveTo(p4x, p4y);
-    ctx.lineTo(p3x, p3y);
-    
-    // Draw inner arc (showing the inside of the fold)
-    if (innerBendRadius > 0) {
-      const innerCenterX = (hemPoint.x + perpX * (hemDepth - steelThickness)) * scale;
-      const innerCenterY = (hemPoint.y + perpY * (hemDepth - steelThickness)) * scale;
-      ctx.arc(
-        innerCenterX,
-        innerCenterY,
-        innerBendRadius * scale,
-        startAngle - Math.PI / 2,
-        endAngle - Math.PI / 2,
-        false
-      );
-    }
-    ctx.stroke();
-    
     // Reset stroke style
-    ctx.strokeStyle = isPreview ? '#9333ea' : '#dc2626';
+    ctx.strokeStyle = isPreview ? '#9333ea' : '#000000';
     ctx.lineWidth = isPreview ? 2 : 3;
     
-    // Fill the hem area to show it's folded material
-    ctx.beginPath();
-    ctx.moveTo(p1x, p1y);
-    ctx.lineTo(p2x, p2y);
-    ctx.arc(
-      bendCenterX,
-      bendCenterY,
-      bendRadius * scale,
-      startAngle,
-      startAngle + Math.PI,
-      false
-    );
-    ctx.lineTo(p4x, p4y);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Draw label
+    // Label offset perpendicular so it doesn't sit on the line
     if (isPreview) {
       ctx.fillStyle = '#9333ea';
       ctx.font = 'bold 14px sans-serif';
@@ -313,13 +243,11 @@ export function TrimPricingCalculator() {
       const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
       ctx.fillText(`${side.toUpperCase()}?`, labelX - 20, labelY + 5);
     } else {
-      ctx.fillStyle = '#dc2626';
+      ctx.fillStyle = '#000000';
       ctx.font = 'bold 12px sans-serif';
       const labelX = (p1x + p2x) / 2 + perpX * 10 * scale;
       const labelY = (p1y + p2y) / 2 + perpY * 10 * scale;
       ctx.fillText('HEM', labelX - 15, labelY + 4);
-      
-      // Add measurement annotation
       ctx.fillStyle = '#666666';
       ctx.font = '10px sans-serif';
       ctx.fillText('0.5"', labelX - 10, labelY + 16);
@@ -349,6 +277,39 @@ export function TrimPricingCalculator() {
     });
     
     return { x: sumX / count, y: sumY / count };
+  }
+
+  /** Hem offset from trim = 2 line widths (must match drawHem). */
+  const HEM_LINE_WIDTH_OFFSET = 0.03125 * 2; // 1/16"
+
+  /** Get the "open end" of a hem (where it doubles back — one line width off the segment). Used as a snap point. */
+  function getHemOpenEndPoint(segment: LineSegment): Point | null {
+    if (!segment.hasHem) return null;
+    const hemPoint = segment.hemAtStart ? segment.start : segment.end;
+    const otherPoint = segment.hemAtStart ? segment.end : segment.start;
+    const dx = otherPoint.x - hemPoint.x;
+    const dy = otherPoint.y - hemPoint.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return null;
+    const perpRightX = -dy / len;
+    const perpRightY = dx / len;
+    const perpLeftX = dy / len;
+    const perpLeftY = -dx / len;
+    const side = segment.hemSide || 'right';
+    const perpX = side === 'right' ? perpLeftX : perpRightX;
+    const perpY = side === 'right' ? perpLeftY : perpRightY;
+    return {
+      x: hemPoint.x + perpX * HEM_LINE_WIDTH_OFFSET,
+      y: hemPoint.y + perpY * HEM_LINE_WIDTH_OFFSET,
+    };
+  }
+
+  /** All points where a new line can attach: segment start, end, and hem open end (if any). */
+  function getSegmentConnectionPoints(segment: LineSegment): Point[] {
+    const points: Point[] = [segment.start, segment.end];
+    const hemOpen = getHemOpenEndPoint(segment);
+    if (hemOpen) points.push(hemOpen);
+    return points;
   }
 
   // Draw canvas
@@ -502,18 +463,26 @@ export function TrimPricingCalculator() {
       }
       ctx.textAlign = 'left';
       
-      // Highlight all endpoints when in drawing mode
+      // Highlight all connection points when in drawing mode (endpoints + hem open ends)
       ctx.fillStyle = '#10b981';
       drawing.segments.forEach(seg => {
         // Highlight start point
         ctx.beginPath();
         ctx.arc(seg.start.x * scale, seg.start.y * scale, 8, 0, Math.PI * 2);
         ctx.fill();
-        
         // Highlight end point
         ctx.beginPath();
         ctx.arc(seg.end.x * scale, seg.end.y * scale, 8, 0, Math.PI * 2);
         ctx.fill();
+        // Highlight hem open end (where the closed U meets the segment) so user can attach lines there
+        const hemOpen = getHemOpenEndPoint(seg);
+        if (hemOpen) {
+          ctx.fillStyle = '#059669'; // Slightly different green for hem open end
+          ctx.beginPath();
+          ctx.arc(hemOpen.x * scale, hemOpen.y * scale, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#10b981';
+        }
       });
     }
 
@@ -555,8 +524,8 @@ export function TrimPricingCalculator() {
         const unitX = dx / Math.sqrt(dx * dx + dy * dy);
         const unitY = dy / Math.sqrt(dx * dx + dy * dy);
         
-        const perpX = side === 'right' ? -unitY : unitY;
-        const perpY = side === 'right' ? unitX : -unitX;
+        const perpX = side === 'right' ? unitY : -unitY;
+        const perpY = side === 'right' ? -unitX : unitX;
         
         // Position radially from corner
         const hemAngleX = hemX + perpX * 50;
@@ -674,9 +643,9 @@ export function TrimPricingCalculator() {
     if (hemPreviewMode) {
       const segment = drawing.segments.find(s => s.id === hemPreviewMode.segmentId);
       if (segment) {
-        // Draw preview on both sides
-        drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'left');
-        drawHem(ctx, { ...segment, hasHem: true, hemAtStart: false }, scale, true, 'right');
+        const segWithHem = { ...segment, hasHem: true, hemAtStart: hemPreviewMode.hemAtStart };
+        drawHem(ctx, segWithHem, scale, true, 'left');
+        drawHem(ctx, segWithHem, scale, true, 'right');
       }
     }
 
@@ -743,9 +712,12 @@ export function TrimPricingCalculator() {
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current) return;
     
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = ((e.clientX - rect.left) * scaleX) / scale;
+    const y = ((e.clientY - rect.top) * scaleY) / scale;
     
     // Snap to grid
     const snappedX = Math.round(x / gridSize) * gridSize;
@@ -757,9 +729,13 @@ export function TrimPricingCalculator() {
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current) return;
     
-    const rect = canvasRef.current.getBoundingClientRect();
-    const clickX = (e.clientX - rect.left) / scale;
-    const clickY = (e.clientY - rect.top) / scale;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    // Convert click from display pixels to canvas/inch coords (canvas may be CSS-scaled)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = ((e.clientX - rect.left) * scaleX) / scale;
+    const clickY = ((e.clientY - rect.top) * scaleY) / scale;
     
     // Check if user clicked on an angle label to toggle it
     for (let i = 1; i < drawing.segments.length; i++) {
@@ -782,10 +758,11 @@ export function TrimPricingCalculator() {
       const angleX = startX + Math.cos(bisectorAngle) * angleOffsetDist;
       const angleY = startY + Math.sin(bisectorAngle) * angleOffsetDist;
       
-      // Check if click is near the angle label
+      // Check if click is near the angle label (click in canvas pixels)
+      const clickPixelX = (e.clientX - rect.left) * scaleX;
+      const clickPixelY = (e.clientY - rect.top) * scaleY;
       const distToAngle = Math.sqrt(
-        ((e.clientX - rect.left) - angleX) ** 2 + 
-        ((e.clientY - rect.top) - angleY) ** 2
+        (clickPixelX - angleX) ** 2 + (clickPixelY - angleY) ** 2
       );
       
       if (distToAngle < 20) { // Within 20 pixels of angle label
@@ -827,27 +804,19 @@ export function TrimPricingCalculator() {
     let point: Point = { x: 0, y: 0 };
     
     if (!drawing.currentPoint) {
-      // Check all segment endpoints for snapping
+      // Check all segment connection points: start, end, and hem open end (where the U closes)
+      const snapTolerance = 0.35; // inches - generous so open end of closed U is easy to hit
       for (const seg of drawing.segments) {
-        // Check start point
-        const distToStart = Math.sqrt(
-          (clickX - seg.start.x) ** 2 + (clickY - seg.start.y) ** 2
-        );
-        if (distToStart < 0.25) { // Within 0.25" snap to endpoint
-          point = { x: seg.start.x, y: seg.start.y };
-          snappedToEndpoint = true;
-          break;
+        const connectionPoints = getSegmentConnectionPoints(seg);
+        for (const p of connectionPoints) {
+          const dist = Math.sqrt((clickX - p.x) ** 2 + (clickY - p.y) ** 2);
+          if (dist < snapTolerance) {
+            point = { x: p.x, y: p.y };
+            snappedToEndpoint = true;
+            break;
+          }
         }
-        
-        // Check end point
-        const distToEnd = Math.sqrt(
-          (clickX - seg.end.x) ** 2 + (clickY - seg.end.y) ** 2
-        );
-        if (distToEnd < 0.25) { // Within 0.25" snap to endpoint
-          point = { x: seg.end.x, y: seg.end.y };
-          snappedToEndpoint = true;
-          break;
-        }
+        if (snappedToEndpoint) break;
       }
     }
     
@@ -1062,12 +1031,14 @@ export function TrimPricingCalculator() {
     const segmentId = drawing.selectedSegmentId || drawing.segments[drawing.segments.length - 1]?.id;
     
     if (!segmentId) {
-      toast.error('No segment available for hem');
+      toast.error('Draw at least one segment, then select it (or leave it selected) and click Add Hem.');
       return;
     }
     
     const segment = drawing.segments.find(s => s.id === segmentId);
-    if (segment?.hasHem) {
+    if (!segment) return;
+    
+    if (segment.hasHem) {
       // Remove hem if already exists
       setDrawing(prev => ({
         ...prev,
@@ -1081,8 +1052,10 @@ export function TrimPricingCalculator() {
       return;
     }
     
-    setHemPreviewMode({ segmentId });
-    toast.info('Click on LEFT or RIGHT preview to choose hem side');
+    // Auto-select this segment so user sees which one gets the hem
+    setDrawing(prev => ({ ...prev, selectedSegmentId: segmentId }));
+    setHemPreviewMode({ segmentId, hemAtStart: false });
+    toast.info('Choose which end, then LEFT or RIGHT for the 1/2" U hem');
   }
 
   function addHemToSide(side: 'left' | 'right') {
@@ -1092,12 +1065,17 @@ export function TrimPricingCalculator() {
       ...prev,
       segments: prev.segments.map(seg => 
         seg.id === hemPreviewMode.segmentId
-          ? { ...seg, hasHem: true, hemAtStart: false, hemSide: side }
+          ? { ...seg, hasHem: true, hemAtStart: hemPreviewMode.hemAtStart, hemSide: side }
           : seg
       )
     }));
     setHemPreviewMode(null);
     toast.success(`Hem added to ${side} side`);
+  }
+
+  function setHemPreviewEnd(atStart: boolean) {
+    if (!hemPreviewMode) return;
+    setHemPreviewMode({ ...hemPreviewMode, hemAtStart: atStart });
   }
 
   function cancelHemPreview() {
@@ -1242,7 +1220,7 @@ export function TrimPricingCalculator() {
     }
   }
 
-  async function loadSavedConfigs() {
+  async function loadSavedConfigs(silent = false) {
     try {
       console.log('🔄 Loading saved trim configurations from database...');
       console.log('Current user:', await supabase.auth.getUser());
@@ -1280,7 +1258,9 @@ export function TrimPricingCalculator() {
       }
       
       setSavedConfigs(data || []);
-      toast.success(`Loaded ${data?.length || 0} saved trim configurations`);
+      if (!silent) {
+        toast.success(`Loaded ${data?.length || 0} saved trim configurations`);
+      }
     } catch (error: any) {
       console.error('❌ Unexpected error loading saved configs:', error);
       toast.error(`Error: ${error.message || 'Unknown error'}`);
@@ -1671,13 +1651,36 @@ export function TrimPricingCalculator() {
     }
     
     // Parse and load drawing if it exists
-    const drawingSegments = config.drawing_segments 
-      ? (typeof config.drawing_segments === 'string' 
-          ? JSON.parse(config.drawing_segments) 
-          : config.drawing_segments)
-      : null;
-    
+    let drawingSegments: LineSegment[] | null = null;
+    try {
+      if (config.drawing_segments) {
+        const raw = typeof config.drawing_segments === 'string'
+          ? JSON.parse(config.drawing_segments)
+          : config.drawing_segments;
+        const arr = Array.isArray(raw) ? raw : null;
+        if (arr && arr.length > 0) {
+          // Normalize segments so canvas has required fields (id, start, end, label, hasHem, hemAtStart, hemSide)
+          drawingSegments = arr.map((seg: any, index: number) => ({
+            id: seg.id ?? `seg-${index}-${Date.now()}`,
+            start: seg.start && typeof seg.start.x === 'number' && typeof seg.start.y === 'number'
+              ? { x: seg.start.x, y: seg.start.y }
+              : { x: 0, y: 0 },
+            end: seg.end && typeof seg.end.x === 'number' && typeof seg.end.y === 'number'
+              ? { x: seg.end.x, y: seg.end.y }
+              : { x: 0, y: 0 },
+            label: seg.label ?? String.fromCharCode(65 + index),
+            hasHem: seg.hasHem === true,
+            hemAtStart: seg.hemAtStart === true,
+            hemSide: seg.hemSide === 'left' || seg.hemSide === 'right' ? seg.hemSide : 'right',
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Could not parse drawing_segments for config', config.name, e);
+    }
+
     if (drawingSegments && drawingSegments.length > 0) {
+      setShowDrawing(true); // Ensure drawing panel is visible when loading a trim that has a drawing
       setDrawing({
         segments: drawingSegments,
         selectedSegmentId: null,
@@ -1686,9 +1689,10 @@ export function TrimPricingCalculator() {
       });
       toast.success(`Loaded configuration with drawing: ${config.name}`);
     } else {
+      setDrawing(prev => ({ ...prev, segments: [], selectedSegmentId: null, currentPoint: null, nextLabel: 65 }));
       toast.success(`Loaded configuration: ${config.name}`);
     }
-    
+
     setShowLoadDialog(false);
     setPreviewConfig(null);
   }
@@ -1764,21 +1768,52 @@ export function TrimPricingCalculator() {
   }
 
   async function deleteConfiguration(configId: string) {
-    if (!confirm('Delete this saved configuration?')) return;
-    
-    try {
-      const { error } = await supabase
-        .from('trim_saved_configs')
-        .delete()
-        .eq('id', configId);
+    const id = typeof configId === 'string' ? configId.trim() : String(configId);
+    if (!id) {
+      toast.error('Cannot delete: invalid configuration');
+      return;
+    }
+    if (!confirm('Delete this saved configuration? It will be removed from the list.')) return;
 
-      if (error) throw error;
-      
-      toast.success('Configuration deleted');
-      await loadSavedConfigs(); // Reload to update the list
-    } catch (error: any) {
-      console.error('Error deleting configuration:', error);
-      toast.error('Failed to delete configuration');
+    setDeletingConfigId(id);
+    // Remove from list immediately so the item disappears and stays removed
+    setSavedConfigs((prev) => prev.filter((c) => String(c.id) !== id));
+
+    try {
+      // Edge Function uses service role — can always delete even when table permissions block the client
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('delete-trim-config', {
+        body: { config_id: id },
+      });
+
+      const success =
+        !fnError &&
+        (fnData?.deleted_id != null || fnData?.error === 'Not found or already deleted');
+
+      if (success) {
+        toast.success('Configuration deleted');
+        setDeletingConfigId(null);
+        return;
+      }
+
+      // Function not deployed or failed — show how to fix
+      const notDeployed =
+        fnError?.message?.includes('404') ||
+        fnError?.message?.toLowerCase().includes('function') ||
+        fnError?.message?.toLowerCase().includes('not found');
+      if (notDeployed) {
+        toast.error(
+          'Deploy the delete function once: supabase functions deploy delete-trim-config',
+          { duration: 10000 }
+        );
+        console.error(
+          'Run in terminal (from project root): supabase functions deploy delete-trim-config'
+        );
+      } else {
+        toast.error(fnError?.message || fnData?.error || 'Delete failed');
+      }
+      await loadSavedConfigs(true); // Restore list when delete failed
+    } finally {
+      setDeletingConfigId(null);
     }
   }
 
@@ -1884,8 +1919,24 @@ export function TrimPricingCalculator() {
               {hemPreviewMode && (
                 <>
                   <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 border-2 border-purple-500 rounded">
-                    <span className="text-purple-700 font-bold text-xs">Choose Hem Side:</span>
+                    <span className="text-purple-700 font-bold text-xs">1/2&quot; U Hem — choose end, then side:</span>
                   </div>
+                  <Button
+                    onClick={() => setHemPreviewEnd(false)}
+                    size="sm"
+                    variant="outline"
+                    className={`h-7 px-2 text-xs ${!hemPreviewMode.hemAtStart ? 'border-purple-600 bg-purple-100 text-purple-800 font-bold' : 'border-gray-400 text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    At end
+                  </Button>
+                  <Button
+                    onClick={() => setHemPreviewEnd(true)}
+                    size="sm"
+                    variant="outline"
+                    className={`h-7 px-2 text-xs ${hemPreviewMode.hemAtStart ? 'border-purple-600 bg-purple-100 text-purple-800 font-bold' : 'border-gray-400 text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    At start
+                  </Button>
                   <Button
                     onClick={() => addHemToSide('left')}
                     size="sm"
@@ -2539,14 +2590,34 @@ export function TrimPricingCalculator() {
                   return (
                     <div
                       key={config.id}
-                      className="bg-black/30 border-2 border-green-800 rounded-lg p-4"
+                      className="relative bg-black/30 border-2 border-green-800 rounded-lg p-4"
                     >
-                      <div className="flex items-start justify-between gap-4">
+                      {/* Delete: small trash icon in top-right corner */}
+                      <Button
+                        type="button"
+                        disabled={deletingConfigId === config.id}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          await deleteConfiguration(String(config.id));
+                        }}
+                        size="icon"
+                        variant="ghost"
+                        className="absolute top-2 right-2 h-8 w-8 shrink-0 rounded-md border border-red-500/50 text-red-400 hover:bg-red-900/40 hover:text-red-300"
+                        title="Delete"
+                      >
+                        {deletingConfigId === config.id ? (
+                          <span className="text-[10px]">…</span>
+                        ) : (
+                          <Trash className="h-4 w-4" />
+                        )}
+                      </Button>
+
+                      <div className="flex items-center gap-4 pr-8">
                         {/* Preview thumbnail if has drawing */}
                         {config.drawing_segments && config.drawing_segments.length > 0 && (
-                          <div className="w-32 h-32 bg-white rounded border-2 border-green-700 flex-shrink-0">
+                          <div className="w-24 h-24 shrink-0 bg-white rounded border-2 border-green-700">
                             <svg viewBox="0 0 100 100" className="w-full h-full">
-                              {/* Calculate bounds */}
                               {(() => {
                                 const allX = config.drawing_segments!.flatMap(s => [s.start.x, s.end.x]);
                                 const allY = config.drawing_segments!.flatMap(s => [s.start.y, s.end.y]);
@@ -2564,19 +2635,10 @@ export function TrimPricingCalculator() {
                                 const scale = Math.min(scaleX, scaleY);
                                 const offsetX = (100 - width * scale) / 2 - minX * scale;
                                 const offsetY = (100 - height * scale) / 2 - minY * scale;
-                                
                                 return (
                                   <g transform={`translate(${offsetX}, ${offsetY}) scale(${scale})`}>
                                     {config.drawing_segments!.map((seg, i) => (
-                                      <line
-                                        key={i}
-                                        x1={seg.start.x}
-                                        y1={seg.start.y}
-                                        x2={seg.end.x}
-                                        y2={seg.end.y}
-                                        stroke="#000000"
-                                        strokeWidth={0.5 / scale}
-                                      />
+                                      <line key={i} x1={seg.start.x} y1={seg.start.y} x2={seg.end.x} y2={seg.end.y} stroke="#000000" strokeWidth={0.5 / scale} />
                                     ))}
                                   </g>
                                 );
@@ -2584,68 +2646,51 @@ export function TrimPricingCalculator() {
                             </svg>
                           </div>
                         )}
-                        
-                        {/* Info */}
-                        <div className="flex-1">
-                          <div className="text-yellow-400 font-bold text-lg mb-1">{config.name}</div>
-                          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+
+                        {/* Info: title with bends & price close, then rest */}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-yellow-400 font-bold text-lg">{config.name}</div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm mt-0.5 text-white/80">
+                            <span>Bends: <span className="font-semibold text-white">{config.bends}</span></span>
+                            <span>Price: <span className="font-bold text-yellow-400">${pricing.price.toFixed(2)}</span></span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-sm mt-2">
                             <div className="flex justify-between text-white/70">
                               <span>Total Inches:</span>
                               <span className="font-semibold text-white">{(() => {
                                 try {
                                   const inchesArray = typeof config.inches === 'string' ? JSON.parse(config.inches) : config.inches;
-                                  if (Array.isArray(inchesArray)) {
-                                    return inchesArray.reduce((a, b) => a + b, 0).toFixed(2) + '"';
-                                  }
-                                  return '0.00"';
-                                } catch {
-                                  return '0.00"';
-                                }
+                                  return Array.isArray(inchesArray) ? inchesArray.reduce((a: number, b: number) => a + b, 0).toFixed(2) + '"' : '0.00"';
+                                } catch { return '0.00"'; }
                               })()}</span>
-                            </div>
-                            <div className="flex justify-between text-white/70">
-                              <span>Bends:</span>
-                              <span className="font-semibold text-white">{config.bends}</span>
                             </div>
                             <div className="flex justify-between text-white/70">
                               <span>Saved Material:</span>
                               <span className="font-semibold text-green-400">{config.material_type_name || 'Unknown'}</span>
                             </div>
                             {config.job_name && (
-                              <div className="flex justify-between text-white/70">
+                              <div className="flex justify-between text-white/70 col-span-2">
                                 <span>Job:</span>
                                 <span className="font-semibold text-white">{config.job_name}</span>
                               </div>
                             )}
                             <div className="flex justify-between text-white/70">
-                              <span>Current Price:</span>
-                              <span className="font-bold text-yellow-400">${pricing.price.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between text-white/70">
                               <span>Markup:</span>
                               <span className="font-semibold text-green-400">{pricing.markupPercent.toFixed(1)}%</span>
                             </div>
                           </div>
-                          <div className="text-xs text-white/50 mt-2">
+                          <div className="text-xs text-white/50 mt-1.5">
                             Saved: {new Date(config.created_at).toLocaleString()}
                           </div>
                         </div>
-                        
-                        {/* Actions */}
-                        <div className="flex flex-col gap-2">
+
+                        {/* Load button: centered in the card */}
+                        <div className="flex shrink-0 items-center justify-center">
                           <Button
                             onClick={() => loadConfiguration(config)}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
+                            className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold px-6"
                           >
                             Load
-                          </Button>
-                          <Button
-                            onClick={() => deleteConfiguration(config.id)}
-                            size="sm"
-                            variant="outline"
-                            className="border-red-500 text-red-400"
-                          >
-                            <Trash className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
@@ -2803,21 +2848,32 @@ export function TrimPricingCalculator() {
                               <td className="text-right p-2 text-white/80">${item.cutCost.toFixed(2)}</td>
                               <td className="text-right p-2 text-yellow-400 font-bold">${item.sellingPrice.toFixed(2)}</td>
                               <td className="text-center p-2">
-                                <Button
-                                  onClick={() => {
-                                    // Set the material type first
-                                    setSelectedTrimTypeId(priceListMaterialId);
-                                    // Small delay to ensure material is set
-                                    setTimeout(() => {
-                                      loadConfiguration(item.config);
-                                      setShowPriceList(false);
-                                    }, 100);
-                                  }}
-                                  size="sm"
-                                  className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-7 px-2 text-xs"
-                                >
-                                  Load
-                                </Button>
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    onClick={() => {
+                                      setSelectedTrimTypeId(priceListMaterialId);
+                                      setTimeout(() => {
+                                        loadConfiguration(item.config);
+                                        setShowPriceList(false);
+                                      }, 100);
+                                    }}
+                                    size="sm"
+                                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-7 px-2 text-xs"
+                                  >
+                                    Load
+                                  </Button>
+                                  <Button
+                                    onClick={async () => {
+                                      if (!confirm(`Delete "${item.config.name}" from the trim list?`)) return;
+                                      await deleteConfiguration(item.config.id);
+                                    }}
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-red-500 text-red-400 hover:bg-red-900/30 h-7 px-2 text-xs"
+                                  >
+                                    <Trash className="w-3 h-3" />
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           ))
