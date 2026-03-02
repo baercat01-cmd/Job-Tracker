@@ -121,7 +121,7 @@ interface JobFinancialsProps {
 }
 
 // Sortable Row Component
-function SortableRow({ item, isReadOnly, ...props }: any) {
+function SortableRow({ item, isReadOnly, quote, ...props }: any) {
   const {
     attributes,
     listeners,
@@ -5701,6 +5701,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                         customRows={customRows}
                         savingMarkupsRef={savingMarkupsRef}
                         isReadOnly={isReadOnly}
+                        quote={quote}
                       />
                     ))}
                   </SortableContext>
