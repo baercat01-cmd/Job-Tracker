@@ -61,6 +61,7 @@ import {
   RefreshCw,
   AlertCircle,
   MoreVertical,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -224,6 +225,9 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
   // Zoho sync state
   const [syncingZoho, setSyncingZoho] = useState(false);
   const [showSyncResults, setShowSyncResults] = useState(false);
+
+  // Export XLSX state
+  const [exportingXLSX, setExportingXLSX] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
 
   // Load job quotes (proposals) so we can scope materials per proposal
@@ -1269,6 +1273,70 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
     }
   }
 
+  async function exportMaterialWorkbookToXLSX() {
+    if (!workbook || workbook.sheets.length === 0) {
+      toast.error('No workbook or sheets to export');
+      return;
+    }
+    setExportingXLSX(true);
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      const headers = [
+        'Category',
+        'Usage',
+        'SKU',
+        'Material',
+        'Qty',
+        'Length',
+        'Color',
+        'Cost Per Unit',
+        'Mark Up',
+        'Price Per Unit',
+        'Extended Cost',
+        'Extended Price',
+        'Taxable',
+        'Notes',
+        'Status',
+      ];
+      for (const sheet of workbook.sheets) {
+        const rows: (string | number | null | boolean)[][] = [headers];
+        for (const item of sheet.items) {
+          const markupDisplay = item.markup_percent != null ? (item.markup_percent * 100).toFixed(2) : '';
+          rows.push([
+            item.category ?? '',
+            item.usage ?? '',
+            item.sku ?? '',
+            item.material_name ?? '',
+            item.quantity ?? 0,
+            item.length ?? '',
+            item.color ?? '',
+            item.cost_per_unit ?? '',
+            markupDisplay,
+            item.price_per_unit ?? '',
+            item.extended_cost ?? '',
+            item.extended_price ?? '',
+            item.taxable ?? false,
+            item.notes ?? '',
+            item.status ?? '',
+          ]);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const sheetName = (sheet.sheet_name || 'Sheet').replace(/[:\\/?*\[\]]/g, ' ').slice(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+      const safeName = (job.name || 'MaterialWorkbook').replace(/[^a-z0-9_-]/gi, '_');
+      const filename = `${safeName}_Material_Workbook_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Workbook exported to XLSX');
+    } catch (error: any) {
+      console.error('Export XLSX error:', error);
+      toast.error('Failed to export workbook: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setExportingXLSX(false);
+    }
+  }
+
   async function addMaterial() {
     if (!newMaterialName.trim()) {
       toast.error('Please enter a material name');
@@ -1536,6 +1604,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                 </Button>
               </CardContent>
             </Card>
+          ) : showDocumentViewer ? (
+            <FloatingDocumentViewer
+              jobId={job.id}
+              open={true}
+              onClose={() => setShowDocumentViewer(false)}
+              embed
+              backLabel="Back to Workbook"
+            />
           ) : (
             <>
               <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -1663,6 +1739,16 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
                             >
                               <FileText className="w-3 h-3 mr-0.5" />
                               Documents
+                            </Button>
+                            <Button
+                              onClick={exportMaterialWorkbookToXLSX}
+                              size="sm"
+                              variant="outline"
+                              disabled={exportingXLSX}
+                              className="h-6 text-xs whitespace-nowrap px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Download className="w-3 h-3 mr-0.5" />
+                              {exportingXLSX ? 'Exporting…' : 'Export XLSX'}
                             </Button>
                             <Button
                               onClick={() => openAddDialog()}
@@ -3147,12 +3233,14 @@ export function MaterialsManagement({ job, userId, proposalNumber, controlledQuo
         </DialogContent>
       </Dialog>
 
-      {/* Floating Document Viewer */}
-      <FloatingDocumentViewer
-        jobId={job.id}
-        open={showDocumentViewer}
-        onClose={() => setShowDocumentViewer(false)}
-      />
+      {/* Floating Document Viewer (only when not showing in-place in manage tab) */}
+      {showDocumentViewer && !(activeTab === 'manage' && workbook) && (
+        <FloatingDocumentViewer
+          jobId={job.id}
+          open={true}
+          onClose={() => setShowDocumentViewer(false)}
+        />
+      )}
 
       {/* Zoho Sync Results Dialog */}
       <Dialog open={showSyncResults} onOpenChange={setShowSyncResults}>

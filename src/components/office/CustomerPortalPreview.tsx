@@ -1,7 +1,7 @@
 // Interactive Customer Portal Preview Component
 // This component renders a full-featured preview of what customers will see in their portal
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,12 @@ interface CustomerPortalPreviewProps {
 
 export function CustomerPortalPreview({ customerName, jobs, visibilitySettings, customMessage }: CustomerPortalPreviewProps) {
   const [selectedJob, setSelectedJob] = useState<any>(null);
+
+  // When previewing a single job (e.g. from Create dialog), open straight to its detail view
+  useEffect(() => {
+    if (jobs.length === 1) setSelectedJob(jobs[0]);
+    else if (jobs.length === 0) setSelectedJob(null);
+  }, [jobs]);
 
   if (selectedJob) {
     return (

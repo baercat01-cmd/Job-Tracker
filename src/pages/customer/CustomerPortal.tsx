@@ -25,7 +25,9 @@ import {
   Briefcase,
   Send,
   MessageSquare,
-  Inbox
+  Inbox,
+  Copy,
+  LayoutDashboard
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -113,8 +115,8 @@ export default function CustomerPortal() {
         .update({ last_accessed_at: new Date().toISOString() })
         .eq('id', accessData.id);
 
-      // Load data for the customer (all their jobs)
-      await loadCustomerData(accessData.customer_identifier);
+      // Load data for the customer (use job from link when set, else find by customer)
+      await loadCustomerData(accessData);
     } catch (error: any) {
       console.error('Error validating token:', error);
       toast.error('Failed to load portal data');
@@ -122,25 +124,30 @@ export default function CustomerPortal() {
     }
   }
 
-  async function loadCustomerData(customerIdentifier: string) {
+  async function loadCustomerData(accessData: any) {
     try {
-      // Find all jobs for this customer (by client_name matching customer_name)
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
-        .select('*')
-        .ilike('client_name', `%${customerInfo?.customer_name || customerIdentifier}%`)
-        .order('created_at', { ascending: false });
-
-      if (jobsError) throw jobsError;
-
-      if (!jobsData || jobsData.length === 0) {
-        toast.error('No projects found for your account');
-        setLoading(false);
-        return;
+      let job: any = null;
+      if (accessData.job_id) {
+        const { data: jobRow, error: jobError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('id', accessData.job_id)
+          .maybeSingle();
+        if (!jobError && jobRow) job = jobRow;
       }
-
-      // Use the FIRST job for this customer (most recent or main job)
-      const job = jobsData[0];
+      if (!job) {
+        const { data: jobsData, error: jobsError } = await supabase
+          .from('jobs')
+          .select('*')
+          .ilike('client_name', `%${accessData.customer_name || accessData.customer_identifier || ''}%`)
+          .order('created_at', { ascending: false });
+        if (jobsError || !jobsData?.length) {
+          toast.error('No projects found for your account');
+          setLoading(false);
+          return;
+        }
+        job = jobsData[0];
+      }
 
       // Load quote for this job
       const { data: quoteData } = await supabase
@@ -192,6 +199,17 @@ export default function CustomerPortal() {
       // Load proposal data
       const proposalData = await loadProposalData(job.id);
 
+      // Load viewer links (drawings / 3D) for this job
+      let viewerLinks: { id: string; label: string; url: string }[] = [];
+      try {
+        const { data: linksData } = await supabase
+          .from('job_viewer_links')
+          .select('id, label, url')
+          .eq('job_id', job.id)
+          .order('order_index', { ascending: true });
+        if (linksData?.length) viewerLinks = linksData;
+      } catch (_) {}
+
       const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
 
       setJobData({
@@ -203,6 +221,7 @@ export default function CustomerPortal() {
         scheduleEvents: scheduleData || [],
         emails: emailsData || [],
         proposalData,
+        viewerLinks,
         totalPaid,
         balance: proposalData.totals.grandTotal - totalPaid,
       });
@@ -318,8 +337,14 @@ export default function CustomerPortal() {
 
 // Job Detail View Component
 function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: any }) {
-  const { job, quote, payments, documents, photos, scheduleEvents, emails, proposalData, totalPaid, balance } = jobData;
+  const { job, quote, payments, documents, photos, scheduleEvents, emails, proposalData, viewerLinks = [], totalPaid, balance } = jobData;
   const [activeTab, setActiveTab] = useState('overview');
+  const showFinancial = !!customerInfo?.show_financial_summary;
+  const showProposal = customerInfo?.show_proposal !== false;
+  const showPayments = customerInfo?.show_payments !== false;
+  const showSchedule = customerInfo?.show_schedule !== false;
+  const showDocuments = customerInfo?.show_documents !== false;
+  const showPhotos = customerInfo?.show_photos !== false;
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
@@ -436,6 +461,27 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
   }
 
   const proposalNumber = quote?.proposal_number || quote?.quote_number || 'N/A';
+  const portalUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+  async function copyPortalUrl() {
+    if (!portalUrl) return;
+    try {
+      await navigator.clipboard.writeText(portalUrl);
+      toast.success('Portal link copied to clipboard');
+    } catch {
+      toast.error('Could not copy link');
+    }
+  }
+
+  const viewOptions = [
+    { value: 'overview', label: 'Overview', icon: LayoutDashboard },
+    ...(showProposal ? [{ value: 'proposal' as const, label: 'Proposal', icon: FileText }] : []),
+    ...(showPayments ? [{ value: 'payments' as const, label: 'Payments', icon: DollarSign }] : []),
+    ...(showSchedule ? [{ value: 'schedule' as const, label: 'Schedule', icon: Calendar }] : []),
+    ...(showDocuments ? [{ value: 'documents' as const, label: 'Documents', icon: FileSpreadsheet }] : []),
+    ...(showPhotos ? [{ value: 'photos' as const, label: 'Photos', icon: Image }] : []),
+    { value: 'emails' as const, label: 'Messages', icon: Mail },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -466,72 +512,136 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-7 mb-6">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="proposal">Proposal</TabsTrigger>
-            <TabsTrigger value="payments">Payments</TabsTrigger>
-            <TabsTrigger value="schedule">Schedule</TabsTrigger>
-            <TabsTrigger value="documents">Documents</TabsTrigger>
-            <TabsTrigger value="photos">Photos</TabsTrigger>
-            <TabsTrigger value="emails">
-              <Mail className="w-4 h-4 mr-2" />
-              Messages
-              {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
-                <Badge variant="destructive" className="ml-2">
-                  {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+      {/* Portal URL – copy link */}
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link:</span>
+            <code className="flex-1 min-w-0 text-sm text-slate-700 bg-slate-100 rounded px-2 py-1.5 truncate">
+              {portalUrl}
+            </code>
+            <Button variant="outline" size="sm" onClick={copyPortalUrl} className="shrink-0">
+              <Copy className="w-4 h-4 mr-2" />
+              Copy link
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content + viewing options – all on one page */}
+      <div className="flex max-w-[1920px] mx-auto min-h-0">
+        {/* Main content */}
+        <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            {/* View options: horizontal bar when sidebar is hidden (small/medium), so preview + buttons are one page */}
+            <div className="flex md:hidden gap-1 mb-4 overflow-x-auto pb-2 -mx-1">
+              {viewOptions.map((opt) => {
+                const Icon = opt.icon;
+                return (
+                  <Button
+                    key={opt.value}
+                    variant={activeTab === opt.value ? 'secondary' : 'outline'}
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setActiveTab(opt.value)}
+                  >
+                    <Icon className="w-4 h-4 sm:mr-1.5" />
+                    <span className="inline">{opt.label}</span>
+                    {opt.value === 'emails' && emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
+                      <Badge variant="destructive" className="ml-1 shrink-0">
+                        {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
+                      </Badge>
+                    )}
+                  </Button>
+                );
+              })}
+            </div>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" />
-                    Project Total
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-3xl font-bold text-blue-600">
-                    ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </p>
+            {customerInfo?.custom_message && (
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardContent className="pt-6">
+                  <p className="text-slate-800 whitespace-pre-wrap">{customerInfo.custom_message}</p>
                 </CardContent>
               </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    Amount Paid
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-3xl font-bold text-green-600">
-                    ${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </p>
+            )}
+            {showFinancial && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      Project Total
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-blue-600">
+                      ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      Amount Paid
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-green-600">
+                      ${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Balance Due
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className={`text-3xl font-bold ${balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                      ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            {!showFinancial && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardContent className="pt-6">
+                  <p className="text-slate-700">Pricing and final amount will be shared when ready. You can review the proposal scope and drawings below and send messages with any questions.</p>
                 </CardContent>
               </Card>
-
+            )}
+            {viewerLinks.length > 0 && (
               <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    Balance Due
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ExternalLink className="w-5 h-5" />
+                    Drawings & 3D Views
                   </CardTitle>
+                  <p className="text-sm text-muted-foreground font-normal">Open the links below to view plans and 3D models.</p>
                 </CardHeader>
                 <CardContent>
-                  <p className={`text-3xl font-bold ${balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                    ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {viewerLinks.map((link: any) => (
+                      <Button
+                        key={link.id}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        {link.label}
+                      </Button>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
-            </div>
+            )}
 
             {/* Project Info */}
             <Card>
@@ -567,7 +677,8 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             </Card>
           </TabsContent>
 
-          {/* Proposal Tab */}
+          {/* Proposal Tab - only visible when showProposal */}
+          {showProposal && (
           <TabsContent value="proposal">
             <Card>
               <CardHeader>
@@ -575,6 +686,9 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                   <FileSpreadsheet className="w-5 h-5" />
                   Project Proposal
                 </CardTitle>
+                {!showFinancial && (
+                  <p className="text-sm text-muted-foreground font-normal mt-1">Pricing will be shared when ready. Below is the scope and description.</p>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {proposalData.materialSheets.map((sheet: any) => (
@@ -590,52 +704,52 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
                   <div key={row.id} className="border rounded-lg p-4 flex items-center justify-between">
                     <div>
                       <h3 className="font-bold">{row.description}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {row.quantity} × ${row.unit_cost.toFixed(2)}
-                      </p>
+                      {showFinancial && (
+                        <p className="text-sm text-muted-foreground">
+                          {row.quantity} × ${row.unit_cost.toFixed(2)}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xl font-bold text-blue-600">
-                      ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
+                    {showFinancial && (
+                      <p className="text-xl font-bold text-blue-600">
+                        ${row.selling_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    )}
                   </div>
                 ))}
 
-                {proposalData.subcontractorEstimates.map((est: any) => {
-                  const finalPrice = (est.total_amount || 0) * (1 + (est.markup_percent || 0) / 100);
-                  return (
-                    <div key={est.id} className="border rounded-lg p-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-bold">{est.company_name}</h3>
-                        {est.scope_of_work && (
-                          <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
-                        )}
-                      </div>
-                      <p className="text-xl font-bold text-blue-600">
-                        ${finalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  );
-                })}
+                {proposalData.subcontractorEstimates.map((est: any) => (
+                  <div key={est.id} className="border rounded-lg p-4">
+                    <h3 className="font-bold">{est.company_name}</h3>
+                    {est.scope_of_work && (
+                      <p className="text-sm text-muted-foreground mt-1">{est.scope_of_work}</p>
+                    )}
+                    {/* Subcontractor line-item prices are not shown to the customer */}
+                  </div>
+                ))}
 
-                <div className="border-t-2 pt-4 space-y-2">
-                  <div className="flex justify-between text-lg">
-                    <span className="font-medium">Subtotal:</span>
-                    <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                {showFinancial && (
+                  <div className="border-t-2 pt-4 space-y-2">
+                    <div className="flex justify-between text-lg">
+                      <span className="font-medium">Subtotal:</span>
+                      <span>${proposalData.totals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-lg">
+                      <span className="font-medium">Tax (7%):</span>
+                      <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-2xl font-bold pt-2 border-t">
+                      <span>Grand Total:</span>
+                      <span className="text-blue-600">
+                        ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-lg">
-                    <span className="font-medium">Tax (7%):</span>
-                    <span>${proposalData.totals.tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between text-2xl font-bold pt-2 border-t">
-                    <span>Grand Total:</span>
-                    <span className="text-blue-600">
-                      ${proposalData.totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {/* Payments Tab */}
           <TabsContent value="payments">
@@ -886,6 +1000,31 @@ function JobDetailView({ jobData, customerInfo }: { jobData: any; customerInfo: 
             </Card>
           </TabsContent>
         </Tabs>
+        </div>
+
+        {/* Right sidebar – viewing options (hidden on small screens; use horizontal bar above content instead) */}
+        <aside className="hidden md:flex flex-col w-52 shrink-0 border-l border-slate-200 bg-white/90 py-4 sticky top-0 max-h-[calc(100vh-0px)] overflow-y-auto">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 mb-2">View</span>
+          {viewOptions.map((opt) => {
+            const Icon = opt.icon;
+            return (
+              <Button
+                key={opt.value}
+                variant={activeTab === opt.value ? 'secondary' : 'ghost'}
+                className="justify-start rounded-none py-3 px-4 h-auto font-medium"
+                onClick={() => setActiveTab(opt.value)}
+              >
+                <Icon className="w-4 h-4 mr-2 shrink-0" />
+                <span className="truncate">{opt.label}</span>
+                {opt.value === 'emails' && emails.filter((e: any) => !e.is_read && e.direction === 'sent').length > 0 && (
+                  <Badge variant="destructive" className="ml-2 shrink-0">
+                    {emails.filter((e: any) => !e.is_read && e.direction === 'sent').length}
+                  </Badge>
+                )}
+              </Button>
+            );
+          })}
+        </aside>
       </div>
 
       {/* Send Email Dialog */}

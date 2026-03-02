@@ -54,8 +54,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('');
-  const [existingCustomerLinks, setExistingCustomerLinks] = useState<string[]>([]);
-  
+
   // Visibility settings
   const [showProposal, setShowProposal] = useState(true);
   const [showPayments, setShowPayments] = useState(true);
@@ -71,16 +70,38 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewSettings, setPreviewSettings] = useState<any>(null);
 
+  // Token shown in preview before creating; same token is used when user clicks Create Portal Link
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+
   useEffect(() => {
     loadPortalLinks();
     loadCustomerInfo();
+    setPreviewJobs([]);
   }, [job.id]);
+
+  // When no portal links exist, show preview inline: load preview data and set pending token
+  useEffect(() => {
+    if (loading || portalLinks.length > 0 || !customerName || previewJobs.length > 0) return;
+    setPendingToken((t) => t || crypto.randomUUID().replace(/-/g, ''));
+    loadPreviewData(false);
+  }, [loading, portalLinks.length, customerName, job.id]);
 
   async function loadCustomerInfo() {
     try {
       console.log('🔍 Loading customer info for job:', job.id);
-      
-      // Priority 1: Try to get customer info from contacts table
+
+      // Priority 1: Job overview (Edit Job form – customer email, client name, phone)
+      const jobEmail = (job as { customer_email?: string | null }).customer_email;
+      const jobPhone = (job as { customer_phone?: string | null }).customer_phone;
+      if (jobEmail && jobEmail.trim()) {
+        setCustomerName(job.client_name || '');
+        setCustomerEmail(jobEmail.trim());
+        setCustomerPhone((jobPhone && jobPhone.trim()) || '');
+        console.log('✅ Loaded from job overview:', job.client_name, jobEmail);
+        return;
+      }
+
+      // Priority 2: Contacts table (customer contact for this job)
       const { data: contactData } = await supabase
         .from('contacts')
         .select('*')
@@ -89,39 +110,36 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .maybeSingle();
 
       if (contactData && contactData.email) {
-        // Found customer contact with email - use this data
         setCustomerName(contactData.name);
         setCustomerEmail(contactData.email);
         setCustomerPhone(contactData.phone || '');
         console.log('✅ Loaded from contacts:', contactData.name, contactData.email);
         return;
       }
-      
-      // Priority 2: Try to get customer info from quote
+
+      // Priority 3: Quote
       const { data: quoteData } = await supabase
         .from('quotes')
         .select('customer_name, customer_email, customer_phone')
         .eq('job_id', job.id)
         .maybeSingle();
-      
+
       if (quoteData && quoteData.customer_email) {
-        // Found quote with customer email - use this data
         setCustomerName(quoteData.customer_name || job.client_name || '');
         setCustomerEmail(quoteData.customer_email);
         setCustomerPhone(quoteData.customer_phone || '');
         console.log('✅ Loaded from quote:', quoteData.customer_name, quoteData.customer_email);
         return;
       }
-      
-      // Priority 3: Fallback to job data (name only, no email/phone)
+
+      // Fallback: job name only, no email/phone
       setCustomerName(job.client_name || '');
-      setCustomerEmail(''); // No email found - user will need to enter it
-      setCustomerPhone(''); // No phone found
+      setCustomerEmail('');
+      setCustomerPhone('');
       console.log('⚠️ No email found - user must enter manually');
-      
-      // Show clear instruction to user
+
       toast.warning(
-        'Customer email not found.\n\nTo create a portal link, please:\n1. Enter customer email below, OR\n2. Edit the quote and add customer email/phone',
+        'Customer email not found.\n\nAdd it in Job Overview (Edit Job → Customer Email), or enter it below.',
         { duration: 8000 }
       );
     } catch (error: any) {
@@ -142,17 +160,10 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      
-      // Build list of customer+job combinations that already have links
-      const existingCombos = (data || [])
-        .filter(link => link.customer_identifier && link.job_id)
-        .map(link => `${link.customer_identifier}|${link.job_id}`);
-      setExistingCustomerLinks(existingCombos);
-      
-      const jobCustomerLinks = (data || []).filter(link => 
-        link.customer_name === job.client_name || link.job_id === job.id
-      );
-      setPortalLinks(jobCustomerLinks);
+
+      // One link per job: only show the link for this job
+      const jobLink = (data || []).filter(link => link.job_id === job.id);
+      setPortalLinks(jobLink);
     } catch (error: any) {
       console.error('Error loading portal links:', error);
       toast.error('Failed to load portal links');
@@ -193,26 +204,21 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
       return;
     }
 
-    // Check if a portal link already exists for this customer + job combination
-    const customerJobCombo = `${customerEmail.trim().toLowerCase()}|${job.id}`;
-    if (existingCustomerLinks.map(link => link.toLowerCase()).includes(customerJobCombo)) {
-      toast.error(
-        '❌ A portal link already exists for this customer on this job.\n\nPlease use the existing link or deactivate it first.',
-        { duration: 6000 }
-      );
-      return;
-    }
+    // One link per job: update existing or create new
+    const existingLink = portalLinks.find(link => link.job_id === job.id);
+    const isUpdate = !!existingLink;
 
-    console.log('🔷 Creating portal link...');
+    console.log(isUpdate ? '🔷 Updating portal link...' : '🔷 Creating portal link...');
     console.log('  Customer:', customerName);
     console.log('  Email:', customerEmail);
     console.log('  Job:', job.name, `(${job.id})`);
 
     try {
-      const token = generateAccessToken();
-      console.log('  Generated token:', token);
-      
-      let expiresAt = null;
+      const token = isUpdate ? existingLink!.access_token : (pendingToken || generateAccessToken());
+      if (!isUpdate && pendingToken) setPendingToken(null);
+      if (!isUpdate) console.log('  Token:', token);
+
+      let expiresAt: string | null = null;
       if (expiresInDays && expiresInDays.trim() !== '') {
         const days = parseInt(expiresInDays);
         if (isNaN(days) || days <= 0) {
@@ -236,7 +242,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         customer_phone: customerPhone?.trim() || null,
         is_active: true,
         expires_at: expiresAt,
-        created_by: profile?.id,
+        ...(isUpdate ? {} : { created_by: profile?.id }),
         show_proposal: showProposal,
         show_payments: showPayments,
         show_schedule: showSchedule,
@@ -244,15 +250,47 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         show_photos: showPhotos,
         show_financial_summary: showFinancialSummary,
         custom_message: customMessage?.trim() || null,
+        updated_at: new Date().toISOString(),
       };
 
       console.log('  Portal data:', JSON.stringify(portalData, null, 2));
 
-      const { data, error } = await supabase
-        .from('customer_portal_access')
-        .insert([portalData])
-        .select()
-        .single();
+      let data: any;
+      let error: any;
+
+      if (isUpdate) {
+        const result = await supabase
+          .from('customer_portal_access')
+          .update({
+            customer_identifier: portalData.customer_identifier,
+            customer_name: portalData.customer_name,
+            customer_email: portalData.customer_email,
+            customer_phone: portalData.customer_phone,
+            is_active: portalData.is_active,
+            expires_at: portalData.expires_at,
+            show_proposal: portalData.show_proposal,
+            show_payments: portalData.show_payments,
+            show_schedule: portalData.show_schedule,
+            show_documents: portalData.show_documents,
+            show_photos: portalData.show_photos,
+            show_financial_summary: portalData.show_financial_summary,
+            custom_message: portalData.custom_message,
+            updated_at: portalData.updated_at,
+          })
+          .eq('id', existingLink!.id)
+          .select()
+          .single();
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase
+          .from('customer_portal_access')
+          .insert([{ ...portalData, created_by: profile?.id }])
+          .select()
+          .single();
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('❌ Database error:', error);
@@ -275,10 +313,10 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             { duration: 6000 }
           );
         } else if (error.code === '42501') {
-          // Permission denied
+          // Database RLS blocking insert – any office user should be allowed
           toast.error(
-            '❌ Permission denied\n\nYou do not have permission to create portal links. Please contact your administrator.',
-            { duration: 6000 }
+            '❌ Database is blocking this action.\n\nAny office user can create portal links. Ask your project admin to run scripts/fix-customer-portal-access-rls.sql in the Supabase SQL Editor to allow it.',
+            { duration: 8000 }
           );
         } else {
           toast.error(
@@ -289,19 +327,20 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         return;
       }
 
-      console.log('✅ Portal link created successfully:', data);
-      toast.success(`✅ Customer portal link created for ${job.name}`, { duration: 3000 });
-      
-      // Email integration is now active
-      console.log('📧 Email integration enabled for:', customerEmail, 'Job:', job.id);
-      
+      if (isUpdate) {
+        toast.success('Portal link updated. Same URL; visibility settings saved.', { duration: 3000 });
+      } else {
+        console.log('✅ Portal link created successfully:', data);
+        toast.success(`✅ Customer portal link created for ${job.name}`, { duration: 3000 });
+      }
+
       setShowCreateDialog(false);
       resetForm();
       await loadPortalLinks();
 
       const portalUrl = `${window.location.origin}/customer-portal?token=${token}`;
       await navigator.clipboard.writeText(portalUrl);
-      toast.success('🔗 Portal link copied to clipboard!', { duration: 3000 });
+      toast.success(isUpdate ? 'Portal URL copied (unchanged).' : '🔗 Portal link copied to clipboard!', { duration: 3000 });
       
       console.log('🔗 Portal URL:', portalUrl);
     } catch (error: any) {
@@ -357,15 +396,15 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
     setShowPreview(false);
   }
 
-  async function loadPreviewData() {
+  async function loadPreviewData(openDialog = true) {
     if (!customerName) {
-      toast.error('Please enter customer name to preview');
+      if (openDialog) toast.error('Please enter customer name to preview');
       return;
     }
 
     setPreviewLoading(true);
     try {
-      // Store current visibility settings for preview
+      // Store current visibility settings for preview (so you can craft the view, then create)
       setPreviewSettings({
         show_proposal: showProposal,
         show_payments: showPayments,
@@ -376,71 +415,73 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         custom_message: customMessage,
       });
 
-      const { data: jobsData, error: jobsError } = await supabase
+      // Load only this job so preview shows exactly what the customer will see for this project
+      const { data: jobRow, error: jobError } = await supabase
         .from('jobs')
         .select('*')
-        .eq('client_name', customerName)
-        .order('created_at', { ascending: false });
+        .eq('id', job.id)
+        .single();
 
-      if (jobsError) throw jobsError;
+      if (jobError || !jobRow) {
+        toast.error('Could not load job for preview');
+        setPreviewLoading(false);
+        return;
+      }
 
-      const jobsWithData = await Promise.all((jobsData || []).map(async (job) => {
-        const { data: quoteData } = await supabase
-          .from('quotes')
-          .select('*')
-          .eq('job_id', job.id)
-          .maybeSingle();
+      const j = jobRow;
+      const { data: quoteData } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('job_id', j.id)
+        .maybeSingle();
 
-        const { data: paymentsData } = await supabase
-          .from('customer_payments')
-          .select('*')
-          .eq('job_id', job.id)
-          .order('payment_date', { ascending: false });
+      const { data: paymentsData } = await supabase
+        .from('customer_payments')
+        .select('*')
+        .eq('job_id', j.id)
+        .order('payment_date', { ascending: false });
 
-        const { data: documentsData } = await supabase
-          .from('job_documents')
-          .select('id, name, category')
-          .eq('job_id', job.id);
+      const { data: documentsData } = await supabase
+        .from('job_documents')
+        .select('id, name, category')
+        .eq('job_id', j.id);
 
-        const { data: photosData } = await supabase
-          .from('photos')
-          .select('id, photo_url, caption, created_at')
-          .eq('job_id', job.id)
-          .order('created_at', { ascending: false })
-          .limit(20);
+      const { data: photosData } = await supabase
+        .from('photos')
+        .select('id, photo_url, caption, created_at')
+        .eq('job_id', j.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-        const { data: scheduleData } = await supabase
-          .from('calendar_events')
-          .select('*')
-          .eq('job_id', job.id)
-          .order('event_date', { ascending: true });
+      const { data: scheduleData } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('job_id', j.id)
+        .order('event_date', { ascending: true });
 
-        // Load proposal data
-        const proposalData = await loadProposalData(job.id);
+      const proposalData = await loadProposalData(j.id);
+      const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
+      const estimatedPrice = proposalData.totals.grandTotal;
+      const remainingBalance = estimatedPrice - totalPaid;
 
-        const totalPaid = (paymentsData || []).reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
-        const estimatedPrice = proposalData.totals.grandTotal;
-        const remainingBalance = estimatedPrice - totalPaid;
+      const jobWithData = {
+        ...j,
+        quote: quoteData,
+        payments: paymentsData || [],
+        documents: documentsData || [],
+        photos: photosData || [],
+        scheduleEvents: scheduleData || [],
+        proposalData,
+        totalPaid,
+        estimatedPrice,
+        remainingBalance,
+      };
 
-        return {
-          ...job,
-          quote: quoteData,
-          payments: paymentsData || [],
-          documents: documentsData || [],
-          photos: photosData || [],
-          scheduleEvents: scheduleData || [],
-          proposalData,
-          totalPaid,
-          estimatedPrice,
-          remainingBalance,
-        };
-      }));
-
-      setPreviewJobs(jobsWithData);
-      setShowPreview(true);
+      setPreviewJobs([jobWithData]);
+      if (openDialog) setShowPreview(true);
     } catch (error: any) {
       console.error('Error loading preview data:', error);
-      toast.error('Failed to load preview data');
+      if (openDialog) toast.error('Failed to load preview data');
     } finally {
       setPreviewLoading(false);
     }
@@ -578,15 +619,40 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         <div>
           <h3 className="text-lg font-semibold">Customer Portal Access</h3>
           <p className="text-sm text-muted-foreground">
-            Create shareable links for customers to view their projects with customizable visibility settings.
+            Any office user can create or update the portal link for this job. Share the link with the customer; use visibility settings to control what they see.
           </p>
         </div>
         <Button onClick={async () => {
-          await loadCustomerInfo(); // Wait for customer info to load before opening dialog
+          if (portalLinks.length === 1) {
+            const link = portalLinks[0];
+            setCustomerName(link.customer_name);
+            setCustomerEmail(link.customer_email || '');
+            setCustomerPhone(link.customer_phone || '');
+            setShowProposal(link.show_proposal);
+            setShowPayments(link.show_payments);
+            setShowSchedule(link.show_schedule);
+            setShowDocuments(link.show_documents);
+            setShowPhotos(link.show_photos);
+            setShowFinancialSummary(link.show_financial_summary);
+            setCustomMessage(link.custom_message || '');
+            setExpiresInDays(link.expires_at ? '' : '');
+          } else {
+            await loadCustomerInfo();
+            setPendingToken(crypto.randomUUID().replace(/-/g, ''));
+          }
           setShowCreateDialog(true);
         }}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Portal Link
+          {portalLinks.length === 1 ? (
+            <>
+              <Settings className="w-4 h-4 mr-2" />
+              Update Portal Link
+            </>
+          ) : (
+            <>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Portal Link
+            </>
+          )}
         </Button>
       </div>
 
@@ -708,16 +774,135 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
           })}
         </div>
       ) : (
-        <Card>
-          <CardContent className="text-center py-12">
-            <Share2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground mb-4">No customer portal links created yet</p>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Create First Portal Link
-            </Button>
-          </CardContent>
-        </Card>
+        /* No links yet: show preview inline so you can craft the view, then create the link */
+        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+          {previewLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mr-3" />
+              <span className="text-muted-foreground">Loading preview…</span>
+            </div>
+          ) : previewJobs.length > 0 && pendingToken ? (
+            <>
+              <div className="bg-slate-50 border-b px-4 py-3 flex items-center gap-3 flex-wrap">
+                <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link (create link to activate):</span>
+                <code className="flex-1 min-w-0 text-sm text-slate-700 bg-white rounded px-2 py-1.5 truncate border">
+                  {`${typeof window !== 'undefined' ? window.location.origin : ''}/customer-portal?token=${pendingToken}`}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const url = `${window.location.origin}/customer-portal?token=${pendingToken}`;
+                    navigator.clipboard.writeText(url);
+                    toast.success('Link copied. Create the link to activate it.');
+                  }}
+                  className="shrink-0"
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy link
+                </Button>
+              </div>
+              <div className="flex min-h-[400px]">
+                {/* Left sidebar – what the customer will see */}
+                <aside className="w-56 shrink-0 border-r border-slate-200 bg-white py-4 px-3 flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">What customer sees</span>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Final price</span>
+                    <Switch
+                      checked={showFinancialSummary}
+                      onCheckedChange={(v) => {
+                        setShowFinancialSummary(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_financial_summary: v } : s));
+                      }}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Proposal</span>
+                    <Switch
+                      checked={showProposal}
+                      onCheckedChange={(v) => {
+                        setShowProposal(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_proposal: v } : s));
+                      }}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Payments</span>
+                    <Switch
+                      checked={showPayments}
+                      onCheckedChange={(v) => {
+                        setShowPayments(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_payments: v } : s));
+                      }}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Schedule</span>
+                    <Switch
+                      checked={showSchedule}
+                      onCheckedChange={(v) => {
+                        setShowSchedule(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_schedule: v } : s));
+                      }}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Documents</span>
+                    <Switch
+                      checked={showDocuments}
+                      onCheckedChange={(v) => {
+                        setShowDocuments(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_documents: v } : s));
+                      }}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 py-2 px-3 rounded-md hover:bg-slate-50 cursor-pointer">
+                    <span className="text-sm font-medium">Photos</span>
+                    <Switch
+                      checked={showPhotos}
+                      onCheckedChange={(v) => {
+                        setShowPhotos(v);
+                        setPreviewSettings((s) => (s ? { ...s, show_photos: v } : s));
+                      }}
+                    />
+                  </label>
+                </aside>
+                <div className="flex-1 min-w-0 bg-gradient-to-br from-slate-50 to-slate-100">
+                  <CustomerPortalPreview
+                    customerName={customerName}
+                    jobs={previewJobs}
+                    visibilitySettings={previewSettings}
+                    customMessage={previewSettings?.custom_message}
+                  />
+                </div>
+              </div>
+              <div className="border-t px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Toggle options on the left to control what the customer sees, then create the link.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setShowCreateDialog(true)}>
+                    <Settings className="w-4 h-4 mr-2" />
+                    More settings
+                  </Button>
+                  <Button onClick={createPortalLink}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Portal Link
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-12 px-4">
+              <Share2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground mb-4">Enter customer name in the dialog to preview, or create a link.</p>
+              <Button onClick={() => setShowCreateDialog(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Portal Link
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Portal Settings Dialog */}
@@ -736,8 +921,8 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 border rounded-lg">
                 <div>
-                  <Label className="font-medium">Financial Summary</Label>
-                  <p className="text-sm text-muted-foreground">Show total amount, paid, and balance</p>
+                  <Label className="font-medium">Show final price</Label>
+                  <p className="text-sm text-muted-foreground">Show total amount, paid, balance, and proposal line-item prices. Turn off to hide pricing until you’re ready.</p>
                 </div>
                 <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
               </div>
@@ -806,11 +991,16 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
         </DialogContent>
       </Dialog>
 
-      {/* Create Portal Link Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      {/* Create / Update Portal Link Dialog (one link per job) */}
+      <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) setPendingToken(null); }}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Customer Portal Link</DialogTitle>
+            <DialogTitle>{portalLinks.length === 1 ? 'Update Portal Link' : 'Create Customer Portal Link'}</DialogTitle>
+            {portalLinks.length === 1 ? (
+              <p className="text-sm text-muted-foreground font-normal mt-1">This job has one portal link. Change settings below; the same URL will keep working.</p>
+            ) : (
+              <p className="text-sm text-muted-foreground font-normal mt-1">Set visibility below, then click <strong>Preview Customer View</strong> to see the exact view and copy the link. When it looks right, click Create Portal Link.</p>
+            )}
           </DialogHeader>
           <div className="space-y-6">
             {/* Pre-populated Notice */}
@@ -895,16 +1085,16 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
-                    <Label className="font-medium">Financial Summary</Label>
-                    <p className="text-sm text-muted-foreground">Show total amount, paid, and balance</p>
+                    <Label className="font-medium">Show final price</Label>
+                    <p className="text-sm text-muted-foreground">Show totals and proposal prices. Turn off to hide until you’re ready.</p>
                   </div>
                   <Switch checked={showFinancialSummary} onCheckedChange={setShowFinancialSummary} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
-                    <Label className="font-medium">Proposal Details</Label>
-                    <p className="text-sm text-muted-foreground">Show itemized proposal/pricing</p>
+                    <Label className="font-medium">Proposal (scope & description)</Label>
+                    <p className="text-sm text-muted-foreground">Show proposal tab with scope; prices only if “Show final price” is on</p>
                   </div>
                   <Switch checked={showProposal} onCheckedChange={setShowProposal} />
                 </div>
@@ -960,7 +1150,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                 Preview Customer View
               </Button>
               <Button onClick={createPortalLink} className="flex-1">
-                Create Portal Link
+                {portalLinks.length === 1 ? 'Update Portal Link' : 'Create Portal Link'}
               </Button>
               <Button variant="outline" onClick={() => {
                 setShowCreateDialog(false);
@@ -1012,13 +1202,13 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   <div className="flex items-center gap-3">
                     <Eye className="w-6 h-6" />
                     <div>
-                      <h2 className="text-xl font-bold">Interactive Preview Mode</h2>
-                      <p className="text-purple-100 text-sm">This is EXACTLY how customers will interact with their portal</p>
+                      <h2 className="text-xl font-bold">Preview – craft the view, then create the link</h2>
+                      <p className="text-purple-100 text-sm">This is exactly what the customer will see. Adjust settings and preview again until it’s right, then create the link.</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="bg-white/10 text-white border-white/30">
-                      Preview Only
+                      Preview
                     </Badge>
                     <Button onClick={() => setShowPreview(false)} variant="ghost" className="text-white hover:bg-white/10">
                       ✕ Close
@@ -1026,6 +1216,38 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
                   </div>
                 </div>
               </div>
+
+              {/* Portal URL – copy before or after creating */}
+              {(() => {
+                const existingLink = portalLinks.find(l => l.job_id === job.id);
+                const token = existingLink?.access_token ?? pendingToken;
+                const previewPortalUrl = token ? `${window.location.origin}/customer-portal?token=${token}` : '';
+                return previewPortalUrl ? (
+                  <div className="bg-white border-b px-6 py-3 flex-shrink-0 flex items-center gap-3 flex-wrap">
+                    <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Portal link:</span>
+                    <code className="flex-1 min-w-0 text-sm text-slate-700 bg-slate-100 rounded px-2 py-1.5 truncate">
+                      {previewPortalUrl}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(previewPortalUrl);
+                        toast.success('Link copied to clipboard');
+                      }}
+                      className="shrink-0"
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy link
+                    </Button>
+                    {!existingLink && pendingToken && (
+                      <span className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                        Link will be active when you click &quot;Create Portal Link&quot; below.
+                      </span>
+                    )}
+                  </div>
+                ) : null;
+              })()}
 
               {/* Embedded Interactive Portal */}
               <div className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100">
@@ -1040,7 +1262,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
               {/* Preview Footer Actions */}
               <div className="bg-white border-t-2 px-6 py-4 flex gap-3 flex-shrink-0">
                 <Button onClick={() => setShowPreview(false)} variant="outline" className="flex-1">
-                  Close Preview
+                  Back to settings
                 </Button>
                 <Button onClick={createPortalLink} className="flex-1 bg-green-600 hover:bg-green-700">
                   <Plus className="w-4 h-4 mr-2" />
