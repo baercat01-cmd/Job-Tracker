@@ -253,11 +253,15 @@ export function MaterialPackages({ jobId, userId, workbook, job }: MaterialPacka
         .eq('job_id', jobId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setPackages(data || []);
+      if (error) {
+        console.warn('Packages load failed (non-blocking):', error.message);
+        setPackages([]);
+      } else {
+        setPackages(data || []);
+      }
     } catch (error: any) {
-      console.error('Error loading packages:', error);
-      toast.error('Failed to load packages');
+      console.warn('Packages load failed (non-blocking):', error?.message || error);
+      setPackages([]);
     } finally {
       setLoading(false);
     }

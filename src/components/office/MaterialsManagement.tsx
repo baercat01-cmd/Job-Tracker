@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
+import { useMaterialsToolbarSlot } from '@/contexts/JobDetailMaterialsToolbarContext';
+
+// Module-level cache: survives component unmount/remount (e.g. tab switches).
+// Key: `${jobId}:${quoteId|null}`, value: { workbook, categories, cachedAt }
+interface WorkbookCacheEntry {
+  workbook: any;
+  categories: string[];
+  cachedAt: number;
+}
+const workbookCache = new Map<string, WorkbookCacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +32,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Plus,
   Edit,
@@ -42,6 +60,7 @@ import {
   FileText,
   RefreshCw,
   AlertCircle,
+  MoreVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -112,6 +131,10 @@ interface MaterialsManagementProps {
   job: Job;
   userId: string;
   proposalNumber?: string | null;
+  /** When provided, proposal selection is controlled by parent (e.g. combined Proposal+Materials view) */
+  controlledQuoteId?: string | null;
+  /** Called when user selects a different proposal in the dropdown */
+  onQuoteChange?: (quoteId: string | null) => void;
 }
 
 interface CategoryGroup {
@@ -119,9 +142,11 @@ interface CategoryGroup {
   items: MaterialItem[];
 }
 
-export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsManagementProps) {
+export function MaterialsManagement({ job, userId, proposalNumber, controlledQuoteId, onQuoteChange }: MaterialsManagementProps) {
   const [jobQuotes, setJobQuotes] = useState<JobQuote[]>([]);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const isControlled = controlledQuoteId !== undefined;
+  const effectiveQuoteId = isControlled ? controlledQuoteId : selectedQuoteId;
   const [workbook, setWorkbook] = useState<MaterialWorkbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'manage' | 'breakdown' | 'packages' | 'crew-orders' | 'comparison' | 'upload'>('manage');
@@ -129,6 +154,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
   const [searchTerm, setSearchTerm] = useState('');
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [movingItem, setMovingItem] = useState<MaterialItem | null>(null);
+  const [openPhotosForItem, setOpenPhotosForItem] = useState<{ id: string; materialName: string } | null>(null);
   const [moveToSheetId, setMoveToSheetId] = useState<string>('');
   const [moveToCategory, setMoveToCategory] = useState<string>('');
   const [allCategories, setAllCategories] = useState<string[]>([]);
@@ -213,57 +239,55 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       if (error) {
         console.error('Error loading job quotes:', error);
         setJobQuotes([]);
-        setSelectedQuoteId(null);
+        if (!isControlled) setSelectedQuoteId(null);
         return;
       }
       const quotes = (data || []) as JobQuote[];
       setJobQuotes(quotes);
-      setSelectedQuoteId(prev => {
-        if (quotes.length === 0) return null;
-        if (!prev || !quotes.some(q => q.id === prev)) return quotes[0].id;
-        return prev;
-      });
+      if (!isControlled) {
+        setSelectedQuoteId(prev => {
+          if (quotes.length === 0) return null;
+          if (!prev || !quotes.some(q => q.id === prev)) return quotes[0].id;
+          return prev;
+        });
+      }
     })();
     return () => { mounted = false; };
-  }, [job.id]);
+  }, [job.id, isControlled]);
 
+  // Load workbook once we know which quote to use.
+  // In uncontrolled mode, wait until jobQuotes has loaded so we use the real quote ID
+  // rather than firing a wasted load with null then reloading again immediately after.
+  // In controlled mode, the parent provides a real ID (never null thanks to ?? undefined).
   useEffect(() => {
+    if (!isControlled && jobQuotes.length === 0) return;
     loadWorkbook();
+  }, [job.id, effectiveQuoteId, isControlled, jobQuotes.length]);
+
+  // Load packages once per job; subscribe to package changes (already filtered by job_id)
+  useEffect(() => {
     loadPackages();
-
-    // Subscribe to real-time changes on material_items
-    const itemsChannel = supabase
-      .channel('material_items_changes')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'material_items' },
-        (payload) => {
-          console.log('Material items changed:', payload);
-          loadWorkbook();
-        }
-      )
-      .subscribe();
-
-    // Subscribe to package changes
     const packagesChannel = supabase
-      .channel('material_bundles_changes')
+      .channel(`material_bundles_changes_${job.id}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'material_bundles', filter: `job_id=eq.${job.id}` },
-        () => {
-          loadPackages();
-        }
+        () => { loadPackages(); }
       )
       .subscribe();
+    return () => { supabase.removeChannel(packagesChannel); };
+  }, [job.id]);
 
-    return () => {
-      supabase.removeChannel(itemsChannel);
-      supabase.removeChannel(packagesChannel);
+  // When proposal/materials are restored from snapshot (JobFinancials), refetch workbook for this quote
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ quoteId: string }>) => {
+      if (e.detail?.quoteId && e.detail.quoteId === effectiveQuoteId) loadWorkbook(false);
     };
-  }, [job.id, selectedQuoteId]);
+    window.addEventListener('material-workbook-restored', handler as EventListener);
+    return () => window.removeEventListener('material-workbook-restored', handler as EventListener);
+  }, [effectiveQuoteId]);
 
   async function loadPackages() {
     try {
-      console.log('Loading packages for job:', job.id);
-      
       const { data, error } = await supabase
         .from('material_bundles')
         .select(`
@@ -277,101 +301,110 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         .order('name');
 
       if (error) {
-        console.error('Error loading packages:', error);
-        throw error;
+        console.warn('Packages load failed (non-blocking):', error.message);
+        setPackages([]);
+        return;
       }
-      
-      console.log('Loaded packages:', data?.length || 0);
       setPackages(data || []);
     } catch (error: any) {
-      console.error('Error loading packages:', error);
-      toast.error('Failed to load packages');
+      console.warn('Packages load failed (non-blocking):', error?.message || error);
+      setPackages([]);
     }
   }
 
-  async function loadWorkbook() {
+  async function loadWorkbook(silent = false) {
     try {
-      setLoading(true);
-      // When a proposal is selected, load workbook for that quote so materials are per-proposal
-      const baseQuery = supabase
+      const quoteIdForLoad = effectiveQuoteId ?? null;
+      const cacheKey = `${job.id}:${quoteIdForLoad}`;
+
+      // Serve from cache immediately (stale-while-revalidate pattern)
+      const cached = workbookCache.get(cacheKey);
+      if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+        setWorkbook(cached.workbook);
+        setAllCategories(cached.categories);
+        if (cached.workbook?.sheets?.length > 0 && !activeSheetId) {
+          setActiveSheetId(cached.workbook.sheets[0].id);
+        }
+        // Refresh in background without showing the loading spinner
+        silent = true;
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      // Single query: fetch all workbooks for this job, then pick the best one in JS.
+      // This collapses 4 sequential fallback round-trips into 1.
+      const { data: allWorkbooks, error: wbError } = await supabase
         .from('material_workbooks')
         .select('*')
-        .eq('job_id', job.id);
-      if (selectedQuoteId) {
-        baseQuery.eq('quote_id', selectedQuoteId);
-      }
-      let { data: workbookData, error: workbookError } = await baseQuery
-        .eq('status', 'working')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .eq('job_id', job.id)
+        .order('updated_at', { ascending: false });
 
-      if (workbookError) throw workbookError;
-      if (!workbookData) {
-        const fallbackQuery = supabase
-          .from('material_workbooks')
+      if (wbError) throw wbError;
+
+      const wbs = allWorkbooks || [];
+      // Priority: working + matching quote > any status + matching quote > null quote_id (legacy) > any
+      const candidates: typeof wbs = [];
+      const byQuoteWorking = wbs.find(w => w.status === 'working' && w.quote_id === quoteIdForLoad);
+      const byQuoteAny = wbs.find(w => w.quote_id === quoteIdForLoad);
+      const byNullQuote = quoteIdForLoad ? wbs.find(w => !w.quote_id) : null;
+      if (byQuoteWorking) candidates.push(byQuoteWorking);
+      if (byQuoteAny && byQuoteAny !== byQuoteWorking) candidates.push(byQuoteAny);
+      if (byNullQuote) candidates.push(byNullQuote);
+      wbs.forEach(w => { if (!candidates.includes(w)) candidates.push(w); });
+
+      let workbookData: (typeof wbs)[0] | null = null;
+      let sheetsData: any[] = [];
+      let itemsData: any[] = [];
+
+      for (const candidate of candidates) {
+        const { data: sheets, error: sheetsError } = await supabase
+          .from('material_sheets')
           .select('*')
-          .eq('job_id', job.id);
-        if (selectedQuoteId) fallbackQuery.eq('quote_id', selectedQuoteId);
-        const { data: fallback, error: fallbackErr } = await fallbackQuery
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (!fallbackErr && fallback) workbookData = fallback;
+          .eq('workbook_id', candidate.id)
+          .order('order_index');
+        if (sheetsError) throw sheetsError;
+        const sList = sheets || [];
+        const sheetIds = sList.map((s: any) => s.id);
+        let items: any[] = [];
+        if (sheetIds.length > 0) {
+          const { data: itemsRes, error: itemsError } = await supabase
+            .from('material_items')
+            .select('*')
+            .in('sheet_id', sheetIds)
+            .order('order_index');
+          if (itemsError) throw itemsError;
+          items = itemsRes || [];
+        }
+        const hasContent = sList.length > 0 && items.length > 0;
+        if (hasContent || !workbookData) {
+          workbookData = candidate;
+          sheetsData = sList;
+          itemsData = items;
+          if (hasContent) break;
+        }
       }
-      // Legacy: if a proposal is selected but no workbook for that quote, show job-level workbook (quote_id null)
-      if (!workbookData && selectedQuoteId) {
-        const { data: legacy } = await supabase
-          .from('material_workbooks')
-          .select('*')
-          .eq('job_id', job.id)
-          .is('quote_id', null)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (legacy) workbookData = legacy;
-      }
+
       if (!workbookData) {
         setWorkbook(null);
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
 
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('*')
-        .eq('workbook_id', workbookData.id)
-        .order('order_index');
-
-      if (sheetsError) throw sheetsError;
-
-      const sheetIds = (sheetsData || []).map(s => s.id);
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('material_items')
-        .select('*')
-        .in('sheet_id', sheetIds)
-        .order('order_index');
-
-      if (itemsError) throw itemsError;
-
-      const sheets: MaterialSheet[] = (sheetsData || []).map(sheet => ({
+      const sheets: MaterialSheet[] = sheetsData.map((sheet: any) => ({
         ...sheet,
-        items: (itemsData || []).filter(item => item.sheet_id === sheet.id),
+        items: itemsData.filter((item: any) => item.sheet_id === sheet.id),
       }));
 
-      // Extract all unique categories from all items
       const uniqueCategories = new Set<string>();
-      (itemsData || []).forEach(item => {
-        if (item.category) {
-          uniqueCategories.add(item.category);
-        }
-      });
-      setAllCategories(Array.from(uniqueCategories).sort());
+      itemsData.forEach((item: any) => { if (item.category) uniqueCategories.add(item.category); });
+      const categories = Array.from(uniqueCategories).sort();
+      setAllCategories(categories);
 
-      setWorkbook({
-        ...workbookData,
-        sheets,
-      });
+      const fullWorkbook = { ...workbookData, sheets };
+      setWorkbook(fullWorkbook);
+
+      // Write to cache so the next visit is instant
+      workbookCache.set(cacheKey, { workbook: fullWorkbook, categories, cachedAt: Date.now() });
 
       if (sheets.length > 0 && !activeSheetId) {
         setActiveSheetId(sheets[0].id);
@@ -675,36 +708,22 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
       const { field } = editingCell;
       let value: any = cellValue;
 
-      console.log('=== SAVE CELL EDIT START ===');
-      console.log('Field:', field);
-      console.log('Input value:', cellValue);
-      console.log('Current item:', item);
-
       if (['quantity', 'cost_per_unit', 'price_per_unit'].includes(field)) {
         value = parseFloat(cellValue) || null;
       } else if (field === 'markup_percent') {
-        // Convert percentage input (e.g., "35") to decimal (e.g., 0.35)
         const percentValue = parseFloat(cellValue);
-        console.log('Parsed percentage value:', percentValue);
-        
         if (isNaN(percentValue)) {
-          console.error('Invalid number entered:', cellValue);
           toast.error('Please enter a valid number');
           cancelCellEdit();
           return;
         }
-        
-        // Check if the value is too large for the database field (numeric(5,4) = max 9.9999)
         const decimalValue = percentValue / 100;
         if (decimalValue > 9.9999) {
-          console.error('Markup too large:', decimalValue);
           toast.error('Markup cannot exceed 999.99%');
           cancelCellEdit();
           return;
         }
-        
         value = decimalValue;
-        console.log('Converted to decimal:', value);
       }
 
       const updateData: any = {
@@ -712,99 +731,64 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         updated_at: new Date().toISOString(),
       };
 
-      // Recalculate extended_cost when quantity or cost_per_unit changes
       if (field === 'quantity' || field === 'cost_per_unit') {
         const qty = field === 'quantity' ? value : item.quantity;
         const cost = field === 'cost_per_unit' ? value : item.cost_per_unit;
         updateData.extended_cost = qty && cost ? qty * cost : null;
       }
-      
-      // Recalculate price_per_unit when markup changes
+
       if (field === 'markup_percent' && item.cost_per_unit) {
-        const markupDecimal = value; // already converted to decimal above
-        const newPricePerUnit = item.cost_per_unit * (1 + markupDecimal);
+        const newPricePerUnit = item.cost_per_unit * (1 + value);
         updateData.price_per_unit = newPricePerUnit;
         updateData.extended_price = item.quantity && newPricePerUnit ? item.quantity * newPricePerUnit : null;
-        console.log('Recalculated prices:', { 
-          cost: item.cost_per_unit, 
-          markup: markupDecimal, 
-          newPrice: newPricePerUnit,
-          extendedPrice: updateData.extended_price 
-        });
       }
-      
-      console.log('Final updateData:', updateData);
-      
-      // Recalculate extended_price when quantity or price_per_unit changes
+
       if (field === 'quantity' || field === 'price_per_unit') {
         const qty = field === 'quantity' ? value : item.quantity;
         const price = field === 'price_per_unit' ? value : item.price_per_unit;
         updateData.extended_price = qty && price ? qty * price : null;
       }
 
-      // Save current scroll position
       scrollPositionRef.current = window.scrollY;
-
-      // Close editing mode immediately for better UX
       setEditingCell(null);
       setCellValue('');
 
-      // Optimistic update - update local state immediately
+      // Optimistic update — apply to local state and cache immediately
       if (workbook) {
         const updatedWorkbook = {
           ...workbook,
           sheets: workbook.sheets.map(sheet => ({
             ...sheet,
-            items: sheet.items.map(i => 
-              i.id === item.id 
-                ? { ...i, ...updateData }
-                : i
-            ),
+            items: sheet.items.map(i => i.id === item.id ? { ...i, ...updateData } : i),
           })),
         };
         setWorkbook(updatedWorkbook);
+        // Keep cache in sync so switching away and back shows current data
+        const cacheKey = `${job.id}:${effectiveQuoteId ?? null}`;
+        const existing = workbookCache.get(cacheKey);
+        if (existing) {
+          workbookCache.set(cacheKey, { ...existing, workbook: updatedWorkbook, cachedAt: Date.now() });
+        }
       }
 
-      // Save to database
-      console.log('Sending to database - Item ID:', item.id);
-      console.log('Update payload:', JSON.stringify(updateData, null, 2));
-      
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('material_items')
         .update(updateData)
-        .eq('id', item.id)
-        .select();
-
-      console.log('Database response - data:', data);
-      console.log('Database response - error:', error);
+        .eq('id', item.id);
 
       if (error) {
-        console.error('=== DATABASE ERROR ===');
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        console.error('Error details:', error.details);
-        console.error('Error hint:', error.hint);
         toast.error(`Failed to update ${field}: ${error.message}`);
         // Reload on error to revert optimistic update
+        workbookCache.delete(`${job.id}:${effectiveQuoteId ?? null}`);
         await loadWorkbook();
-      } else {
-        console.log('=== SUCCESS ===');
-        console.log('Database updated successfully');
-        console.log('Updated row:', data);
-        toast.success('Updated successfully');
       }
-      
-      console.log('=== SAVE CELL EDIT END ===');
 
-      // Restore scroll position
       requestAnimationFrame(() => {
         window.scrollTo({ top: scrollPositionRef.current, behavior: 'instant' });
       });
 
     } catch (error: any) {
-      console.error('=== EXCEPTION IN saveCellEdit ===');
-      console.error('Error type:', typeof error);
-      console.error('Error:', error);
+      console.error('Error in saveCellEdit:', error);
       console.error('Error message:', error?.message);
       console.error('Error stack:', error?.stack);
       toast.error(`Failed to save: ${error?.message || 'Unknown error'}`);
@@ -1402,77 +1386,144 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
     );
   }
 
-  const selectedQuote = jobQuotes.find(q => q.id === selectedQuoteId);
+  const selectedQuote = jobQuotes.find(q => q.id === effectiveQuoteId);
   const proposalLabel = selectedQuote
     ? (selectedQuote.proposal_number || selectedQuote.quote_number || `Proposal ${selectedQuote.id.slice(0, 8)}`)
     : (proposalNumber || 'Proposal');
 
-  return (
-    <div className="w-full px-4">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-lg border-2 border-slate-200">
-          <div className="relative w-full">
-            {jobQuotes.length > 1 ? (
-              <div className="flex items-center gap-2 mb-2">
-                <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
-                <Select value={selectedQuoteId ?? ''} onValueChange={(v) => setSelectedQuoteId(v || null)}>
-                  <SelectTrigger className="w-[200px] h-9 bg-white border-2">
-                    <SelectValue placeholder="Select proposal" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jobQuotes.map((q) => (
-                      <SelectItem key={q.id} value={q.id}>
-                        {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : jobQuotes.length === 1 ? (
-              <div className="absolute -top-1 right-2 z-20">
-                <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
-                  Proposal #{proposalLabel}
-                </Badge>
-              </div>
-            ) : proposalNumber ? (
-              <div className="absolute -top-1 right-2 z-20">
-                <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
-                  Proposal #{proposalNumber}
-                </Badge>
-              </div>
-            ) : null}
-            <TabsList className="grid w-full grid-cols-6 h-14 bg-white shadow-sm">
-            <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <FileSpreadsheet className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Workbook</span>
-            </TabsTrigger>
-            <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <DollarSign className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Breakdown</span>
-            </TabsTrigger>
-            <TabsTrigger value="comparison" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <TrendingUp className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Comparison</span>
-            </TabsTrigger>
-            <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <Package className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Packages</span>
-            </TabsTrigger>
-            <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <Package className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Crew Orders</span>
-            </TabsTrigger>
-            <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-base font-semibold">
-              <Upload className="w-5 h-5" />
-              <span className="text-xs sm:text-base">Upload</span>
-            </TabsTrigger>
-          </TabsList>
-          </div>
-        </div>
+  const materialsSlot = useMaterialsToolbarSlot();
+  const portalTarget = materialsSlot?.ready && materialsSlot?.ref?.current ? materialsSlot.ref.current : null;
 
-        <TabsContent value="manage" className="space-y-3">
+  const materialsToolbarContent = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <TabsList className="grid grid-cols-6 h-8 bg-white/95 shadow-sm border border-slate-200/80 rounded-md">
+        <TabsTrigger value="manage" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <FileSpreadsheet className="w-3.5 h-3.5" />
+          <span>Workbook</span>
+        </TabsTrigger>
+        <TabsTrigger value="breakdown" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <DollarSign className="w-3.5 h-3.5" />
+          <span>Breakdown</span>
+        </TabsTrigger>
+        <TabsTrigger value="comparison" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <TrendingUp className="w-3.5 h-3.5" />
+          <span>Comparison</span>
+        </TabsTrigger>
+        <TabsTrigger value="packages" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <Package className="w-3.5 h-3.5" />
+          <span>Packages</span>
+        </TabsTrigger>
+        <TabsTrigger value="crew-orders" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <Package className="w-3.5 h-3.5" />
+          <span>Crew Orders</span>
+        </TabsTrigger>
+        <TabsTrigger value="upload" className="flex items-center gap-1 text-xs font-semibold py-1 px-2">
+          <Upload className="w-3.5 h-3.5" />
+          <span>Upload</span>
+        </TabsTrigger>
+      </TabsList>
+      {(jobQuotes.length === 1 || proposalNumber) && (
+        <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md shrink-0">
+          Proposal #{proposalLabel}
+        </Badge>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="w-full min-w-0 px-2 flex flex-col h-full">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-1 flex flex-col flex-1 min-h-0 min-w-0">
+        {portalTarget && createPortal(materialsToolbarContent, portalTarget)}
+        {!portalTarget && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-gradient-to-r from-slate-50 to-slate-100 p-2 rounded-lg border border-slate-200">
+            <div className="relative w-full">
+              {jobQuotes.length > 1 ? (
+                <div className="flex items-center gap-2 mb-2">
+                  <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
+                  <Select
+                    value={effectiveQuoteId ?? ''}
+                    onValueChange={(v) => {
+                      const id = v || null;
+                      onQuoteChange?.(id);
+                      setSelectedQuoteId(id);
+                    }}
+                  >
+                    <SelectTrigger className="w-[160px] h-8 bg-white border text-xs">
+                      <SelectValue placeholder="Select proposal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobQuotes.map((q) => (
+                        <SelectItem key={q.id} value={q.id}>
+                          {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (jobQuotes.length === 1 || proposalNumber) ? (
+                <div className="absolute -top-1 right-2 z-20">
+                  <Badge variant="secondary" className="bg-blue-600 text-white border-blue-700 text-xs font-semibold shadow-md">
+                    Proposal #{proposalLabel}
+                  </Badge>
+                </div>
+              ) : null}
+              <TabsList className="grid w-full grid-cols-6 h-9 bg-white shadow-sm">
+                <TabsTrigger value="manage" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Workbook</span>
+                </TabsTrigger>
+                <TabsTrigger value="breakdown" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>Breakdown</span>
+                </TabsTrigger>
+                <TabsTrigger value="comparison" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Comparison</span>
+                </TabsTrigger>
+                <TabsTrigger value="packages" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Packages</span>
+                </TabsTrigger>
+                <TabsTrigger value="crew-orders" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Crew Orders</span>
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1 text-xs font-semibold py-1">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+        )}
+        {jobQuotes.length > 1 && (
+          <div className="flex items-center gap-2 mb-2">
+            <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Proposal</Label>
+            <Select
+              value={effectiveQuoteId ?? ''}
+              onValueChange={(v) => {
+                const id = v || null;
+                onQuoteChange?.(id);
+                setSelectedQuoteId(id);
+              }}
+            >
+              <SelectTrigger className="w-[160px] h-8 bg-white border text-xs">
+                <SelectValue placeholder="Select proposal" />
+              </SelectTrigger>
+              <SelectContent>
+                {jobQuotes.map((q) => (
+                  <SelectItem key={q.id} value={q.id}>
+                    {q.proposal_number || q.quote_number || `Proposal ${q.id.slice(0, 8)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <TabsContent value="manage" className="space-y-3 flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
           {!workbook ? (
-            <Card>
+            <Card className="w-full">
               <CardContent className="py-12 text-center">
                 <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
                 <h3 className="text-lg font-semibold mb-2">No Material Workbook</h3>
@@ -1487,10 +1538,10 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
             </Card>
           ) : (
             <>
-              <Card className="border-2">
-                <CardContent className="p-0">
-                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2">
-                    <div className="flex items-center justify-between gap-2 px-2 py-1">
+              <Card className="border-2 w-full flex-1 min-h-0 flex flex-col overflow-hidden">
+                <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 border-b">
+                    <div className="flex items-center justify-between gap-1 px-1.5 py-0.5">
                       <div className="flex items-center gap-1 overflow-x-auto flex-1">
                         {workbook.sheets.map((sheet) => (
                           <div key={sheet.id} className="relative group">
@@ -1498,11 +1549,11 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                               variant={activeSheetId === sheet.id ? 'default' : 'ghost'}
                               size="sm"
                               onClick={() => handleSheetChange(sheet.id)}
-                              className={`flex items-center gap-2 min-w-[140px] justify-start font-semibold pr-8 ${activeSheetId === sheet.id ? 'bg-white shadow-md border-2 border-primary' : 'hover:bg-white/50'}`}
+                              className={`flex items-center gap-1 min-w-[100px] justify-start font-semibold pr-6 text-xs h-7 ${activeSheetId === sheet.id ? 'bg-white shadow border border-primary' : 'hover:bg-white/50'}`}
                             >
-                              <FileSpreadsheet className="w-4 h-4" />
+                              <FileSpreadsheet className="w-3 h-3" />
                               {sheet.sheet_name}
-                              <Badge variant="secondary" className="ml-auto text-xs">
+                              <Badge variant="secondary" className="ml-auto text-[10px] px-1">
                                 {sheet.items.length}
                               </Badge>
                             </Button>
@@ -1530,32 +1581,32 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                             variant="outline"
                             size="sm"
                             onClick={() => setShowAddSheetDialog(true)}
-                            className="border-2 border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold min-w-[140px]"
+                            className="border border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold min-w-[90px] h-7 text-xs"
                           >
-                            <Plus className="w-5 h-5 mr-1" />
+                            <Plus className="w-3 h-3 mr-0.5" />
                             Add Sheet
                           </Button>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 flex-wrap">
                         {packageSelectionMode ? (
                           <>
                             <Button
                               onClick={openAddToPackageDialog}
                               size="sm"
                               disabled={selectedMaterialsForPackageAdd.size === 0}
-                              className="bg-green-600 hover:bg-green-700 whitespace-nowrap"
+                              className="h-6 text-xs bg-green-600 hover:bg-green-700 whitespace-nowrap px-2"
                             >
-                              <Package className="w-4 h-4 mr-1" />
-                              Add to Package ({selectedMaterialsForPackageAdd.size})
+                              <Package className="w-3 h-3 mr-0.5" />
+                              Add to Pkg ({selectedMaterialsForPackageAdd.size})
                             </Button>
                             <Button
                               onClick={togglePackageSelectionMode}
                               size="sm"
                               variant="outline"
-                              className="whitespace-nowrap"
+                              className="h-6 text-xs whitespace-nowrap px-2"
                             >
-                              <X className="w-4 h-4 mr-1" />
+                              <X className="w-3 h-3 mr-0.5" />
                               Cancel
                             </Button>
                           </>
@@ -1565,18 +1616,18 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                               onClick={openBulkMoveDialog}
                               size="sm"
                               disabled={selectedMaterialsForMove.size === 0}
-                              className="bg-orange-600 hover:bg-orange-700 whitespace-nowrap"
+                              className="h-6 text-xs bg-orange-600 hover:bg-orange-700 whitespace-nowrap px-2"
                             >
-                              <MoveHorizontal className="w-4 h-4 mr-1" />
-                              Move Selected ({selectedMaterialsForMove.size})
+                              <MoveHorizontal className="w-3 h-3 mr-0.5" />
+                              Move ({selectedMaterialsForMove.size})
                             </Button>
                             <Button
                               onClick={toggleBulkMoveMode}
                               size="sm"
                               variant="outline"
-                              className="whitespace-nowrap"
+                              className="h-6 text-xs whitespace-nowrap px-2"
                             >
-                              <X className="w-4 h-4 mr-1" />
+                              <X className="w-3 h-3 mr-0.5" />
                               Cancel
                             </Button>
                           </>
@@ -1587,10 +1638,10 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                 onClick={toggleBulkMoveMode}
                                 size="sm"
                                 variant="outline"
-                                className="whitespace-nowrap bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100"
+                                className="h-6 text-xs whitespace-nowrap px-2 bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100"
                               >
-                                <MoveHorizontal className="w-4 h-4 mr-1" />
-                                Select to Move
+                                <MoveHorizontal className="w-3 h-3 mr-0.5" />
+                                Move
                               </Button>
                             )}
                             {packages.length > 0 && (
@@ -1598,27 +1649,27 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                 onClick={togglePackageSelectionMode}
                                 size="sm"
                                 variant="outline"
-                                className="whitespace-nowrap bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
+                                className="h-6 text-xs whitespace-nowrap px-2 bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
                               >
-                                <Package className="w-4 h-4 mr-1" />
-                                Select for Package
+                                <Package className="w-3 h-3 mr-0.5" />
+                                Package
                               </Button>
                             )}
                             <Button
                               onClick={() => setShowDocumentViewer(true)}
                               size="sm"
                               variant="outline"
-                              className="whitespace-nowrap bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                              className="h-6 text-xs whitespace-nowrap px-2 bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
                             >
-                              <FileText className="w-4 h-4 mr-1" />
-                              View Documents
+                              <FileText className="w-3 h-3 mr-0.5" />
+                              Documents
                             </Button>
                             <Button
                               onClick={() => openAddDialog()}
                               size="sm"
-                              className="gradient-primary whitespace-nowrap"
+                              className="h-6 text-xs gradient-primary whitespace-nowrap px-2"
                             >
-                              <Plus className="w-4 h-4 mr-1" />
+                              <Plus className="w-3 h-3 mr-0.5" />
                               Add Material
                             </Button>
                           </>
@@ -1627,22 +1678,22 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                     </div>
                   </div>
 
-                  <div className="p-3 bg-white border-b">
-                    <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-white border-b">
+                    <div className="flex items-center gap-1">
                       <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                         <Input
-                          placeholder="Search materials in current sheet..."
+                          placeholder="Search materials..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-9 pr-9"
+                          className="pl-7 pr-7 h-7 text-xs"
                         />
                         {searchTerm && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setSearchTerm('')}
-                            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                            className="absolute right-0.5 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -1653,67 +1704,65 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
 
 
 
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto flex-1 min-h-0">
                     {categoryGroups.length === 0 ? (
-                      <div className="text-center py-12 text-muted-foreground">
-                        <FileSpreadsheet className="w-16 h-16 mx-auto mb-3 opacity-50" />
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        <FileSpreadsheet className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>No materials in this sheet</p>
                       </div>
                     ) : (
-                      <div className="inline-block min-w-full">
-                        <table className="border-collapse w-auto">
+                      <div className="w-full text-xs">
+                        <table className="border-collapse w-full">
                         <thead className="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-10">
                           <tr>
                             {(packageSelectionMode || bulkMoveMode) && (
-                              <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
-                                <CheckSquare className="w-5 h-5 mx-auto" />
+                              <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-6">
+                                <CheckSquare className="w-3 h-3 mx-auto" />
                               </th>
                             )}
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">
-                              <Package className="w-5 h-5 mx-auto" />
-                            </th>
-                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">SKU</th>
-                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
-                            <th className="text-left p-3 font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Qty</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Length</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Color</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Cost/Unit</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Markup %</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Price/Unit</th>
-                            <th className="text-right p-3 font-bold border-r border-slate-600 whitespace-nowrap">Total Price</th>
-                            <th className="text-center p-3 font-bold border-r border-slate-600 whitespace-nowrap">Status</th>
-                            <th className="text-center p-3 font-bold whitespace-nowrap">Actions</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-16 max-w-[4rem]">Pkg</th>
+                            <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">SKU</th>
+                            <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">Material</th>
+                            <th className="text-left p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap">Usage</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-10">Qty</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-12">Length</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-14">Color</th>
+                            <th className="text-right p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-14">Cost/Unit</th>
+                            <th className="text-center p-0.5 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-12">Markup %</th>
+                            <th className="text-right p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-16">Price/Unit</th>
+                            <th className="text-right p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-16">Total</th>
+                            <th className="text-center p-1 text-[10px] font-bold border-r border-slate-600 whitespace-nowrap w-14">Status</th>
+                            <th className="text-center p-1 text-[10px] font-bold whitespace-nowrap w-14">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {categoryGroups.map((catGroup, catIndex) => (
                             <>
-                              <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y-2 border-indigo-300">
-                                <td colSpan={packageSelectionMode ? 13 : 12} className="p-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
-                                      <h3 className="font-bold text-lg text-indigo-900">{catGroup.category}</h3>
-                                      <Badge variant="outline" className="bg-white">
+                              <tr key={`cat-${catIndex}`} className="bg-gradient-to-r from-indigo-100 to-indigo-50 border-y border-indigo-300">
+                                <td colSpan={packageSelectionMode ? 13 : 12} className="p-1">
+                                  <div className="flex items-center justify-between flex-wrap gap-1">
+                                    <div className="flex items-center gap-1">
+                                      <FileSpreadsheet className="w-3 h-3 text-indigo-700" />
+                                      <h3 className="font-bold text-xs text-indigo-900">{catGroup.category}</h3>
+                                      <Badge variant="outline" className="bg-white text-[10px] px-1">
                                         {catGroup.items.length} items
                                       </Badge>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-1">
                                       <Button
                                         size="sm"
                                         onClick={() => openZohoOrderDialogForCategory(catGroup.items)}
-                                        className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white"
+                                        className="h-6 text-[10px] bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-2"
                                       >
-                                        <ShoppingCart className="w-3 h-3 mr-1" />
+                                        <ShoppingCart className="w-2.5 h-2.5 mr-0.5" />
                                         Order All
                                       </Button>
                                       <Button
                                         size="sm"
                                         onClick={() => openAddDialog(catGroup.category)}
-                                        className="bg-indigo-600 hover:bg-indigo-700"
+                                        className="h-6 text-[10px] bg-indigo-600 hover:bg-indigo-700 px-2"
                                       >
-                                        <Plus className="w-3 h-3 mr-1" />
+                                        <Plus className="w-2.5 h-2.5 mr-0.5" />
                                         Add to {catGroup.category}
                                       </Button>
                                     </div>
@@ -1759,8 +1808,8 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                         </div>
                                       </td>
                                     )}
-                                    <td className="p-1 border-r whitespace-nowrap">
-                                      <div className="min-w-[180px]">
+                                    <td className="p-1 border-r whitespace-nowrap w-20 max-w-[5rem]">
+                                      <div className="min-w-0">
                                         <Select
                                           value=""
                                           onValueChange={(value) => {
@@ -1772,11 +1821,11 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             }
                                           }}
                                         >
-                                          <SelectTrigger className="h-8 text-xs border-2 bg-white">
+                                          <SelectTrigger className="h-6 text-[10px] border bg-white w-full max-w-[4rem]">
                                             <SelectValue placeholder={
                                               materialPackageNames.length > 0
                                                 ? materialPackageNames.join(', ')
-                                                : 'No package'
+                                                : '–'
                                             } />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -1831,7 +1880,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                       </div>
                                     </td>
                                     <td className="p-1 border-r whitespace-nowrap">
-                                      <div className="font-mono text-sm text-muted-foreground p-2 min-h-[32px]">
+                                      <div className="font-mono text-xs text-muted-foreground p-1 min-h-[24px]">
                                         {item.sku || '–'}
                                       </div>
                                     </td>
@@ -1846,16 +1895,16 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm"
+                                          className="h-7 text-sm"
                                         />
                                       ) : (
                                         <div 
                                           onClick={() => startCellEdit(item.id, 'material_name', item.material_name)}
-                                          className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] max-w-[400px]"
+                                          className="font-medium text-sm cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px] max-w-[360px]"
                                         >
                                           {item.material_name}
                                           {item.notes && (
-                                            <div className="text-xs text-muted-foreground mt-1">{item.notes}</div>
+                                            <div className="text-xs text-muted-foreground mt-0.5">{item.notes}</div>
                                           )}
                                         </div>
                                       )}
@@ -1872,12 +1921,12 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm"
+                                          className="h-6 text-xs"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'usage', item.usage)}
-                                          className="text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.usage || '-'}
                                         </div>
@@ -1896,12 +1945,12 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm text-center"
+                                          className="h-6 text-xs text-center"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'quantity', item.quantity)}
-                                          className="text-center font-semibold cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-center font-semibold text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.quantity}
                                         </div>
@@ -1919,12 +1968,12 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm text-center"
+                                          className="h-6 text-xs text-center"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'length', item.length)}
-                                          className="text-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-center text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.length || '-'}
                                         </div>
@@ -1942,12 +1991,12 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm text-center"
+                                          className="h-6 text-xs text-center"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'color', item.color)}
-                                          className="text-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-center text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.color || '-'}
                                         </div>
@@ -1967,71 +2016,60 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm text-right"
+                                          className="h-6 text-xs text-right"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'cost_per_unit', item.cost_per_unit)}
-                                          className="text-right font-mono text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.cost_per_unit ? `$${item.cost_per_unit.toFixed(2)}` : '-'}
                                         </div>
                                       )}
                                     </td>
 
-                                    <td className="p-1 border-r whitespace-nowrap">
+                                    <td className="p-0.5 border-r whitespace-nowrap">
                                       {isEditingThisCell('markup_percent') ? (
-                                        <div className="flex items-center gap-1 px-2">
+                                        <div className="flex items-center gap-0.5 px-1">
                                           <Input
                                             type="number"
                                             step="0.1"
                                             min="0"
                                             max="999"
                                             value={cellValue}
-                                            onChange={(e) => {
-                                              console.log('Markup input changed:', e.target.value);
-                                              setCellValue(e.target.value);
-                                            }}
+                                            onChange={(e) => setCellValue(e.target.value)}
                                             onBlur={() => saveCellEdit(item)}
                                             onKeyDown={(e) => {
-                                              if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                saveCellEdit(item);
-                                              }
-                                              if (e.key === 'Escape') {
-                                                e.preventDefault();
-                                                cancelCellEdit();
-                                              }
+                                              if (e.key === 'Enter') { e.preventDefault(); saveCellEdit(item); }
+                                              if (e.key === 'Escape') { e.preventDefault(); cancelCellEdit(); }
                                             }}
                                             autoFocus
-                                            className="h-8 text-sm text-center w-20"
+                                            className="h-6 text-xs text-center w-14"
                                             placeholder="35"
                                           />
-                                          <span className="text-xs text-muted-foreground">%</span>
+                                          <span className="text-[10px] text-muted-foreground">%</span>
                                         </div>
                                       ) : (
                                         <div
                                           onClick={() => {
-                                            // When both cost and price exist, use calculated % difference; else use stored
                                             const displayMarkup = (item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
                                               ? calculateMarkupPercent(item.cost_per_unit, item.price_per_unit)
                                               : (item.markup_percent != null ? item.markup_percent * 100 : 0);
                                             startCellEdit(item.id, 'markup_percent', displayMarkup.toFixed(1));
                                           }}
-                                          className="cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px] flex items-center justify-center"
-                                          title="Click to edit markup % (difference between cost and price)"
+                                          className="cursor-pointer hover:bg-blue-100 py-0.5 px-1 rounded min-h-[22px] flex items-center justify-center text-xs"
+                                          title="Click to edit markup %"
                                         >
                                           {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null) || (item.markup_percent != null && item.markup_percent > 0) || markupPercent > 0 ? (
-                                            <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold">
-                                              <Percent className="w-3 h-3 mr-1" />
-                                              {/* Always show % difference between cost and price when both exist */}
+                                            <Badge variant="secondary" className="bg-green-100 text-green-800 font-semibold text-[10px] px-1.5 py-0">
+                                              <Percent className="w-2.5 h-2.5 mr-0.5" />
                                               {(item.cost_per_unit != null && item.cost_per_unit > 0 && item.price_per_unit != null)
                                                 ? markupPercent.toFixed(1)
                                                 : (item.markup_percent != null ? (item.markup_percent * 100).toFixed(1) : markupPercent.toFixed(1))
                                               }%
                                             </Badge>
                                           ) : (
-                                            <span className="text-xs text-muted-foreground">Click to set</span>
+                                            <span className="text-[10px] text-muted-foreground">Set</span>
                                           )}
                                         </div>
                                       )}
@@ -2050,20 +2088,20 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                             if (e.key === 'Escape') cancelCellEdit();
                                           }}
                                           autoFocus
-                                          className="h-8 text-sm text-right"
+                                          className="h-6 text-xs text-right"
                                         />
                                       ) : (
                                         <div
                                           onClick={() => startCellEdit(item.id, 'price_per_unit', item.price_per_unit)}
-                                          className="text-right font-mono text-sm cursor-pointer hover:bg-blue-100 p-2 rounded min-h-[32px]"
+                                          className="text-right font-mono text-xs cursor-pointer hover:bg-blue-100 p-1 rounded min-h-[24px]"
                                         >
                                           {item.price_per_unit ? `$${item.price_per_unit.toFixed(2)}` : '-'}
                                         </div>
                                       )}
                                     </td>
 
-                                    <td className="p-2 text-right border-r">
-                                      <div className="font-bold text-sm text-green-700">
+                                    <td className="p-1 text-right border-r">
+                                      <div className="font-bold text-xs text-green-700">
                                         {item.extended_price ? `$${item.extended_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
                                       </div>
                                     </td>
@@ -2073,7 +2111,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                         value={item.status || 'not_ordered'}
                                         onValueChange={(value) => updateStatus(item.id, value)}
                                       >
-                                        <SelectTrigger className={`h-8 text-xs font-semibold border-2 ${getStatusColor(item.status || 'not_ordered')}`}>
+                                        <SelectTrigger className={`h-6 text-[10px] font-semibold border ${getStatusColor(item.status || 'not_ordered')}`}>
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -2087,34 +2125,35 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
                                       </Select>
                                     </td>
 
-                                    <td className="p-1">
-                                      <div className="flex items-center justify-center gap-1">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => openZohoOrderDialogForMaterial(item)}
-                                          className="text-purple-600 hover:bg-purple-50 hover:text-purple-700"
-                                          title="Create Zoho Order"
-                                        >
-                                          <ShoppingCart className="w-4 h-4" />
-                                        </Button>
-                                        <MaterialItemPhotos 
-                                          materialItemId={item.id}
-                                          materialName={item.material_name}
-                                        />
-                                        <Button size="sm" variant="ghost" onClick={() => openMoveItem(item)} title="Move">
-                                          <MoveHorizontal className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => deleteItem(item.id)}
-                                          className="text-destructive hover:bg-destructive/10"
-                                          title="Delete"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      </div>
+                                    <td className="p-0.5">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Actions">
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem onClick={() => openZohoOrderDialogForMaterial(item)}>
+                                            <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                                            Create Zoho Order
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => setOpenPhotosForItem({ id: item.id, materialName: item.material_name })}>
+                                            <ImageIcon className="w-3.5 h-3.5 mr-2" />
+                                            Photos
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => openMoveItem(item)}>
+                                            <MoveHorizontal className="w-3.5 h-3.5 mr-2" />
+                                            Move
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={() => deleteItem(item.id)}
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                            Delete
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </td>
                                   </tr>
                                 );
@@ -2296,7 +2335,7 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-2">
-          <MaterialWorkbookManager jobId={job.id} quoteId={selectedQuoteId ?? undefined} onWorkbookCreated={loadWorkbook} />
+          <MaterialWorkbookManager jobId={job.id} quoteId={effectiveQuoteId ?? undefined} onWorkbookCreated={loadWorkbook} />
         </TabsContent>
       </Tabs>
 
@@ -3246,6 +3285,17 @@ export function MaterialsManagement({ job, userId, proposalNumber }: MaterialsMa
           )}
         </DialogContent>
       </Dialog>
+
+      {openPhotosForItem && (
+        <MaterialItemPhotos
+          key={openPhotosForItem.id}
+          materialItemId={openPhotosForItem.id}
+          materialName={openPhotosForItem.materialName}
+          trigger="none"
+          open={true}
+          onOpenChange={(open) => !open && setOpenPhotosForItem(null)}
+        />
+      )}
     </div>
   );
 }

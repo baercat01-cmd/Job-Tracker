@@ -29,12 +29,20 @@ interface MaterialItemPhoto {
 interface MaterialItemPhotosProps {
   materialItemId: string;
   materialName: string;
+  /** When 'none', only the dialog is rendered (for opening from a dropdown elsewhere) */
+  trigger?: 'default' | 'none';
+  /** Controlled open state when opening from parent */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function MaterialItemPhotos({ materialItemId, materialName }: MaterialItemPhotosProps) {
+export function MaterialItemPhotos({ materialItemId, materialName, trigger = 'default', open: controlledOpen, onOpenChange }: MaterialItemPhotosProps) {
   const [photos, setPhotos] = useState<MaterialItemPhoto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showDialog, setShowDialog] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const showDialog = isControlled ? controlledOpen : internalOpen;
+  const setShowDialog = isControlled ? (v: boolean) => onOpenChange?.(v) : setInternalOpen;
   const [selectedPhoto, setSelectedPhoto] = useState<MaterialItemPhoto | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadCaption, setUploadCaption] = useState('');
@@ -184,39 +192,41 @@ export function MaterialItemPhotos({ materialItemId, materialName }: MaterialIte
     }
   }
 
-  if (loading) {
+  if (loading && trigger === 'default') {
     return null;
   }
 
   return (
     <>
-      <div className="flex items-center gap-1">
-        {photos.length > 0 ? (
+      {trigger === 'default' && (
+        <div className="flex items-center gap-1">
+          {photos.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDialog(true)}
+              className="gap-2"
+            >
+              <ImageIcon className="w-4 h-4" />
+              {photos.length}
+            </Button>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              <ImageIcon className="w-3 h-3 mr-1" />
+              0
+            </Badge>
+          )}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            onClick={() => setShowDialog(true)}
-            className="gap-2"
+            onClick={openUploadDialog}
+            className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            title="Upload photos"
           >
-            <ImageIcon className="w-4 h-4" />
-            {photos.length}
+            <Upload className="w-4 h-4" />
           </Button>
-        ) : (
-          <Badge variant="outline" className="text-muted-foreground">
-            <ImageIcon className="w-3 h-3 mr-1" />
-            0
-          </Badge>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={openUploadDialog}
-          className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-          title="Upload photos"
-        >
-          <Upload className="w-4 h-4" />
-        </Button>
-      </div>
+        </div>
+      )}
 
       {/* Photos Gallery Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

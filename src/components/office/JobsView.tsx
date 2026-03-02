@@ -98,7 +98,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
         setSelectedJob(job);
         // Auto-open materials tab if requested (from notification)
         if (openMaterialsTab) {
-          setSelectedTab('materials');
+          setSelectedTab('proposal-materials');
         }
         // Scroll to job card if it exists in the DOM
         setTimeout(() => {
@@ -193,6 +193,23 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
       loadJobs();
     } catch (error: any) {
       console.error('Error setting job on hold:', error);
+      toast.error('Failed to update job status');
+    }
+  }
+
+  async function setJobQuoting(jobId: string) {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'quoting', updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job moved to Quoting');
+      loadJobs();
+    } catch (error: any) {
+      console.error('Error moving job to quoting:', error);
       toast.error('Failed to update job status');
     }
   }
@@ -636,7 +653,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedJob(job);
-                            setSelectedTab('materials');
+                            setSelectedTab('proposal-materials');
                           }}
                         >
                           <Package className="w-3 h-3 sm:mr-1" />
@@ -866,7 +883,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -919,7 +936,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -932,7 +949,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('materials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <Package className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1094,7 +1111,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1147,7 +1164,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1160,7 +1177,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('materials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <Package className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1313,7 +1330,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1366,7 +1383,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1379,7 +1396,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('materials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <Package className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1485,6 +1502,15 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                                 <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    setJobQuoting(job.id);
+                                  }}
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  Move to Quoting
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setJobPrepping(job.id);
                                   }}
                                 >
@@ -1532,7 +1558,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <div className="flex items-center justify-between">
@@ -1585,7 +1611,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('financials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <ScrollText className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1598,7 +1624,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedJob(job);
-                                setSelectedTab('materials');
+                                setSelectedTab('proposal-materials');
                               }}
                             >
                               <Package className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1661,7 +1687,7 @@ export function JobsView({ showArchived = false, selectedJobId, openMaterialsTab
           const job = jobs.find(j => j.id === jobId);
           if (job) {
             setSelectedJob(job);
-            setSelectedTab('materials');
+            setSelectedTab('proposal-materials');
           }
         }}
       />

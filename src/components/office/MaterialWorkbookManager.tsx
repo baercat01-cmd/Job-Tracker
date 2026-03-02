@@ -23,7 +23,6 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { parseExcelWorkbook, validateMaterialWorkbook, parseNumericValue, parsePercentValue } from '@/lib/excel-parser';
-import { FunctionsHttpError } from '@supabase/supabase-js';
 
 interface MaterialWorkbook {
   id: string;
@@ -50,7 +49,6 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
   const [uploading, setUploading] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [creatingQuote, setCreatingQuote] = useState(false);
   const [job, setJob] = useState<any>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [creatingWorkbook, setCreatingWorkbook] = useState(false);
@@ -357,36 +355,13 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
       setSelectedFile(null);
       await loadWorkbooks();
       onWorkbookCreated?.();
+      // Open the uploaded workbook immediately instead of staying on this overview
+      window.location.href = `/office/workbooks/${newWorkbook.id}`;
     } catch (error: any) {
       console.error('Error uploading workbook:', error);
       toast.error('Failed to upload workbook: ' + error.message);
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function lockWorkbook(workbookId: string) {
-    if (!confirm('Lock this version? You won\'t be able to edit it after locking.')) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('material_workbooks')
-        .update({
-          status: 'locked',
-          locked_at: new Date().toISOString(),
-          locked_by: profile?.id,
-        })
-        .eq('id', workbookId);
-
-      if (error) throw error;
-
-      toast.success('Workbook locked');
-      await loadWorkbooks();
-    } catch (error: any) {
-      console.error('Error locking workbook:', error);
-      toast.error('Failed to lock workbook');
     }
   }
 
@@ -408,96 +383,6 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
     } catch (error: any) {
       console.error('Error deleting workbook:', error);
       toast.error('Failed to delete workbook');
-    }
-  }
-
-  async function createZohoQuote(workbookId: string) {
-    if (!job) {
-      toast.error('Job information not found');
-      return;
-    }
-
-    if (job.zoho_quote_id) {
-      const confirmOverwrite = confirm(
-        `A quote already exists (${job.zoho_quote_number}). Create a new quote? This will replace the existing quote reference.`
-      );
-      if (!confirmOverwrite) return;
-    }
-
-    if (!confirm(
-      `Create Zoho Books Quote for ${job.name}?\n\nThis will include all materials with SKUs from this workbook for tracking purposes.`
-    )) {
-      return;
-    }
-
-    setCreatingQuote(true);
-
-    try {
-      console.log('📋 Creating Zoho quote for job:', job.name);
-
-      const { data: sheetsData, error: sheetsError } = await supabase
-        .from('material_sheets')
-        .select('id')
-        .eq('workbook_id', workbookId);
-
-      if (sheetsError) throw sheetsError;
-      const sheetIds = sheetsData?.map(s => s.id) || [];
-
-      const { data: materialsWithSkus, error: materialsError } = await supabase
-        .from('material_items')
-        .select('*')
-        .in('sheet_id', sheetIds)
-        .not('sku', 'is', null)
-        .neq('sku', '');
-
-      if (materialsError) throw materialsError;
-
-      if (!materialsWithSkus || materialsWithSkus.length === 0) {
-        toast.error('No materials with SKUs found in this workbook');
-        return;
-      }
-
-      console.log('📦 Found', materialsWithSkus.length, 'materials with SKUs');
-
-      const { data, error } = await supabase.functions.invoke('zoho-sync', {
-        body: {
-          action: 'create_quote',
-          jobId: job.id,
-          jobName: job.name,
-          materialItems: materialsWithSkus,
-          materialItemIds: materialsWithSkus.map(m => m.id),
-          userId: profile?.id,
-          notes: `Material tracking quote for ${job.name}`,
-        },
-      });
-
-      if (error) {
-        let errorMessage = error.message;
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const statusCode = error.context?.status ?? 500;
-            const textContent = await error.context?.text();
-            errorMessage = `[Code: ${statusCode}] ${textContent || error.message || 'Unknown error'}`;
-          } catch {
-            errorMessage = error.message || 'Failed to read response';
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      console.log('✅ Quote created:', data);
-
-      await loadJob();
-
-      toast.success(
-        `Quote ${data.quote.number} created in Zoho Books!\n\n${materialsWithSkus.length} materials included for tracking.`,
-        { duration: 5000 }
-      );
-    } catch (error: any) {
-      console.error('❌ Error creating quote:', error);
-      toast.error(`Failed to create quote: ${error.message}`);
-    } finally {
-      setCreatingQuote(false);
     }
   }
 
@@ -590,32 +475,6 @@ export function MaterialWorkbookManager({ jobId, quoteId, onWorkbookCreated }: M
                   >
                     <Eye className="w-4 h-4 mr-1" />
                     View
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => createZohoQuote(workingVersion.id)}
-                    disabled={creatingQuote}
-                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                  >
-                    {creatingQuote ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <FileSpreadsheet className="w-4 h-4 mr-1" />
-                        Create Quote
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => lockWorkbook(workingVersion.id)}
-                    className="bg-amber-600 hover:bg-amber-700"
-                  >
-                    <Lock className="w-4 h-4 mr-1" />
-                    Lock Version
                   </Button>
                   <Button
                     size="sm"

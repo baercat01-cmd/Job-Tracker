@@ -1,0 +1,58 @@
+import { createContext, useContext, useState, useCallback } from 'react';
+
+export interface ProposalSummary {
+  proposalNumber: string;
+  materials: number;
+  labor: number;
+  subtotal: number;
+  tax: number;
+  grandTotal: number;
+}
+
+type SetProposalSummary = (summary: ProposalSummary | null) => void;
+
+const ProposalSummaryContext = createContext<{
+  summary: ProposalSummary | null;
+  setSummary: SetProposalSummary;
+} | null>(null);
+
+export function ProposalSummaryProvider({ children }: { children: React.ReactNode }) {
+  const [summary, setSummary] = useState<ProposalSummary | null>(null);
+  const setSummaryStable = useCallback((s: ProposalSummary | null) => setSummary(s), []);
+  return (
+    <ProposalSummaryContext.Provider value={{ summary, setSummary: setSummaryStable }}>
+      {children}
+    </ProposalSummaryContext.Provider>
+  );
+}
+
+export function useProposalSummary() {
+  return useContext(ProposalSummaryContext);
+}
+
+/** Renders the proposal line (Proposal #, Materials, Labor, Subtotal, Tax, Grand Total) for the green header bar */
+export function ProposalSummaryRow({ className }: { className?: string }) {
+  const ctx = useProposalSummary();
+  const s = ctx?.summary;
+  if (!s) return null;
+  const fmt = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  return (
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs ${className ?? ''}`}>
+      <span className="font-semibold text-yellow-100">
+        Proposal #{s.proposalNumber}
+      </span>
+      <span className="text-yellow-600/80">|</span>
+      <span className="text-yellow-100/90">Materials:</span>
+      <span className="font-semibold text-yellow-100">${fmt(s.materials)}</span>
+      <span className="text-yellow-100/90">Labor:</span>
+      <span className="font-semibold text-yellow-100">${fmt(s.labor)}</span>
+      <span className="text-yellow-600/80">|</span>
+      <span className="text-yellow-100/90">Subtotal:</span>
+      <span className="font-semibold text-yellow-100">${fmt(s.subtotal)}</span>
+      <span className="text-yellow-100/90">Tax (7%):</span>
+      <span className="font-semibold text-amber-200">${fmt(s.tax)}</span>
+      <span className="text-yellow-600/80">|</span>
+      <span className="font-bold text-green-300">GRAND TOTAL: ${fmt(s.grandTotal)}</span>
+    </div>
+  );
+}

@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer } from 'lucide-react';
+import { Clock, Users, Calendar, ChevronDown, ChevronRight, TrendingUp, Target, Camera, FileText, AlertCircle, Package, Activity, Briefcase, Building2, MapPin, FileCheck, ArrowLeft, Edit, DollarSign, FileSpreadsheet, Mail, Printer, LayoutGrid } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,6 +13,7 @@ import { JobSchedule } from './JobSchedule';
 import { JobDocuments } from './JobDocuments';
 import { JobPhotosView } from './JobPhotosView';
 import { JobFinancials } from './JobFinancials';
+import { ProposalAndMaterialsView } from './ProposalAndMaterialsView';
 import { CustomerPortalManagement } from './CustomerPortalManagement';
 import { SubcontractorEstimatesManagement } from './SubcontractorEstimatesManagement';
 import { JobCommunications } from './JobCommunications';
@@ -24,6 +25,9 @@ import { format } from 'date-fns';
 
 import { useAuth } from '@/hooks/useAuth';
 import type { Job } from '@/types';
+import { JobDetailProposalToolbarContext } from '@/contexts/JobDetailProposalToolbarContext';
+import { JobDetailMaterialsToolbarSlotContext } from '@/contexts/JobDetailMaterialsToolbarContext';
+import { ProposalSummaryProvider, ProposalSummaryRow } from '@/contexts/ProposalSummaryContext';
 
 interface JobDetailedViewProps {
   job: Job;
@@ -400,6 +404,12 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const [emailStats, setEmailStats] = useState({ total: 0, customer: 0, vendor: 0, subcontractor: 0, unread: 0 });
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState(initialTab === 'financials' || initialTab === 'materials' ? 'proposal-materials' : initialTab);
+  const [proposalToolbarContent, setProposalToolbarContent] = useState<React.ReactNode>(null);
+  type ProposalViewMode = 'split' | 'proposal' | 'materials';
+  const [proposalViewMode, setProposalViewMode] = useState<ProposalViewMode>('split');
+  const materialsToolbarSlotRef = useRef<HTMLDivElement>(null);
+  const [materialsToolbarSlotReady, setMaterialsToolbarSlotReady] = useState(false);
 
   function toggleDate(date: string) {
     setExpandedDates(prev => {
@@ -469,7 +479,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
     
     // Subscribe to new notifications
     const notificationsChannel = supabase
-      .channel('job_notifications')
+      .channel(`job_notifications_${job.id}`)
       .on('postgres_changes', 
         { 
           event: 'INSERT', 
@@ -483,9 +493,11 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
       )
       .subscribe();
 
-    // Subscribe to crew orders (material changes)
+    // Subscribe to crew orders (material changes).
+    // Debounce so rapid item saves don't fire 5 stats queries back-to-back.
+    let statsDebounce: ReturnType<typeof setTimeout> | null = null;
     const materialsChannel = supabase
-      .channel('job_materials_changes')
+      .channel(`job_materials_changes_${job.id}`)
       .on('postgres_changes',
         {
           event: '*',
@@ -494,12 +506,14 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           filter: `job_id=eq.${job.id}`
         },
         () => {
-          loadJobStats(); // Reload stats to update crew orders count
+          if (statsDebounce) clearTimeout(statsDebounce);
+          statsDebounce = setTimeout(() => loadJobStats(), 2000);
         }
       )
       .subscribe();
 
     return () => {
+      if (statsDebounce) clearTimeout(statsDebounce);
       supabase.removeChannel(notificationsChannel);
       supabase.removeChannel(materialsChannel);
     };
@@ -507,6 +521,9 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
 
   async function loadData() {
     setLoading(true);
+    const timeout = window.setTimeout(() => {
+      setLoading(false);
+    }, 10000);
     try {
       await Promise.all([
         loadComponentWork(),
@@ -517,6 +534,7 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
     } catch (error) {
       console.error('Error loading job details:', error);
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
   }
@@ -1197,119 +1215,168 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
   const remainingHours = Math.max(estimatedHours - totalClockInHours, 0);
 
   return (
+    <JobDetailProposalToolbarContext.Provider value={setProposalToolbarContent}>
+    <JobDetailMaterialsToolbarSlotContext.Provider value={{ ref: materialsToolbarSlotRef, ready: materialsToolbarSlotReady }}>
+    <ProposalSummaryProvider>
     <div className="min-h-screen bg-background">
-      <Tabs defaultValue={initialTab} className="w-full">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className={`w-full ${activeTab === 'proposal-materials' ? 'pt-28' : 'pt-14'}`}
+      >
         {/* Main Navigation Tabs - Fixed at Top with Black, Gold, Dark Green Theme */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black border-b-4 border-yellow-600 shadow-2xl">
-          <div className="flex items-center gap-4 px-4 py-2">
+          <div className="flex items-center gap-2 px-4 py-1.5 min-h-14">
             {onBack && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onBack}
-                className="text-yellow-100 hover:text-yellow-400 hover:bg-green-900/50"
+                className="text-yellow-100 hover:text-yellow-400 hover:bg-green-900/50 shrink-0"
               >
                 <ArrowLeft className="w-5 h-5 mr-2" />
                 Back to Jobs
               </Button>
             )}
-            <h1 className="text-2xl font-bold text-yellow-500">
+            <h1 className="text-lg font-bold text-yellow-500 truncate shrink-0 max-w-[180px] sm:max-w-[240px]">
               {job.name}
             </h1>
-          </div>
-          <TabsList className="grid w-full grid-cols-11 h-16 rounded-none bg-gradient-to-r from-green-900 via-black to-green-900">
+            <TabsList className="flex-1 min-w-0 grid grid-cols-10 h-11 rounded-none bg-transparent p-0 gap-0 border-0">
             <TabsTrigger 
               value="overview" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <Activity className="w-5 h-5 sm:mr-2" />
+              <Activity className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Overview</span>
             </TabsTrigger>
             <TabsTrigger 
-              value="financials" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              value="proposal-materials" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all relative rounded-none py-2"
             >
-              <DollarSign className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Proposal</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="components" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
-            >
-              <Target className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Components</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="schedule" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
-            >
-              <Calendar className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Schedule</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="documents" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
-            >
-              <FileText className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Documents</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="materials" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all relative"
-            >
-              <Package className="w-5 h-5 sm:mr-2" />
-              <span className="hidden sm:inline">Materials</span>
+              <DollarSign className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Proposal & Materials</span>
               {crewOrdersCount > 0 && (
-                <Badge 
-                  variant="destructive" 
-                  className="ml-1 sm:ml-2 bg-red-600 text-white font-bold animate-pulse text-xs"
-                >
+                <Badge variant="destructive" className="ml-1 bg-red-600 text-white font-bold animate-pulse text-xs">
                   {crewOrdersCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger 
-              value="orders" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              value="components" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <FileSpreadsheet className="w-5 h-5 sm:mr-2" />
+              <Target className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Components</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="schedule" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
+            >
+              <Calendar className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Schedule</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="documents" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
+            >
+              <FileText className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Documents</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="orders" 
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
+            >
+              <FileSpreadsheet className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Orders</span>
             </TabsTrigger>
             <TabsTrigger 
               value="photos" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <Camera className="w-5 h-5 sm:mr-2" />
+              <Camera className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Photos</span>
             </TabsTrigger>
             <TabsTrigger 
               value="subcontractors" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <Briefcase className="w-5 h-5 sm:mr-2" />
+              <Briefcase className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Subs</span>
             </TabsTrigger>
             <TabsTrigger 
               value="customer-portal" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <Users className="w-5 h-5 sm:mr-2" />
+              <Users className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Portal</span>
             </TabsTrigger>
             <TabsTrigger 
               value="communications" 
-              className="font-bold text-sm sm:text-base text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all"
+              className="font-bold text-xs sm:text-sm text-yellow-100 hover:text-yellow-400 data-[state=active]:bg-gradient-to-br data-[state=active]:from-yellow-600 data-[state=active]:to-yellow-500 data-[state=active]:text-black data-[state=active]:shadow-lg transition-all rounded-none py-2"
             >
-              <Mail className="w-5 h-5 sm:mr-2" />
+              <Mail className="w-4 h-4 sm:mr-1" />
               <span className="hidden sm:inline">Email</span>
             </TabsTrigger>
           </TabsList>
+          </div>
 
+          {/* Proposal & Materials: proposal buttons | divider | materials tabs (Workbook, Breakdown, etc.) + View row */}
+          {activeTab === 'proposal-materials' && (
+            <div className="bg-green-900/80 border-t border-yellow-600/30">
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+                {proposalToolbarContent && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {proposalToolbarContent}
+                    </div>
+                    <div className="h-6 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+                    <div
+                      ref={(el) => {
+                        (materialsToolbarSlotRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                        setMaterialsToolbarSlotReady(!!el);
+                      }}
+                      className="flex items-center gap-2 flex-1 min-w-0"
+                    />
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-1.5 border-t border-yellow-600/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-yellow-100/90 mr-2">View:</span>
+                  <Button
+                    variant={proposalViewMode === 'split' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setProposalViewMode('split')}
+                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    Split
+                  </Button>
+                  <Button
+                    variant={proposalViewMode === 'proposal' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setProposalViewMode('proposal')}
+                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    Proposal
+                  </Button>
+                  <Button
+                    variant={proposalViewMode === 'materials' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setProposalViewMode('materials')}
+                    className="gap-1.5 h-8 text-xs bg-green-700 hover:bg-green-600 data-[state=active]:bg-green-600 text-yellow-100 border-yellow-600/40"
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    Materials
+                  </Button>
+                </div>
+                <div className="h-5 w-px bg-yellow-600/40 flex-shrink-0" aria-hidden />
+                <ProposalSummaryRow className="flex-1 min-w-0" />
+              </div>
+            </div>
+          )}
         </div>
-        
-        {/* Add spacer to prevent content from hiding under fixed header */}
-        {/* Total height: 64px (main tabs) */}
-        <div className="h-16" />
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="w-full">
@@ -1660,10 +1727,9 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           </div>
         </TabsContent>
 
-        <TabsContent value="financials" className="w-full">
-          <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
-            <JobFinancials job={job} />
-          </div>
+        {/* forceMount keeps the panel alive across tab switches — data persists, no cold-restart */}
+        <TabsContent forceMount value="proposal-materials" className="w-full h-[calc(100vh-8rem)] min-h-[600px] data-[state=inactive]:hidden">
+          <ProposalAndMaterialsView job={job} userId={profile?.id} viewMode={proposalViewMode} onViewModeChange={setProposalViewMode} />
         </TabsContent>
 
         <TabsContent value="components" className="w-full">
@@ -1688,12 +1754,6 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
           <div className="max-w-7xl mx-auto space-y-4 pt-4 px-4">
             <JobPhotosView job={job} />
           </div>
-        </TabsContent>
-
-        <TabsContent value="materials" className="space-y-4 pt-4 px-2">
-          {profile?.id && (
-            <MaterialsManagement job={job} userId={profile.id} proposalNumber={proposalNumber} />
-          )}
         </TabsContent>
 
         <TabsContent value="orders" className="w-full">
@@ -1753,5 +1813,8 @@ export function JobDetailedView({ job, onBack, onEdit, initialTab = 'overview' }
         </div>
       )}
     </div>
+    </ProposalSummaryProvider>
+    </JobDetailMaterialsToolbarSlotContext.Provider>
+    </JobDetailProposalToolbarContext.Provider>
   );
 }

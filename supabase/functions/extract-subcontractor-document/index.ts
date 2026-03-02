@@ -176,17 +176,22 @@ Extract all line items. Return ONLY the JSON object, no other text.`
         })
         .eq('id', documentId);
 
-      // Insert line items
+      // Insert line items (set item_type so labor counts in job labor total)
       if (extractedData.line_items && extractedData.line_items.length > 0) {
-        const lineItems = extractedData.line_items.map((item: any, index: number) => ({
-          estimate_id: documentId,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.total_price,
-          notes: item.notes,
-          order_index: index,
-        }));
+        const lineItems = extractedData.line_items.map((item: any, index: number) => {
+          const desc = (item.description || '').toLowerCase();
+          const isLabor = desc.includes('labor') || desc.includes('install') || desc.includes('service') || desc.includes('installation');
+          return {
+            estimate_id: documentId,
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+            notes: item.notes,
+            order_index: index,
+            item_type: isLabor ? 'labor' : 'material',
+          };
+        });
 
         await supabase
           .from('subcontractor_estimate_line_items')
