@@ -212,7 +212,30 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
 
   const effectiveViewerLinks = viewerLinks.length > 0 ? viewerLinks : [];
   const legacyViewerUrl = (sketchUpViewerUrl ?? (import.meta.env.VITE_SKETCHUP_VIEWER_URL as string) ?? '').trim();
-  const currentViewerUrl = selectedViewerLink?.url ?? '';
+
+  /** Normalize viewer URL so iframe loads reliably: trim, ensure protocol, strip default port :443. */
+  function normalizeViewerUrl(raw: string): string {
+    const s = (raw ?? '').trim();
+    if (!s) return '';
+    let url = s;
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:' && parsed.port === '443') {
+        parsed.port = '';
+        return parsed.toString();
+      }
+      if (parsed.protocol === 'http:' && parsed.port === '80') {
+        parsed.port = '';
+        return parsed.toString();
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  }
+
+  const currentViewerUrl = normalizeViewerUrl(selectedViewerLink?.url ?? '');
 
   async function saveViewerLink() {
     const label = manageLinkLabel.trim();
@@ -409,12 +432,23 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
           </div>
           <CardContent className="flex-1 p-0 overflow-auto min-h-0">
             {viewMode === 'sketchup' && currentViewerUrl ? (
-              <div className="h-full min-h-[300px] bg-slate-100">
+              <div className="h-full min-h-[300px] bg-slate-100 flex flex-col">
                 <iframe
                   src={currentViewerUrl}
-                  className="w-full h-full min-h-[300px] border-0"
+                  className="w-full flex-1 min-h-[280px] border-0"
                   title={selectedViewerLink?.label ?? 'Viewer'}
+                  allow="fullscreen"
+                  referrerPolicy="no-referrer"
                 />
+                <div className="px-3 py-2 bg-amber-50 border-t border-amber-200 flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-amber-800">
+                    Blank? This site may block embedding. Click to open in a new tab:
+                  </p>
+                  <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={() => window.open(currentViewerUrl, '_blank', 'noopener,noreferrer')}>
+                    <LinkIcon className="w-3 h-3 mr-1" />
+                    Open in new tab
+                  </Button>
+                </div>
               </div>
             ) : viewMode === 'grid' ? (
               <div className="p-4">
@@ -539,7 +573,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 <div key={link.id} className="flex items-center justify-between gap-2 rounded border p-2 text-sm">
                   <div className="min-w-0">
                     <span className="font-medium">{link.label}</span>
-                    <p className="text-xs text-muted-foreground truncate">{link.url}</p>
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground truncate block hover:underline cursor-pointer">{link.url}</a>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
                     <Button variant="ghost" size="sm" onClick={() => startEditLink(link)} className="h-8 w-8 p-0">
@@ -667,12 +701,23 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
             {/* Content */}
             <div className="flex-1 overflow-auto">
               {viewMode === 'sketchup' && currentViewerUrl ? (
-                <div className="h-full bg-slate-100">
+                <div className="h-full bg-slate-100 flex flex-col">
                   <iframe
                     src={currentViewerUrl}
-                    className="w-full h-full border-0 min-h-[60vh]"
+                    className="w-full flex-1 border-0 min-h-[60vh]"
                     title={selectedViewerLink?.label ?? 'Viewer'}
+                    allow="fullscreen"
+                    referrerPolicy="no-referrer"
                   />
+                  <div className="px-3 py-2 bg-amber-50 border-t border-amber-200 flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-xs text-amber-800">
+                      Blank? This site may block embedding. Click to open in a new tab:
+                    </p>
+                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={() => window.open(currentViewerUrl, '_blank', 'noopener,noreferrer')}>
+                      <LinkIcon className="w-3 h-3 mr-1" />
+                      Open in new tab
+                    </Button>
+                  </div>
                 </div>
               ) : viewMode === 'grid' ? (
                 <div className="p-4">
@@ -783,7 +828,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
                 <div key={link.id} className="flex items-center justify-between gap-2 rounded border p-2 text-sm">
                   <div className="min-w-0">
                     <span className="font-medium">{link.label}</span>
-                    <p className="text-xs text-muted-foreground truncate">{link.url}</p>
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground truncate block hover:underline cursor-pointer">{link.url}</a>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
                     <Button variant="ghost" size="sm" onClick={() => startEditLink(link)} className="h-8 w-8 p-0"><Pencil className="w-4 h-4" /></Button>
@@ -908,12 +953,23 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
         {/* Content */}
         <CardContent className="flex-1 p-0 overflow-auto">
           {viewMode === 'sketchup' && currentViewerUrl ? (
-            <div className="h-full min-h-[300px] bg-slate-100">
+            <div className="h-full min-h-[300px] bg-slate-100 flex flex-col">
               <iframe
                 src={currentViewerUrl}
-                className="w-full h-full min-h-[300px] border-0"
+                className="w-full flex-1 min-h-[280px] border-0"
                 title={selectedViewerLink?.label ?? 'Viewer'}
+                allow="fullscreen"
+                referrerPolicy="no-referrer"
               />
+              <div className="px-3 py-2 bg-amber-50 border-t border-amber-200 flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs text-amber-800">
+                  Blank? This site may block embedding. Click to open in a new tab:
+                </p>
+                <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={() => window.open(currentViewerUrl, '_blank', 'noopener,noreferrer')}>
+                  <LinkIcon className="w-3 h-3 mr-1" />
+                  Open in new tab
+                </Button>
+              </div>
             </div>
           ) : viewMode === 'grid' ? (
             <div className="p-4">
@@ -1026,7 +1082,7 @@ export function FloatingDocumentViewer({ jobId, open, onClose, embed = false, ba
               <div key={link.id} className="flex items-center justify-between gap-2 rounded border p-2 text-sm">
                 <div className="min-w-0">
                   <span className="font-medium">{link.label}</span>
-                  <p className="text-xs text-muted-foreground truncate">{link.url}</p>
+                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground truncate block hover:underline cursor-pointer">{link.url}</a>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   <Button variant="ghost" size="sm" onClick={() => startEditLink(link)} className="h-8 w-8 p-0"><Pencil className="w-4 h-4" /></Button>

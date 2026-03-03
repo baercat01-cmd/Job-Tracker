@@ -1324,7 +1324,7 @@ export function CustomerPortalManagement({ job }: CustomerPortalManagementProps)
             </div>
 
             <div className="flex gap-3 pt-4 border-t">
-              <Button onClick={loadPreviewData} variant="outline" className="flex-1" disabled={!customerName}>
+              <Button onClick={(e) => { void loadPreviewData(); }} variant="outline" className="flex-1" disabled={!customerName}>
                 <Eye className="w-4 h-4 mr-2" />
                 Preview Customer View
               </Button>

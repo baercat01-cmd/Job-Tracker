@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar, FileText, Settings } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Clock, TrendingUp, Percent, Calculator, FileSpreadsheet, ChevronDown, Briefcase, Edit, Upload, MoreVertical, List, Eye, Check, X, GripVertical, Download, History, Lock, Calendar, FileText, Settings, Printer, Send, CheckCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -1688,7 +1688,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [showLineItems, setShowLineItems] = useState(false); // Default to false - no row pricing by default
   const [exportViewType, setExportViewType] = useState<'customer' | 'office'>('customer');
   const [exporting, setExporting] = useState(false);
-  const [viewingPdf, setViewingPdf] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [showPdfView, setShowPdfView] = useState(false);
   const [pdfViewHtml, setPdfViewHtml] = useState<string | null>(null);
   const [pdfViewFilename, setPdfViewFilename] = useState<string>('');
@@ -1707,6 +1707,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [proposalChangeNotes, setProposalChangeNotes] = useState('');
   const [showCreateProposalDialog, setShowCreateProposalDialog] = useState(false);
+  const [templateQuoteIdForNewProposal, setTemplateQuoteIdForNewProposal] = useState<string | null>(null);
   
   // Use ref to track user's selected quote ID (persists across re-renders)
   const userSelectedQuoteIdRef = useRef<string | null>(null);
@@ -1724,8 +1725,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [initializingVersions, setInitializingVersions] = useState(false);
   
-  // Computed: Read-only mode when viewing historical proposal (not the most recent)
-  const isReadOnly = quote && allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id;
+  // Computed: Read-only when viewing historical proposal, or when proposal was marked as sent
+  const isReadOnly = !!quote && (
+    (allJobQuotes.length > 0 && quote.id !== allJobQuotes[0]?.id) ||
+    !!(quote as any).sent_at
+  );
   
   // Document viewer state — Building Description is quote-level only (quotes.description), not job-level
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
@@ -1944,6 +1948,61 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     } catch (error: any) {
       console.error('Error signing version:', error);
       toast.error('Failed to sign version');
+    }
+  }
+
+  async function markProposalAsSent() {
+    if (!quote || !profile) return;
+    if ((quote as any).sent_at) {
+      toast.info('This proposal is already marked as sent.');
+      return;
+    }
+    if (!confirm('Mark this proposal as sent? This will lock the proposal and materials and record the date/time. You can still create a new proposal to continue editing.')) return;
+    try {
+      const { error: rpcErr } = await supabase.rpc('mark_proposal_as_sent', {
+        p_quote_id: quote.id,
+        p_user_id: profile.id,
+      });
+      const isRpcNotFound =
+        rpcErr?.message?.includes('mark_proposal_as_sent') &&
+        (rpcErr?.message?.includes('schema cache') || rpcErr?.message?.includes('could not find the function'));
+
+      if (rpcErr && !isRpcNotFound) throw rpcErr;
+
+      if (rpcErr && isRpcNotFound) {
+        // Fallback: do the same updates directly (works if schema cache has sent_at/sent_by on quotes)
+        const { error: lockErr } = await supabase
+          .from('material_workbooks')
+          .update({ status: 'locked', updated_at: new Date().toISOString() })
+          .eq('quote_id', quote.id);
+        if (lockErr) throw lockErr;
+
+        const { error: updateErr } = await supabase
+          .from('quotes')
+          .update({
+            sent_at: new Date().toISOString(),
+            sent_by: profile.id,
+          })
+          .eq('id', quote.id);
+        if (updateErr) throw updateErr;
+      }
+
+      toast.success('Proposal marked as sent. It is now locked with a timestamp.');
+      await loadQuoteData();
+      await loadData(true);
+    } catch (error: any) {
+      console.error('Error marking proposal as sent:', error);
+      const msg = error?.message || '';
+      const isSchemaCacheError =
+        (msg.includes('sent_at') && msg.includes('schema cache')) ||
+        (msg.includes('mark_proposal_as_sent') && (msg.includes('schema cache') || msg.includes('could not find the function')));
+      if (isSchemaCacheError) {
+        toast.error(
+          'Mark as Sent: run the two SQL scripts in Supabase SQL Editor, then run: select pg_notification_queue_usage(); then NOTIFY pgrst, \'reload schema\'; (see scripts/mark-proposal-as-sent-rpc.sql)'
+        );
+      } else {
+        toast.error(msg || 'Failed to mark as sent');
+      }
     }
   }
 
@@ -2443,10 +2502,9 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
   }
 
   async function createNewProposal() {
-    if (!quote || !profile) return;
+    if (!profile) return;
     setCreatingProposal(true);
 
-    const oldQuoteId = quote.id;
     const safetyTimeoutMs = 90000; // 90s max so loading never sticks forever
     const safetyTimer = setTimeout(() => {
       setCreatingProposal(false);
@@ -2454,21 +2512,59 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }, safetyTimeoutMs);
 
     try {
-      // ── Step 1: Create the new quotes row ──
-      // The DB trigger auto-assigns the incremented proposal_number (YYNNN-Z)
+      // ── Start from blank: RPC creates new empty quote (no template) ──
+      if (templateQuoteIdForNewProposal === null) {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('create_proposal_version', {
+          p_quote_id: null,
+          p_job_id: job.id,
+          p_user_id: profile.id,
+          p_change_notes: proposalChangeNotes || 'New proposal (empty)',
+        });
+        if (rpcErr) throw new Error(rpcErr.message);
+        const newQuoteId = (rpcData as any)?.quote_id;
+        if (!newQuoteId) throw new Error('No quote_id returned');
+        const { data: newQuote, error: fetchError } = await supabase.from('quotes').select('*').eq('id', newQuoteId).single();
+        if (fetchError) throw fetchError;
+        setQuote(newQuote);
+        userSelectedQuoteIdRef.current = newQuote.id;
+        toast.success(`New proposal ${newQuote.proposal_number} created. You can add materials and rows.`);
+        setShowCreateProposalDialog(false);
+        setProposalChangeNotes('');
+        setTemplateQuoteIdForNewProposal(quote?.id ?? null);
+        clearTimeout(safetyTimer);
+        setCreatingProposal(false);
+        await loadQuoteData();
+        await loadData(false, newQuote);
+        return;
+      }
+
+      // ── Use selected proposal as template (clone without affecting the template) ──
+      const sourceQuote = allJobQuotes.find((q: any) => q.id === templateQuoteIdForNewProposal) ?? (quote?.id === templateQuoteIdForNewProposal ? quote : null);
+      if (!sourceQuote) {
+        toast.error('Selected template not found.');
+        clearTimeout(safetyTimer);
+        setCreatingProposal(false);
+        return;
+      }
+      const oldQuoteId = templateQuoteIdForNewProposal;
+      const isCloningCurrent = oldQuoteId === quote?.id;
+
+      // ── Step 1: Create the new quotes row (from template quote data) ──
       const { data: newQuoteRow, error: quoteErr } = await supabase
         .from('quotes')
         .insert({
           job_id: job.id,
-          customer_name:    (quote as any).customer_name    ?? null,
-          customer_address: (quote as any).customer_address ?? null,
-          customer_email:   (quote as any).customer_email   ?? null,
-          customer_phone:   (quote as any).customer_phone   ?? null,
-          project_name:     (quote as any).project_name     ?? null,
-          width:            (quote as any).width             ?? 0,
-          length:           (quote as any).length            ?? 0,
+          customer_name:    (sourceQuote as any).customer_name    ?? null,
+          customer_address: (sourceQuote as any).customer_address ?? null,
+          customer_email:   (sourceQuote as any).customer_email   ?? null,
+          customer_phone:   (sourceQuote as any).customer_phone   ?? null,
+          project_name:     (sourceQuote as any).project_name     ?? null,
+          width:            (sourceQuote as any).width             ?? 0,
+          length:           (sourceQuote as any).length            ?? 0,
           status:           'draft',
           created_by:       profile.id,
+          description:      (sourceQuote as any).description       ?? null,
+          estimated_price:  (sourceQuote as any).estimated_price   ?? null,
         })
         .select()
         .single();
@@ -2654,27 +2750,29 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       }
       console.log(`✅ Step 4 — copied ${oldEstimates?.length ?? 0} subcontractor estimates`);
 
-      // ── Step 5: Save frozen snapshot of the OLD proposal to proposal_versions ──
-      const nextVersion = (proposalVersions?.length ?? 0) + 1;
-      const { error: snapErr } = await supabase.from('proposal_versions').insert({
-        quote_id:                  oldQuoteId,
-        version_number:            nextVersion,
-        customer_name:             (quote as any).customer_name    ?? null,
-        customer_address:          (quote as any).customer_address ?? null,
-        customer_email:            (quote as any).customer_email   ?? null,
-        customer_phone:            (quote as any).customer_phone   ?? null,
-        project_name:              (quote as any).project_name     ?? null,
-        width:                     (quote as any).width             ?? 0,
-        length:                    (quote as any).length            ?? 0,
-        estimated_price:           (quote as any).estimated_price  ?? null,
-        workbook_snapshot:         { sheets: snapshotSheets, category_markups: snapshotCategoryMarkups, sheet_labor: snapshotSheetLabor },
-        financial_rows_snapshot:   snapshotFinancialRows,
-        subcontractor_snapshot:    snapshotSubcontractors,
-        change_notes:              proposalChangeNotes || 'New proposal version',
-        created_by:                profile.id,
-      });
-      if (snapErr) console.warn('⚠️ Snapshot save failed (non-fatal):', snapErr.message);
-      else console.log('✅ Step 5 — snapshot saved to proposal_versions');
+      // ── Step 5: Save frozen snapshot only when cloning current proposal (not when using another as template) ──
+      if (isCloningCurrent) {
+        const nextVersion = (proposalVersions?.length ?? 0) + 1;
+        const { error: snapErr } = await supabase.from('proposal_versions').insert({
+          quote_id:                  oldQuoteId,
+          version_number:            nextVersion,
+          customer_name:             (quote as any).customer_name    ?? null,
+          customer_address:          (quote as any).customer_address ?? null,
+          customer_email:            (quote as any).customer_email   ?? null,
+          customer_phone:            (quote as any).customer_phone   ?? null,
+          project_name:              (quote as any).project_name     ?? null,
+          width:                     (quote as any).width             ?? 0,
+          length:                    (quote as any).length            ?? 0,
+          estimated_price:           (quote as any).estimated_price  ?? null,
+          workbook_snapshot:         { sheets: snapshotSheets, category_markups: snapshotCategoryMarkups, sheet_labor: snapshotSheetLabor },
+          financial_rows_snapshot:   snapshotFinancialRows,
+          subcontractor_snapshot:    snapshotSubcontractors,
+          change_notes:              proposalChangeNotes || 'New proposal version',
+          created_by:                profile.id,
+        });
+        if (snapErr) console.warn('⚠️ Snapshot save failed (non-fatal):', snapErr.message);
+        else console.log('✅ Step 5 — snapshot saved to proposal_versions');
+      }
 
       // ── Step 6: Reload and switch UI to the new proposal ──
       const { data: newQuote, error: fetchError } = await supabase
@@ -2686,6 +2784,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       toast.success(`New proposal ${newQuote.proposal_number} created with independent data`);
       setShowCreateProposalDialog(false);
       setProposalChangeNotes('');
+      setTemplateQuoteIdForNewProposal(quote?.id ?? null);
       setCreatingProposal(false); // Clear loading so dialog/button don't hang if reload is slow
 
       // Reload quote list and financials in background (with timeout so we never hang indefinitely)
@@ -4727,19 +4826,23 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
     }
   }
 
-  async function handlePrintPdfView() {
+  function openPrintDialog(forPdf: boolean) {
     if (!pdfViewHtml || !pdfViewFilename) return;
     try {
-      // Use proposal HTML directly so template @page and footer (margin from bottom) apply
       const blob = new Blob([pdfViewHtml], { type: 'text/html; charset=utf-8' });
       const blobUrl = URL.createObjectURL(blob);
       const win = window.open(blobUrl, '_blank');
       if (!win) {
         URL.revokeObjectURL(blobUrl);
-        toast.error('Allow popups to open the print dialog.');
+        toast.error('Allow popups to print or save as PDF.');
         return;
       }
       win.focus();
+      if (forPdf) {
+        toast.info(`Choose "Save as PDF" to download. File will be named ${pdfViewFilename}.`, { duration: 6000 });
+      } else {
+        toast.info('Select your printer to print the proposal.');
+      }
       setTimeout(() => {
         try {
           if (!win.closed) win.print();
@@ -4749,8 +4852,53 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
         setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
       }, 600);
     } catch (err: any) {
-      toast.error(err.message || 'Failed to load print view');
+      toast.error(err.message || 'Failed to open print dialog');
     }
+  }
+
+  async function handleDownloadPdf() {
+    if (!pdfViewHtml || !pdfViewFilename) return;
+    setDownloadingPdf(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden');
+      document.body.appendChild(iframe);
+      const doc = iframe.contentDocument;
+      if (!doc) throw new Error('Could not create document');
+      doc.open();
+      doc.write(pdfViewHtml);
+      doc.close();
+      await new Promise<void>((resolve, reject) => {
+        iframe.onload = () => resolve();
+        iframe.onerror = () => reject(new Error('Failed to load proposal'));
+        if (doc.readyState === 'complete') resolve();
+      });
+      await new Promise(r => setTimeout(r, 400));
+      const element = iframe.contentDocument?.body;
+      if (!element) throw new Error('Could not get proposal content');
+      await html2pdf()
+        .set({
+          margin: 10,
+          filename: pdfViewFilename,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2 },
+          jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
+        })
+        .from(element)
+        .save();
+      document.body.removeChild(iframe);
+      toast.success(`Downloaded ${pdfViewFilename}`);
+    } catch (err: any) {
+      console.error('PDF export error:', err);
+      toast.error(err?.message || 'Failed to download PDF. Try Print then Save as PDF.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
+  function handlePrintProposal() {
+    openPrintDialog(false);
   }
 
   async function handleExportPDF() {
@@ -4884,136 +5032,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       console.log('Generating PDF with HTML');
       const filename = `Proposal-${proposalNumber}.pdf`;
       openPdfViewInApp(html, filename);
-      toast.success('Proposal preview opened. Use "Open Print Dialog" to save as PDF.');
+      toast.success('Proposal preview opened. Click "Download PDF" to save as PDF (named by proposal number).');
       setShowExportDialog(false);
     } catch (error: any) {
       console.error('Error exporting PDF:', error);
       toast.error(`Failed to export PDF: ${error.message || 'Unknown error'}`);
     } finally {
       setExporting(false);
-    }
-  }
-
-  /** Open customer proposal in a new tab for viewing / sending. Uses customer view with section prices. */
-  async function handleViewProposalPDF() {
-    if (!quote) {
-      toast.error('Select a proposal first');
-      return;
-    }
-    setViewingPdf(true);
-    try {
-      const proposalNumber = quote.proposal_number || job.id.split('-')[0].toUpperCase();
-      const sections = allItems.map((item) => {
-        if (item.type === 'material') {
-          const sheet = item.data;
-          const linkedRows = customRows.filter((r: any) => r.sheet_id === sheet.sheetId);
-          const linkedSubs = linkedSubcontractors[sheet.sheetId] || [];
-          const linkedRowsTotal = linkedRows.reduce((sum: number, row: any) => {
-            const lineItems = customRowLineItems[row.id] || [];
-            const baseCost = lineItems.length > 0
-              ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-              : row.total_cost;
-            return sum + (baseCost * (1 + row.markup_percent / 100));
-          }, 0);
-          const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
-            const lineItems = subcontractorLineItems[sub.id] || [];
-            const taxableTotal = lineItems
-              .filter((item: any) => !item.excluded && item.taxable)
-              .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-            return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
-          }, 0);
-          const sheetBaseCost = sheet.totalPrice + linkedRowsTotal + linkedSubsTaxableTotal;
-          const sheetFinalPrice = sheetBaseCost * (1 + (sheet.markup_percent || 10) / 100);
-          return {
-            name: sheet.sheetName,
-            description: sheet.sheetDescription || '',
-            price: sheetFinalPrice,
-            items: sheet.categories?.map((cat: any) => ({
-              description: cat.name,
-              quantity: cat.itemCount,
-              unit: 'items',
-              price: cat.totalPrice
-            }))
-          };
-        } else if (item.type === 'custom') {
-          const row = item.data;
-          const lineItems = customRowLineItems[row.id] || [];
-          const linkedSubs = linkedSubcontractors[row.id] || [];
-          const linkedSubsTaxableTotal = linkedSubs.reduce((sum: number, sub: any) => {
-            const subLineItems = subcontractorLineItems[sub.id] || [];
-            const taxableTotal = subLineItems
-              .filter((item: any) => !item.excluded && item.taxable)
-              .reduce((itemSum: number, item: any) => itemSum + item.total_price, 0);
-            return sum + (taxableTotal * (1 + (sub.markup_percent || 0) / 100));
-          }, 0);
-          const baseLineCost = lineItems.length > 0
-            ? lineItems.reduce((itemSum: number, item: any) => itemSum + item.total_cost, 0)
-            : row.total_cost;
-          const finalPrice = (baseLineCost + linkedSubsTaxableTotal) * (1 + row.markup_percent / 100);
-          return {
-            name: row.description,
-            description: row.notes || '',
-            price: finalPrice,
-            items: lineItems.length > 0 ? lineItems.map((li: any) => ({
-              description: li.description,
-              quantity: li.quantity,
-              unit: '',
-              price: li.total_cost
-            })) : undefined
-          };
-        } else if (item.type === 'subcontractor') {
-          const est = item.data;
-          const lineItems = subcontractorLineItems[est.id] || [];
-          const includedTotal = lineItems
-            .filter((item: any) => !item.excluded)
-            .reduce((sum: number, item: any) => sum + item.total_price, 0);
-          const finalPrice = includedTotal * (1 + (est.markup_percent || 0) / 100);
-          return {
-            name: est.company_name,
-            description: est.scope_of_work || '',
-            price: finalPrice,
-            items: lineItems.filter((item: any) => !item.excluded).map((li: any) => ({
-              description: li.description,
-              quantity: li.quantity || 1,
-              unit: '',
-              price: li.total_price
-            }))
-          };
-        }
-        return null;
-      }).filter(Boolean);
-
-      const html = generateProposalHTML({
-        proposalNumber,
-        date: new Date().toLocaleDateString(),
-        job: {
-          client_name: job.client_name,
-          address: job.address,
-          name: job.name,
-          customer_phone: job.customer_phone,
-          description: buildingDescription,
-        },
-        sections,
-        totals: {
-          materials: proposalMaterialsTotalWithSubcontractors,
-          labor: proposalLaborPrice,
-          subtotal: proposalSubtotal,
-          tax: proposalTotalTax,
-          grandTotal: proposalGrandTotal,
-        },
-        showLineItems: true,
-        showSectionPrices: true,
-        showInternalDetails: false,
-      });
-
-      const filename = `Proposal-${proposalNumber}.pdf`;
-      openPdfViewInApp(html, filename);
-      toast.success('Proposal preview opened. Use "Open Print Dialog" to save as PDF.');
-    } catch (error: any) {
-      console.error('Error opening proposal PDF view:', error);
-      toast.error(`Failed to open PDF view: ${error.message || 'Unknown error'}`);
-    } finally {
-      setViewingPdf(false);
     }
   }
 
@@ -5504,14 +5529,16 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
             <Lock className="w-3 h-3 mr-1" />Set as Contract
           </Button>
         )}
+        {quote && !(quote as any).sent_at && (
+          <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
+            <Send className="w-3 h-3 mr-1" />Mark as Sent
+          </Button>
+        )}
         <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className={headerBtn}>
           <Settings className="w-3 h-3 mr-1" />Template
         </Button>
         <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className={headerBtn}>
           <FileText className="w-3 h-3 mr-1" />Documents
-        </Button>
-        <Button onClick={handleViewProposalPDF} variant="outline" size="sm" disabled={!quote || viewingPdf} className={headerBtn}>
-          {viewingPdf ? <><div className="w-3 h-3 mr-1 border-2 border-current border-t-transparent rounded-full animate-spin" />Opening...</> : <><FileText className="w-3 h-3 mr-1" />View PDF</>}
         </Button>
         <Button onClick={() => setShowExportDialog(true)} size="sm" className="bg-white hover:bg-slate-100 text-black border border-slate-400 h-8 text-xs">
           <Download className="w-3 h-3 mr-1" />Export PDF
@@ -5569,7 +5596,13 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                 <span className="text-sm font-semibold text-blue-900">
                   Proposal #{quote.proposal_number || quote.quote_number}
                 </span>
-                {isReadOnly && (
+                {(quote as any).sent_at && (
+                  <Badge className="text-xs bg-emerald-100 border-emerald-300 text-emerald-900" title={`Sent at ${new Date((quote as any).sent_at).toLocaleString()}`}>
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Sent {new Date((quote as any).sent_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                  </Badge>
+                )}
+                {isReadOnly && !(quote as any).sent_at && (
                   <Badge className="text-xs bg-amber-100 border-amber-300 text-amber-900">
                     Historical View
                   </Badge>
@@ -5640,15 +5673,17 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                   <Lock className="w-3 h-3 mr-2" />Set as Contract
                 </Button>
               )}
+              {quote && !(quote as any).sent_at && (
+                <Button size="sm" onClick={markProposalAsSent} disabled={isReadOnly} variant="outline" className="border-slate-400">
+                  <Send className="w-3 h-3 mr-2" />Mark as Sent
+                </Button>
+              )}
               <div className="h-6 w-px bg-border" />
               <Button onClick={() => setShowTemplateEditor(true)} variant="outline" size="sm" className="bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100">
                 <Settings className="w-4 h-4 mr-2" />Edit Template
               </Button>
               <Button onClick={() => setShowDocumentViewer(true)} variant="outline" size="sm" className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100">
                 <FileText className="w-4 h-4 mr-2" />View Documents
-              </Button>
-              <Button onClick={handleViewProposalPDF} variant="outline" size="sm" disabled={!quote || viewingPdf}>
-                {viewingPdf ? <><div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />Opening...</> : <><FileText className="w-4 h-4 mr-2" />View PDF</>}
               </Button>
               <Button onClick={() => setShowExportDialog(true)} variant="default" size="sm">
                 <Download className="w-4 h-4 mr-2" />Export PDF
@@ -6469,8 +6504,11 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
           <div className="flex items-center justify-between px-4 py-2 border-b bg-slate-50 shrink-0">
             <DialogTitle className="text-base font-semibold">Proposal Preview</DialogTitle>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrintPdfView} disabled={!pdfViewHtml}>
-                <Download className="w-4 h-4 mr-1" />Open Print Dialog
+              <Button variant="outline" size="sm" onClick={handlePrintProposal} disabled={!pdfViewHtml}>
+                <Printer className="w-4 h-4 mr-1" />Print
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={!pdfViewHtml || downloadingPdf}>
+                {downloadingPdf ? <><div className="w-3 h-3 mr-1 border-2 border-current border-t-transparent rounded-full animate-spin" />Downloading...</> : <><Download className="w-4 h-4 mr-1" />Export PDF</>}
               </Button>
               <Button variant="outline" size="sm" onClick={closePdfView}>
                 Close
@@ -6558,26 +6596,52 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
       </Dialog>
 
       {/* Create New Proposal Dialog */}
-      <Dialog open={showCreateProposalDialog} onOpenChange={setShowCreateProposalDialog}>
+      <Dialog open={showCreateProposalDialog} onOpenChange={(open) => {
+          if (open) setTemplateQuoteIdForNewProposal(quote?.id ?? null);
+          if (!open) setProposalChangeNotes('');
+          setShowCreateProposalDialog(open);
+        }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Proposal</DialogTitle>
             <DialogDescription>
-              This will lock the current proposal (saving a snapshot of all materials and pricing) and create a new proposal with an incremented number that you can continue editing.
+              Choose a proposal to use as a template. A new proposal will be created with its own materials and workbook; the template is not changed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>Use as template</Label>
+              <Select
+                value={templateQuoteIdForNewProposal ?? '__blank__'}
+                onValueChange={(v) => setTemplateQuoteIdForNewProposal(v === '__blank__' ? null : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a proposal or start blank" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__blank__">Start from blank (empty proposal)</SelectItem>
+                  {allJobQuotes.map((q: any) => (
+                    <SelectItem key={q.id} value={q.id}>
+                      Proposal #{q.proposal_number ?? q.quote_number ?? q.id?.slice(0, 8)}
+                      {q.id === quote?.id ? ' (current)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                The new proposal will be fully editable. The selected template is copied only; it is not locked or modified.
+              </p>
+            </div>
             <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-sm">
               <div className="flex items-start gap-2">
                 <Lock className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-blue-900 mb-1">What happens:</p>
                   <ul className="text-blue-800 space-y-1 list-disc list-inside">
-                    <li>Current proposal ({quote?.proposal_number}) will be locked with a snapshot</li>
-                    <li>All data will be <strong>fully duplicated</strong> for the new proposal</li>
-                    <li>New proposal gets its own independent materials, rows, and estimates</li>
-                    <li>Current proposal&apos;s workbook is locked so edits never affect it again</li>
-                    <li>You will be switched to the new proposal; changes apply only to the new one</li>
+                    <li>A new proposal is created with an incremented number</li>
+                    <li>If you chose a template, all materials, rows, and subcontractors are copied to the new proposal</li>
+                    <li>The new proposal has its own independent workbook; edits do not affect the template or any other proposal</li>
+                    <li>You will be switched to the new proposal to edit it</li>
                   </ul>
                 </div>
               </div>
@@ -6600,6 +6664,7 @@ export function JobFinancials({ job, controlledQuoteId, onQuoteChange }: JobFina
                 onClick={() => {
                   setShowCreateProposalDialog(false);
                   setProposalChangeNotes('');
+                  setTemplateQuoteIdForNewProposal(quote?.id ?? null);
                 }}
                 disabled={creatingProposal}
               >

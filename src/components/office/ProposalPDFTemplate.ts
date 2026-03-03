@@ -63,6 +63,7 @@ export function generateProposalHTML(data: {
     <html>
       <head>
         <meta charset="UTF-8">
+        <title>Proposal-${proposalNumber}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
@@ -372,6 +373,9 @@ export function generateProposalHTML(data: {
             .print-footer {
               display: flex;
               bottom: 0.45in;
+            }
+            .print-footer::after {
+              content: "Page 1";
             }
           }
         </style>
